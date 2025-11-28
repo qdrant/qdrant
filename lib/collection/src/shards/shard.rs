@@ -356,4 +356,14 @@ impl Shard {
             }
         }
     }
+
+    pub async fn stop_gracefully(&self) {
+        match self {
+            Shard::Local(local_shard) => local_shard.stop_gracefully().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.stop_gracefully().await,
+            Shard::ForwardProxy(forward_proxy_shard) => forward_proxy_shard.stop_gracefully().await,
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.stop_gracefully().await,
+            Shard::Dummy(_) => {}
+        }
+    }
 }

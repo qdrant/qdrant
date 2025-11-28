@@ -89,6 +89,10 @@ pub trait ShardOperation {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse>;
+
+    /// Signal `Stop` to all background operations gracefully
+    /// and wait till they are finished.
+    async fn stop_gracefully(&self);
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

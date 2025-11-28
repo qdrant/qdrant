@@ -389,4 +389,17 @@ impl ShardOperation for LocalShard {
         log_request_to_collector(&self.collection_name, elapsed, || request);
         Ok(FacetResponse { hits })
     }
+
+    /// Finishes ongoing update tasks
+    async fn stop_gracefully(&self) {
+        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
+            log::warn!("Error sending stop signal to update handler: {err}");
+        }
+
+        self.stop_flush_worker().await;
+
+        if let Err(err) = self.wait_update_workers_stop().await {
+            log::warn!("Update workers failed with: {err}");
+        }
+    }
 }

@@ -614,6 +614,9 @@ impl ShardReplicaSet {
         match local_shard_res {
             Ok(local_shard) => {
                 *local = Some(Shard::Local(local_shard));
+                if let Some(current_shard) = current_shard {
+                    current_shard.stop_gracefully().await;
+                }
                 Ok(())
             }
             Err(err) => {
@@ -627,12 +630,18 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Replaces the local shard with the given one.
+    /// Returns stopped old shard if any.
     pub async fn set_local(
         &self,
         local: LocalShard,
         state: Option<ReplicaState>,
     ) -> CollectionResult<Option<Shard>> {
         let old_shard = self.local.write().await.replace(Shard::Local(local));
+
+        if let Some(old_shard) = &old_shard {
+            old_shard.stop_gracefully().await;
+        }
 
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
@@ -664,6 +673,7 @@ impl ShardReplicaSet {
 
         if let Some(removing_local) = removing_local {
             // stop ongoing tasks and delete data
+            removing_local.stop_gracefully().await;
             drop(removing_local);
             LocalShard::clear(&self.shard_path).await?;
         }

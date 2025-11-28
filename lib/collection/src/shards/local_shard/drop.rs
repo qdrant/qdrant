@@ -1,18 +1,22 @@
-use std::thread;
-
 use crate::shards::local_shard::LocalShard;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
-        thread::scope(|s| {
-            let handle = thread::Builder::new()
-                .name("drop-shard".to_string())
-                .spawn_scoped(s, || {
-                    // Needs dedicated thread to avoid `Cannot start a runtime from within a runtime` error.
-                    self.update_runtime
-                        .block_on(async { self.stop_gracefully().await })
-                });
-            handle.expect("Failed to create thread for shard drop");
-        })
+        let already_stopped = self.blocking_ask_workers_to_stop();
+
+        #[cfg(any(debug_assertions, feature = "staging"))]
+        if !already_stopped {
+            eprintln!(
+                "LocalShard::drop {:?}",
+                std::backtrace::Backtrace::capture()
+            );
+            panic!(
+                "Dropping LocalShard which was not already stopped. Waiting for graceful shutdown."
+            );
+        }
+
+        if !already_stopped {
+            log::error!("Dropping LocalShard which was not already stopped.");
+        }
     }
 }

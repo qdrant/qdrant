@@ -15,19 +15,6 @@ impl LocalShard {
         let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
-    /// Finishes ongoing update tasks
-    pub async fn stop_gracefully(&self) {
-        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
-            log::warn!("Error sending stop signal to update handler: {err}");
-        }
-
-        self.stop_flush_worker().await;
-
-        if let Err(err) = self.wait_update_workers_stop().await {
-            log::warn!("Update workers failed with: {err}");
-        }
-    }
-
     pub async fn stop_flush_worker(&self) {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.stop_flush_worker()
@@ -41,19 +28,24 @@ impl LocalShard {
     /// Synchronously asks update workers to stop
     ///
     /// This function doesn't wait for workers to actually stop, but it should finish quickly.
-    pub fn blocking_ask_workers_to_stop(&self) {
+    /// Returns true if the workers were already stopped.
+    /// Returns false if workers might still be running.
+    pub fn blocking_ask_workers_to_stop(&self) -> bool {
+        {
+            let mut update_handler = self.update_handler.blocking_lock();
+            if update_handler.is_stopped() {
+                return true;
+            }
+            update_handler.stop_flush_worker();
+        }
+
         // This can block longer, if the channel is full
         // If channel is closed, assume it is already stopped
         if let Err(err) = self.update_sender.load().blocking_send(UpdateSignal::Stop) {
             log::trace!("Error sending update signal to update handler: {err}");
         }
-        let mut update_handler = self.update_handler.blocking_lock();
 
-        if update_handler.is_stopped() {
-            return;
-        }
-
-        update_handler.stop_flush_worker();
+        false
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {

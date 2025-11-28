@@ -235,6 +235,9 @@ impl ShardReplicaSet {
             Some(shard) => {
                 let local_manifest = shard.snapshot_manifest().await;
 
+                // If local shard produces a valid manifest, it can be replaced and no longer needed
+                // If it fails, we return it back.
+
                 match local_manifest {
                     Ok(local_manifest) => {
                         local_manifest.validate().map_err(|err| {
@@ -245,6 +248,10 @@ impl ShardReplicaSet {
                                 self.collection_id, self.shard_id,
                             ))
                         })?;
+
+                        // Shard is no longer needed and can be dropped
+                        shard.stop_gracefully().await;
+                        drop(shard);
 
                         Some(local_manifest)
                     }
