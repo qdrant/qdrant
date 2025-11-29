@@ -9,7 +9,8 @@ use api::grpc::qdrant::{
     DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
     GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
-    UpdateCollection, UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
+    ListShardKeysRequest, ListShardKeysResponse, UpdateCollection,
+    UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
@@ -245,6 +246,28 @@ impl Collections for CollectionsService {
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
             result,
         }))
+    }
+
+    async fn list_shard_keys(
+        &self,
+        mut request: Request<ListShardKeysRequest>,
+    ) -> Result<Response<ListShardKeysResponse>, Status> {
+        validate(request.get_ref())?;
+        let timing = Instant::now();
+        let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let result = do_get_collection_shard_keys(
+            self.dispatcher.toc(&access, &pass),
+            access,
+            request.into_inner().collection_name.as_str(),
+        )
+        .await?;
+
+        let response = ListShardKeysResponse::from((timing, result));
+        Ok(Response::new(response))
     }
 
     async fn create_shard_key(
