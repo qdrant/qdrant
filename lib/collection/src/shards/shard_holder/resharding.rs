@@ -125,13 +125,23 @@ impl ShardHolder {
 
         // TODO(resharding): Delete shard on error!?
 
-        let ring = get_ring(&mut self.rings, &shard_key)?;
+        let ring_res = get_ring(&mut self.rings, &shard_key);
+        let ring = match ring_res {
+            Ok(ring) => ring,
+            Err(err) => {
+                if let Some(new_shard) = new_shard {
+                    new_shard.stop_gracefully().await;
+                }
+                return Err(err);
+            }
+        };
         ring.start_resharding(shard_id, direction);
 
         // Add new shard if resharding up
         if let Some(new_shard) = new_shard {
             debug_assert_eq!(direction, ReshardingDirection::Up);
-            self.add_shard(shard_id, new_shard, shard_key.clone()).await?;
+            self.add_shard(shard_id, new_shard, shard_key.clone())
+                .await?;
         }
 
         self.resharding_state.write(|state| {
