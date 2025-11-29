@@ -1,5 +1,6 @@
-use crate::shards::local_shard::LocalShard;
 use std::thread;
+
+use crate::shards::local_shard::LocalShard;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
