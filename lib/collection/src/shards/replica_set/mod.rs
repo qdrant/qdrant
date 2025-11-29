@@ -382,6 +382,12 @@ impl ShardReplicaSet {
         replica_set
     }
 
+    pub async fn stop_gracefully(self) {
+        if let Some(local) = self.local.write().await.take() {
+            local.stop_gracefully().await;
+        }
+    }
+
     pub fn shard_key(&self) -> Option<&ShardKey> {
         self.shard_key.as_ref()
     }

@@ -54,7 +54,7 @@ impl Collection {
                 None
             };
 
-            shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
+            shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set).await?;
 
             if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;

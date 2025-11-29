@@ -110,7 +110,7 @@ impl ShardHolder {
     }
 
     // TODO: do not leave broken intermediate state if this fails midway?
-    pub fn start_resharding_unchecked(
+    pub async fn start_resharding_unchecked(
         &mut self,
         resharding_key: ReshardKey,
         new_shard: Option<ShardReplicaSet>,
@@ -131,7 +131,7 @@ impl ShardHolder {
         // Add new shard if resharding up
         if let Some(new_shard) = new_shard {
             debug_assert_eq!(direction, ReshardingDirection::Up);
-            self.add_shard(shard_id, new_shard, shard_key.clone())?;
+            self.add_shard(shard_id, new_shard, shard_key.clone()).await?;
         }
 
         self.resharding_state.write(|state| {

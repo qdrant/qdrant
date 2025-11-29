@@ -137,7 +137,7 @@ impl Collection {
                 shard_id,
                 replica_set,
                 Some(shard_key.clone()),
-            )?;
+            ).await?;
         }
 
         Ok(())

@@ -163,7 +163,7 @@ impl ShardHolder {
     pub async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> CollectionResult<()> {
         if let Some(replica_set) = self.shards.remove(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
-            drop(replica_set);
+            replica_set.stop_gracefully().await;
 
             // Explicitly drop shard config file first
             // If removing all shard files at once, it may be possible for the shard configuration
@@ -200,13 +200,18 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn add_shard(
+    pub async fn add_shard(
         &mut self,
         shard_id: ShardId,
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        self.shards.insert(shard_id, shard);
+        let evicted = self.shards.insert(shard_id, shard);
+        if let Some(evicted) = evicted {
+            debug_assert!(false, "Overwriting existing shard id {shard_id}");
+            evicted.stop_gracefully().await;
+        }
+
         self.rings
             .entry(shard_key.clone())
             .or_insert_with(HashRingRouter::single)
@@ -306,7 +311,12 @@ impl ShardHolder {
         shard_key_mapping: ShardKeyMapping,
         extra_shards: AHashMap<ShardId, ShardReplicaSet>,
     ) -> CollectionResult<()> {
-        self.shards.extend(extra_shards.into_iter());
+        for (extra_shard_id, extra_shard) in extra_shards {
+            let evicted = self.shards.insert(extra_shard_id, extra_shard);
+            if let Some(evicted) = evicted {
+                evicted.stop_gracefully().await;
+            }
+        }
 
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
 
@@ -877,7 +887,9 @@ impl ShardHolder {
                     .expect("Failed to set local shard state");
             }
             let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
-            self.add_shard(shard_id, replica_set, shard_key).unwrap();
+            self.add_shard(shard_id, replica_set, shard_key)
+                .await
+                .unwrap();
         }
 
         // If resharding, rebuild the hash rings because they'll be messed up
