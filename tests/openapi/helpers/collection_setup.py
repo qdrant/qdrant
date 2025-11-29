@@ -124,6 +124,7 @@ def basic_collection_setup(
         on_disk_payload=False,
         on_disk_vectors=False,
         wal_capacity=None,
+        sharding_method=None,
 ):
     drop_collection(collection_name)
 
@@ -132,6 +133,7 @@ def basic_collection_setup(
         method="PUT",
         path_params={'collection_name': collection_name},
         body={
+            "sharding_method": sharding_method,
             "vectors": {
                 "size": 4,
                 "distance": "Dot",
@@ -154,6 +156,9 @@ def basic_collection_setup(
         path_params={'collection_name': collection_name},
     )
     assert response.ok
+
+    if sharding_method == "custom":
+        return
 
     response = request_with_validation(
         api='/collections/{collection_name}/points',
