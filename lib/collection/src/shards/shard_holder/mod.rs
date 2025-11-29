@@ -121,6 +121,14 @@ impl ShardHolder {
         })
     }
 
+    pub async fn stop_gracefully(self) {
+        let futures = self
+            .shards
+            .into_values()
+            .map(|shard| shard.stop_gracefully());
+        futures::future::join_all(futures).await;
+    }
+
     pub async fn save_key_mapping_to_tar(
         &self,
         tar: &common::tar_ext::BuilderExt,

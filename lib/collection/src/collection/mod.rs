@@ -159,7 +159,9 @@ impl Collection {
             )
             .await?;
 
-            shard_holder.add_shard(shard_id, replica_set, shard_key).await?;
+            shard_holder
+                .add_shard(shard_id, replica_set, shard_key)
+                .await?;
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
