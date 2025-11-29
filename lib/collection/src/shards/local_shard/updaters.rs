@@ -30,6 +30,11 @@ impl LocalShard {
     /// This function doesn't wait for workers to actually stop, but it should finish quickly.
     /// Returns true if the workers were already stopped.
     /// Returns false if workers might still be running.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called from async runtime.
+    /// That includes sync functions called from async context.
     pub fn blocking_ask_workers_to_stop(&self) -> bool {
         {
             let mut update_handler = self.update_handler.blocking_lock();

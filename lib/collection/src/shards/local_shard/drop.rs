@@ -1,8 +1,18 @@
 use crate::shards::local_shard::LocalShard;
+use std::thread;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
-        let already_stopped = self.blocking_ask_workers_to_stop();
+        // Drop might happen in the runtime, so we need to spawn a thread to do blocking operations.
+        let already_stopped = thread::scope(|s| {
+            let handle = thread::Builder::new()
+                .name("drop-shard".to_string())
+                .spawn_scoped(s, || self.blocking_ask_workers_to_stop());
+            handle
+                .expect("Failed to create thread for shard drop")
+                .join()
+                .expect("Drop shard thread panicked")
+        });
 
         // Normally we expect, that LocalShard should be explicitly stopped in asynchronous
         // runtime before being dropped.

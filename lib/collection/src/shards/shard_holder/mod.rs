@@ -129,6 +129,11 @@ impl ShardHolder {
         futures::future::join_all(futures).await;
     }
 
+    #[cfg(feature = "testing")]
+    pub async fn stop_gracefully_owned(mut self) {
+        self.stop_gracefully().await;
+    }
+
     pub async fn save_key_mapping_to_tar(
         &self,
         tar: &common::tar_ext::BuilderExt,
