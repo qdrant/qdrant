@@ -121,11 +121,11 @@ impl ShardHolder {
         })
     }
 
-    pub async fn stop_gracefully(self) {
+    pub async fn stop_gracefully(&mut self) {
         let futures = self
             .shards
-            .into_values()
-            .map(|shard| shard.stop_gracefully());
+            .drain()
+            .map(|(_, shard)| shard.stop_gracefully());
         futures::future::join_all(futures).await;
     }
 

@@ -316,6 +316,11 @@ impl Collection {
         }
     }
 
+    pub async fn stop_gracefully(self) {
+        let mut owned_holder = self.shards_holder.write().await;
+        owned_holder.stop_gracefully().await;
+    }
+
     /// Check if stored version have consequent version.
     /// If major version is different, then it is not compatible.
     /// If the difference in consecutive versions is greater than 1 in patch,

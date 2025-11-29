@@ -199,12 +199,13 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<bool, StorageError> {
         let _collection_create_guard = self.collection_create_lock.lock().await;
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            self.alias_persistence
-                .write()
-                .await
-                .remove_collection(collection_name)?;
 
+        self.alias_persistence
+            .write()
+            .await
+            .remove_collection(collection_name)?;
+
+        if let Some(removed) = self.collections.write().await.remove(collection_name) {
             let path = self.get_collection_path(collection_name);
 
             if let Some(state) = removed.resharding_state().await
@@ -216,8 +217,7 @@ impl TableOfContent {
                     state.key(),
                 );
             }
-
-            drop(removed);
+            removed.stop_gracefully().await;
 
             // Move collection to ".deleted" folder to prevent accidental reuse
             // the original collection path will be moved atomically within this
