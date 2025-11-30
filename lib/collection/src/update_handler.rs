@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
-use tokio::sync::{Mutex as TokioMutex, oneshot};
+use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -173,6 +173,9 @@ impl UpdateHandler {
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 
+        // Optimization notifier is triggered when a new optimization is finished
+        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
+
         self.optimizer_worker = Some(self.runtime_handle.spawn(
             UpdateWorkers::optimization_worker_fn(
                 self.optimizers.clone(),
@@ -189,6 +192,7 @@ impl UpdateHandler {
                 self.payload_index_schema.clone(),
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
+                optimization_finished_sender,
             ),
         ));
 
@@ -205,6 +209,7 @@ impl UpdateHandler {
             segments,
             scroll_read_lock,
             update_tracker,
+            optimization_finished_receiver,
         )));
 
         let segments = self.segments.clone();
