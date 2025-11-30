@@ -6,12 +6,14 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::watch;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
+use crate::shards::local_shard::indexed_only::get_largest_unindexed_segment_vector_size;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
@@ -27,6 +29,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        mut optimization_finished_receiver: watch::Receiver<()>,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -42,6 +45,22 @@ impl UpdateWorkers {
                     let segments_clone = segments.clone();
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
+
+                    let operation_result = Self::wait_for_optimization(
+                        Some(5000 * 256 * 4), // ToDo: make configurable
+                        &segments_clone,
+                        &mut optimization_finished_receiver,
+                    )
+                    .await;
+
+                    if let Err(err) = operation_result
+                        && let Some(feedback) = sender
+                    {
+                        feedback.send(Err(err)).unwrap_or_else(|_| {
+                            log::debug!("Can't report operation {op_num} result. Assume already not required");
+                        });
+                        continue;
+                    };
 
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
@@ -101,6 +120,55 @@ impl UpdateWorkers {
             .send(OptimizerSignal::Stop)
             .await
             .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+    }
+
+    /// Checks that unoptimized segments are small enough, so that we can effectively
+    /// push moro updates.
+    ///
+    /// If segments are smaller that the
+    async fn wait_for_optimization(
+        // Size of the unoptimized segment to be considered large enough for waiting.
+        // If `None`, waiting is disabled.
+        optimization_threshold: Option<usize>,
+        segments: &LockedSegmentHolder,
+        optimization_finished_receiver: &mut watch::Receiver<()>,
+    ) -> CollectionResult<()> {
+        let Some(optimization_threshold) = optimization_threshold else {
+            // Waiting is disabled
+            return Ok(());
+        };
+
+        loop {
+            let locked_segments = segments.clone();
+            let can_proceed = tokio::task::spawn_blocking(move || {
+                let segments = locked_segments.read();
+                let largest_unoptimized_segment_size_opt =
+                    get_largest_unindexed_segment_vector_size(&segments);
+
+                let largest_unoptimized_segment_size =
+                    largest_unoptimized_segment_size_opt.unwrap_or(0);
+
+                // True, if we can proceed with updates
+                largest_unoptimized_segment_size < optimization_threshold
+            })
+            .await
+            .map_err(CollectionError::from)?;
+
+            if can_proceed {
+                return Ok(());
+            }
+
+            // ToDo: if there are no optimizations running, it can be a deadlock situation
+            // We have to check validate that there are at least some optimizations
+
+            // If unoptimized segments are too large, the only way it can be fixed is optimization
+            // So we wait the notification of optimization completion to re-check the sizes
+            if let Err(err) = optimization_finished_receiver.changed().await {
+                // this can be if optimization is cancelled, we don't need to wait anymore
+                log::debug!("Optimization thread terminated with an error: {err}");
+                return Ok(());
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

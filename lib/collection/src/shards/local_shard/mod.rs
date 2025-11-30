@@ -12,6 +12,7 @@ mod telemetry;
 #[cfg(test)]
 mod snapshot_tests;
 
+pub mod indexed_only;
 #[cfg(feature = "testing")]
 pub mod testing;
 
