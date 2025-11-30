@@ -96,6 +96,12 @@ impl SegmentHolder {
             .chain(self.non_appendable_segments.iter())
     }
 
+    /// Iterate over all appendable segments with their IDs
+    /// Do not include non-appendable segments.
+    pub fn iter_appendable(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
+        self.appendable_segments.iter()
+    }
+
     pub fn len(&self) -> usize {
         self.appendable_segments.len() + self.non_appendable_segments.len()
     }
