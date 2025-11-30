@@ -89,7 +89,7 @@ impl UpdateWorkers {
                     // get stuck into yellow state until a new update operation is received.
                     // See: <https://github.com/qdrant/qdrant/pull/5111>
                     log::warn!(
-                        "Cleaned a optimization handle after timeout, explicitly triggering optimizers",
+                        "Cleaned an optimization handle after timeout, explicitly triggering optimizers",
                     );
                     true
                 }
