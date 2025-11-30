@@ -15,6 +15,7 @@ pub(super) mod updaters;
 mod snapshot_tests;
 
 mod drop;
+pub mod indexed_only;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod wal_ops;
