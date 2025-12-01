@@ -878,12 +878,14 @@ mod tests {
         Put(PointOffset, Payload),
         Delete(PointOffset),
         Update(PointOffset, Payload),
+        Get(PointOffset),
+        Flush,
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..3);
+            let operation = rng.random_range(0..4);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -896,6 +898,8 @@ mod tests {
                     let payload = random_payload(rng, size_factor);
                     Operation::Update(point_offset, payload)
                 }
+                3 => Operation::Get(point_offset),
+                4 => Operation::Flush,
                 _ => unreachable!(),
             }
         }
@@ -905,14 +909,14 @@ mod tests {
     fn test_behave_like_hashmap(
         #[values(1_048_576, 2_097_152, DEFAULT_PAGE_SIZE_BYTES)] page_size: usize,
     ) {
-        use std::collections::HashMap;
+        use ahash::AHashMap;
 
         let (dir, mut storage) = empty_storage_sized(page_size);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 100000u32;
+        let max_point_offset = 10000u32;
 
-        let mut model_hashmap = HashMap::new();
+        let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
         let operations = (0..100000u32)
             .map(|_| Operation::random(rng, max_point_offset))
@@ -925,10 +929,15 @@ mod tests {
         for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
-                    storage
+                    let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
-                    model_hashmap.insert(point_offset, payload);
+                    let old2 = model_hashmap.insert(point_offset, payload);
+                    assert_eq!(
+                        old1,
+                        old2.is_some(),
+                        "put failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
+                    );
                 }
                 Operation::Delete(point_offset) => {
                     let old1 = storage.delete_value(point_offset);
@@ -944,6 +953,20 @@ mod tests {
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
+                Operation::Get(point_offset) => {
+                    let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
+                    let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
+                    let v2 = model_hashmap.get(&point_offset).cloned();
+                    assert_eq!(
+                        v1_seq, v2,
+                        "get sequential failed for point_offset: {point_offset} with {v1_seq:?} vs {v2:?}",
+                    );
+                    assert_eq!(
+                        v1_rand, v2,
+                        "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
+                    );
+                }
+                Operation::Flush => storage.flusher()().unwrap(),
             }
         }
 

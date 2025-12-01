@@ -361,7 +361,7 @@ impl Tracker {
     }
 
     pub fn has_pointer(&self, point_offset: PointOffset) -> bool {
-        self.pending_updates.contains_key(&point_offset) || self.get(point_offset).is_some()
+        self.get(point_offset).is_some()
     }
 
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
