@@ -25,6 +25,12 @@ impl LocalShard {
         update_handler.wait_workers_stops().await
     }
 
+
+    /// Handles updates to the optimizer configuration by rebuilding optimizers
+    /// and restarting the update handler's workers with the new configuration.
+    ///
+    /// ## Cancel Safety
+    /// This function is **not** cancel safe.
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
