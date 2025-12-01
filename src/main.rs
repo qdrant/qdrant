@@ -401,8 +401,25 @@ fn main() -> anyhow::Result<()> {
             let upgrade_time = m.upgrade_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
             let upgrades = m.upgrade_counter.load(Relaxed);
 
+            let try_read_for_time =
+                m.try_read_for_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let try_reads_for = m.try_read_for_counter.load(Relaxed);
+
+            let read_for_update_time =
+                m.read_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let reads_for_update = m.read_for_update_counter.load(Relaxed);
+            let write_for_update_time =
+                m.write_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
+            let writes_for_update = m.write_for_update_counter.load(Relaxed);
+
             log::info!(
                 "MeasurableRwLock wait times (s): read: {read_time} ({reads}), write: {write_time} ({writes}), upgrade: {upgrade_time} ({upgrades})"
+            );
+            log::info!(
+                "MeasurableRwLock try_read_for times (s): {try_read_for_time} ({try_reads_for})"
+            );
+            log::info!(
+                "MeasurableRwLock wait update times (s): read: {read_for_update_time} ({reads_for_update}), write: {write_for_update_time} ({writes_for_update})"
             );
         }
     });
