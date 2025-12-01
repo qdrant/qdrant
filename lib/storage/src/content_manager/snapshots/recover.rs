@@ -51,6 +51,9 @@ pub async fn activate_shard(
     Ok(())
 }
 
+/// # Cancel safety
+///
+/// This method is cancel safe.
 pub async fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
@@ -77,6 +80,9 @@ pub async fn do_recover_from_snapshot(
     Ok(res)
 }
 
+/// # Cancel safety
+///
+/// This method is *not* cancel safe.
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     access: Access,

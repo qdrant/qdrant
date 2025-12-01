@@ -65,7 +65,14 @@ impl Dispatcher {
     }
 
     /// If `wait_timeout` is not supplied - then default duration will be used.
+    ///
     /// This function needs to be called from a runtime with timers enabled.
+    ///
+    /// ## Cancel safety
+    ///
+    /// This function is cancel safe.
+    ///
+    /// On deployments without consensus - a submitted operation is always run to completion.
     pub async fn submit_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -247,7 +254,9 @@ impl Dispatcher {
 
             Ok(res)
         } else {
-            self.toc.perform_collection_meta_op(operation).await
+            let toc = self.toc.clone();
+            tokio::task::spawn(async move { toc.perform_collection_meta_op(operation).await })
+                .await?
         }
     }
 

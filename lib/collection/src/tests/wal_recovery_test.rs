@@ -82,7 +82,7 @@ async fn test_delete_from_indexed_payload() {
         .unwrap()
         .points;
 
-    drop(shard);
+    shard.stop_gracefully().await;
 
     let shard = LocalShard::load(
         0,
@@ -109,7 +109,7 @@ async fn test_delete_from_indexed_payload() {
         .await
         .unwrap();
 
-    drop(shard);
+    shard.stop_gracefully().await;
 
     let shard = LocalShard::load(
         0,
@@ -210,7 +210,7 @@ async fn test_partial_flush_recovery() {
     // This only flushed id-tracker-mapping, but not the storage change
     shard.partial_flush();
 
-    drop(shard);
+    shard.stop_gracefully().await;
 
     let shard = LocalShard::load(
         0,

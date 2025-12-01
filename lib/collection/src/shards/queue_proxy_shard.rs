@@ -393,6 +393,16 @@ impl ShardOperation for QueueProxyShard {
             .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
+
+    async fn stop_gracefully(mut self) {
+        if let Some(inner) = self.inner.take() {
+            debug_assert!(
+                false,
+                "QueueProxyShard should be finalized before stopping gracefully"
+            );
+            inner.wrapped_shard.stop_gracefully().await;
+        }
+    }
 }
 
 // Safe guard in debug mode to ensure that `finalize()` is called before dropping
@@ -734,6 +744,10 @@ impl ShardOperation for Inner {
         local_shard
             .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
+    }
+
+    async fn stop_gracefully(self) {
+        self.wrapped_shard.stop_gracefully().await
     }
 }
 
