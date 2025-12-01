@@ -5,7 +5,9 @@ use ahash::AHashMap;
 use fs_err as fs;
 
 use crate::madvise::{Advice, AdviceSetting};
-use crate::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
+use crate::mmap_ops::{
+    MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
+};
 use crate::mmap_type::{Error as MmapError, MmapFlusher, MmapSlice};
 use crate::mmap_type_readonly::MmapSliceReadOnly;
 
@@ -15,8 +17,15 @@ const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 /// Memory mapped chunk data, that can be read and written and also maintain sequential read-only view
 #[derive(Debug)]
 pub struct UniversalMmapChunk<T: Sized + 'static> {
+    /// Main data mmap slice for read/write
+    ///
+    /// Best suited for random reads.
     mmap: MmapSlice<T>,
-    mmap_seq: MmapSliceReadOnly<T>,
+    /// Read-only mmap slice best suited for sequential reads
+    ///
+    /// `None` on platforms that do not support multiple memory maps to the same file.
+    /// Use [`as_seq_slice`] utility function to access this mmap slice if available.
+    _mmap_seq: Option<MmapSliceReadOnly<T>>,
 }
 
 impl<T: Sized + 'static> UniversalMmapChunk<T> {
@@ -28,8 +37,13 @@ impl<T: Sized + 'static> UniversalMmapChunk<T> {
         &mut self.mmap
     }
 
+    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
     pub fn as_seq_slice(&self) -> &[T] {
-        &self.mmap_seq
+        #[expect(clippy::used_underscore_binding)]
+        self._mmap_seq
+            .as_ref()
+            .map(|m| m.as_ref())
+            .unwrap_or(self.mmap.as_ref())
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -45,7 +59,11 @@ impl<T: Sized + 'static> UniversalMmapChunk<T> {
     }
 
     pub fn populate(&self) -> io::Result<()> {
-        self.mmap_seq.populate()
+        #[expect(clippy::used_underscore_binding)]
+        if let Some(mmap_seq) = &self._mmap_seq {
+            mmap_seq.populate()?;
+        }
+        Ok(())
     }
 }
 
@@ -88,18 +106,23 @@ pub fn read_mmaps<T: Sized>(
                 directory.display(),
             ))
         })?;
+
         let mmap = open_write_mmap(&mmap_file, advice, populate)?;
+        let mmap = unsafe { MmapSlice::try_from(mmap) }?;
 
-        let mmap_seq =
-            open_read_mmap(&mmap_file, AdviceSetting::Advice(Advice::Sequential), false)?;
-
-        let chunk = unsafe {
-            UniversalMmapChunk {
-                mmap: MmapSlice::try_from(mmap)?,
-                mmap_seq: MmapSliceReadOnly::try_from(mmap_seq)?,
-            }
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq =
+                open_read_mmap(&mmap_file, AdviceSetting::Advice(Advice::Sequential), false)?;
+            Some(unsafe { MmapSliceReadOnly::try_from(mmap_seq) }?)
+        } else {
+            None
         };
-        result.push(chunk);
+
+        result.push(UniversalMmapChunk {
+            mmap,
+            _mmap_seq: mmap_seq,
+        });
     }
     Ok(result)
 }
@@ -122,18 +145,22 @@ pub fn create_chunk<T: Sized>(
         AdviceSetting::Global,
         false, // don't populate newly created chunk, as it's empty and will be filled later
     )?;
+    let mmap = unsafe { MmapSlice::try_from(mmap) }?;
 
-    let mmap_seq = open_read_mmap(
-        &chunk_file_path,
-        AdviceSetting::Advice(Advice::Sequential),
-        false,
-    )?;
-
-    let chunk = unsafe {
-        UniversalMmapChunk {
-            mmap: MmapSlice::try_from(mmap)?,
-            mmap_seq: MmapSliceReadOnly::try_from(mmap_seq)?,
-        }
+    // Only open second mmap for sequential reads if supported
+    let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+        let mmap_seq = open_read_mmap(
+            &chunk_file_path,
+            AdviceSetting::Advice(Advice::Sequential),
+            false,
+        )?;
+        Some(unsafe { MmapSliceReadOnly::try_from(mmap_seq) }?)
+    } else {
+        None
     };
-    Ok(chunk)
+
+    Ok(UniversalMmapChunk {
+        mmap,
+        _mmap_seq: mmap_seq,
+    })
 }
