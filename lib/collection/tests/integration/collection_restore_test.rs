@@ -24,7 +24,9 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
-    drop(collection);
+
+    collection.stop_gracefully().await;
+
     for _i in 0..5 {
         let collection_path = collection_dir.path();
         let collection = load_local_collection(
@@ -148,6 +150,8 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .unwrap()
             .get_value(&JsonPath::new("k"))
     );
+
+    collection.stop_gracefully().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

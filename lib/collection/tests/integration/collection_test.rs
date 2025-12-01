@@ -292,6 +292,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             assert_eq!(non_empty_payload.len(), 1)
         }
     }
+
+    loaded_collection.stop_gracefully().await;
     println!("Function end");
 }
 
