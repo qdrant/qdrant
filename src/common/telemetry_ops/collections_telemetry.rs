@@ -1,3 +1,7 @@
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
+
+use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
 };
@@ -29,11 +33,19 @@ pub struct CollectionsTelemetry {
 }
 
 impl CollectionsTelemetry {
-    pub async fn collect(detail: TelemetryDetail, access: &Access, toc: &TableOfContent) -> Self {
+    pub async fn collect(
+        detail: TelemetryDetail,
+        access: &Access,
+        toc: &TableOfContent,
+        timeout: Duration,
+        is_stopped: &AtomicBool,
+    ) -> CollectionResult<Self> {
         let number_of_collections = toc.all_collections(access).await.len();
         let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
-                let toc_telemetry = toc.get_telemetry_data(detail, access).await;
+                let toc_telemetry = toc
+                    .get_telemetry_data(detail, access, timeout, is_stopped)
+                    .await?;
 
                 let collections: Vec<_> = toc_telemetry
                     .collection_telemetry
@@ -44,8 +56,8 @@ impl CollectionsTelemetry {
                 (collections, toc_telemetry.snapshot_telemetry)
             } else {
                 let collections = toc
-                    .get_aggregated_telemetry_data(access)
-                    .await
+                    .get_aggregated_telemetry_data(access, timeout, is_stopped)
+                    .await?
                     .into_iter()
                     .map(CollectionTelemetryEnum::Aggregated)
                     .collect();
@@ -59,11 +71,11 @@ impl CollectionsTelemetry {
 
         let max_collections = toc.max_collections();
 
-        CollectionsTelemetry {
+        Ok(CollectionsTelemetry {
             number_of_collections,
             max_collections,
             collections,
             snapshots,
-        }
+        })
     }
 }

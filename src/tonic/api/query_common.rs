@@ -33,7 +33,7 @@ use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
@@ -779,7 +779,7 @@ pub async fn query(
     shard_selection: Option<ShardId>,
     access: Access,
     request_hw_counter: RequestHwCounter,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<Response<QueryResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
@@ -791,7 +791,7 @@ pub async fn query(
     let collection_name = query_points.collection_name.clone();
     let timeout = query_points.timeout;
     let (request, inference_usage) =
-        convert_query_points_from_grpc(query_points, inference_token).await?;
+        convert_query_points_from_grpc(query_points, inference_params).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -838,7 +838,7 @@ pub async fn query_batch(
     access: Access,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
@@ -848,7 +848,7 @@ pub async fn query_batch(
         let shard_key_selector = query_points.shard_key_selector.clone();
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
         let (request, usage) =
-            convert_query_points_from_grpc(query_points, inference_token.clone()).await?;
+            convert_query_points_from_grpc(query_points, inference_params.clone()).await?;
         total_inference_usage.merge(usage);
         requests.push((request, shard_selector));
     }
@@ -899,7 +899,7 @@ pub async fn query_groups(
     shard_selection: Option<ShardId>,
     access: Access,
     request_hw_counter: RequestHwCounter,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<Response<QueryGroupsResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector)?;
@@ -911,7 +911,7 @@ pub async fn query_groups(
     let timeout = query_points.timeout;
     let collection_name = query_points.collection_name.clone();
     let (request, inference_usage) =
-        convert_query_point_groups_from_grpc(query_points, inference_token).await?;
+        convert_query_point_groups_from_grpc(query_points, inference_params).await?;
 
     let toc = toc_provider
         .check_strict_mode(

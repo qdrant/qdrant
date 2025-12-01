@@ -1,19 +1,35 @@
-use actix_web::{Responder, post, put, web};
+use actix_web::{Responder, get, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKey, CreateShardingKeyOperation, DropShardingKey,
     DropShardingKeyOperation,
 };
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use crate::actix::api::CollectionPath;
 use crate::actix::api::collections_api::WaitTimeout;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
-use crate::common::collections::do_update_collection_cluster;
+use crate::actix::helpers::{self, process_response};
+use crate::common::collections::{do_get_collection_shard_keys, do_update_collection_cluster};
 
-// ToDo: introduce API for listing shard keys
+#[get("/collections/{name}/shards")]
+async fn list_shard_keys(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    // No strict-mode checks to verify
+    let pass = new_unchecked_verification_pass();
+
+    helpers::time(do_get_collection_shard_keys(
+        dispatcher.toc(&access, &pass),
+        access,
+        &collection.name,
+    ))
+    .await
+}
 
 #[put("/collections/{name}/shards")]
 async fn create_shard_key(
@@ -76,5 +92,7 @@ async fn delete_shard_key(
 }
 
 pub fn config_shards_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(create_shard_key).service(delete_shard_key);
+    cfg.service(list_shard_keys)
+        .service(create_shard_key)
+        .service(delete_shard_key);
 }

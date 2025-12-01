@@ -1,6 +1,7 @@
 use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
+use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
@@ -70,34 +71,45 @@ impl Shard {
         }
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+    ) -> CollectionResult<LocalShardTelemetry> {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
-                let mut shard_telemetry = local_shard.get_telemetry_data(detail).await;
+                let mut shard_telemetry = local_shard.get_telemetry_data(detail, timeout).await?;
 
                 // can't take sync locks in async fn so local_shard_status() has to be
                 // called outside get_telemetry_data()
                 shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
-            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail, timeout).await?,
+            Shard::ForwardProxy(proxy_shard) => {
+                proxy_shard.get_telemetry_data(detail, timeout).await?
+            }
+            Shard::QueueProxy(proxy_shard) => {
+                proxy_shard.get_telemetry_data(detail, timeout).await?
+            }
             Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
-        telemetry
+        Ok(telemetry)
     }
 
-    pub async fn get_optimization_status(&self) -> OptimizersStatus {
+    pub async fn get_optimization_status(
+        &self,
+        timeout: Duration,
+    ) -> CollectionResult<OptimizersStatus> {
         match self {
-            Shard::Local(local_shard) => local_shard.get_optimization_status().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status().await,
+            Shard::Local(local_shard) => local_shard.get_optimization_status(timeout).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status(timeout).await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status(timeout).await,
             Shard::QueueProxy(queue_proxy_shard) => {
-                queue_proxy_shard.get_optimization_status().await
+                queue_proxy_shard.get_optimization_status(timeout).await
             }
-            Shard::Dummy(dummy_shard) => dummy_shard.get_optimization_status(),
+            Shard::Dummy(dummy_shard) => Ok(dummy_shard.get_optimization_status()),
         }
     }
 
@@ -148,12 +160,12 @@ impl Shard {
         }
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         match self {
-            Shard::Local(local_shard) => local_shard.snapshot_manifest(),
-            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
-            Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest(),
+            Shard::Local(local_shard) => local_shard.snapshot_manifest().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
+            Shard::QueueProxy(proxy_shard) => proxy_shard.snapshot_manifest().await,
             Shard::Dummy(dummy_shard) => dummy_shard.snapshot_manifest(),
         }
     }

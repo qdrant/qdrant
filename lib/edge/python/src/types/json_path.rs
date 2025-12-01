@@ -12,9 +12,10 @@ use segment::json_path::JsonPath;
 #[repr(transparent)]
 pub struct PyJsonPath(pub JsonPath);
 
-impl<'py> FromPyObject<'_, 'py> for PyJsonPath {
+impl FromPyObject<'_, '_> for PyJsonPath {
     type Error = PyErr;
-    fn extract(json_path: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+
+    fn extract(json_path: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let json_path: String = json_path.extract()?;
         let json_path = JsonPath::from_str(&json_path)
             .map_err(|_| PyValueError::new_err(format!("invalid JSON path {json_path}")))?;

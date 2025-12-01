@@ -1,6 +1,6 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -42,8 +42,7 @@ const BATCH_SIZE: usize = 10;
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
 
-static MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: LazyLock<Version> =
-    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
+const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
 
 /// QueueProxyShard shard
 ///
@@ -149,8 +148,11 @@ impl QueueProxyShard {
             .await
     }
 
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.inner_unchecked().wrapped_shard.snapshot_manifest()
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        self.inner_unchecked()
+            .wrapped_shard
+            .snapshot_manifest()
+            .await
     }
 
     /// Transfer all updates that the remote missed from WAL
@@ -186,17 +188,24 @@ impl QueueProxyShard {
         self.inner_unchecked().wrapped_shard.trigger_optimizers();
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        timeout: Duration,
+    ) -> CollectionResult<LocalShardTelemetry> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_telemetry_data(detail)
+            .get_telemetry_data(detail, timeout)
             .await
     }
 
-    pub async fn get_optimization_status(&self) -> OptimizersStatus {
+    pub async fn get_optimization_status(
+        &self,
+        timeout: Duration,
+    ) -> CollectionResult<OptimizersStatus> {
         self.inner_unchecked()
             .wrapped_shard
-            .get_optimization_status()
+            .get_optimization_status(timeout)
             .await
     }
 

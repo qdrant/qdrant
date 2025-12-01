@@ -18,7 +18,7 @@ jobs:
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
       uses: arduino/setup-protoc@v3
@@ -32,10 +32,10 @@ jobs:
         sudo apt-get install clang mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
         /usr/bin/vulkaninfo --summary
     - name: Build
-      run: cargo build --tests --workspace --features gpu --locked
+      run: cargo build --tests --features "gpu rocksdb" --locked
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --features gpu --profile ci --locked
+      run: cargo nextest run --features "gpu rocksdb" --profile ci --locked
     - name: Upload test report
       uses: actions/upload-artifact@v5
       with:
@@ -77,7 +77,7 @@ jobs:
           echo $delimiter >> $GITHUB_OUTPUT
       - name: pull issue template
         if: ${{ steps.process-test-report.outputs.has_flaky_tests == 'true' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             .github/ISSUE_TEMPLATE/flaky_test.md

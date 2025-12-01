@@ -161,11 +161,11 @@ impl PayloadFieldIndex for BoolIndex {
         }
     }
 
-    fn cleanup(self) -> crate::common::operation_error::OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         match self {
             #[cfg(feature = "rocksdb")]
-            BoolIndex::Simple(index) => index.cleanup(),
-            BoolIndex::Mmap(index) => index.cleanup(),
+            BoolIndex::Simple(index) => index.wipe(),
+            BoolIndex::Mmap(index) => index.wipe(),
         }
     }
 
@@ -265,10 +265,10 @@ impl ValueIndexer for BoolIndex {
 
     fn add_many(
         &mut self,
-        id: common::types::PointOffsetType,
+        id: PointOffsetType,
         values: Vec<Self::ValueType>,
         hw_counter: &HardwareCounterCell,
-    ) -> crate::common::operation_error::OperationResult<()> {
+    ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.add_many(id, values, hw_counter),
@@ -283,10 +283,7 @@ impl ValueIndexer for BoolIndex {
         }
     }
 
-    fn remove_point(
-        &mut self,
-        id: common::types::PointOffsetType,
-    ) -> crate::common::operation_error::OperationResult<()> {
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
             #[cfg(feature = "rocksdb")]
             BoolIndex::Simple(index) => index.remove_point(id),

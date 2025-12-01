@@ -14,7 +14,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Condition, Distance, Filter, SearchParams, WithPayload};
+use segment::types::{Condition, Distance, Filter, SearchParams, SegmentType, WithPayload};
 use tempfile::Builder;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
@@ -345,4 +345,24 @@ fn test_update_named_vector() {
 
     // check that nearests are the same
     assert_eq!(nearest_upsert.id, nearest_update.id);
+}
+
+#[test]
+fn test_plain_search_top_zero() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let segment = build_segment_1(dir.path());
+    assert_eq!(segment.segment_type(), SegmentType::Plain);
+
+    segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &[1.0, 1.0, 1.0, 1.0].into(),
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            0,
+            None,
+        )
+        .unwrap();
 }

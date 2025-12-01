@@ -13,7 +13,7 @@ OUTPATH_PATH="unit-test-coverage.lcov"
 
 if [ "$RUN_PER_PACKAGE" == "false" ]; then
     # Run for the entire workspace in one shot. This assumes that the machine has enough memory
-    cargo llvm-cov --no-clean nextest --profile ci --workspace --lcov --output-path "lcov.info"
+    cargo llvm-cov --no-clean nextest --profile ci --workspace --features rocksdb --lcov --output-path "lcov.info"
     cargo llvm-cov report --html
     exit 0
 fi
@@ -32,7 +32,7 @@ for PACKAGE in "${PACKAGES[@]}"; do
     PACKAGE_REPORT_PATH="$REPORT_DIR/$PACKAGE.info"
 
     # Profile "ci" is configured in .config/nextest.toml
-    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$PACKAGE_REPORT_PATH"
+    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --features rocksdb --lcov --output-path "$PACKAGE_REPORT_PATH"
     echo "Testing completed for package $PACKAGE. Cleaning artifacts"
     cargo llvm-cov clean -p "$PACKAGE"
 

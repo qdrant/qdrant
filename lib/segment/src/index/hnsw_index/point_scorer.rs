@@ -47,8 +47,6 @@ use crate::vector_storage::{
 ///  │ [RawScorer] ◄───┼──┤ QueryScorer ◄─┼── (ditto)
 ///  │                 │  └───────────────┘
 ///  │ FilterContext   │
-///  │                 │
-///  │ top             │
 ///  └─────────────────┘
 /// ```
 pub struct FilteredScorer<'a> {
@@ -259,69 +257,6 @@ impl<'a> FilteredScorer<'a> {
     pub fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.raw_scorer.score_internal(point_a, point_b)
     }
-
-    pub fn peek_top_all(
-        &self,
-        top: usize,
-        is_stopped: &AtomicBool,
-    ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        let iter = self
-            .filters
-            .point_deleted
-            .iter_zeros()
-            .map(|p| p as PointOffsetType);
-        self.peek_top_iter(iter, top, is_stopped)
-    }
-
-    pub fn peek_top_iter(
-        &self,
-        mut points: impl Iterator<Item = PointOffsetType>,
-        top: usize,
-        is_stopped: &AtomicBool,
-    ) -> CancellableResult<Vec<ScoredPointOffset>> {
-        if top == 0 {
-            return Ok(vec![]);
-        }
-
-        let mut pq = FixedLengthPriorityQueue::new(top);
-
-        // Reuse the same buffer for all chunks, to avoid reallocation
-        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
-        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
-
-        loop {
-            check_process_stopped(is_stopped)?;
-
-            let mut chunk_size = 0;
-            for point_id in &mut points {
-                check_process_stopped(is_stopped)?;
-                if !self.filters.check_vector(point_id) {
-                    continue;
-                }
-                chunk[chunk_size] = point_id;
-                chunk_size += 1;
-                if chunk_size == VECTOR_READ_BATCH_SIZE {
-                    break;
-                }
-            }
-
-            if chunk_size == 0 {
-                break;
-            }
-
-            self.raw_scorer
-                .score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
-
-            for i in 0..chunk_size {
-                pq.push(ScoredPointOffset {
-                    idx: chunk[i],
-                    score: scores_buffer[i],
-                });
-            }
-        }
-
-        Ok(pq.into_sorted_vec())
-    }
 }
 
 // We keep each scorer with its queue to reduce allocations and improve data locality.
@@ -333,7 +268,6 @@ struct BatchSearch<'a> {
 pub struct BatchFilteredSearcher<'a> {
     scorer_batch: SmallVec<[BatchSearch<'a>; 1]>,
     filters: ScorerFilters<'a>,
-    top: usize,
 }
 
 impl<'a> BatchFilteredSearcher<'a> {
@@ -372,7 +306,6 @@ impl<'a> BatchFilteredSearcher<'a> {
         Ok(Self {
             scorer_batch,
             filters,
-            top,
         })
     }
 
@@ -410,7 +343,6 @@ impl<'a> BatchFilteredSearcher<'a> {
                 point_deleted,
                 vec_deleted: vector_storage.deleted_vector_bitslice(),
             },
-            top,
         }
     }
 
@@ -431,10 +363,6 @@ impl<'a> BatchFilteredSearcher<'a> {
         mut points: impl Iterator<Item = PointOffsetType>,
         is_stopped: &AtomicBool,
     ) -> CancellableResult<Vec<Vec<ScoredPointOffset>>> {
-        if self.top == 0 {
-            return Ok(vec![vec![]; self.scorer_batch.len()]);
-        }
-
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];

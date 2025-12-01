@@ -43,7 +43,7 @@ jobs:
         run: pip install maturin
 
       - name: Checkout Qdrant
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@v2

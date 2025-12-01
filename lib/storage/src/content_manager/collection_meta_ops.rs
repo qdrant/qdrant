@@ -22,6 +22,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+// Re-export staging types when the feature is enabled
+#[cfg(feature = "staging")]
+pub use super::staging::TestSlowDown;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
@@ -410,7 +413,12 @@ pub enum CollectionMetaOperations {
     DropShardKey(DropShardKey),
     CreatePayloadIndex(CreatePayloadIndex),
     DropPayloadIndex(DropPayloadIndex),
-    Nop { token: usize }, // Empty operation
+    Nop {
+        token: usize,
+    }, // Empty operation
+    /// Introduce artificial delay to a specific peer node
+    #[cfg(feature = "staging")]
+    TestSlowDown(TestSlowDown),
 }
 
 /// Use config of the existing collection to generate a create collection operation

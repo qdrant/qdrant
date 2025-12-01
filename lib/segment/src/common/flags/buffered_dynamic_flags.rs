@@ -19,15 +19,19 @@ pub(crate) struct BufferedDynamicFlags {
 
     /// Pending changes to the storage flags.
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
+
+    /// Lock to prevent concurrent flush and drop
+    pub is_alive_flush_lock: Arc<Mutex<bool>>,
 }
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
-
+        let is_alive_flush_lock = Arc::new(Mutex::new(true));
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
+            is_alive_flush_lock,
         }
     }
 
@@ -56,8 +60,24 @@ impl BufferedDynamicFlags {
             (updates, required_len)
         };
 
-        let flags_arc = self.storage.clone();
+        // Weak reference to detect when the storage has been deleted
+        let flags_arc = Arc::downgrade(&self.storage);
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         Box::new(move || {
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Storage is removed, skip flush
+                return Ok(());
+            }
+
+            let Some(flags_arc) = flags_arc.upgrade() else {
+                log::debug!("skipping flushing on deleted storage");
+                return Ok(());
+            };
+
             // lock for the entire flushing process
             let mut flags_guard = flags_arc.lock();
 
@@ -74,6 +94,13 @@ impl BufferedDynamicFlags {
 
             Ok(())
         })
+    }
+}
+
+impl Drop for BufferedDynamicFlags {
+    fn drop(&mut self) {
+        // Wait for all background flush operations to finish
+        *self.is_alive_flush_lock.lock() = false;
     }
 }
 

@@ -316,6 +316,7 @@ mod tests {
 
     use atomic_refcell::AtomicRefCell;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use itertools::Itertools;
     use memory::mmap_ops::transmute_to_u8_slice;
     use tempfile::Builder;
 
@@ -422,7 +423,8 @@ mod tests {
         let res = searcher
             .peek_top_all(&DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
 
         assert_eq!(res.len(), 2);
@@ -438,7 +440,8 @@ mod tests {
         let res = searcher
             .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
 
         assert_eq!(res.len(), 2);
@@ -510,7 +513,8 @@ mod tests {
         let closest = searcher
             .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
@@ -538,7 +542,8 @@ mod tests {
         let closest = searcher
             .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
         assert_eq!(closest[0].idx, 4);
@@ -564,7 +569,8 @@ mod tests {
         let closest = searcher
             .peek_top_all(&DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
@@ -626,7 +632,8 @@ mod tests {
         let closest = searcher
             .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
             .unwrap()
-            .pop()
+            .into_iter()
+            .exactly_one()
             .unwrap();
 
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");

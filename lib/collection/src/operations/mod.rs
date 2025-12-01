@@ -11,6 +11,8 @@ pub mod shard_selector_internal;
 pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod snapshot_storage_ops;
+#[cfg(feature = "staging")]
+pub mod staging;
 pub mod types;
 pub mod universal_query;
 pub mod validation;

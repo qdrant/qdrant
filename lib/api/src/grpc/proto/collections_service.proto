@@ -58,4 +58,8 @@ service Collections {
   Delete shard key
   */
   rpc DeleteShardKey (DeleteShardKeyRequest) returns (DeleteShardKeyResponse) {}
+  /*
+  List shard keys
+  */
+  rpc ListShardKeys (ListShardKeysRequest) returns (ListShardKeysResponse) {}
 }

@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  POETRY_VERSION: 2.1.3
+  POETRY_VERSION: 2.2.1
 
 jobs:
   integration-tests:
@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -37,7 +37,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests
         run: poetry --project tests run bash ./tests/integration-tests.sh
         shell: bash
@@ -48,7 +48,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -68,7 +68,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests - 1 peer
         run: poetry --project tests run bash ./tests/integration-tests.sh distributed
         shell: bash
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
@@ -112,6 +112,7 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+            FEATURES=staging
       - name: Run integration tests - multiple peers - compose
         run: poetry run bash ./test_restart.sh
         working-directory: ./tests/consensus_tests
@@ -123,7 +124,7 @@ jobs:
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration-tests
@@ -143,6 +144,7 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+            FEATURES=staging
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -175,7 +177,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: integration-tests
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -183,11 +185,11 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang jq
       - name: Build
-        run: cargo build --bin qdrant --locked
+        run: cargo build --bin qdrant --features "rocksdb staging" --locked
       - name: Run Shard Snapshot API Tests (local)
         shell: bash
         run: |
-          cargo run &
+          cargo run --features "rocksdb staging" &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
 
@@ -202,7 +204,7 @@ jobs:
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY=minioadmin
           export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL=http://127.0.0.1:9000
 
-          cargo run &
+          cargo run --features "rocksdb staging" &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
 
@@ -229,7 +231,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           lfs: true  # Fetch LFS files automatically
       - uses: actions/setup-python@v6
@@ -257,13 +259,13 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
-            FEATURES=data-consistency-check
+            FEATURES=data-consistency-check,rocksdb,staging
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: poetry --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5
+        run: poetry --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 20
       - name: Upload test logs on failure
         uses: actions/upload-artifact@v5
         if: failure()

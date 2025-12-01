@@ -307,7 +307,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
         self.indexed_count
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         if self.base_dir.is_dir() {
             fs::remove_dir_all(self.base_dir)?;
         };

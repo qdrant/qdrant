@@ -9,7 +9,7 @@ use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, U
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
-use storage::content_manager::errors::StorageError;
+use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 
@@ -140,7 +140,7 @@ pub fn already_in_progress_response() -> HttpResponse {
 /// Future must be cancel safe.
 pub async fn time<T, Fut>(future: Fut) -> HttpResponse
 where
-    Fut: Future<Output = Result<T, StorageError>>,
+    Fut: Future<Output = StorageResult<T>>,
     T: serde::Serialize,
 {
     time_impl(async { future.await.map(Some) }).await
@@ -150,7 +150,7 @@ where
 /// If `wait` is false, returns `202 Accepted` immediately.
 pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> HttpResponse
 where
-    Fut: Future<Output = Result<T, StorageError>> + Send + 'static,
+    Fut: Future<Output = StorageResult<T>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {

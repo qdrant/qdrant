@@ -301,7 +301,7 @@ where
         match self.storage {
             #[cfg(feature = "rocksdb")]
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
-            Storage::Gridstore(mut store) => store.clear().map_err(|err| {
+            Storage::Gridstore(store) => store.wipe().map_err(|err| {
                 OperationError::service_error(format!("Failed to wipe mutable map index: {err}",))
             }),
         }

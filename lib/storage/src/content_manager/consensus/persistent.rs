@@ -99,6 +99,13 @@ impl Persistent {
         *peer_metadata_by_id.write() = metadata_by_id;
         *cluster_metadata = new_cluster_metadata;
 
+        // Last Raft commit and last snapshot index must be equal and persisted in one operation
+        // Our `ConsensusManager::new` function relies on this for reconciling WAL clears
+        debug_assert_eq!(
+            state.hard_state.commit, latest_snapshot_meta.index,
+            "applied Raft commit and last snapshot index must be equal",
+        );
+
         self.save()
     }
 

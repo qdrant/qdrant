@@ -1,11 +1,13 @@
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
-use actix_web::web::{Data, Query};
+use actix_web::web::Data;
 use actix_web::{HttpResponse, Responder, get, post, web};
+use actix_web_validator::Query;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -13,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
+use validator::Validate;
 
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
@@ -23,15 +26,23 @@ use crate::common::telemetry::TelemetryCollector;
 use crate::settings::ServiceConfig;
 use crate::tracing;
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct TelemetryParam {
     pub anonymize: Option<bool>,
     pub details_level: Option<usize>,
+    #[validate(range(min = 1))]
+    pub timeout: Option<u64>,
+}
+
+impl TelemetryParam {
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout.map(Duration::from_secs)
+    }
 }
 
 #[get("/telemetry")]
 fn telemetry(
-    telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
@@ -46,7 +57,9 @@ fn telemetry(
             histograms: false,
         };
         let telemetry_collector = telemetry_collector.lock().await;
-        let telemetry_data = telemetry_collector.prepare_data(&access, detail).await;
+        let telemetry_data = telemetry_collector
+            .prepare_data(&access, detail, params.timeout())
+            .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -56,14 +69,22 @@ fn telemetry(
     })
 }
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
+    #[validate(range(min = 1))]
+    pub timeout: Option<u64>,
+}
+
+impl MetricsParam {
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout.map(Duration::from_secs)
+    }
 }
 
 #[get("/metrics")]
 async fn metrics(
-    telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
+    telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
     config: Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
@@ -81,19 +102,28 @@ async fn metrics(
                 level: DetailsLevel::Level4,
                 histograms: true,
             },
+            params.timeout(),
         )
         .await;
-    let telemetry_data = if anonymize {
-        telemetry_data.anonymize()
-    } else {
-        telemetry_data
-    };
 
-    let metrics_prefix = config.metrics_prefix.as_deref();
+    match telemetry_data {
+        Err(err) => process_response_error(err, Instant::now(), None),
+        Ok(telemetry_data) => {
+            let telemetry_data = if anonymize {
+                telemetry_data.anonymize()
+            } else {
+                telemetry_data
+            };
 
-    HttpResponse::Ok()
-        .content_type(ContentType::plaintext())
-        .body(MetricsData::new_from_telemetry(telemetry_data, metrics_prefix).format_metrics())
+            let metrics_prefix = config.metrics_prefix.as_deref();
+            HttpResponse::Ok()
+                .content_type(ContentType::plaintext())
+                .body(
+                    MetricsData::new_from_telemetry(telemetry_data, metrics_prefix)
+                        .format_metrics(),
+                )
+        }
+    }
 }
 
 #[get("/stacktrace")]

@@ -728,7 +728,7 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.get_indexed_points()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
 
@@ -876,7 +876,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         self.get_indexed_points()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
 
@@ -1065,7 +1065,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         self.get_indexed_points()
     }
 
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         self.wipe()
     }
 

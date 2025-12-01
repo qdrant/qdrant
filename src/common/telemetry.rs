@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use collection::operations::verification::new_unchecked_verification_pass;
 use common::types::{DetailsLevel, TelemetryDetail};
@@ -6,8 +7,11 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
+use shard::common::stopping_guard::StoppingGuard;
+use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
 
@@ -20,6 +24,8 @@ use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, RequestsTelemetry, TonicTelemetryCollector,
 };
 use crate::settings::Settings;
+
+const DEFAULT_TELEMETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct TelemetryCollector {
     process_id: Uuid,
@@ -71,29 +77,47 @@ impl TelemetryCollector {
         }
     }
 
-    pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
+    pub async fn prepare_data(
+        &self,
+        access: &Access,
+        detail: TelemetryDetail,
+        timeout: Option<Duration>,
+    ) -> StorageResult<TelemetryData> {
+        let timeout = timeout.unwrap_or(DEFAULT_TELEMETRY_TIMEOUT);
         // Use blocking pool because the collection telemetry acquires several sync. locks.
-        let collections_telemetry = {
+        let is_stopped_guard = StoppingGuard::new();
+        let is_stopped = is_stopped_guard.get_is_stopped();
+        let collections_telemetry_handle = {
             let toc = self
                 .dispatcher
                 .toc(access, &new_unchecked_verification_pass())
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
             let access_collection = access.clone();
+
             let handle = runtime_handle.spawn_blocking(move || {
                 // Re-enter the async runtime in this blocking thread
                 tokio::runtime::Handle::current().block_on(async move {
-                    CollectionsTelemetry::collect(detail, &access_collection, &toc).await
+                    CollectionsTelemetry::collect(
+                        detail,
+                        &access_collection,
+                        &toc,
+                        timeout,
+                        &is_stopped,
+                    )
+                    .await
                 })
             });
-            AbortOnDropHandle::new(handle).await
+            AbortOnDropHandle::new(handle)
         };
 
-        let collections_telemetry = collections_telemetry
-            .map_err(|err| log::error!("Failed to generate collection telemetry {err}"))
-            .unwrap_or_default();
+        let collections_telemetry = tokio::time::timeout(timeout, collections_telemetry_handle)
+            .await
+            .map_err(|_: Elapsed| {
+                StorageError::timeout(timeout.as_secs() as usize, "collections telemetry")
+            })???;
 
-        TelemetryData {
+        Ok(TelemetryData {
             id: self.process_id.to_string(),
             collections: collections_telemetry,
             app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
@@ -109,6 +133,6 @@ impl TelemetryCollector {
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
-        }
+        })
     }
 }

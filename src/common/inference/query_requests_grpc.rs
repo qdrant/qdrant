@@ -16,17 +16,17 @@ use segment::types::{Filter, PointIdType, SearchParams};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
-use crate::common::inference::InferenceToken;
 use crate::common::inference::batch_processing_grpc::{
     BatchAccumGrpc, collect_prefetch, collect_query,
 };
 use crate::common::inference::infer_processing::BatchAccumInferred;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_point_groups_from_grpc(
     query: grpc::QueryPointGroups,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(CollectionQueryGroupsRequest, InferenceUsage), Status> {
     let grpc::QueryPointGroups {
         collection_name: _,
@@ -61,7 +61,7 @@ pub async fn convert_query_point_groups_from_grpc(
     let BatchAccumGrpc { objects } = batch;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
@@ -107,7 +107,7 @@ pub async fn convert_query_point_groups_from_grpc(
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(CollectionQueryRequest, InferenceUsage), Status> {
     let grpc::QueryPoints {
         collection_name: _,
@@ -140,7 +140,7 @@ pub async fn convert_query_points_from_grpc(
     let BatchAccumGrpc { objects } = batch;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_params)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 

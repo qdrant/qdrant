@@ -336,7 +336,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
-            hnsw_config.clone(),
+            hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
         );
@@ -345,7 +345,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params,
-            hnsw_config.clone(),
+            hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
         );
@@ -380,7 +380,7 @@ mod tests {
         let mut changed_hnsw_config = hnsw_config;
         changed_hnsw_config.m /= 2;
         changed_hnsw_config.ef_construct /= 5;
-        config_mismatch_optimizer.hnsw_config = changed_hnsw_config.clone();
+        config_mismatch_optimizer.hnsw_config = changed_hnsw_config;
 
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
@@ -410,7 +410,7 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[DEFAULT_VECTOR_NAME].index,
-                    Indexes::Hnsw(changed_hnsw_config.clone()),
+                    Indexes::Hnsw(changed_hnsw_config),
                     "segment must be optimized with changed HNSW config",
                 );
             });
@@ -501,7 +501,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
-            hnsw_config_collection.clone(),
+            hnsw_config_collection,
             HnswGlobalConfig::default(),
             Default::default(),
         );
@@ -510,7 +510,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params,
-            hnsw_config_collection.clone(),
+            hnsw_config_collection,
             HnswGlobalConfig::default(),
             Default::default(),
         );

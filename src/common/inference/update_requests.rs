@@ -9,15 +9,15 @@ use collection::operations::point_ops::{
 use collection::operations::vector_ops::PointVectorsPersisted;
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::InferenceToken;
 use crate::common::inference::batch_processing::BatchAccum;
 use crate::common::inference::infer_processing::BatchAccumInferred;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
 pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
     inference_type: InferenceType,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(Vec<PointStructPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
 
@@ -44,7 +44,7 @@ pub async fn convert_point_struct(
 
     let (inferred, usage) = if !batch_accum.objects.is_empty() {
         let (inferred_data, usage) =
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_params)
                 .await?;
         (Some(inferred_data), usage)
     } else {
@@ -157,7 +157,7 @@ pub async fn convert_point_struct(
 
 pub async fn convert_batch(
     batch: Batch,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(BatchPersisted, Option<InferenceUsage>), StorageError> {
     let Batch {
         ids,
@@ -174,7 +174,7 @@ pub async fn convert_batch(
             let mut named_vectors = HashMap::new();
             for (name, vecs) in named {
                 let (converted_vectors, batch_usage) =
-                    convert_vectors(vecs, InferenceType::Update, inference_token.clone()).await?;
+                    convert_vectors(vecs, InferenceType::Update, inference_params.clone()).await?;
                 inference_usage.merge_opt(batch_usage);
                 named_vectors.insert(name, converted_vectors);
             }
@@ -209,7 +209,7 @@ pub async fn convert_batch(
 pub async fn convert_point_vectors(
     point_vectors_list: Vec<PointVectors>,
     inference_type: InferenceType,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(Vec<PointVectorsPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
 
@@ -230,7 +230,7 @@ pub async fn convert_point_vectors(
 
     let inferred = if !batch_accum.objects.is_empty() {
         let (inferred_data, usage) =
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_params)
                 .await?;
         inference_usage.merge_opt(usage);
         Some(inferred_data)
@@ -373,7 +373,7 @@ fn convert_point_struct_with_inferred(
 pub async fn convert_vectors(
     vectors: Vec<Vector>,
     inference_type: InferenceType,
-    inference_token: InferenceToken,
+    inference_params: InferenceParams,
 ) -> Result<(Vec<VectorPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
     for vector in &vectors {
@@ -389,7 +389,7 @@ pub async fn convert_vectors(
 
     let inferred = if !batch_accum.objects.is_empty() {
         let (inferred_data, usage) =
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_params)
                 .await?;
         inference_usage.merge_opt(usage);
         Some(inferred_data)

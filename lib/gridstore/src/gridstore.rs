@@ -41,6 +41,8 @@ pub struct Gridstore<V> {
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
+    ///
+    /// Additionally, this is also used as a barrier to wait for a flush to finish when [`wipe`](Self::wipe)'ing.
     bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
@@ -479,12 +481,18 @@ impl<V: Blob> Gridstore<V> {
     /// Wipe the storage, drop all pages and delete the base directory
     ///
     /// Takes ownership because this function leaves Gridstore in an inconsistent state which does
-    /// not allow further usage. Use [`clear`] instead to clear and reuse the storage.
+    /// not allow further usage. Use [`clear`](Self::clear) instead to clear and reuse the storage.
     pub fn wipe(self) -> Result<()> {
-        // clear pages
-        self.pages.write().clear();
+        let base_path = self.base_path.clone();
+
+        // Barrier to wait for any ongoing flush to finish
+        drop(self.bitmask.write());
+
+        // Make sure strong references are dropped, to avoid starting another flush
+        drop(self);
+
         // deleted base directory
-        fs::remove_dir_all(&self.base_path)
+        fs::remove_dir_all(base_path)
             .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
     }
 
@@ -566,12 +574,19 @@ impl<V> Gridstore<V> {
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
-        let pages = self.pages.clone();
-        let tracker = self.tracker.clone();
-        let bitmask = self.bitmask.clone();
+        let pages = Arc::downgrade(&self.pages);
+        let tracker = Arc::downgrade(&self.tracker);
+        let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
         Box::new(move || {
+            let (Some(pages), Some(tracker), Some(bitmask)) =
+                (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
+            else {
+                log::debug!("Aborted flushing on a dropped Gridstore instance");
+                return Ok(());
+            };
+
             let mut bitmask_guard = bitmask.upgradable_read();
             bitmask_guard.flush()?;
             for page in pages.read().iter() {
@@ -863,12 +878,14 @@ mod tests {
         Put(PointOffset, Payload),
         Delete(PointOffset),
         Update(PointOffset, Payload),
+        Get(PointOffset),
+        Flush,
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..3);
+            let operation = rng.random_range(0..4);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -881,6 +898,8 @@ mod tests {
                     let payload = random_payload(rng, size_factor);
                     Operation::Update(point_offset, payload)
                 }
+                3 => Operation::Get(point_offset),
+                4 => Operation::Flush,
                 _ => unreachable!(),
             }
         }
@@ -890,14 +909,14 @@ mod tests {
     fn test_behave_like_hashmap(
         #[values(1_048_576, 2_097_152, DEFAULT_PAGE_SIZE_BYTES)] page_size: usize,
     ) {
-        use std::collections::HashMap;
+        use ahash::AHashMap;
 
         let (dir, mut storage) = empty_storage_sized(page_size);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 100000u32;
+        let max_point_offset = 10000u32;
 
-        let mut model_hashmap = HashMap::new();
+        let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
         let operations = (0..100000u32)
             .map(|_| Operation::random(rng, max_point_offset))
@@ -910,10 +929,15 @@ mod tests {
         for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
-                    storage
+                    let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
-                    model_hashmap.insert(point_offset, payload);
+                    let old2 = model_hashmap.insert(point_offset, payload);
+                    assert_eq!(
+                        old1,
+                        old2.is_some(),
+                        "put failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
+                    );
                 }
                 Operation::Delete(point_offset) => {
                     let old1 = storage.delete_value(point_offset);
@@ -929,6 +953,20 @@ mod tests {
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
+                Operation::Get(point_offset) => {
+                    let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
+                    let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
+                    let v2 = model_hashmap.get(&point_offset).cloned();
+                    assert_eq!(
+                        v1_seq, v2,
+                        "get sequential failed for point_offset: {point_offset} with {v1_seq:?} vs {v2:?}",
+                    );
+                    assert_eq!(
+                        v1_rand, v2,
+                        "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
+                    );
+                }
+                Operation::Flush => storage.flusher()().unwrap(),
             }
         }
 

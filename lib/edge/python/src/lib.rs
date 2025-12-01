@@ -23,11 +23,23 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::PyShard;
     #[pymodule_export]
-    use super::config::{
-        PyDistance, PyIndexes, PyMultiVectorComparator, PyMultiVectorConfig, PyPayloadStorageType,
-        PyQuantizationConfig, PySegmentConfig, PySparseVectorDataConfig, PyVectorDataConfig,
-        PyVectorStorageDatatype, PyVectorStorageType,
+    use super::config::quantization::{
+        PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
+        PyBinaryQuantizationQueryEncoding, PyCompressionRatio, PyProductQuantizationConfig,
+        PyScalarQuantizationConfig, PyScalarType,
     };
+    #[pymodule_export]
+    use super::config::sparse_vector_data::{
+        PyModifier, PySparseIndexConfig, PySparseIndexType, PySparseVectorDataConfig,
+        PySparseVectorStorageType,
+    };
+    #[pymodule_export]
+    use super::config::vector_data::{
+        PyDistance, PyHnswIndexConfig, PyMultiVectorComparator, PyMultiVectorConfig,
+        PyPlainIndexConfig, PyVectorDataConfig, PyVectorStorageDatatype, PyVectorStorageType,
+    };
+    #[pymodule_export]
+    use super::config::{PyPayloadStorageType, PySegmentConfig};
     #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,

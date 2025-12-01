@@ -333,7 +333,7 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
 }
 
 impl PayloadFieldIndex for SimpleBoolIndex {
-    fn cleanup(self) -> OperationResult<()> {
+    fn wipe(self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()
     }
 

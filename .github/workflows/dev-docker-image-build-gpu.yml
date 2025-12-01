@@ -7,7 +7,7 @@ jobs:
   branch-gpu-build-and-push:
     runs-on: [self-hosted, linux, x64]
     steps:
-        - uses: actions/checkout@v5
+        - uses: actions/checkout@v6
           with:
             ref: ${{ github.ref_name }}
         - uses: ./.github/actions/branch-build-and-push
@@ -15,3 +15,4 @@ jobs:
             ghcr-password: ${{ secrets.GITHUB_TOKEN }}
             push-to-ghcr: true
             build-gpu: true
+            staging-build: ${{ github.ref_type == 'branch' && github.ref_name != 'master' }}

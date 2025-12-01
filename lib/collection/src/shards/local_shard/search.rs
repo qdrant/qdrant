@@ -111,6 +111,7 @@ impl LocalShard {
                 self.segments.clone(),
                 &core_request,
                 &collection_config,
+                search_runtime_handle,
                 is_stopped_guard,
                 hw_counter_acc.clone(),
             )

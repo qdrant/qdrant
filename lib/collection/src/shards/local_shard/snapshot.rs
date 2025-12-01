@@ -24,11 +24,15 @@ use crate::update_handler::UpdateSignal;
 use crate::wal_delta::LockedWal;
 
 impl LocalShard {
-    pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
-        self.segments()
-            .read()
-            .snapshot_manifest()
-            .map_err(CollectionError::from)
+    pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
+        let task = {
+            let _runtime = self.search_runtime.enter();
+
+            let segments = self.segments.clone();
+            cancel::blocking::spawn_cancel_on_drop(move |_| segments.read().snapshot_manifest())
+        };
+
+        Ok(task.await??)
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {

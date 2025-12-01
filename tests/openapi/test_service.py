@@ -101,3 +101,21 @@ def test_telemetry_detail(level: int):
 
             segment = local_shard['segments'][0]
             assert set(segment.keys()) == {'info', 'config', 'vector_index_searches', 'payload_field_indices'}
+
+
+def test_issues():
+    response = request_with_validation(
+        api='/issues',
+        method="GET",
+    )
+    assert response.ok
+    result = response.json()['result']['issues']
+    assert len(result) == 0
+
+    response = request_with_validation(
+        api='/issues',
+        method="DELETE",
+    )
+    assert response.ok
+    result = response.json()['result']
+    assert result

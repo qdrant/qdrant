@@ -185,6 +185,7 @@ fn configure_validation(builder: Builder) -> Builder {
             "QuantizationConfigDiff",
             "quantization_config_diff::Quantization",
             "Replica",
+            "ListShardKeysRequest",
         ])
         // Service: collections_internal.proto
         .validates(&[

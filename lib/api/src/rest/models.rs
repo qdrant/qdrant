@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use ahash::HashMap;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::types::ShardKey;
 use serde;
 use serde::{Deserialize, Serialize};
 
@@ -159,4 +160,18 @@ fn example_collections_response() -> CollectionsResponse {
 #[schemars(example = "example_collections_response")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ShardKeyDescription {
+    pub key: ShardKey,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ShardKeysResponse {
+    /// The existing shard keys. Only available when sharding method is `custom`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_keys: Option<Vec<ShardKeyDescription>>,
 }

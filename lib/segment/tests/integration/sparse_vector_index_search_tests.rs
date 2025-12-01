@@ -801,3 +801,24 @@ fn sparse_vector_test_large_index() {
         _ => panic!("unexpected vector index type"),
     }
 }
+
+#[test]
+fn test_sparse_search_top_zero() {
+    let mut rnd = StdRng::seed_from_u64(43);
+    let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
+
+    let sparse_vector_index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
+        &mut rnd,
+        NUM_VECTORS,
+        MAX_SPARSE_DIM,
+        LOW_FULL_SCAN_THRESHOLD,
+        data_dir.path(),
+    );
+
+    let query_vector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+
+    let top = 0;
+    sparse_vector_index
+        .search(&[&query_vector], None, top, None, &Default::default())
+        .unwrap();
+}

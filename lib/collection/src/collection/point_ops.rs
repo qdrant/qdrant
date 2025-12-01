@@ -34,37 +34,39 @@ impl Collection {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let results = tokio::task::spawn(async move {
-            let _update_lock = update_lock;
+        let results = self
+            .update_runtime
+            .spawn(async move {
+                let _update_lock = update_lock;
 
-            // `ShardReplicaSet::update_local` is *not* cancel safe, so we *have to* execute *all*
-            // `update_local` requests to completion.
-            //
-            // Note that `futures::try_join_all`/`TryStreamExt::try_collect` *cancel* pending
-            // requests if any of them returns an error, so we *have to* use
-            // `futures::join_all`/`TryStreamExt::collect` instead!
+                // `ShardReplicaSet::update_local` is *not* cancel safe, so we *have to* execute *all*
+                // `update_local` requests to completion.
+                //
+                // Note that `futures::try_join_all`/`TryStreamExt::try_collect` *cancel* pending
+                // requests if any of them returns an error, so we *have to* use
+                // `futures::join_all`/`TryStreamExt::collect` instead!
 
-            let local_updates: FuturesUnordered<_> = shard_holder
-                .all_shards()
-                .map(|shard| {
-                    // The operation *can't* have a clock tag!
-                    //
-                    // We update *all* shards with a single operation, but each shard has it's own clock,
-                    // so it's *impossible* to assign any single clock tag to this operation.
-                    shard.update_local(
-                        OperationWithClockTag::from(operation.clone()),
-                        wait,
-                        hw_measurement_acc.clone(),
-                        false,
-                    )
-                })
-                .collect();
+                let local_updates: FuturesUnordered<_> = shard_holder
+                    .all_shards()
+                    .map(|shard| {
+                        // The operation *can't* have a clock tag!
+                        //
+                        // We update *all* shards with a single operation, but each shard has it's own clock,
+                        // so it's *impossible* to assign any single clock tag to this operation.
+                        shard.update_local(
+                            OperationWithClockTag::from(operation.clone()),
+                            wait,
+                            hw_measurement_acc.clone(),
+                            false,
+                        )
+                    })
+                    .collect();
 
-            let results: Vec<_> = local_updates.collect().await;
+                let results: Vec<_> = local_updates.collect().await;
 
-            results
-        })
-        .await?;
+                results
+            })
+            .await?;
 
         let mut result = None;
 
@@ -97,7 +99,7 @@ impl Collection {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let result = tokio::task::spawn(async move {
+        let result = self.update_runtime.spawn(async move {
             let _update_lock = update_lock;
 
             let Some(shard) = shard_holder.get_shard(shard_selection) else {
@@ -149,64 +151,66 @@ impl Collection {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let mut results = tokio::task::spawn(async move {
-            let _update_lock = update_lock;
+        let mut results = self
+            .update_runtime
+            .spawn(async move {
+                let _update_lock = update_lock;
 
-            let updates = FuturesUnordered::new();
-            let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
+                let updates = FuturesUnordered::new();
+                let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
 
-            for (shard, operation) in operations {
-                let operation = shard_holder.split_by_mode(shard.shard_id, operation);
+                for (shard, operation) in operations {
+                    let operation = shard_holder.split_by_mode(shard.shard_id, operation);
 
-                let hw_acc = hw_measurement_acc.clone();
-                updates.push(async move {
-                    let mut result = UpdateResult {
-                        operation_id: None,
-                        status: UpdateStatus::Acknowledged,
-                        clock_tag: None,
-                    };
+                    let hw_acc = hw_measurement_acc.clone();
+                    updates.push(async move {
+                        let mut result = UpdateResult {
+                            operation_id: None,
+                            status: UpdateStatus::Acknowledged,
+                            clock_tag: None,
+                        };
 
-                    for operation in operation.update_all {
-                        result = shard
-                            .update_with_consistency(
-                                operation,
-                                wait,
-                                ordering,
-                                false,
-                                hw_acc.clone(),
-                            )
-                            .await?;
-                    }
-
-                    for operation in operation.update_only_existing {
-                        let res = shard
-                            .update_with_consistency(
-                                operation,
-                                wait,
-                                ordering,
-                                true,
-                                hw_acc.clone(),
-                            )
-                            .await;
-
-                        if let Err(err) = &res
-                            && err.is_missing_point()
-                        {
-                            continue;
+                        for operation in operation.update_all {
+                            result = shard
+                                .update_with_consistency(
+                                    operation,
+                                    wait,
+                                    ordering,
+                                    false,
+                                    hw_acc.clone(),
+                                )
+                                .await?;
                         }
 
-                        result = res?;
-                    }
+                        for operation in operation.update_only_existing {
+                            let res = shard
+                                .update_with_consistency(
+                                    operation,
+                                    wait,
+                                    ordering,
+                                    true,
+                                    hw_acc.clone(),
+                                )
+                                .await;
 
-                    CollectionResult::Ok(result)
-                });
-            }
+                            if let Err(err) = &res
+                                && err.is_missing_point()
+                            {
+                                continue;
+                            }
 
-            let results: Vec<_> = updates.collect().await;
+                            result = res?;
+                        }
 
-            CollectionResult::Ok(results)
-        })
-        .await??;
+                        CollectionResult::Ok(result)
+                    });
+                }
+
+                let results: Vec<_> = updates.collect().await;
+
+                CollectionResult::Ok(results)
+            })
+            .await??;
 
         if results.is_empty() {
             return Err(CollectionError::bad_request(

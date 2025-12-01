@@ -15,11 +15,12 @@ use super::CollectionPath;
 use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter};
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_rest::{
     CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
+use crate::common::inference::token::InferenceToken;
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
@@ -53,9 +54,11 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
+    let inference_params = InferenceParams::new(inference_token, params.timeout());
+
     let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =
-            convert_query_request_from_rest(query_request, &inference_token).await?;
+            convert_query_request_from_rest(query_request, &inference_params).await?;
 
         inference_usage.merge_opt(usage);
 
@@ -122,6 +125,8 @@ async fn query_points_batch(
 
     let mut all_usages: InferenceUsage = InferenceUsage::default();
 
+    let inference_params = InferenceParams::new(inference_token, params.timeout());
+
     let result = async {
         let mut batch = Vec::with_capacity(searches.len());
 
@@ -132,7 +137,7 @@ async fn query_points_batch(
             } = request_item;
 
             let CollectionQueryRequestWithUsage { request, usage } =
-                convert_query_request_from_rest(internal, &inference_token).await?;
+                convert_query_request_from_rest(internal, &inference_params).await?;
 
             all_usages.merge_opt(usage);
 
@@ -209,13 +214,15 @@ async fn query_points_groups(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
+    let inference_params = InferenceParams::new(inference_token, params.timeout());
+
     let result = async {
         let shard_selection = match shard_key {
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
         let CollectionQueryGroupsRequestWithUsage { request, usage } =
-            convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
+            convert_query_groups_request_from_rest(search_group_request, inference_params).await?;
 
         inference_usage.merge_opt(usage);
 

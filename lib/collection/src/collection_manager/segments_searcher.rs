@@ -171,6 +171,7 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         batch_request: &CoreSearchRequestBatch,
         collection_config: &CollectionConfigInternal,
+        search_runtime_handle: &Handle,
         is_stopped_guard: &StoppingGuard,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<QueryContext>> {
@@ -196,9 +197,10 @@ impl SegmentsSearcher {
         );
 
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
-            fill_query_context(query_context, segments)
-        }))
+        let task = AbortOnDropHandle::new(
+            search_runtime_handle
+                .spawn_blocking(move || fill_query_context(query_context, segments)),
+        )
         .await?;
         Ok(task)
     }

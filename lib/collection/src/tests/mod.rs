@@ -6,6 +6,7 @@ mod points_dedup;
 mod query_prefetch_offset_limit;
 mod sha_256_test;
 mod shard_query;
+mod shard_telemetry;
 mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;

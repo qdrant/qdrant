@@ -3,8 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use api::grpc::qdrant::CollectionExists;
-use api::rest::models::{CollectionDescription, CollectionsResponse};
+use api::rest::models::{
+    CollectionDescription, CollectionsResponse, ShardKeyDescription, ShardKeysResponse,
+};
 use collection::config::ShardingMethod;
+#[cfg(feature = "staging")]
+use collection::operations::cluster_ops::TestSlowDownOperation;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
     ReplicatePoints, ReplicatePointsOperation, ReplicateShardOperation, ReshardingDirection,
@@ -26,6 +30,8 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
+#[cfg(feature = "staging")]
+use storage::content_manager::collection_meta_ops::TestSlowDown;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
     SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
@@ -86,6 +92,30 @@ pub async fn do_list_collections(
         .collect_vec();
 
     Ok(CollectionsResponse { collections })
+}
+
+pub async fn do_get_collection_shard_keys(
+    toc: &TableOfContent,
+    access: Access,
+    name: &str,
+) -> Result<ShardKeysResponse, StorageError> {
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
+
+    let collection = toc.get_collection(&collection_pass).await?;
+
+    let state = collection.state().await;
+    let shard_keys = match state.config.params.sharding_method.unwrap_or_default() {
+        ShardingMethod::Auto => None,
+        ShardingMethod::Custom => Some(
+            state
+                .shards_key_mapping
+                .iter_shard_keys()
+                .map(|k| ShardKeyDescription { key: k.clone() })
+                .collect(),
+        ),
+    };
+
+    Ok(ShardKeysResponse { shard_keys })
 }
 
 /// Construct shards-replicas layout for the shard from the given scope of peers
@@ -876,6 +906,27 @@ pub async fn do_update_collection_cluster(
                             shard_key: state.shard_key.clone(),
                         }),
                     ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        #[cfg(feature = "staging")]
+        ClusterOperations::TestSlowDown(TestSlowDownOperation { test_slow_down }) => {
+            if let Some(peer_id) = test_slow_down.peer_id {
+                validate_peer_exists(peer_id)?;
+            }
+
+            // Convert seconds (f64) to milliseconds (u64)
+            let duration_ms = (test_slow_down.duration * 1000.0) as u64;
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TestSlowDown(TestSlowDown {
+                        peer_id: test_slow_down.peer_id,
+                        duration_ms,
+                    }),
                     access,
                     wait_timeout,
                 )

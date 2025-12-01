@@ -8,7 +8,7 @@ use super::batch_processing::BatchAccum;
 use super::service::{
     InferenceData, InferenceInput, InferenceResponse, InferenceService, InferenceType,
 };
-use crate::common::inference::InferenceToken;
+use crate::common::inference::params::InferenceParams;
 
 pub struct BatchAccumInferred {
     pub(crate) objects: HashMap<InferenceData, VectorPersisted>,
@@ -24,7 +24,7 @@ impl BatchAccumInferred {
     pub async fn from_objects(
         objects: HashSet<InferenceData>,
         inference_type: InferenceType,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<(Self, Option<InferenceUsage>), StorageError> {
         if objects.is_empty() {
             return Ok((Self::new(), None));
@@ -46,7 +46,7 @@ impl BatchAccumInferred {
             .collect();
 
         let InferenceResponse { embeddings, usage } = service
-            .infer(inference_inputs, inference_type, inference_token)
+            .infer(inference_inputs, inference_type, inference_params)
             .await?;
 
         if embeddings.is_empty() {
@@ -63,10 +63,10 @@ impl BatchAccumInferred {
     pub async fn from_batch_accum(
         batch: BatchAccum,
         inference_type: InferenceType,
-        inference_token: &InferenceToken,
+        inference_params: &InferenceParams,
     ) -> Result<(Self, Option<InferenceUsage>), StorageError> {
         let BatchAccum { objects } = batch;
-        Self::from_objects(objects, inference_type, inference_token.clone()).await
+        Self::from_objects(objects, inference_type, inference_params.clone()).await
     }
 
     pub fn get_vector(&self, data: &InferenceData) -> Option<&VectorPersisted> {

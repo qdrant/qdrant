@@ -191,10 +191,26 @@ impl QuantizedVectors {
     }
 
     pub fn default_rescoring(&self) -> bool {
-        matches!(
-            self.storage_impl,
-            QuantizedVectorStorage::BinaryRam(_) | QuantizedVectorStorage::BinaryMmap(_)
-        )
+        match self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(_) => false,
+            QuantizedVectorStorage::ScalarMmap(_) => false,
+            QuantizedVectorStorage::ScalarChunkedMmap(_) => false,
+            QuantizedVectorStorage::PQRam(_) => false,
+            QuantizedVectorStorage::PQMmap(_) => false,
+            QuantizedVectorStorage::PQChunkedMmap(_) => false,
+            QuantizedVectorStorage::BinaryRam(_) => true,
+            QuantizedVectorStorage::BinaryMmap(_) => true,
+            QuantizedVectorStorage::BinaryChunkedMmap(_) => true,
+            QuantizedVectorStorage::ScalarRamMulti(_) => false,
+            QuantizedVectorStorage::ScalarMmapMulti(_) => false,
+            QuantizedVectorStorage::ScalarChunkedMmapMulti(_) => false,
+            QuantizedVectorStorage::PQRamMulti(_) => false,
+            QuantizedVectorStorage::PQMmapMulti(_) => false,
+            QuantizedVectorStorage::PQChunkedMmapMulti(_) => false,
+            QuantizedVectorStorage::BinaryRamMulti(_) => true,
+            QuantizedVectorStorage::BinaryMmapMulti(_) => true,
+            QuantizedVectorStorage::BinaryChunkedMmapMulti(_) => true,
+        }
     }
 
     pub fn is_multivector(&self) -> bool {

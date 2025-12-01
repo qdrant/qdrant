@@ -269,7 +269,7 @@ impl LocalShard {
         }
     }
 
-    pub(super) fn segments(&self) -> &RwLock<SegmentHolder> {
+    pub fn segments(&self) -> &RwLock<SegmentHolder> {
         self.segments.deref()
     }
 

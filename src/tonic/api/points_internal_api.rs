@@ -32,7 +32,8 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
-use crate::common::inference::{InferenceToken, extract_token};
+use crate::common::inference::params::InferenceParams;
+use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
@@ -56,7 +57,7 @@ impl PointsInternalService {
     async fn sync_internal(
         &self,
         sync_points_internal: SyncPointsInternal,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         let SyncPointsInternal {
             sync_points,
@@ -72,7 +73,7 @@ impl PointsInternalService {
             sync_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
-            inference_token,
+            inference_params,
         )
         .await?
         .into_inner();
@@ -83,7 +84,7 @@ impl PointsInternalService {
     async fn upsert_internal(
         &self,
         upsert_points_internal: UpsertPointsInternal,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         let UpsertPointsInternal {
             upsert_points,
@@ -102,7 +103,7 @@ impl PointsInternalService {
             upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
-            inference_token.clone(),
+            inference_params.clone(),
             hw_metrics,
         )
         .await
@@ -137,7 +138,7 @@ impl PointsInternalService {
     async fn update_vectors_internal(
         &self,
         update_vectors_internal: UpdateVectorsInternal,
-        inference_token: InferenceToken,
+        inference_params: InferenceParams,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         let UpdateVectorsInternal {
             update_vectors,
@@ -156,7 +157,7 @@ impl PointsInternalService {
             update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
-            inference_token.clone(),
+            inference_params.clone(),
             hw_metrics,
         )
         .await
@@ -456,8 +457,9 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(inference_token.clone(), None);
 
-        self.upsert_internal(request.into_inner(), inference_token)
+        self.upsert_internal(request.into_inner(), inference_params)
             .await
     }
 
@@ -477,8 +479,9 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let inference_token = extract_token(&request);
+        let inference_params = InferenceParams::new(inference_token.clone(), None);
 
-        self.update_vectors_internal(request.into_inner(), inference_token)
+        self.update_vectors_internal(request.into_inner(), inference_params)
             .await
     }
 
@@ -553,6 +556,9 @@ impl PointsInternal for PointsInternalService {
 
         let inference_token = extract_token(&request);
 
+        // Update operation doesn't specify explicit timeout yet
+        let inference_params = InferenceParams::new(inference_token.clone(), None);
+
         let request_inner = request.into_inner();
 
         let mut total_usage = HardwareUsage::default();
@@ -569,14 +575,16 @@ impl PointsInternal for PointsInternalService {
                     return Err(Status::invalid_argument("Update is missing"));
                 }
                 Some(update) => match update {
-                    Update::Sync(sync) => self.sync_internal(sync, inference_token.clone()).await?,
+                    Update::Sync(sync) => {
+                        self.sync_internal(sync, inference_params.clone()).await?
+                    }
                     Update::Upsert(upsert) => {
-                        self.upsert_internal(upsert, inference_token.clone())
+                        self.upsert_internal(upsert, inference_params.clone())
                             .await?
                     }
                     Update::Delete(delete) => self.delete_internal(delete).await?,
                     Update::UpdateVectors(update_vectors) => {
-                        self.update_vectors_internal(update_vectors, inference_token.clone())
+                        self.update_vectors_internal(update_vectors, inference_params.clone())
                             .await?
                     }
                     Update::DeleteVectors(delete_vectors) => {
@@ -788,7 +796,10 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
         let inference_token = extract_token(&request);
 
-        self.sync_internal(request.into_inner(), inference_token)
+        // Internal operation, we don't expect timeout here
+        let inference_params = InferenceParams::new(inference_token, None);
+
+        self.sync_internal(request.into_inner(), inference_params)
             .await
     }
 

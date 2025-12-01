@@ -783,17 +783,24 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn get_aggregated_telemetry_data(&self) -> CollectionsAggregatedTelemetry {
+    pub async fn get_aggregated_telemetry_data(
+        &self,
+        timeout: Duration,
+    ) -> CollectionResult<CollectionsAggregatedTelemetry> {
+        let start = std::time::Instant::now();
         let shards_holder = self.shards_holder.read().await;
 
         let mut shard_optimization_statuses = Vec::new();
         let mut vectors = 0;
 
         for shard in shards_holder.all_shards() {
-            let shard_optimization_status = shard
-                .get_optimization_status()
+            let shard_optimization_status = match shard
+                .get_optimization_status(timeout.saturating_sub(start.elapsed()))
                 .await
-                .unwrap_or(OptimizersStatus::Ok);
+            {
+                None => OptimizersStatus::Ok,
+                Some(status) => status?,
+            };
 
             shard_optimization_statuses.push(shard_optimization_status);
 
@@ -805,11 +812,11 @@ impl Collection {
             .max()
             .unwrap_or(OptimizersStatus::Ok);
 
-        CollectionsAggregatedTelemetry {
+        Ok(CollectionsAggregatedTelemetry {
             vectors,
             optimizers_status,
             params: self.collection_config.read().await.params.clone(),
-        }
+        })
     }
 
     pub async fn effective_optimizers_config(&self) -> CollectionResult<OptimizersConfig> {

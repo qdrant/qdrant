@@ -35,7 +35,7 @@ pub struct RemoteShardTelemetry {
     pub updates: OperationDurationStatistics,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
 pub struct LocalShardTelemetry {
     #[anonymize(false)]
     pub variant_name: Option<String>,

@@ -4,7 +4,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 import "json_with_int.proto";
-import "common.proto";
+import "qdrant_common.proto";
 
 enum Datatype {
   Default = 0;
@@ -790,10 +790,23 @@ message DeleteShardKeyRequest {
   optional uint64 timeout = 3; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
 
+message ListShardKeysRequest {
+  string collection_name = 1; // Name of the collection
+}
+
 message CreateShardKeyResponse {
   bool result = 1;
 }
 
 message DeleteShardKeyResponse {
   bool result = 1;
+}
+
+message ShardKeyDescription {
+  ShardKey key = 1;
+}
+
+message ListShardKeysResponse {
+  repeated ShardKeyDescription shard_keys = 1;
+  double time = 2; // Time spent to process
 }

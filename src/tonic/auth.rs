@@ -24,7 +24,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
     if path == "/qdrant.Qdrant/HealthCheck" || path == "/grpc.health.v1.Health/Check" {
         // Set default full access for health check endpoints
         let access = Access::full("Health check endpoints have full access without authentication");
-        let inference_token = crate::common::inference::InferenceToken(None);
+        let inference_token = crate::common::inference::token::InferenceToken(None);
 
         req.extensions_mut().insert::<Access>(access);
         req.extensions_mut().insert(inference_token);

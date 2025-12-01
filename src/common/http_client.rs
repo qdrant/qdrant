@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::{io, result};
 
+use common::defaults::APP_USER_AGENT;
 use fs_err as fs;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use storage::content_manager::errors::StorageError;
@@ -62,7 +63,7 @@ fn https_client(
     tls_config: Option<&TlsConfig>,
     verify_https_client_certificate: bool,
 ) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder().user_agent(APP_USER_AGENT.as_str());
 
     // Configure TLS root certificate and validation
     if let Some(tls_config) = tls_config {
