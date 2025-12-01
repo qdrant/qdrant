@@ -25,7 +25,6 @@ impl LocalShard {
         update_handler.wait_workers_stops().await
     }
 
-
     /// Handles updates to the optimizer configuration by rebuilding optimizers
     /// and restarting the update handler's workers with the new configuration.
     ///
