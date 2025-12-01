@@ -57,20 +57,21 @@ pub struct ForwardProxyShard {
 }
 
 impl ForwardProxyShard {
+    #[allow(clippy::result_large_err)]
     pub fn new(
         shard_id: ShardId,
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRingRouter>,
         filter: Option<Filter>,
-    ) -> CollectionResult<Self> {
+    ) -> Result<Self, (CollectionError, LocalShard)> {
         // Validate that `ForwardProxyShard` initialized correctly
 
         if resharding_hash_ring.is_some() && filter.is_some() {
-            return Err(CollectionError::forward_proxy_error(
+            return Err((CollectionError::forward_proxy_error(
                 remote_shard.peer_id,
                 "ForwardProxyShard cannot have both resharding_hash_ring and filter set at the same time".to_string(),
-            ));
+            ), wrapped_shard));
         }
 
         debug_assert!({
@@ -636,5 +637,9 @@ impl ShardOperation for ForwardProxyShard {
         local_shard
             .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
+    }
+
+    async fn stop_gracefully(self) {
+        self.wrapped_shard.stop_gracefully().await
     }
 }

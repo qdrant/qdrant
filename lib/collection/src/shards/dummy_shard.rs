@@ -200,4 +200,6 @@ impl ShardOperation for DummyShard {
     ) -> CollectionResult<FacetResponse> {
         self.dummy()
     }
+
+    async fn stop_gracefully(self) {}
 }

@@ -241,7 +241,15 @@ impl TableOfContent {
         {
             let mut write_collections = self.collections.write().await;
             write_collections.validate_collection_not_exists(collection_name)?;
-            write_collections.insert(collection_name.to_string(), collection);
+            let existing_collection =
+                write_collections.insert(collection_name.to_string(), collection);
+            if let Some(existing_collection) = existing_collection {
+                debug_assert!(
+                    false,
+                    "Collection `{collection_name}` was not expected to exist"
+                );
+                existing_collection.stop_gracefully().await;
+            }
         }
 
         drop(collection_create_guard);

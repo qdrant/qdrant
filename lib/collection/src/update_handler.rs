@@ -10,7 +10,6 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
-use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
@@ -249,7 +248,7 @@ impl UpdateHandler {
         if let Some(flush_stop) = self.flush_stop.take()
             && let Err(()) = flush_stop.send(())
         {
-            log::warn!("Failed to stop flush worker as it is already stopped.");
+            log::debug!("Can't stop flush worker as it is already stopped.");
         }
     }
 
@@ -270,16 +269,17 @@ impl UpdateHandler {
         }
 
         let mut opt_handles_guard = self.optimization_handles.lock().await;
-        let opt_handles = std::mem::take(&mut *opt_handles_guard);
-        let stopping_handles = opt_handles
-            .into_iter()
-            .filter_map(|h| h.stop())
-            .collect_vec();
 
-        for res in stopping_handles {
-            res.await?;
+        for handle in opt_handles_guard.iter() {
+            handle.ask_to_stop();
         }
 
+        // If the await fails, we would still keep the rest of handles.
+        while let Some(handle) = opt_handles_guard.pop() {
+            if let Some(join_handle) = handle.stop() {
+                join_handle.await?;
+            }
+        }
         Ok(())
     }
 
@@ -526,6 +526,14 @@ impl UpdateHandler {
         }
 
         Ok(())
+    }
+
+    /// Checks whether all update-related workers have stopped.
+    pub fn is_stopped(&self) -> bool {
+        self.update_worker.is_none()
+            && self.optimizer_worker.is_none()
+            && self.flush_worker.is_none()
+            && self.optimization_handles.blocking_lock().is_empty()
     }
 
     /// Checks the optimizer conditions.

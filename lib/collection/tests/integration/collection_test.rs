@@ -256,6 +256,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             .update_from_client_simple(assign_payload, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
+
+        collection.stop_gracefully().await;
     }
 
     let collection_path = collection_dir.path();
@@ -290,6 +292,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             assert_eq!(non_empty_payload.len(), 1)
         }
     }
+
+    loaded_collection.stop_gracefully().await;
     println!("Function end");
 }
 
@@ -870,7 +874,10 @@ async fn test_collection_local_load_initializing_not_stuck() {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
     // Create and unload collection
-    simple_collection_fixture(collection_dir.path(), 1).await;
+    simple_collection_fixture(collection_dir.path(), 1)
+        .await
+        .stop_gracefully()
+        .await;
 
     // Modify replica state file on disk, set state to Initializing
     // This is to simulate a situation where a collection was not fully created, we cannot create

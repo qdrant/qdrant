@@ -65,7 +65,7 @@ async fn test_fix_payload_indices() {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    drop(shard);
+    shard.stop_gracefully().await;
 
     payload_index_schema
         .write(|schema| {

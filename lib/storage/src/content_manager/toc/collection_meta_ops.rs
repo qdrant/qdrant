@@ -32,6 +32,9 @@ impl TableOfContent {
             .block_on(self.perform_collection_meta_op(operation))
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -199,12 +202,13 @@ impl TableOfContent {
         collection_name: &str,
     ) -> Result<bool, StorageError> {
         let _collection_create_guard = self.collection_create_lock.lock().await;
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            self.alias_persistence
-                .write()
-                .await
-                .remove_collection(collection_name)?;
 
+        self.alias_persistence
+            .write()
+            .await
+            .remove_collection(collection_name)?;
+
+        if let Some(removed) = self.collections.write().await.remove(collection_name) {
             let path = self.get_collection_path(collection_name);
 
             if let Some(state) = removed.resharding_state().await
@@ -216,8 +220,7 @@ impl TableOfContent {
                     state.key(),
                 );
             }
-
-            drop(removed);
+            removed.stop_gracefully().await;
 
             // Move collection to ".deleted" folder to prevent accidental reuse
             // the original collection path will be moved atomically within this
@@ -311,6 +314,9 @@ impl TableOfContent {
         Ok(true)
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn handle_resharding(
         &self,
         collection_id: CollectionId,
@@ -629,6 +635,9 @@ impl TableOfContent {
         Ok(())
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     async fn create_shard_key(&self, operation: CreateShardKey) -> Result<(), StorageError> {
         let use_initializing_state = self.is_distributed()
             && self

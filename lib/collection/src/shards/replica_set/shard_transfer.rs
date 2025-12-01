@@ -79,16 +79,25 @@ impl ShardReplicaSet {
             unreachable!()
         };
 
-        let proxy_shard = ForwardProxyShard::new(
+        let proxy_shard_res = ForwardProxyShard::new(
             self.shard_id,
             local_shard,
             remote_shard,
             resharding_hash_ring,
             filter,
-        )?;
-        let _ = local.insert(Shard::ForwardProxy(proxy_shard));
+        );
 
-        Ok(())
+        match proxy_shard_res {
+            Ok(proxy_shard) => {
+                let _ = local.insert(Shard::ForwardProxy(proxy_shard));
+                Ok(())
+            }
+            Err((err, local_shard)) => {
+                log::warn!("Failed to proxify shard, reverting to local shard: {err}");
+                let _ = local.insert(Shard::Local(local_shard));
+                Err(err)
+            }
+        }
     }
 
     /// Queue proxy our local shard, pointing to the remote shard.
@@ -471,11 +480,22 @@ impl ShardReplicaSet {
         };
 
         let (local_shard, remote_shard) = queue_proxy.forget_updates_and_finalize();
-        let forward_proxy =
-            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None, None)?;
-        let _ = local.insert(Shard::ForwardProxy(forward_proxy));
+        let forward_proxy_res =
+            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None, None);
 
-        Ok(())
+        match forward_proxy_res {
+            Ok(forward_proxy) => {
+                let _ = local.insert(Shard::ForwardProxy(forward_proxy));
+                Ok(())
+            }
+            Err((err, local_shard)) => {
+                log::warn!(
+                    "Failed to transform queue proxy shard into forward proxy, reverting to local shard: {err}"
+                );
+                let _ = local.insert(Shard::Local(local_shard));
+                Err(err)
+            }
+        }
     }
 
     pub async fn resolve_wal_delta(

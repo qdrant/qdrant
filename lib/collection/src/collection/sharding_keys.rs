@@ -133,11 +133,11 @@ impl Collection {
                     .await?;
             }
 
-            self.shards_holder.write().await.add_shard(
-                shard_id,
-                replica_set,
-                Some(shard_key.clone()),
-            )?;
+            self.shards_holder
+                .write()
+                .await
+                .add_shard(shard_id, replica_set, Some(shard_key.clone()))
+                .await?;
         }
 
         Ok(())

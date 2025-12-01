@@ -159,7 +159,9 @@ impl Collection {
             )
             .await?;
 
-            shard_holder.add_shard(shard_id, replica_set, shard_key)?;
+            shard_holder
+                .add_shard(shard_id, replica_set, shard_key)
+                .await?;
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
@@ -312,6 +314,11 @@ impl Collection {
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
         }
+    }
+
+    pub async fn stop_gracefully(self) {
+        let mut owned_holder = self.shards_holder.write().await;
+        owned_holder.stop_gracefully().await;
     }
 
     /// Check if stored version have consequent version.

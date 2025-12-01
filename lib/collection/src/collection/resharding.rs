@@ -22,6 +22,10 @@ impl Collection {
     }
 
     /// Start a new resharding operation
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn start_resharding<T, F>(
         &self,
         resharding_key: ReshardKey,
@@ -54,7 +58,9 @@ impl Collection {
                 None
             };
 
-            shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
+            shard_holder
+                .start_resharding_unchecked(resharding_key.clone(), replica_set)
+                .await?;
 
             if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;

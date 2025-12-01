@@ -382,6 +382,12 @@ impl ShardReplicaSet {
         replica_set
     }
 
+    pub async fn stop_gracefully(self) {
+        if let Some(local) = self.local.write().await.take() {
+            local.stop_gracefully().await;
+        }
+    }
+
     pub fn shard_key(&self) -> Option<&ShardKey> {
         self.shard_key.as_ref()
     }
@@ -595,8 +601,11 @@ impl ShardReplicaSet {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
-
+        if let Some(current_shard) = current_shard {
+            current_shard.stop_gracefully().await;
+        }
         LocalShard::clear(&self.shard_path).await?;
+
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),
@@ -617,16 +626,18 @@ impl ShardReplicaSet {
                 Ok(())
             }
             Err(err) => {
-                log::error!(
-                    "Failed to initialize local shard {:?}: {err}",
+                let error = format!(
+                    "Failed to initialize local shard at {:?}: {err}",
                     self.shard_path
                 );
-                *local = current_shard;
+                log::error!("{error}");
+                *local = Some(Shard::Dummy(DummyShard::new(error)));
                 Err(err)
             }
         }
     }
 
+    /// Replaces the local shard with the given one.
     pub async fn set_local(
         &self,
         local: LocalShard,
@@ -664,7 +675,7 @@ impl ShardReplicaSet {
 
         if let Some(removing_local) = removing_local {
             // stop ongoing tasks and delete data
-            drop(removing_local);
+            removing_local.stop_gracefully().await;
             LocalShard::clear(&self.shard_path).await?;
         }
         Ok(())
@@ -804,7 +815,10 @@ impl ShardReplicaSet {
                     | ReplicaState::ReshardingScaleDown => {
                         // No way we can provide up-to-date replica right away at this point,
                         // so we report a failure to consensus
-                        self.set_local(local_shard, Some(state)).await?;
+                        let existing = self.set_local(local_shard, Some(state)).await?;
+                        if let Some(existing) = existing {
+                            existing.stop_gracefully().await;
+                        }
                         self.notify_peer_failure(peer_id, Some(state));
                     }
 
@@ -815,7 +829,10 @@ impl ShardReplicaSet {
                     | ReplicaState::Recovery
                     | ReplicaState::Resharding
                     | ReplicaState::ActiveRead => {
-                        self.set_local(local_shard, Some(state)).await?;
+                        let existing = self.set_local(local_shard, Some(state)).await?;
+                        if let Some(existing) = existing {
+                            existing.stop_gracefully().await;
+                        }
                     }
                 }
 
@@ -839,6 +856,9 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
