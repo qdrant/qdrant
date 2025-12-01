@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
 use actix_web::http::StatusCode;
 use actix_web::http::header::ContentType;
@@ -9,14 +8,13 @@ use actix_web::web::Data;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use actix_web_validator::Query;
 use common::types::{DetailsLevel, TelemetryDetail};
-use schemars::JsonSchema;
+use request_params::TelemetryParam;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
-use validator::Validate;
 
+use crate::actix::api::service_api::request_params::MetricsParam;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
@@ -26,17 +24,40 @@ use crate::common::telemetry::TelemetryCollector;
 use crate::settings::ServiceConfig;
 use crate::tracing;
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct TelemetryParam {
-    pub anonymize: Option<bool>,
-    pub details_level: Option<usize>,
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
-}
+pub(crate) mod request_params {
+    use std::time::Duration;
 
-impl TelemetryParam {
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
+    use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+    use validator::Validate;
+
+    use crate::common::helpers::limit_and_convert_timeout_opt;
+
+    #[derive(Deserialize, Serialize, JsonSchema, Validate)]
+    pub struct TelemetryParam {
+        pub anonymize: Option<bool>,
+        pub details_level: Option<usize>,
+        #[validate(range(min = 1))]
+        timeout: Option<u64>,
+    }
+
+    impl TelemetryParam {
+        pub fn timeout(&self) -> Option<Duration> {
+            limit_and_convert_timeout_opt(self.timeout)
+        }
+    }
+
+    #[derive(Deserialize, Serialize, JsonSchema, Validate)]
+    pub struct MetricsParam {
+        pub anonymize: Option<bool>,
+        #[validate(range(min = 1))]
+        timeout: Option<u64>,
+    }
+
+    impl MetricsParam {
+        pub fn timeout(&self) -> Option<Duration> {
+            limit_and_convert_timeout_opt(self.timeout)
+        }
     }
 }
 
@@ -67,19 +88,6 @@ fn telemetry(
         };
         Ok(telemetry_data)
     })
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct MetricsParam {
-    pub anonymize: Option<bool>,
-    #[validate(range(min = 1))]
-    pub timeout: Option<u64>,
-}
-
-impl MetricsParam {
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.map(Duration::from_secs)
-    }
 }
 
 #[get("/metrics")]

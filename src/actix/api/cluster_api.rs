@@ -16,13 +16,12 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers;
 
 mod request_params {
-    use std::cmp;
     use std::time::Duration;
 
     use serde::Deserialize;
     use validator::Validate;
 
-    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+    use crate::common::helpers::limit_and_convert_timeout_opt;
 
     #[derive(Debug, Deserialize, Validate)]
     pub(super) struct QueryParams {
@@ -36,9 +35,7 @@ mod request_params {
     impl QueryParams {
         /// Returns the passed timeout, limited to 1h.
         pub fn timeout(&self) -> Option<Duration> {
-            self.timeout
-                .map(|timeout| cmp::min(timeout, HOUR_IN_SECONDS))
-                .map(Duration::from_secs)
+            limit_and_convert_timeout_opt(self.timeout)
         }
 
         pub fn force(&self) -> bool {

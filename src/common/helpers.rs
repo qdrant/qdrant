@@ -1,6 +1,7 @@
-use std::cmp::max;
+use std::cmp::{self, max};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use fs_err as fs;
 use tokio::runtime;
@@ -103,6 +104,19 @@ fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
 
 pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
     io::Error::other(err)
+}
+
+/// 1 hour as seconds.
+pub const HOUR_AS_SECONDS: u64 = 60 * 60;
+
+/// Limits the given timeout to 1h and returns it as `Duration`.
+pub fn limit_and_convert_timeout_opt(timeout: Option<u64>) -> Option<Duration> {
+    timeout.map(limit_and_convert_timeout)
+}
+
+/// Limits the given timeout to 1h and returns it as `Duration`.
+pub fn limit_and_convert_timeout(timeout: u64) -> Duration {
+    Duration::from_secs(cmp::min(timeout, HOUR_AS_SECONDS))
 }
 
 #[cfg(test)]

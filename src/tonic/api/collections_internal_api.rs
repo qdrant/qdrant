@@ -12,8 +12,8 @@ use storage::rbac::{Access, AccessRequirements, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
+use crate::common::helpers::limit_and_convert_timeout;
 use crate::tonic::api::collections_common::get;
-use crate::tonic::api::limit_timeout;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -98,7 +98,7 @@ impl CollectionsInternal for CollectionsInternalService {
         } = request;
         let state = state.try_into()?;
 
-        let timeout = limit_timeout(timeout);
+        let timeout = limit_and_convert_timeout(timeout);
 
         let collection_read = self
             .toc

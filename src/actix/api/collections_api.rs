@@ -17,13 +17,12 @@ use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
 pub(crate) mod request_params {
-    use std::cmp;
     use std::time::Duration;
 
     use serde::Deserialize;
     use validator::Validate;
 
-    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+    use crate::common::helpers::limit_and_convert_timeout_opt;
 
     #[derive(Debug, Deserialize, Validate)]
     pub struct WaitTimeout {
@@ -34,9 +33,7 @@ pub(crate) mod request_params {
     impl WaitTimeout {
         /// Returns the timeout, limited to 1h.
         pub fn timeout(&self) -> Option<Duration> {
-            self.timeout
-                .map(|i| cmp::min(i, HOUR_IN_SECONDS))
-                .map(Duration::from_secs)
+            limit_and_convert_timeout_opt(self.timeout)
         }
     }
 }
@@ -264,7 +261,7 @@ mod tests {
     use actix_web::web::Query;
 
     use super::WaitTimeout;
-    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+    use crate::common::helpers::HOUR_AS_SECONDS;
 
     #[test]
     fn timeout_is_deserialized() {
@@ -275,7 +272,7 @@ mod tests {
         let timeout: WaitTimeout = Query::from_query("timeout=9999").unwrap().0;
         assert_eq!(
             timeout.timeout(),
-            Some(Duration::from_secs(HOUR_IN_SECONDS))
+            Some(Duration::from_secs(HOUR_AS_SECONDS))
         );
     }
 }

@@ -221,13 +221,12 @@ async fn count_points(
 }
 
 mod request_params {
-    use std::cmp;
     use std::num::NonZeroU64;
     use std::time::Duration;
 
     use serde::Deserialize;
 
-    use crate::actix::api::read_params::HOUR_IN_SECONDS;
+    use crate::common::helpers::limit_and_convert_timeout_opt;
 
     #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
     pub struct CleanParams {
@@ -241,9 +240,7 @@ mod request_params {
     impl CleanParams {
         /// Returns the passed timeout, limited to 1h.
         pub fn timeout(&self) -> Option<Duration> {
-            self.timeout
-                .map(|timeout| cmp::min(timeout.get(), HOUR_IN_SECONDS))
-                .map(Duration::from_secs)
+            limit_and_convert_timeout_opt(self.timeout.map(|i| i.get()))
         }
     }
 }

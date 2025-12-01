@@ -33,13 +33,13 @@ use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
+use crate::common::helpers::limit_and_convert_timeout_opt;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
 use crate::common::query::*;
 use crate::common::strict_mode::*;
-use crate::tonic::api::limit_timeout_opt;
 
 pub(crate) fn convert_shard_selector_for_read(
     shard_id_selector: Option<ShardId>,
@@ -84,7 +84,7 @@ pub async fn search(
         sparse_indices,
     } = search_points;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let vector_internal =
         VectorInternal::from_vector_and_indices(vector, sparse_indices.map(|v| v.data));
@@ -259,7 +259,7 @@ pub async fn search_groups(
         ..
     } = search_point_groups;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let toc = toc_provider
         .check_strict_mode(&search_groups_request, &collection_name, timeout, &access)
@@ -304,7 +304,7 @@ pub async fn recommend(
     let collection_name = recommend_points.collection_name.clone();
     let read_consistency = recommend_points.read_consistency.clone();
     let shard_key_selector = recommend_points.shard_key_selector.clone();
-    let timeout = limit_timeout_opt(recommend_points.timeout);
+    let timeout = limit_and_convert_timeout_opt(recommend_points.timeout);
 
     let request =
         collection::operations::types::RecommendRequestInternal::try_from(recommend_points)?;
@@ -408,7 +408,7 @@ pub async fn recommend_groups(
         ..
     } = recommend_point_groups;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let toc = toc_provider
         .check_strict_mode(
@@ -559,7 +559,7 @@ pub async fn scroll(
         timeout,
     } = scroll_points;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let scroll_request = ScrollRequestInternal {
         offset: offset.map(|o| o.try_into()).transpose()?,
@@ -630,7 +630,7 @@ pub async fn count(
         timeout,
     } = count_points;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let count_request = collection::operations::types::CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
@@ -685,7 +685,7 @@ pub async fn get(
         timeout,
     } = get_points;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let point_request = PointRequestInternal {
         ids: ids
@@ -744,7 +744,7 @@ pub async fn query(
         .map(TryFrom::try_from)
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
-    let timeout = limit_timeout_opt(query_points.timeout);
+    let timeout = limit_and_convert_timeout_opt(query_points.timeout);
     let (request, inference_usage) =
         convert_query_points_from_grpc(query_points, inference_params).await?;
 
@@ -850,7 +850,7 @@ pub async fn query_groups(
         .clone()
         .map(TryFrom::try_from)
         .transpose()?;
-    let timeout = limit_timeout_opt(query_points.timeout);
+    let timeout = limit_and_convert_timeout_opt(query_points.timeout);
     let collection_name = query_points.collection_name.clone();
     let (request, inference_usage) =
         convert_query_point_groups_from_grpc(query_points, inference_params).await?;
@@ -902,7 +902,7 @@ pub async fn facet(
         timeout,
     } = facet_counts;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let facet_request = FacetParams {
         key: json_path_from_proto(&key)?,
@@ -964,7 +964,7 @@ pub async fn search_points_matrix(
         timeout,
     } = search_matrix_points;
 
-    let timeout = limit_timeout_opt(timeout);
+    let timeout = limit_and_convert_timeout_opt(timeout);
 
     let search_matrix_request = CollectionSearchMatrixRequest {
         filter: filter.map(TryInto::try_into).transpose()?,

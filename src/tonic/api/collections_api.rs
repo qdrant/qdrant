@@ -22,6 +22,7 @@ use tonic::{Request, Response, Status};
 
 use super::validate;
 use crate::common::collections::*;
+use crate::common::helpers::limit_and_convert_timeout_opt;
 use crate::tonic::api::collections_common::get;
 use crate::tonic::auth::extract_access;
 
@@ -233,6 +234,9 @@ impl Collections for CollectionsService {
             timeout,
             ..
         } = request.into_inner();
+
+        let timeout = limit_and_convert_timeout_opt(timeout);
+
         let result = do_update_collection_cluster(
             self.dispatcher.as_ref(),
             collection_name,
@@ -240,7 +244,7 @@ impl Collections for CollectionsService {
                 .ok_or_else(|| Status::new(tonic::Code::InvalidArgument, "empty operation"))?
                 .try_into()?,
             access,
-            timeout.map(std::time::Duration::from_secs),
+            timeout,
         )
         .await?;
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
@@ -286,7 +290,7 @@ impl Collections for CollectionsService {
             return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
         };
 
-        let timeout = timeout.map(std::time::Duration::from_secs);
+        let timeout = limit_and_convert_timeout_opt(timeout);
 
         let operation = ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
             create_sharding_key: request.try_into()?,
@@ -320,7 +324,7 @@ impl Collections for CollectionsService {
             return Err(Status::new(tonic::Code::InvalidArgument, "empty request"));
         };
 
-        let timeout = timeout.map(std::time::Duration::from_secs);
+        let timeout = limit_and_convert_timeout_opt(timeout);
 
         let operation = ClusterOperations::DropShardingKey(DropShardingKeyOperation {
             drop_sharding_key: request.try_into()?,
@@ -348,9 +352,7 @@ macro_rules! impl_with_timeout {
     ($operation:ty) => {
         impl WithTimeout for $operation {
             fn wait_timeout(&self) -> Option<Duration> {
-                self.timeout
-                    .map(|i| std::cmp::min(i, crate::actix::api::read_params::HOUR_IN_SECONDS))
-                    .map(Duration::from_secs)
+                limit_and_convert_timeout_opt(self.timeout)
             }
         }
     };

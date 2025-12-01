@@ -25,12 +25,12 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate;
+use crate::common::helpers::limit_and_convert_timeout_opt;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
-use crate::tonic::api::limit_timeout_opt;
 use crate::tonic::auth::extract_access;
 
 pub struct PointsService {
@@ -377,7 +377,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
 
-        let timeout = limit_timeout_opt(timeout);
+        let timeout = limit_and_convert_timeout_opt(timeout);
 
         let mut requests = Vec::new();
 
@@ -485,7 +485,7 @@ impl Points for PointsService {
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
-        let timeout = limit_timeout_opt(timeout);
+        let timeout = limit_and_convert_timeout_opt(timeout);
 
         let res = recommend_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -556,7 +556,7 @@ impl Points for PointsService {
 
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
-        let timeout = limit_timeout_opt(timeout);
+        let timeout = limit_and_convert_timeout_opt(timeout);
         let res = discover_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -599,10 +599,10 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+
+        let timeout = limit_and_convert_timeout_opt(request.get_ref().timeout);
+        let inference_params = InferenceParams::new(inference_token, timeout);
+
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -626,20 +626,17 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+
+        let timeout = limit_and_convert_timeout_opt(request.get_ref().timeout);
+        let inference_params = InferenceParams::new(inference_token, timeout);
 
         let request = request.into_inner();
         let QueryBatchPoints {
             collection_name,
             query_points,
             read_consistency,
-            timeout,
+            timeout: _,
         } = request;
-
-        let timeout = limit_timeout_opt(timeout);
 
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
@@ -665,10 +662,10 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+
+        let timeout = limit_and_convert_timeout_opt(request.get_ref().timeout);
+        let inference_params = InferenceParams::new(inference_token, timeout);
+
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
