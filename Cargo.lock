@@ -6492,6 +6492,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "shard",
  "smallvec",
  "sparse",
  "strum",
