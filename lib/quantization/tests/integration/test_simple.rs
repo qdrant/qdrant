@@ -5,13 +5,15 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_u8::EncodedVectorsU8;
+    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use rand::{Rng, SeedableRng};
+    use rstest::rstest;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
-    #[test]
-    fn test_dot_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_dot_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -38,6 +40,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -52,8 +55,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l2_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_l2_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -80,6 +84,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -94,8 +99,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l1_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_l1_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -126,6 +132,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -140,8 +147,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_dot_inverted_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_dot_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -168,6 +176,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -182,8 +191,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l2_inverted_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_l2_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -210,6 +220,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -224,8 +235,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l1_inverted_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_l1_inverted_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -256,6 +268,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -270,8 +283,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_dot_internal_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_dot_internal_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count: usize = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -297,6 +311,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -310,8 +325,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_dot_inverted_internal_simple() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_dot_inverted_internal_simple(#[case] method: ScalarQuantizationMethod) {
         let vectors_count: usize = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -337,6 +353,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -350,8 +367,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_u8_large_quantile() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_u8_large_quantile(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -378,6 +396,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -392,8 +411,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_sq_u8_encode_internal() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Int8)]
+    fn test_sq_u8_encode_internal(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 70;
         let error = 1e-3;
@@ -425,6 +445,7 @@ mod tests {
                 &vector_parameters,
                 vectors_count,
                 Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                method.clone(),
                 None,
                 &AtomicBool::new(false),
             )

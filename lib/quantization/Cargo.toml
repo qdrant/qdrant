@@ -39,6 +39,7 @@ quantization = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 num_threads = "0.1.6"
 rand_distr = { workspace = true }
+rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]

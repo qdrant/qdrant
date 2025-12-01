@@ -5,13 +5,15 @@ mod tests {
 
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::encoded_vectors_u8::EncodedVectorsU8;
+    use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use rand::{Rng, SeedableRng};
+    use rstest::rstest;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
 
-    #[test]
-    fn test_dot_neon() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Uint8)]
+    fn test_dot_neon(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -38,6 +40,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -52,8 +55,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l2_neon() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Uint8)]
+    fn test_l2_neon(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -80,6 +84,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
@@ -94,8 +99,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l1_neon() {
+    #[rstest]
+    #[case(ScalarQuantizationMethod::Uint8)]
+    fn test_l1_neon(#[case] method: ScalarQuantizationMethod) {
         let vectors_count = 129;
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
@@ -122,6 +128,7 @@ mod tests {
             &vector_parameters,
             vectors_count,
             None,
+            method,
             None,
             &AtomicBool::new(false),
         )
