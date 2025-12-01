@@ -1,5 +1,6 @@
 use std::mem::{align_of, size_of};
 use std::path::Path;
+use std::sync::LazyLock;
 use std::{io, mem, ptr};
 
 use fs_err as fs;
@@ -9,6 +10,19 @@ use memmap2::{Mmap, MmapMut};
 use crate::madvise::{self, AdviceSetting, Madviseable};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
+
+/// If multiple mmaps to the same file are supported in this environment
+///
+/// Some environments corrupt data on the file system if multiple memory maps are opened on the
+/// same piece of data. This variable allows disabling the use of multiple memory maps at runtime.
+/// An example of such environment is Docker on Windows with a mount into Windows.
+pub static MULTI_MMAP_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
+    let supported = std::env::var_os("QDRANT_NO_MULTI_MMAP").is_none_or(|val| val.is_empty());
+    if !supported {
+        log::warn!("QDRANT_NO_MULTI_MMAP is set, you may see reduced performance");
+    }
+    supported
+});
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
     if path.exists() {

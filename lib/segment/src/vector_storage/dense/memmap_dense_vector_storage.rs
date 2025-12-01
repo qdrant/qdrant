@@ -43,11 +43,10 @@ pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self) {
         if let Some(mmap_store) = &self.mmap_store {
-            mmap_store.populate()?;
+            mmap_store.populate();
         }
-        Ok(())
     }
 
     /// Drop disk cache.

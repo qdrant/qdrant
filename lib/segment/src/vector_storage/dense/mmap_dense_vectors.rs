@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 use fs_err::{File, OpenOptions};
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops;
+use memory::mmap_ops::{self, MULTI_MMAP_IS_SUPPORTED};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
 
@@ -34,13 +34,16 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Memory mapped file for vector data
+    /// Main vector data mmap for read/write
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
+    /// Best suited for random reads.
     mmap: Arc<Mmap>,
-    /// Same as `mmap`, but with `Advice::Sequential` set
-    /// for better performance when reading vectors sequentially.
-    mmap_sequential: Arc<Mmap>,
+    /// Read-only mmap best suited for sequential reads
+    ///
+    /// `None` on platforms that do not support multiple memory maps to the same file.
+    /// Use [`mmap_seq`] utility function to access this mmap if available.
+    _mmap_seq: Option<Arc<Mmap>>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Mutex<Option<UringReader<T>>>,
@@ -63,12 +66,18 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         let mmap = mmap_ops::open_read_mmap(vectors_path, AdviceSetting::Global, false)
             .describe("Open mmap for reading")?;
 
-        let seq_mmap = mmap_ops::open_read_mmap(
-            vectors_path,
-            AdviceSetting::Advice(Advice::Sequential),
-            false,
-        )
-        .describe("Open mmap for sequential reading")?;
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            let mmap_seq = mmap_ops::open_read_mmap(
+                vectors_path,
+                AdviceSetting::Advice(Advice::Sequential),
+                false,
+            )
+            .describe("Open mmap for sequential reading")?;
+            Some(Arc::new(mmap_seq))
+        } else {
+            None
+        };
 
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<T>();
 
@@ -102,7 +111,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             dim,
             num_vectors,
             mmap: mmap.into(),
-            mmap_sequential: seq_mmap.into(),
+            _mmap_seq: mmap_seq,
             uring_reader: Mutex::new(uring_reader),
             deleted,
             deleted_count,
@@ -130,9 +139,16 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         self.dim * size_of::<T>()
     }
 
+    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
+    #[inline]
+    fn mmap_seq(&self) -> Arc<Mmap> {
+        #[expect(clippy::used_underscore_binding)]
+        self._mmap_seq.clone().unwrap_or_else(|| self.mmap.clone())
+    }
+
     fn raw_vector_offset<P: AccessPattern>(&self, offset: usize) -> &[T] {
         let mmap = if P::IS_SEQUENTIAL {
-            &self.mmap_sequential
+            &self.mmap_seq()
         } else {
             &self.mmap
         };
@@ -236,9 +252,11 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
-        self.mmap_sequential.populate();
-        Ok(())
+    pub fn populate(&self) {
+        #[expect(clippy::used_underscore_binding)]
+        if let Some(mmap_seq) = &self._mmap_seq {
+            mmap_seq.populate();
+        }
     }
 }
 

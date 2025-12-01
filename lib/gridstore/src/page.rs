@@ -4,15 +4,24 @@ use fs_err as fs;
 use memmap2::{Mmap, MmapMut};
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
+use memory::mmap_ops::{
+    MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
+};
 
 use crate::tracker::BlockOffset;
 
 #[derive(Debug)]
 pub(crate) struct Page {
     path: PathBuf,
+    /// Main data mmap for read/write
+    ///
+    /// Best suited for random reads.
     mmap: MmapMut,
-    mmap_seq: Mmap,
+    /// Read-only mmap best suited for sequential reads
+    ///
+    /// `None` on platforms that do not support multiple memory maps to the same file.
+    /// Use [`mmap_seq`] utility function to access this mmap if available.
+    _mmap_seq: Option<Mmap>,
 }
 
 impl Page {
@@ -26,13 +35,23 @@ impl Page {
         create_and_ensure_length(path, size).map_err(|err| err.to_string())?;
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
             .map_err(|err| err.to_string())?;
-        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-            .map_err(|err| err.to_string())?;
+
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            Some(
+                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
+                    .map_err(|err| err.to_string())?,
+            )
+        } else {
+            None
+        };
+
         let path = path.to_path_buf();
+
         Ok(Page {
             path,
             mmap,
-            mmap_seq,
+            _mmap_seq: mmap_seq,
         })
     }
 
@@ -44,14 +63,33 @@ impl Page {
         }
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
             .map_err(|err| err.to_string())?;
-        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-            .map_err(|err| err.to_string())?;
+
+        // Only open second mmap for sequential reads if supported
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            Some(
+                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
+                    .map_err(|err| err.to_string())?,
+            )
+        } else {
+            None
+        };
+
         let path = path.to_path_buf();
         Ok(Page {
             path,
             mmap,
-            mmap_seq,
+            _mmap_seq: mmap_seq,
         })
+    }
+
+    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
+    #[inline]
+    fn mmap_seq(&self) -> &[u8] {
+        #[expect(clippy::used_underscore_binding)]
+        self._mmap_seq
+            .as_ref()
+            .map(|m| m.as_ref())
+            .unwrap_or(self.mmap.as_ref())
     }
 
     /// Write a value into the page
@@ -106,7 +144,7 @@ impl Page {
     ) -> (&[u8], usize) {
         if READ_SEQUENTIAL {
             Self::read_value_with_generic_storage(
-                &self.mmap_seq,
+                self.mmap_seq(),
                 block_offset,
                 length,
                 block_size_bytes,
@@ -144,14 +182,18 @@ impl Page {
     /// Delete the page from the filesystem.
     #[allow(dead_code)]
     pub fn delete_page(self) {
-        drop(self.mmap);
+        #[expect(clippy::used_underscore_binding)]
+        drop((self.mmap, self._mmap_seq));
         fs::remove_file(&self.path).unwrap();
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
-        self.mmap_seq.populate();
+        #[expect(clippy::used_underscore_binding)]
+        if let Some(mmap_seq) = &self._mmap_seq {
+            mmap_seq.populate();
+        }
     }
 
     /// Drop disk cache.
