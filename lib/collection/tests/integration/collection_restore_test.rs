@@ -49,6 +49,8 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
+
+        collection.stop_gracefully().await;
     }
 
     let collection_path = collection_dir.path();
@@ -94,6 +96,8 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
+
+        collection.stop_gracefully().await;
     }
     let collection_path = collection_dir.path();
     let collection = load_local_collection(
@@ -175,6 +179,8 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
+
+        collection.stop_gracefully().await;
     }
 
     let collection_path = collection_dir.path();
