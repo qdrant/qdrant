@@ -23,8 +23,9 @@ impl Drop for LocalShard {
         //
         // However.
         // It is not possible to explicitly catch all cases of LocalShard being dropped.
-        // For example, then the service is shutdown by interruption, we might not have a
-        // deep enough control over the shutdown sequence.
+        // For example, then the service is shutdown by interruption, we might not have enough
+        // control over the shutdown sequence. Or we might simply have forgotten to gracefully
+        // shutdown before drop.
         // So we have to assume, that it is fine to not await for explicit shutdown in some cases.
         // But we still want to call explicit shutdown on all removes and internal operations.
         if !already_stopped {
