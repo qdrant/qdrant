@@ -573,7 +573,7 @@ impl<V> Gridstore<V> {
     /// Create flusher that durably persists all pending changes when invoked
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
-        // Weak references to detect if the instance has been already dropped
+
         let pages = Arc::downgrade(&self.pages);
         let tracker = Arc::downgrade(&self.tracker);
         let bitmask = Arc::downgrade(&self.bitmask);
