@@ -5,6 +5,15 @@ use crate::update_handler::UpdateSignal;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
+        if self.is_gracefully_stopped {
+            return;
+        }
+
+        log::debug!(
+            "Local shard {} is not explicitly stopped before drop. Attempting to stop background workers.",
+            self.shard_path().display()
+        );
+
         // Normally we expect, that LocalShard should be explicitly stopped in asynchronous
         // runtime before being dropped.
         // We want this because:

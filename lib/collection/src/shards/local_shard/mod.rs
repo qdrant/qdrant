@@ -114,6 +114,8 @@ pub struct LocalShard {
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 
+    is_gracefully_stopped: bool,
+
     /// Update operation lock
     /// The lock, which must prevent updates critical sections of other operations, which
     /// are not compatible with updates.
@@ -266,6 +268,7 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
+            is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
         }
     }

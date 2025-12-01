@@ -70,6 +70,8 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             .points_count,
         Some(2),
     );
+
+    collection.stop_gracefully().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -281,4 +283,6 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         Value::String(value) => assert_eq!("v4", value),
         _ => panic!("unexpected type"),
     };
+
+    collection.stop_gracefully().await;
 }

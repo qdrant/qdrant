@@ -391,7 +391,7 @@ impl ShardOperation for LocalShard {
     }
 
     /// Finishes ongoing update tasks
-    async fn stop_gracefully(self) {
+    async fn stop_gracefully(mut self) {
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
             log::warn!("Error sending stop signal to update handler: {err}");
         }
@@ -401,5 +401,9 @@ impl ShardOperation for LocalShard {
         if let Err(err) = self.wait_update_workers_stop().await {
             log::warn!("Update workers failed with: {err}");
         }
+
+        self.is_gracefully_stopped = true;
+
+        drop(self);
     }
 }
