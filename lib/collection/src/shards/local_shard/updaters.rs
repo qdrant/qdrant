@@ -25,34 +25,6 @@ impl LocalShard {
         update_handler.wait_workers_stops().await
     }
 
-    /// Synchronously asks update workers to stop
-    ///
-    /// This function doesn't wait for workers to actually stop, but it should finish quickly.
-    /// Returns true if the workers were already stopped.
-    /// Returns false if workers might still be running.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if called from async runtime.
-    /// That includes sync functions called from async context.
-    pub fn blocking_ask_workers_to_stop(&self) -> bool {
-        {
-            let mut update_handler = self.update_handler.blocking_lock();
-            if update_handler.is_stopped() {
-                return true;
-            }
-            update_handler.stop_flush_worker();
-        }
-
-        // This can block longer, if the channel is full
-        // If channel is closed, assume it is already stopped
-        if let Err(err) = self.update_sender.load().blocking_send(UpdateSignal::Stop) {
-            log::trace!("Error sending update signal to update handler: {err}");
-        }
-
-        false
-    }
-
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;

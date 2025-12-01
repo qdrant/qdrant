@@ -601,8 +601,11 @@ impl ShardReplicaSet {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
-
+        if let Some(current_shard) = current_shard {
+            current_shard.stop_gracefully().await;
+        }
         LocalShard::clear(&self.shard_path).await?;
+
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),
@@ -620,17 +623,15 @@ impl ShardReplicaSet {
         match local_shard_res {
             Ok(local_shard) => {
                 *local = Some(Shard::Local(local_shard));
-                if let Some(current_shard) = current_shard {
-                    current_shard.stop_gracefully().await;
-                }
                 Ok(())
             }
             Err(err) => {
-                log::error!(
-                    "Failed to initialize local shard {:?}: {err}",
+                let error = format!(
+                    "Failed to initialize local shard at {:?}: {err}",
                     self.shard_path
                 );
-                *local = current_shard;
+                log::error!("{error}");
+                *local = Some(Shard::Dummy(DummyShard::new(error)));
                 Err(err)
             }
         }

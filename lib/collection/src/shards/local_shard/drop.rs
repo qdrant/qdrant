@@ -1,20 +1,10 @@
 use std::thread;
 
 use crate::shards::local_shard::LocalShard;
+use crate::update_handler::UpdateSignal;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
-        // Drop might happen in the runtime, so we need to spawn a thread to do blocking operations.
-        let already_stopped = thread::scope(|s| {
-            let handle = thread::Builder::new()
-                .name("drop-shard".to_string())
-                .spawn_scoped(s, || self.blocking_ask_workers_to_stop());
-            handle
-                .expect("Failed to create thread for shard drop")
-                .join()
-                .expect("Drop shard thread panicked")
-        });
-
         // Normally we expect, that LocalShard should be explicitly stopped in asynchronous
         // runtime before being dropped.
         // We want this because:
@@ -28,8 +18,38 @@ impl Drop for LocalShard {
         // shutdown before drop.
         // So we have to assume, that it is fine to not await for explicit shutdown in some cases.
         // But we still want to call explicit shutdown on all removes and internal operations.
-        if !already_stopped {
-            log::debug!("Dropping LocalShard while it is not already stopped");
+
+        let update_handler = self.update_handler.clone();
+        let update_sender = self.update_sender.load().clone();
+
+        // Operation might happen in the runtime, so we need to spawn a thread to do blocking operations.
+        let handle_res = thread::Builder::new()
+            .name("drop-shard".to_string())
+            .spawn(move || {
+                {
+                    let mut update_handler = update_handler.blocking_lock();
+                    if update_handler.is_stopped() {
+                        return true;
+                    }
+                    update_handler.stop_flush_worker();
+                }
+
+                // This can block longer, if the channel is full
+                // If channel is closed, assume it is already stopped
+                if let Err(err) = update_sender.blocking_send(UpdateSignal::Stop) {
+                    log::trace!("Error sending update signal to update handler: {err}");
+                }
+                false
+            });
+
+        match handle_res {
+            Ok(_) => {
+                // We spawned a thread, but we can't wait for it here, because we are in Drop.
+                // So we just let it run.
+            }
+            Err(err) => {
+                log::warn!("Failed to background ask workers to stop: {err:?}");
+            }
         }
     }
 }
