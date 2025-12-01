@@ -6,7 +6,6 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
 
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
@@ -19,15 +18,11 @@ use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
-use ::api::grpc::qdrant::qdrant_internal_server::{QdrantInternal, QdrantInternalServer};
+use ::api::grpc::qdrant::qdrant_internal_server::QdrantInternalServer;
 use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
-use ::api::grpc::qdrant::{
-    GetConsensusCommitRequest, GetConsensusCommitResponse, GetPeerTelemetryRequest,
-    GetPeerTelemetryResponse, HealthCheckReply, HealthCheckRequest, WaitOnConsensusCommitRequest,
-    WaitOnConsensusCommitResponse,
-};
+use ::api::grpc::qdrant::{HealthCheckReply, HealthCheckRequest};
 use ::api::rest::models::VersionInfo;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -49,6 +44,7 @@ use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
+use crate::tonic::api::qdrant_internal_api::QdrantInternalService;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
 
 #[derive(Default)]
@@ -79,59 +75,6 @@ impl Health for HealthService {
         };
 
         Ok(Response::new(response))
-    }
-}
-
-pub struct QdrantInternalService {
-    /// Qdrant settings
-    settings: Settings,
-    /// Consensus state
-    consensus_state: ConsensusStateRef,
-}
-
-impl QdrantInternalService {
-    fn new(settings: Settings, consensus_state: ConsensusStateRef) -> Self {
-        Self {
-            settings,
-            consensus_state,
-        }
-    }
-}
-
-#[tonic::async_trait]
-impl QdrantInternal for QdrantInternalService {
-    async fn get_consensus_commit(
-        &self,
-        _: tonic::Request<GetConsensusCommitRequest>,
-    ) -> Result<Response<GetConsensusCommitResponse>, Status> {
-        let persistent = self.consensus_state.persistent.read();
-        let commit = persistent.state.hard_state.commit as _;
-        let term = persistent.state.hard_state.term as _;
-        Ok(Response::new(GetConsensusCommitResponse { commit, term }))
-    }
-
-    async fn wait_on_consensus_commit(
-        &self,
-        request: Request<WaitOnConsensusCommitRequest>,
-    ) -> Result<Response<WaitOnConsensusCommitResponse>, Status> {
-        let request = request.into_inner();
-        let commit = request.commit as u64;
-        let term = request.term as u64;
-        let timeout = Duration::from_secs(request.timeout as u64);
-        let consensus_tick = Duration::from_millis(self.settings.cluster.consensus.tick_period_ms);
-        let ok = self
-            .consensus_state
-            .wait_for_consensus_commit(commit, term, consensus_tick, timeout)
-            .await
-            .is_ok();
-        Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
-    }
-
-    async fn get_peer_telemetry(
-        &self,
-        _request: Request<GetPeerTelemetryRequest>,
-    ) -> Result<Response<GetPeerTelemetryResponse>, Status> {
-        Err(Status::unimplemented("Not implemented"))
     }
 }
 
