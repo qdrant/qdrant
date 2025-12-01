@@ -170,6 +170,9 @@ impl Shard {
         }
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => local_shard.on_optimizer_config_update().await,

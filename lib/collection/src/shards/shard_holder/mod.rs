@@ -213,7 +213,8 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// ## Cancel Safety
+    /// ## Cancel safety
+    ///
     /// This function is **not** cancel safe.
     pub async fn add_shard(
         &mut self,

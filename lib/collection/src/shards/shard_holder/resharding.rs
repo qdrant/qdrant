@@ -110,7 +110,8 @@ impl ShardHolder {
     }
 
     // TODO: do not leave broken intermediate state if this fails midway?
-    /// ## Cancel Safety
+    /// ## Cancel safety
+    ///
     /// This function is **not** cancel safe.
     pub async fn start_resharding_unchecked(
         &mut self,

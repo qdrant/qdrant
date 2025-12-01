@@ -32,6 +32,9 @@ impl TableOfContent {
             .block_on(self.perform_collection_meta_op(operation))
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
@@ -311,6 +314,9 @@ impl TableOfContent {
         Ok(true)
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn handle_resharding(
         &self,
         collection_id: CollectionId,
@@ -629,6 +635,9 @@ impl TableOfContent {
         Ok(())
     }
 
+    /// ## Cancel safety
+    ///
+    /// This function is **not** cancel safe.
     async fn create_shard_key(&self, operation: CreateShardKey) -> Result<(), StorageError> {
         let use_initializing_state = self.is_distributed()
             && self

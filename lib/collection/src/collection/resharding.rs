@@ -22,6 +22,10 @@ impl Collection {
     }
 
     /// Start a new resharding operation
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn start_resharding<T, F>(
         &self,
         resharding_key: ReshardKey,
