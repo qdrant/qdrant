@@ -1,0 +1,42 @@
+version: '3'
+services:
+  qdrant_primary:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:dev}
+    hostname: qdrant_primary
+    expose:
+      - 6335
+    ports:
+      - '6333:6333'
+      - '6334:6334'
+    environment:
+      - QDRANT__CLUSTER__ENABLED=true
+      - QDRANT__SERVICE__HARDWARE_REPORTING=true
+      - QDRANT__LOG_LEVEL=DEBUG
+      - QDRANT__FEATURE_FLAGS__ALL=${QDRANT__FEATURE_FLAGS__ALL:-true}
+    command: ['./qdrant', '--uri', 'http://qdrant_primary:6335']
+
+  qdrant_2:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:dev}
+    hostname: qdrant_2
+    ports:
+      - '6336:6333'
+      - '6337:6334'
+    environment:
+      - QDRANT__CLUSTER__ENABLED=true
+      - QDRANT__SERVICE__HARDWARE_REPORTING=true
+      - QDRANT__LOG_LEVEL=DEBUG
+      - QDRANT__FEATURE_FLAGS__ALL=${QDRANT__FEATURE_FLAGS__ALL:-true}
+    command: bash -c "sleep 5 && ./qdrant --bootstrap 'http://qdrant_primary:6335' --uri 'http://qdrant_2:6335'"
+
+  qdrant_3:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:dev}
+    hostname: qdrant_3
+    ports:
+      - '6338:6333'
+      - '6339:6334'
+    environment:
+      - QDRANT__CLUSTER__ENABLED=true
+      - QDRANT__SERVICE__HARDWARE_REPORTING=true
+      - QDRANT__LOG_LEVEL=DEBUG
+      - QDRANT__FEATURE_FLAGS__ALL=${QDRANT__FEATURE_FLAGS__ALL:-true}
+    command: bash -c "sleep 5 && ./qdrant --bootstrap 'http://qdrant_primary:6335' --uri 'http://qdrant_3:6335'"
