@@ -44,6 +44,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 segment = { path = "../segment", default-features = false, features = ["testing"] }
+shard = { path = ".", default-features = false, features = ["testing"] }
 
 fs-err = { workspace = true }
 proptest = { workspace = true }
