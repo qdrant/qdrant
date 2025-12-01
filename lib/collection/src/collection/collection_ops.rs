@@ -280,12 +280,20 @@ impl Collection {
     ///
     /// Partially blocking. Stopping existing optimizers is blocking. Starting new optimizers is
     /// not blocking.
+    ///
+    /// ## Cancel safety
+    ///
+    /// This function is cancel safe, and will always run to completion.
     pub async fn recreate_optimizers_blocking(&self) -> CollectionResult<()> {
-        let shard_holder = self.shards_holder.read().await;
-        let updates = shard_holder
-            .all_shards()
-            .map(|replica_set| replica_set.on_optimizer_config_update());
-        future::try_join_all(updates).await?;
+        let shards_holder = self.shards_holder.clone();
+        tokio::task::spawn(async move {
+            let shard_holder = shards_holder.read().await;
+            let updates = shard_holder
+                .all_shards()
+                .map(|replica_set| replica_set.on_optimizer_config_update());
+            future::try_join_all(updates).await
+        })
+        .await??;
         Ok(())
     }
 
