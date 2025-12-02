@@ -14,6 +14,11 @@ impl Drop for LocalShard {
             self.shard_path().display()
         );
 
+        #[cfg(feature = "staging")]
+        {
+            log::debug!("{}", std::backtrace::Backtrace::force_capture());
+        }
+
         // Normally we expect, that LocalShard should be explicitly stopped in asynchronous
         // runtime before being dropped.
         // We want this because:
