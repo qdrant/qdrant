@@ -280,7 +280,7 @@ tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fbb2f2a1603222df3f8a34cc6ae2c93ceffbc172" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "b03a156b0ffdbe8109b2c3c409ce3be2ec6d229e" }
 zerocopy = { version = "0.8.31", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
