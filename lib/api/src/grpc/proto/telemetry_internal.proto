@@ -10,6 +10,8 @@ message GetPeerTelemetryRequest {
   uint64 peer_id = 1;
   // The level of detail needed
   uint32 details_level = 2;
+  // Timeout in secs for the request
+  uint64 timeout = 3;
 }
 
 message GetPeerTelemetryResponse {

@@ -62,10 +62,6 @@ pub struct TelemetryData {
 }
 
 impl TelemetryCollector {
-    pub fn reporting_id(&self) -> String {
-        self.process_id.to_string()
-    }
-
     pub fn generate_id() -> Uuid {
         Uuid::new_v4()
     }

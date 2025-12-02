@@ -1,15 +1,25 @@
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetConsensusCommitRequest, GetConsensusCommitResponse, GetPeerTelemetryRequest,
-    GetPeerTelemetryResponse, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
+    ClusterTelemetry, CollectionTelemetry, GetConsensusCommitRequest, GetConsensusCommitResponse,
+    GetPeerTelemetryRequest, GetPeerTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
+    WaitOnConsensusCommitResponse,
 };
-use std::time::Duration;
+use common::types::{DetailsLevel, TelemetryDetail};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
+use storage::rbac::Access;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+use crate::common::telemetry::{TelemetryCollector, TelemetryData};
+use crate::common::telemetry_ops::collections_telemetry::CollectionTelemetryEnum;
 use crate::settings::Settings;
 
 pub struct QdrantInternalService {
+    /// Telemetry collector
+    telemetry_collector: Arc<Mutex<TelemetryCollector>>,
     /// Qdrant settings
     settings: Settings,
     /// Consensus state
@@ -17,8 +27,13 @@ pub struct QdrantInternalService {
 }
 
 impl QdrantInternalService {
-    pub fn new(settings: Settings, consensus_state: ConsensusStateRef) -> Self {
+    pub fn new(
+        telemetry_collector: Arc<Mutex<TelemetryCollector>>,
+        settings: Settings,
+        consensus_state: ConsensusStateRef,
+    ) -> Self {
         Self {
+            telemetry_collector,
             settings,
             consensus_state,
         }
@@ -56,8 +71,68 @@ impl QdrantInternal for QdrantInternalService {
 
     async fn get_peer_telemetry(
         &self,
-        _request: Request<GetPeerTelemetryRequest>,
+        request: Request<GetPeerTelemetryRequest>,
     ) -> Result<Response<GetPeerTelemetryResponse>, Status> {
-        Err(Status::unimplemented("not yet implemented"))
+        let request = request.into_inner();
+
+        if request.details_level < 2 {
+            return Err(Status::invalid_argument(
+                "details_level for internal service must be >= 2",
+            ));
+        }
+
+        let details_level = DetailsLevel::from(request.details_level.max(2) as usize);
+
+        let detail = TelemetryDetail {
+            level: details_level,
+            histograms: false,
+        };
+
+        let timing = Instant::now();
+        let timeout = Duration::from_secs(request.timeout);
+
+        let access = Access::full("internal service");
+
+        let telemetry_collector = self.telemetry_collector.lock().await;
+        let telemetry_data = telemetry_collector
+            .prepare_data(&access, detail, Some(timeout))
+            .await?;
+
+        let TelemetryData {
+            id: _,
+            app: _,
+            collections,
+            cluster,
+            requests: _,
+            memory: _,
+            hardware: _,
+        } = telemetry_data;
+
+        let collections = collections
+            .collections
+            .into_iter()
+            .flatten()
+            .filter_map(|telemetry_enum| {
+                match telemetry_enum {
+                    CollectionTelemetryEnum::Full(collection_telemetry) => {
+                        let telemetry = CollectionTelemetry::from(*collection_telemetry);
+                        let collection_name = telemetry.id.clone();
+                        Some((collection_name, telemetry))
+                    }
+                    // This only happens when details_level is < 2, which we explicitly fail
+                    CollectionTelemetryEnum::Aggregated(_) => None,
+                }
+            })
+            .collect();
+
+        let response = GetPeerTelemetryResponse {
+            result: Some(PeerTelemetry {
+                collections,
+                cluster: cluster.map(ClusterTelemetry::from),
+            }),
+            time: timing.elapsed().as_secs_f64(),
+        };
+
+        Ok(Response::new(response))
     }
 }

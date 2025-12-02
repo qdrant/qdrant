@@ -12450,12 +12450,12 @@ pub mod points_internal_server {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPeerTelemetryRequest {
-    /// The peer id to ask for telemetry
-    #[prost(uint64, tag = "1")]
-    pub peer_id: u64,
     /// The level of detail needed
-    #[prost(uint32, tag = "2")]
+    #[prost(uint32, tag = "1")]
     pub details_level: u32,
+    /// Timeout in secs for the request
+    #[prost(uint64, tag = "2")]
+    pub timeout: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
