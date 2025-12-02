@@ -38,6 +38,7 @@ log = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
+fs-err = { workspace = true, features = ["debug"] }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
 sparse = { path = ".", features = ["testing"] }

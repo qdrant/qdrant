@@ -25,3 +25,4 @@ wal = { workspace = true }
 
 [dev-dependencies]
 anyhow = "1.0"
+fs-err = { workspace = true, features = ["debug"] }
