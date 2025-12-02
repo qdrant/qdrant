@@ -28,6 +28,7 @@ use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use fs_err as fs;
 use memory::checkfs::{check_fs_info, check_mmap_functionality};
+use memory::mmap_ops::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -220,37 +221,45 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&settings.storage.storage_path)?;
 
     // Check if the filesystem is compatible with Qdrant
+    let mmaps_working;
     match check_fs_info(&settings.storage.storage_path) {
-        memory::checkfs::FsCheckResult::Good => {} // Do nothing
+        memory::checkfs::FsCheckResult::Good => {
+            mmaps_working = true;
+        }
         memory::checkfs::FsCheckResult::Unknown(details) => {
             match check_mmap_functionality(&settings.storage.storage_path) {
                 Ok(true) => {
                     log::warn!(
                         "There is a potential issue with the filesystem for storage path {}. Details: {details}",
-                        settings.storage.storage_path
+                        settings.storage.storage_path,
                     );
+                    mmaps_working = true;
                 }
                 Ok(false) => {
                     log::error!(
                         "Filesystem check failed for storage path {}. Details: {details}",
-                        settings.storage.storage_path
+                        settings.storage.storage_path,
                     );
+                    mmaps_working = false;
                 }
                 Err(e) => {
                     log::error!(
                         "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
-                        settings.storage.storage_path
+                        settings.storage.storage_path,
                     );
+                    mmaps_working = false;
                 }
             }
         }
         memory::checkfs::FsCheckResult::Bad(details) => {
             log::error!(
                 "Filesystem check failed for storage path {}. Details: {details}",
-                settings.storage.storage_path
+                settings.storage.storage_path,
             );
+            mmaps_working = false;
         }
     }
+    let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
 
     // Report feature flags that are enabled for easier debugging
     let flags = feature_flags();

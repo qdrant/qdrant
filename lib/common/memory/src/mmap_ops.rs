@@ -1,6 +1,6 @@
 use std::mem::{align_of, size_of};
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::{io, mem, ptr};
 
 use fs_err as fs;
@@ -17,12 +17,39 @@ pub const TEMP_FILE_EXTENSION: &str = "tmp";
 /// same piece of data. This variable allows disabling the use of multiple memory maps at runtime.
 /// An example of such environment is Docker on Windows with a mount into Windows.
 pub static MULTI_MMAP_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
-    let supported = std::env::var_os("QDRANT_NO_MULTI_MMAP").is_none_or(|val| val.is_empty());
-    if !supported {
-        log::warn!("QDRANT_NO_MULTI_MMAP is set, you may see reduced performance");
+    let mut supported = true;
+
+    // Opt-out if multi-mmap support check at startup failed
+    match MULTI_MMAP_SUPPORT_CHECK_RESULT.get() {
+        Some(true) => {}
+        Some(false) => {
+            log::warn!(
+                "Not using multi-mmap due to limited support, you may see reduced performance",
+            );
+            supported = false;
+        }
+        None => {
+            // We hit this branch if MULTI_MMAP_SUPPORT_CHECK_RESULT was never explicitly set
+            // In tests this can be safely ignored because we don't start through main.rs there
+            log::warn!(
+                "MULTI_MMAP_SUPPORT_CHECK_RESULT should be initialized before accessing MULTI_MMAP_IS_SUPPORTED"
+            );
+        }
     }
+
+    // Opt-out if environment variable is set
+    if supported && std::env::var_os("QDRANT_NO_MULTI_MMAP").is_some_and(|val| !val.is_empty()) {
+        supported = false;
+        log::warn!(
+            "Not using multi-mmap because QDRANT_NO_MULTI_MMAP is set, you may see reduced performance"
+        );
+    }
+
     supported
 });
+
+/// If multi-mmap support is checked at Qdrant startup, the result is stored in this cell.
+pub static MULTI_MMAP_SUPPORT_CHECK_RESULT: OnceLock<bool> = OnceLock::new();
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
     if path.exists() {
