@@ -186,6 +186,7 @@ impl LocalShard {
 }
 
 /// Returns the number of vectors which will be excluded from requests with `indexed_only` enabled.
+/// Note: For vectors names without any excluded vectors, we return `0` instead of skipping them in the output.
 ///
 /// This effectively counts vectors in large unindexed segments.
 fn get_index_only_excluded_vectors(
@@ -202,6 +203,8 @@ fn get_index_only_excluded_vectors(
         // convert KB to bytes
         * BYTES_IN_KB;
 
+    let mut index_only_excluded: HashMap<VectorNameBuf, usize> = HashMap::with_capacity(1);
+
     segment_holder
         .iter()
         .flat_map(|(_, segment)| {
@@ -214,9 +217,11 @@ fn get_index_only_excluded_vectors(
                 .filter_map(move |vector_name| {
                     let segment_config = segment_guard.config().vector_data.get(&vector_name)?;
 
+                    let points = segment_guard.available_point_count();
+
                     // Skip segments that have an index.
                     if segment_config.index.is_indexed() {
-                        return None;
+                        return Some((vector_name, None, points));
                     }
 
                     let vector_storage_size =
@@ -224,23 +229,25 @@ fn get_index_only_excluded_vectors(
 
                     if let Err(err) = vector_storage_size {
                         log::error!("Failed to get vector size from segment: {err:?}");
-                        return None;
+                        return Some((vector_name, None, points));
                     }
 
-                    let points = segment_guard.available_point_count();
-                    Some((vector_name, vector_storage_size.unwrap(), points))
+                    Some((vector_name, Some(vector_storage_size.unwrap()), points))
                 })
         })
-        .filter(|(_, vector_size_bytes, _)| {
+        .for_each(|(name, vector_size_bytes, point_count)| {
+            let entry = index_only_excluded.entry(name).or_insert(0);
+
             // Filter out only large segments that do not support full-scan, as smaller segments can
             // be searched quickly without using an index and are included in index-only searches.
-            *vector_size_bytes > search_optimized_threshold_bytes
-        })
-        .fold(
-            HashMap::<VectorNameBuf, usize>::default(),
-            |mut acc, (name, _, point_count)| {
-                *acc.entry(name).or_insert(0) += point_count;
-                acc
-            },
-        )
+            let is_excluded = vector_size_bytes.is_some_and(|vector_size_bytes| {
+                vector_size_bytes > search_optimized_threshold_bytes
+            });
+
+            if is_excluded {
+                *entry += point_count;
+            }
+        });
+
+    index_only_excluded
 }

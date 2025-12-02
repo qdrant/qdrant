@@ -96,7 +96,8 @@ def test_telemetry_detail(level: int):
         elif level >= 4:
             assert set(local_shard.keys()) == {
                 'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
-                'payloads_size_bytes', 'num_points', 'num_vectors', 'num_vectors_by_name', 'segments', 'optimizations', 'async_scorer'
+                'payloads_size_bytes', 'num_points', 'num_vectors', 'num_vectors_by_name', 'segments', 'optimizations',
+                'async_scorer', 'indexed_only_excluded_vectors'
             }
 
             segment = local_shard['segments'][0]
