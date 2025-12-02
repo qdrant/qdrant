@@ -279,7 +279,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
     }
 
-    #[cfg(target_arch = "x86_64")]
     pub fn score_point_simple_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         match &self.metadata {
             Metadata::Int8(metadata) => {
