@@ -21,7 +21,7 @@ pub(crate) struct BufferedDynamicFlags {
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// Lock to prevent concurrent flush and drop
-    pub is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: Arc<Mutex<bool>>,
 }
 
 impl BufferedDynamicFlags {
@@ -99,7 +99,7 @@ impl BufferedDynamicFlags {
 
 impl Drop for BufferedDynamicFlags {
     fn drop(&mut self) {
-        // Wait for all background flush operations to finish
+        // Wait for all background flush operations to finish, and cancel future flushes
         *self.is_alive_flush_lock.lock() = false;
     }
 }
