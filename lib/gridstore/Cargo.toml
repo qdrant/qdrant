@@ -40,6 +40,7 @@ rocksdb = { version = "0.24.0", optional = true }
 [dev-dependencies]
 criterion = { workspace = true }
 csv = "1.4.0"
+fs-err = { workspace = true, features = ["debug"] }
 rstest = { workspace = true }
 proptest = { workspace = true }
 bustle = "0.5.1"

@@ -16,6 +16,7 @@ tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"
 staging = ["collection/staging"]
 
 [dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 env_logger = "0.11"
 

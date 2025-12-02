@@ -20,6 +20,7 @@ staging = []
 
 [dev-dependencies]
 criterion = { workspace = true }
+fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tar = { workspace = true }

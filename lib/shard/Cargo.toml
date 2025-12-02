@@ -46,7 +46,7 @@ serde_json = { workspace = true }
 segment = { path = "../segment", default-features = false, features = ["testing"] }
 shard = { path = ".", default-features = false, features = ["testing"] }
 
-fs-err = { workspace = true }
+fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }

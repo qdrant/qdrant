@@ -35,6 +35,7 @@ ordered-float = { workspace = true }
 arrayvec = "0.7.6"
 
 [dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }
 quantization = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 num_threads = "0.1.6"
