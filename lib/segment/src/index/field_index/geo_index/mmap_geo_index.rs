@@ -342,7 +342,9 @@ impl MmapGeoMapIndex {
 
     pub fn wipe(self) -> OperationResult<()> {
         let files = self.files();
-        let Self { path, .. } = self;
+        let path = self.path.clone();
+        // drop mmap handles before deleting files
+        drop(self);
         for file in files {
             fs::remove_file(file)?;
         }
