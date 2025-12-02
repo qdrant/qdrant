@@ -502,14 +502,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     pub fn get_diff(&self) -> f32 {
         match &self.metadata {
-            Metadata::Int8(metadata) => {
-                let diff = metadata.actual_dim as f32 * metadata.offset * metadata.offset;
-                if metadata.vector_parameters.invert {
-                    -diff
-                } else {
-                    diff
-                }
-            }
+            Metadata::Int8(metadata) => metadata.get_internal_score_diff(),
         }
     }
 
