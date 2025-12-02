@@ -18,3 +18,6 @@ flate2 = { version = "1.1.4" }
 fs-err = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true }
+
+[dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }

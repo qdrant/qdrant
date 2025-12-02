@@ -47,6 +47,7 @@ memory = { path = "../memory" }
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
+fs-err = { workspace = true, features = ["debug"] }
 itertools = { workspace = true }
 rstest = { workspace = true }
 self_cell = "1.2.0"

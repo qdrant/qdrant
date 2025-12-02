@@ -25,5 +25,6 @@ thiserror = { workspace = true }
 nix = { workspace = true }
 
 [dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }
 rand = { workspace = true }
 tempfile = { workspace = true }

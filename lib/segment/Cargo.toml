@@ -25,6 +25,7 @@ clap = { workspace = true }
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
 env_logger = "0.11"
+fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 ndarray = "0.16.1"

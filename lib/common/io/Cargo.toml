@@ -20,3 +20,6 @@ semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }
