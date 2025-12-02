@@ -251,7 +251,7 @@ async fn _do_recover_from_snapshot(
         log::debug!(
             "Recovering shard {} from {}",
             shard_id,
-            snapshot_shard_path.display()
+            snapshot_shard_path.display(),
         );
 
         // TODO:
@@ -338,7 +338,7 @@ async fn _do_recover_from_snapshot(
                     let (replica_peer_id, _state) =
                         other_active_replicas.into_iter().next().unwrap();
                     log::debug!(
-                        "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id}"
+                        "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id}",
                     );
 
                     // assume that if there is another peers, the server is distributed

@@ -235,7 +235,7 @@ impl ShardReplicaSet {
                 shard.stop_gracefully().await;
 
                 None
-            },
+            }
             None if snapshot_manifest.is_empty() => None,
 
             Some(shard) => {
