@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
+use chrono::Utc;
 use collection::shards::replica_set::ReplicaState;
 use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
+use storage::types::ConsensusThreadStatus;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry::TelemetryData;
@@ -515,6 +517,52 @@ impl MetricsProvider for ClusterStatusTelemetry {
                 prefix,
             ));
         }
+
+        // Initialize all states so that every state has a zeroed metric by default.
+        let mut state_working = 0.0;
+        let mut state_stopped = 0.0;
+        let mut error = None::<String>;
+
+        match &self.consensus_thread_status {
+            ConsensusThreadStatus::Working { last_update } => {
+                let delta = Utc::now() - last_update;
+                let delta_secs = delta.as_seconds_f64();
+
+                metrics.push_metric(metric_family(
+                    "cluster_last_update_delta",
+                    "time since last update",
+                    MetricType::GAUGE,
+                    vec![gauge(delta_secs, &[])],
+                    prefix,
+                ));
+
+                state_working = 1.0;
+            }
+            ConsensusThreadStatus::Stopped => state_stopped = 1.0,
+            ConsensusThreadStatus::StoppedWithErr { err } => {
+                state_stopped = 1.0;
+                error = Some(err.clone());
+            }
+        }
+
+        let working_states = vec![
+            gauge(state_working, &[("state", "working")]),
+            gauge(
+                state_stopped,
+                &[
+                    ("state", "stopped"),
+                    ("error", error.as_deref().unwrap_or("")),
+                ],
+            ),
+        ];
+
+        metrics.push_metric(metric_family(
+            "cluster_working_state",
+            "working state of the cluster",
+            MetricType::GAUGE,
+            working_states,
+            prefix,
+        ));
     }
 }
 
