@@ -38,6 +38,7 @@ use tonic::{Request, Response, Status};
 use crate::common::auth::AuthKeys;
 use crate::common::helpers;
 use crate::common::http_client::HttpClient;
+use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;
@@ -207,7 +208,8 @@ pub fn init(
 pub fn init_internal(
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
-    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+    tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     settings: Settings,
     host: String,
     internal_grpc_port: u16,
@@ -229,7 +231,7 @@ pub fn init_internal(
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
             let qdrant_internal_service =
-                QdrantInternalService::new(settings, consensus_state.clone());
+                QdrantInternalService::new(telemetry_collector, settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service =
@@ -259,7 +261,7 @@ pub fn init_internal(
             let middleware_layer = tower::ServiceBuilder::new()
                 .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
-                    telemetry_collector,
+                    tonic_telemetry_collector,
                 ))
                 .into_inner();
 
