@@ -37,16 +37,20 @@ pub struct UpdateParams {
     pub wait: bool,
     #[serde(default)]
     pub ordering: WriteOrdering,
+    #[serde(default)]
+    pub timeout: Option<Duration>,
 }
 
 impl UpdateParams {
     pub fn from_grpc(
         wait: Option<bool>,
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
+        timeout: Option<Duration>,
     ) -> tonic::Result<Self> {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
+            timeout,
         };
 
         Ok(params)
@@ -968,7 +972,11 @@ pub async fn update(
         clock_tag,
     } = internal_params;
 
-    let UpdateParams { wait, ordering } = params;
+    let UpdateParams {
+        wait,
+        ordering,
+        timeout: _,
+    } = params;
 
     let shard_selector = match operation {
         CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {
