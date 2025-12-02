@@ -392,124 +392,139 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc, health_checker) = if is_distributed_deployment {
-        let consensus_state: ConsensusStateRef = ConsensusManager::new(
-            persistent_consensus_state,
-            toc_arc.clone(),
-            propose_operation_sender.unwrap(),
-            Path::new(storage_path),
-        )
-        .expect("initialize consensus manager")
-        .into();
-        let is_new_deployment = consensus_state.is_new_deployment();
+    let (telemetry_collector, tonic_telemetry_collector, dispatcher_arc, health_checker) =
+        if is_distributed_deployment {
+            let consensus_state: ConsensusStateRef = ConsensusManager::new(
+                persistent_consensus_state,
+                toc_arc.clone(),
+                propose_operation_sender.unwrap(),
+                Path::new(storage_path),
+            )
+            .expect("initialize consensus manager")
+            .into();
+            let is_new_deployment = consensus_state.is_new_deployment();
 
-        dispatcher =
-            dispatcher.with_consensus(consensus_state.clone(), settings.cluster.resharding_enabled);
+            dispatcher = dispatcher
+                .with_consensus(consensus_state.clone(), settings.cluster.resharding_enabled);
 
-        let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
-        toc_arc.with_toc_dispatcher(toc_dispatcher);
+            let toc_dispatcher =
+                TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+            toc_arc.with_toc_dispatcher(toc_dispatcher);
 
-        let dispatcher_arc = Arc::new(dispatcher);
+            let dispatcher_arc = Arc::new(dispatcher);
 
-        // Monitoring and telemetry.
-        let telemetry_collector =
-            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+            // Monitoring and telemetry.
+            let telemetry_collector =
+                TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
+            let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
 
-        // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
-        // logs from it to `log` crate
-        let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
+            let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
-        // Runs raft consensus in a separate thread.
-        // Create a pipe `message_sender` to communicate with the consensus
-        let health_checker = Arc::new(common::health::HealthChecker::spawn(
-            toc_arc.clone(),
-            consensus_state.clone(),
-            &runtime_handle,
-            // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
-            consensus_state.is_new_deployment() && bootstrap.is_some(),
-        ));
+            // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
+            // logs from it to `log` crate
+            let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
 
-        let handle = Consensus::run(
-            &slog_logger,
-            consensus_state.clone(),
-            bootstrap,
-            args.uri.map(|uri| uri.to_string()),
-            settings.clone(),
-            channel_service,
-            propose_receiver,
-            tonic_telemetry_collector,
-            toc_arc.clone(),
-            runtime_handle.clone(),
-            args.reinit,
-        )
-        .expect("Can't initialize consensus");
-
-        handles.push(handle);
-
-        let toc_arc_clone = toc_arc.clone();
-        let consensus_state_clone = consensus_state.clone();
-        let _cancel_transfer_handle = runtime_handle.spawn(async move {
-            consensus_state_clone.is_leader_established.await_ready();
-            match toc_arc_clone
-                .cancel_related_transfers("Source or target peer restarted")
-                .await
-            {
-                Ok(_) => {
-                    log::debug!("All transfers if any cancelled");
-                }
-                Err(err) => {
-                    log::error!("Can't cancel related transfers: {err}");
-                }
-            }
-        });
-
-        // TODO(resharding): Remove resharding driver?
-        //
-        // runtime_handle.block_on(async {
-        //     toc_arc.resume_resharding_tasks().await;
-        // });
-
-        let collections_to_recover_in_consensus = if is_new_deployment {
-            let existing_collections =
-                runtime_handle.block_on(toc_arc.all_collections(&FULL_ACCESS));
-            existing_collections
-                .into_iter()
-                .map(|pass| pass.name().to_string())
-                .collect()
-        } else {
-            restored_collections
-        };
-
-        if !collections_to_recover_in_consensus.is_empty() {
-            runtime_handle.block_on(handle_existing_collections(
+            // Runs raft consensus in a separate thread.
+            // Create a pipe `message_sender` to communicate with the consensus
+            let health_checker = Arc::new(common::health::HealthChecker::spawn(
                 toc_arc.clone(),
                 consensus_state.clone(),
-                dispatcher_arc.clone(),
-                consensus_state.this_peer_id(),
-                collections_to_recover_in_consensus,
+                &runtime_handle,
+                // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
+                consensus_state.is_new_deployment() && bootstrap.is_some(),
             ));
-        }
 
-        (telemetry_collector, dispatcher_arc, Some(health_checker))
-    } else {
-        log::info!("Distributed mode disabled");
-        let dispatcher_arc = Arc::new(dispatcher);
+            let handle = Consensus::run(
+                &slog_logger,
+                consensus_state.clone(),
+                bootstrap,
+                args.uri.map(|uri| uri.to_string()),
+                settings.clone(),
+                channel_service,
+                propose_receiver,
+                telemetry_collector.clone(),
+                tonic_telemetry_collector.clone(),
+                toc_arc.clone(),
+                runtime_handle.clone(),
+                args.reinit,
+            )
+            .expect("Can't initialize consensus");
 
-        // Monitoring and telemetry.
-        let telemetry_collector =
-            TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        (telemetry_collector, dispatcher_arc, None)
-    };
+            handles.push(handle);
 
-    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+            let toc_arc_clone = toc_arc.clone();
+            let consensus_state_clone = consensus_state.clone();
+            let _cancel_transfer_handle = runtime_handle.spawn(async move {
+                consensus_state_clone.is_leader_established.await_ready();
+                match toc_arc_clone
+                    .cancel_related_transfers("Source or target peer restarted")
+                    .await
+                {
+                    Ok(_) => {
+                        log::debug!("All transfers if any cancelled");
+                    }
+                    Err(err) => {
+                        log::error!("Can't cancel related transfers: {err}");
+                    }
+                }
+            });
+
+            // TODO(resharding): Remove resharding driver?
+            //
+            // runtime_handle.block_on(async {
+            //     toc_arc.resume_resharding_tasks().await;
+            // });
+
+            let collections_to_recover_in_consensus = if is_new_deployment {
+                let existing_collections =
+                    runtime_handle.block_on(toc_arc.all_collections(&FULL_ACCESS));
+                existing_collections
+                    .into_iter()
+                    .map(|pass| pass.name().to_string())
+                    .collect()
+            } else {
+                restored_collections
+            };
+
+            if !collections_to_recover_in_consensus.is_empty() {
+                runtime_handle.block_on(handle_existing_collections(
+                    toc_arc.clone(),
+                    consensus_state.clone(),
+                    dispatcher_arc.clone(),
+                    consensus_state.this_peer_id(),
+                    collections_to_recover_in_consensus,
+                ));
+            }
+
+            (
+                telemetry_collector,
+                tonic_telemetry_collector,
+                dispatcher_arc,
+                Some(health_checker),
+            )
+        } else {
+            log::info!("Distributed mode disabled");
+            let dispatcher_arc = Arc::new(dispatcher);
+
+            // Monitoring and telemetry.
+            let telemetry_collector =
+                TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
+
+            let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+
+            let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
+
+            (
+                telemetry_collector,
+                tonic_telemetry_collector,
+                dispatcher_arc,
+                None,
+            )
+        };
 
     //
     // Telemetry reporting
     //
-
-    let reporting_id = telemetry_collector.reporting_id();
-    let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
     if reporting_enabled {
         log::info!("Telemetry reporting enabled, id: {reporting_id}");

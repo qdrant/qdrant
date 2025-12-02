@@ -6,8 +6,8 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 message GetPeerTelemetryRequest {
-    uint64 peer_id = 1; // The peer id to ask for telemetry
-    uint32 details_level = 2; // The level of detail needed
+    uint32 details_level = 1; // The level of detail needed
+    uint64 timeout = 2; // Timeout in secs for the request
 }
 
 message GetPeerTelemetryResponse {
