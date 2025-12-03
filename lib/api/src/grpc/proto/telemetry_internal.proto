@@ -11,6 +11,11 @@ message GetPeerTelemetryRequest {
 }
 
 message GetPeerTelemetryResponse {
+    PeerTelemetry result = 1;
+    double time = 2;
+}
+
+message PeerTelemetry {
     reserved 1; // id
     reserved 2; // app
     map<string, CollectionTelemetry> collections = 3; // Mapping from collection name to its telemetry
