@@ -230,7 +230,13 @@ impl ShardReplicaSet {
         }
 
         let local_manifest = match local.take() {
-            _ if snapshot_manifest.is_empty() => None,
+            Some(shard) if snapshot_manifest.is_empty() => {
+                // Shard is no longer needed and can be dropped
+                shard.stop_gracefully().await;
+
+                None
+            }
+            None if snapshot_manifest.is_empty() => None,
 
             Some(shard) => {
                 let local_manifest = shard.snapshot_manifest().await;
