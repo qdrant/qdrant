@@ -137,7 +137,7 @@ impl ChannelService {
         Ok(())
     }
 
-    async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
+    pub async fn with_qdrant_client<T, O: Future<Output = Result<T, Status>>>(
         &self,
         peer_id: PeerId,
         f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
