@@ -433,7 +433,6 @@ impl SegmentsSearcher {
                 .non_appendable_then_appendable_segments()
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
-                        let segment = segment.clone();
                         let arc_ctx = arc_ctx.clone();
                         let hw_counter = hw_measurement_acc.get_counter_cell();
                         move || {

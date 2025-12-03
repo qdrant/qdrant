@@ -206,7 +206,7 @@ impl ShardCleanTask {
 
         ShardCleanTask {
             handle: task,
-            status: receiver.clone(),
+            status: receiver,
             cancel: cancel.drop_guard(),
         }
     }

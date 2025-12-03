@@ -131,7 +131,7 @@ impl SegmentEntry for ProxySegment {
             .wrapped_segment
             .get()
             .read()
-            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
+            .rescore_with_formula(formula_ctx, hw_counter)?;
 
         let result = {
             if self.deleted_points.is_empty() {
@@ -716,7 +716,7 @@ impl SegmentEntry for ProxySegment {
 
         // Store index change to later propagate to optimized/wrapped segment
         self.changed_indexes
-            .insert(key.clone(), ProxyIndexChange::Create(field_schema, op_num));
+            .insert(key, ProxyIndexChange::Create(field_schema, op_num));
 
         Ok(true)
     }
