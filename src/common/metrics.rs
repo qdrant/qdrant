@@ -349,7 +349,10 @@ impl MetricsProvider for CollectionsTelemetry {
         let vector_count = vector_count_by_name
             .iter()
             .map(|m| m.get_gauge().get_value())
-            .sum();
+            .sum::<f64>()
+            // The sum of an empty f64 iterator returns `-0`. Since a negative
+            // number of vectors is impossible, taking the absolute value is always safe.
+            .abs();
 
         metrics.push_metric(metric_family(
             "collections_vector_total",
