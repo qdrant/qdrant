@@ -529,7 +529,7 @@ impl MetricsProvider for ClusterStatusTelemetry {
                 let delta_secs = delta.as_seconds_f64();
 
                 metrics.push_metric(metric_family(
-                    "cluster_last_update_delta",
+                    "cluster_last_update_seconds",
                     "time since last update",
                     MetricType::GAUGE,
                     vec![gauge(delta_secs, &[])],
