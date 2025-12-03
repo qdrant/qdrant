@@ -83,7 +83,9 @@ runs:
         FEATURES_ARG=""
         if [ "${{ inputs.staging-build }}" = "true" ]; then
           echo "Staging feature enabled"
-          FEATURES_ARG="--build-arg FEATURES=staging"
+          FEATURES_ARG="--build-arg FEATURES=rocksdb,staging"
+        else
+          FEATURES_ARG="--build-arg FEATURES=rocksdb"
         fi
 
         # Function to build and push with given suffix and build args
