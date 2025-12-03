@@ -709,7 +709,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
-            let geo_condition_copy = geo_bounding_box.clone();
+            let geo_condition_copy = *geo_bounding_box;
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
                 self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
@@ -719,7 +719,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
-            let geo_condition_copy = geo_radius.clone();
+            let geo_condition_copy = *geo_radius;
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
                 self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)

@@ -1,4 +1,4 @@
-use bytemuck::TransparentWrapperAlloc as _;
+use bytemuck::{TransparentWrapper as _, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::MinShould;
@@ -17,5 +17,15 @@ impl PyMinShould {
             conditions: PyCondition::peel_vec(conditions),
             min_count,
         })
+    }
+
+    #[getter]
+    pub fn conditions(&self) -> &[PyCondition] {
+        PyCondition::wrap_slice(&self.0.conditions)
+    }
+
+    #[getter]
+    pub fn min_count(&self) -> usize {
+        self.0.min_count
     }
 }
