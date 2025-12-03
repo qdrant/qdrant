@@ -162,7 +162,14 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        todo!()
+        match self.0 {
+            ScoringQuery::Vector(vector) => PyQuery(vector).into_bound_py_any(py),
+            ScoringQuery::Fusion(fusion) => PyFusion(fusion).into_bound_py_any(py),
+            ScoringQuery::OrderBy(order_by) => PyOrderBy(order_by).into_bound_py_any(py),
+            ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
+            ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
+            ScoringQuery::Mmr(mmr) => PyMmr(mmr).into_bound_py_any(py),
+        }
     }
 }
 

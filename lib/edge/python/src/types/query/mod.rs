@@ -9,7 +9,7 @@ use shard::query::query_enum::QueryEnum;
 use crate::types::*;
 
 #[derive(Clone, Debug, Into)]
-pub struct PyQuery(QueryEnum);
+pub struct PyQuery(pub QueryEnum);
 
 impl FromPyObject<'_, '_> for PyQuery {
     type Error = PyErr;
