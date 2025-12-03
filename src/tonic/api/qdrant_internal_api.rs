@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
     ClusterTelemetry, CollectionTelemetry, GetConsensusCommitRequest, GetConsensusCommitResponse,
-    GetPeerTelemetryRequest, GetPeerTelemetryResponse, WaitOnConsensusCommitRequest,
+    GetPeerTelemetryRequest, GetPeerTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
     WaitOnConsensusCommitResponse,
 };
 use common::types::{DetailsLevel, TelemetryDetail};
@@ -88,6 +88,7 @@ impl QdrantInternal for QdrantInternalService {
             histograms: false,
         };
 
+        let timing = Instant::now();
         let timeout = Duration::from_secs(request.timeout);
 
         let access = Access::full("internal service");
@@ -125,8 +126,11 @@ impl QdrantInternal for QdrantInternalService {
             .collect();
 
         let response = GetPeerTelemetryResponse {
-            collections,
-            cluster: cluster.map(ClusterTelemetry::from),
+            result: Some(PeerTelemetry {
+                collections,
+                cluster: cluster.map(ClusterTelemetry::from),
+            }),
+            time: timing.elapsed().as_secs_f64(),
         };
 
         Ok(Response::new(response))
