@@ -1108,12 +1108,19 @@ impl ShardReplicaSet {
     ///
     /// If `from_state` is given, the peer will only be disabled if the given state matches
     /// consensus.
-    fn add_locally_disabled(
+    pub fn add_locally_disabled(
         &self,
-        state: &ReplicaSetState,
+        state: Option<&ReplicaSetState>,
         peer_id: PeerId,
         from_state: Option<ReplicaState>,
     ) {
+        let mut state_guard = None;
+
+        let state = match state {
+            Some(state) => state,
+            None => state_guard.insert(self.replica_state.read()),
+        };
+
         let other_peers = state
             .active_or_resharding_peers()
             .filter(|id| id != &peer_id);
