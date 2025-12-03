@@ -12461,6 +12461,15 @@ pub struct GetPeerTelemetryRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPeerTelemetryResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<PeerTelemetry>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerTelemetry {
     /// Mapping from collection name to its telemetry
     #[prost(map = "string, message", tag = "3")]
     pub collections: ::std::collections::HashMap<

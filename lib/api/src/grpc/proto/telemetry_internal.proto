@@ -13,20 +13,18 @@ message GetPeerTelemetryRequest {
 }
 
 message GetPeerTelemetryResponse {
-  // id
-  reserved 1;
-  // app
-  reserved 2;
-  // Mapping from collection name to its telemetry
-  map<string, CollectionTelemetry> collections = 3;
-  // Telemetry about the cluster and peers
-  ClusterTelemetry cluster = 4;
-  // requests
-  reserved 5;
-  // memory
-  reserved 6;
-  // hardware
-  reserved 7;
+  PeerTelemetry result = 1;
+  double time = 2;
+}
+
+message PeerTelemetry {
+  reserved 1; // id
+  reserved 2; // app
+  map<string, CollectionTelemetry> collections = 3; // Mapping from collection name to its telemetry
+  ClusterTelemetry cluster = 4; // Telemetry about the cluster and peers
+  reserved 5; // requests
+  reserved 6; // memory
+  reserved 7; // hardware
 }
 
 message CollectionTelemetry {
