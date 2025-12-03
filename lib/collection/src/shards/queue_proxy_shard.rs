@@ -209,8 +209,11 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn get_size_stats(&self) -> SizeStats {
-        self.inner_unchecked().wrapped_shard.get_size_stats().await
+    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+        self.inner_unchecked()
+            .wrapped_shard
+            .get_size_stats(timeout)
+            .await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

@@ -60,6 +60,7 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .prepare_data(&access, detail, params.timeout())
             .await?;
+        drop(telemetry_collector);
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -105,7 +106,7 @@ async fn metrics(
             params.timeout(),
         )
         .await;
-
+    drop(telemetry_collector);
     match telemetry_data {
         Err(err) => process_response_error(err, Instant::now(), None),
         Ok(telemetry_data) => {

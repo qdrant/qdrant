@@ -79,17 +79,18 @@ impl LocalShard {
             })
             .fold(Default::default(), |total, stats| total + stats);
 
-        // update timeout
-        let timeout = timeout.saturating_sub(start.elapsed());
-        let status = self.get_optimization_status(timeout).await?;
-
+        let status = self
+            .get_optimization_status(timeout.saturating_sub(start.elapsed()))
+            .await?;
         let SizeStats {
             num_vectors,
             num_vectors_by_name,
             vectors_size_bytes,
             payloads_size_bytes,
             num_points,
-        } = self.get_size_stats().await;
+        } = self
+            .get_size_stats(timeout.saturating_sub(start.elapsed()))
+            .await?;
 
         Ok(LocalShardTelemetry {
             variant_name: None,
@@ -140,11 +141,17 @@ impl LocalShard {
         AbortOnDropHandle::new(status).await?
     }
 
-    pub async fn get_size_stats(&self) -> SizeStats {
+    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
         let segments = self.segments.clone();
 
         let stats = tokio::task::spawn_blocking(move || {
-            let segments = segments.read();
+            // blocking sync lock
+            let Some(segments) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout.as_secs() as usize,
+                    "get size stats",
+                ));
+            };
 
             let SizeStats {
                 mut num_points,
@@ -167,21 +174,15 @@ impl LocalShard {
                 }
             }
 
-            SizeStats {
+            Ok(SizeStats {
                 num_vectors,
                 num_vectors_by_name,
                 vectors_size_bytes,
                 payloads_size_bytes,
                 num_points,
-            }
+            })
         });
-        let stats = AbortOnDropHandle::new(stats).await;
-
-        if let Err(err) = &stats {
-            log::error!("failed to get size stats: {err}");
-        }
-
-        stats.unwrap_or_default()
+        AbortOnDropHandle::new(stats).await?
     }
 }
 
