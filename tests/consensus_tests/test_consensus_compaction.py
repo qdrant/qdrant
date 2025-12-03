@@ -5,7 +5,8 @@ from time import sleep
 from typing import Any
 
 import requests
-from consensus_tests.fixtures import create_collection, drop_collection
+
+from .fixtures import *
 from .utils import *
 
 N_PEERS = 3
@@ -133,6 +134,43 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     # - <https://github.com/qdrant/qdrant/pull/6209>
     # - <https://github.com/qdrant/qdrant/pull/6212>
     wait_for_shard_keys(peer_api_uris, "test_collection", SHARD_KEYS)
+
+@pytest.mark.parametrize(
+    "replication_factor",
+    [1, 2]
+)
+def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replication_factor: int):
+    assert_project_root()
+
+    N_PEERS = 3
+
+    env = {
+        "QDRANT__LOG_LEVEL": "debug",
+        # Aggressively compact consensus WAL
+        "QDRANT__CLUSTER__CONSENSUS__COMPACT_WAL_ENTRIES": "1",
+    }
+
+    # Start cluster
+    peers, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=env)
+
+    # Get last peer ID
+    last_peer_id = get_cluster_info(peers[-1])['peer_id']
+
+    # Kill last peer
+    processes.pop().kill()
+
+    # Bootstrap collection
+    create_collection(peers[0], shard_number=3, replication_factor=replication_factor)
+    wait_collection_on_all_peers("test_collection", peers[:N_PEERS - 1], 10)
+
+    upsert_random_points(peers[0], 1000, fail_on_error=False)
+
+    # Restart last peer
+    peers[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri)
+    wait_for_peer_online(peers[-1])
+
+    # Wait for last peer recovery
+    wait_collection_exists_and_active_on_all_peers("test_collection", peers, 10)
 
 
 def put_metadata_key(peer_uris: list[str], key: str, value: Any):

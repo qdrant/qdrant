@@ -152,7 +152,7 @@ impl ShardReplicaSet {
                         // Deactivate the peer if forwarding failed with transient error
                         let replica_state = self.replica_state.read();
                         let from_state = replica_state.get_peer_state(leader_peer);
-                        self.add_locally_disabled(&replica_state, leader_peer, from_state);
+                        self.add_locally_disabled(Some(&replica_state), leader_peer, from_state);
 
                         // Return service error
                         CollectionError::service_error(format!(
@@ -647,7 +647,7 @@ impl ShardReplicaSet {
             // Always deactivate the replica if its in a shard transfer related state
             let from_state = Some(peer_state).filter(|state| !state.is_partial_or_recovery());
 
-            self.add_locally_disabled(state, *peer_id, from_state);
+            self.add_locally_disabled(Some(state), *peer_id, from_state);
         }
 
         wait_for_deactivation

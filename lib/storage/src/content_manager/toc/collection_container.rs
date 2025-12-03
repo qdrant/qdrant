@@ -244,14 +244,15 @@ impl TableOfContent {
                 // if collection has been created during snapshot application
                 if !collection_exists {
                     for shard_id in collection.get_local_shards().await {
-                        collection
-                            .set_shard_replica_state(
-                                shard_id,
-                                self.this_peer_id,
-                                ReplicaState::Dead,
-                                None,
-                            )
-                            .await?;
+                        let shard_holder = collection.shards_holder().read_owned().await;
+
+                        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                            continue;
+                        };
+
+                        if replica_set.is_local().await {
+                            replica_set.add_locally_disabled(None, self.this_peer_id, None);
+                        }
                     }
                 }
             }

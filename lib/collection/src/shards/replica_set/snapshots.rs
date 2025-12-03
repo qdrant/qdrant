@@ -434,10 +434,7 @@ impl ShardReplicaSet {
                 )));
 
                 // Mark local replica as Dead since it's dummy and dirty
-                {
-                    let replica_state = self.replica_state.read();
-                    self.add_locally_disabled(&replica_state, self.this_peer_id(), None);
-                }
+                self.add_locally_disabled(None, self.this_peer_id(), None);
 
                 // Remove inner shard data but keep the shard folder with its configuration files.
                 // This way the shard can be read on startup and the user can decide what to do next.
