@@ -249,7 +249,7 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     type Error = PyErr; // Infallible
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        Bound::new(py, self.clone())
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }
 
@@ -320,7 +320,7 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     type Error = PyErr; // Infallible
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        Bound::new(py, self.clone())
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }
 
