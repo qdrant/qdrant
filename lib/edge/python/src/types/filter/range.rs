@@ -49,6 +49,26 @@ impl PyRangeFloat {
             lt: lt.map(OrderedFloat),
         })
     }
+
+    #[getter]
+    pub fn gte(&self) -> Option<FloatPayloadType> {
+        self.0.gte.map(|of| of.into_inner())
+    }
+
+    #[getter]
+    pub fn gt(&self) -> Option<FloatPayloadType> {
+        self.0.gt.map(|of| of.into_inner())
+    }
+
+    #[getter]
+    pub fn lte(&self) -> Option<FloatPayloadType> {
+        self.0.lte.map(|of| of.into_inner())
+    }
+
+    #[getter]
+    pub fn lt(&self) -> Option<FloatPayloadType> {
+        self.0.lt.map(|of| of.into_inner())
+    }
 }
 
 #[pyclass(name = "RangeDateTime")]
@@ -71,6 +91,26 @@ impl PyRangeDateTime {
             lte: parse_datetime_opt(lte.as_deref())?,
             lt: parse_datetime_opt(lt.as_deref())?,
         }))
+    }
+
+    #[getter]
+    pub fn gte(&self) -> Option<String> {
+        self.0.gte.map(|dt| dt.to_string())
+    }
+
+    #[getter]
+    pub fn gt(&self) -> Option<String> {
+        self.0.gt.map(|dt| dt.to_string())
+    }
+
+    #[getter]
+    pub fn lte(&self) -> Option<String> {
+        self.0.lte.map(|dt| dt.to_string())
+    }
+
+    #[getter]
+    pub fn lt(&self) -> Option<String> {
+        self.0.lt.map(|dt| dt.to_string())
     }
 }
 

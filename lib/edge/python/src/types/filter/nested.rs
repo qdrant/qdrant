@@ -1,3 +1,4 @@
+use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
@@ -19,5 +20,15 @@ impl PyNestedCondition {
                 filter: Filter::from(filter),
             },
         })
+    }
+
+    #[getter]
+    pub fn key(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.nested.key)
+    }
+
+    #[getter]
+    pub fn filter(&self) -> PyFilter {
+        PyFilter(self.0.nested.filter.clone())
     }
 }

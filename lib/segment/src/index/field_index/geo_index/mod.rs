@@ -709,7 +709,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
-            let geo_condition_copy = geo_bounding_box.clone();
+            let geo_condition_copy = *geo_bounding_box;
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
                 self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
@@ -719,7 +719,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
-            let geo_condition_copy = geo_radius.clone();
+            let geo_condition_copy = *geo_radius;
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
                 self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
@@ -1143,7 +1143,7 @@ mod tests {
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION).unwrap();
         check_cardinality_match(
             nyc_hashes,
-            condition_for_geo_radius("test", geo_radius.clone()),
+            condition_for_geo_radius("test", geo_radius),
             index_type,
         );
 
@@ -1205,7 +1205,7 @@ mod tests {
             radius: OrderedFloat(r_meters),
         };
         check_geo_indexed_filtering(
-            condition_for_geo_radius("test", geo_radius.clone()),
+            condition_for_geo_radius("test", geo_radius),
             |geo_point| geo_radius.check_point(geo_point),
             index_type,
         );
@@ -1288,7 +1288,7 @@ mod tests {
             center: NYC,
             radius: OrderedFloat(r_meters),
         };
-        let field_condition = condition_for_geo_radius("test", nyc_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", nyc_geo_radius);
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -1307,7 +1307,7 @@ mod tests {
             center: BERLIN,
             radius: OrderedFloat(r_meters),
         };
-        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -1327,7 +1327,7 @@ mod tests {
             center: TOKYO,
             radius: OrderedFloat(r_meters),
         };
-        let field_condition = condition_for_geo_radius("test", tokyo_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", tokyo_geo_radius);
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         // no points found
@@ -1374,7 +1374,7 @@ mod tests {
             radius: OrderedFloat(50_000.0), // Berlin <-> Potsdam is 27 km
         };
         // check with geo_radius
-        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
         let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         // handle properly that a single point matches via two different geo payloads
@@ -1450,7 +1450,7 @@ mod tests {
         };
 
         // check with geo_radius
-        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius);
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
         let point_offsets = new_index

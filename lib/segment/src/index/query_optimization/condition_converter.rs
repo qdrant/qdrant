@@ -210,17 +210,17 @@ pub fn field_condition_index<'a>(
 
         FieldCondition {
             range: Some(cond), ..
-        } => get_range_checkers(index, cond.clone(), hw_acc),
+        } => get_range_checkers(index, *cond, hw_acc),
 
         FieldCondition {
             geo_radius: Some(geo_radius),
             ..
-        } => get_geo_radius_checkers(index, geo_radius.clone(), hw_acc),
+        } => get_geo_radius_checkers(index, *geo_radius, hw_acc),
 
         FieldCondition {
             geo_bounding_box: Some(geo_bounding_box),
             ..
-        } => get_geo_bounding_box_checkers(index, geo_bounding_box.clone(), hw_acc),
+        } => get_geo_bounding_box_checkers(index, *geo_bounding_box, hw_acc),
 
         FieldCondition {
             geo_polygon: Some(geo_polygon),

@@ -105,7 +105,7 @@ impl<T> PrecomputedFeedbackPair<T> {
 }
 
 /// Trained coefficients for the formula. Specific to a triplet of dataset-smallmodel-bigmodel.
-#[derive(Debug, Clone, PartialEq, Serialize, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub struct SimpleFeedbackStrategy {
     /// Trained coefficient `a`
     pub a: OrderedFloat<f32>,

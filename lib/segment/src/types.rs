@@ -2585,7 +2585,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<OrderedFloat<FloatPayloadType>>),
@@ -2703,7 +2703,7 @@ impl From<std::ops::Range<usize>> for ValuesCount {
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoBoundingBox {
     /// Coordinates of the top left point of the area rectangle
@@ -2730,7 +2730,7 @@ impl GeoBoundingBox {
 /// Geo filter request
 ///
 /// Matches coordinates inside the circle of `radius` and center with coordinates `center`
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoRadius {
     /// Coordinates of the top left point of the area rectangle

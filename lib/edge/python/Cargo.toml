@@ -21,6 +21,8 @@ sparse = { path = "../../sparse" }
 
 ahash = { workspace = true }
 bytemuck = { workspace = true }
+fnv = { workspace = true }
+indexmap = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 ordered-float = { workspace = true }

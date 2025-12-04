@@ -1,3 +1,4 @@
+use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
@@ -12,8 +13,18 @@ pub struct PyFieldCondition(pub FieldCondition);
 #[pymethods]
 impl PyFieldCondition {
     #[new]
-    #[pyo3(signature = (key, r#match=None, range=None, geo_bounding_box=None, geo_radius=None, geo_polygon=None, values_count=None, is_empty=None, is_null=None))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        key,
+        r#match=None,
+        range=None,
+        geo_bounding_box=None,
+        geo_radius=None,
+        geo_polygon=None,
+        values_count=None,
+        is_empty=None,
+        is_null=None,
+    ))]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         key: PyJsonPath,
         r#match: Option<PyMatch>,
@@ -36,5 +47,50 @@ impl PyFieldCondition {
             is_empty,
             is_null,
         })
+    }
+
+    #[getter]
+    pub fn key(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.key)
+    }
+
+    #[getter]
+    pub fn r#match(&self) -> Option<PyMatch> {
+        self.0.r#match.clone().map(PyMatch)
+    }
+
+    #[getter]
+    pub fn range(&self) -> Option<PyRange> {
+        self.0.range.map(PyRange::from)
+    }
+
+    #[getter]
+    pub fn geo_bounding_box(&self) -> Option<PyGeoBoundingBox> {
+        self.0.geo_bounding_box.map(PyGeoBoundingBox)
+    }
+
+    #[getter]
+    pub fn geo_radius(&self) -> Option<PyGeoRadius> {
+        self.0.geo_radius.map(PyGeoRadius)
+    }
+
+    #[getter]
+    pub fn geo_polygon(&self) -> Option<PyGeoPolygon> {
+        self.0.geo_polygon.clone().map(PyGeoPolygon)
+    }
+
+    #[getter]
+    pub fn values_count(&self) -> Option<PyValuesCount> {
+        self.0.values_count.map(PyValuesCount)
+    }
+
+    #[getter]
+    pub fn is_empty(&self) -> Option<bool> {
+        self.0.is_empty
+    }
+
+    #[getter]
+    pub fn is_null(&self) -> Option<bool> {
+        self.0.is_null
     }
 }

@@ -95,7 +95,7 @@ impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
     type Error = PyErr; // Infallible
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        Bound::new(py, self.clone())
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }
 
