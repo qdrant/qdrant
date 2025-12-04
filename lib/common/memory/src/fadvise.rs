@@ -8,8 +8,8 @@ use fs_err::File;
 use nix::fcntl::{PosixFadviseAdvice, posix_fadvise};
 
 #[cfg(posix_fadvise_supported)]
-fn fadvise(f: &impl std::os::unix::io::AsRawFd, advise: PosixFadviseAdvice) -> io::Result<()> {
-    Ok(posix_fadvise(f.as_raw_fd(), 0, 0, advise)?)
+fn fadvise(f: &impl std::os::unix::io::AsFd, advise: PosixFadviseAdvice) -> io::Result<()> {
+    Ok(posix_fadvise(f, 0, 0, advise)?)
 }
 
 /// For given file path, clear disk cache with `posix_fadvise`
