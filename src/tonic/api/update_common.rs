@@ -732,6 +732,7 @@ pub async fn create_field_index(
         field_type,
         field_index_params,
         ordering,
+        timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -748,7 +749,11 @@ pub async fn create_field_index(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(
+            wait,
+            ordering,
+            timeout.map(|t| std::time::Duration::from_secs(t)),
+        )?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -773,6 +778,7 @@ pub async fn create_field_index_internal(
         field_type,
         field_index_params,
         ordering,
+        timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -785,7 +791,11 @@ pub async fn create_field_index_internal(
         field_name,
         field_schema,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(
+            wait,
+            ordering,
+            timeout.map(|t| std::time::Duration::from_secs(t)),
+        )?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -805,6 +815,7 @@ pub async fn delete_field_index(
         wait,
         field_name,
         ordering,
+        timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -815,7 +826,11 @@ pub async fn delete_field_index(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(
+            wait,
+            ordering,
+            timeout.map(|t| std::time::Duration::from_secs(t)),
+        )?,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
@@ -835,6 +850,7 @@ pub async fn delete_field_index_internal(
         wait,
         field_name,
         ordering,
+        timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -845,7 +861,11 @@ pub async fn delete_field_index_internal(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(
+            wait,
+            ordering,
+            timeout.map(|t| std::time::Duration::from_secs(t)),
+        )?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -868,6 +888,7 @@ pub async fn sync(
         from_id,
         to_id,
         ordering,
+        timeout,
     } = sync_points;
 
     let timing = Instant::now();
@@ -893,7 +914,11 @@ pub async fn sync(
         &collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(
+            wait,
+            ordering,
+            timeout.map(|t| std::time::Duration::from_secs(t)),
+        )?,
         None,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured

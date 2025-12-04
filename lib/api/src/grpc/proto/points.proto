@@ -224,6 +224,7 @@ message CreateFieldIndexCollection {
   optional FieldType field_type = 4; // Field type.
   optional PayloadIndexParams field_index_params = 5; // Payload index params.
   optional WriteOrdering ordering = 6; // Write ordering guarantees
+  optional uint64 timeout = 7; // Timeout for the request in seconds
 }
 
 message DeleteFieldIndexCollection {
@@ -231,6 +232,7 @@ message DeleteFieldIndexCollection {
   optional bool wait = 2; // Wait until the changes have been applied?
   string field_name = 3; // Field name to delete
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional uint64 timeout = 5; // Timeout for the request in seconds
 }
 
 message PayloadIncludeSelector {
