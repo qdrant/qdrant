@@ -36,6 +36,7 @@ message SyncPoints {
   optional PointId from_id = 4; // Start of the sync range
   optional PointId to_id = 5; // End of the sync range
   optional WriteOrdering ordering = 6;
+  optional uint64 timeout = 7; // Timeout for the request in seconds
 }
 
 message SyncPointsInternal {

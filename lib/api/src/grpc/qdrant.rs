@@ -5129,6 +5129,9 @@ pub struct CreateFieldIndexCollection {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Timeout for the request in seconds
+    #[prost(uint64, optional, tag = "7")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5152,6 +5155,9 @@ pub struct DeleteFieldIndexCollection {
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Timeout for the request in seconds
+    #[prost(uint64, optional, tag = "5")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -9866,6 +9872,9 @@ pub struct SyncPoints {
     pub to_id: ::core::option::Option<PointId>,
     #[prost(message, optional, tag = "6")]
     pub ordering: ::core::option::Option<WriteOrdering>,
+    /// Timeout for the request in seconds
+    #[prost(uint64, optional, tag = "7")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
