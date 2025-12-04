@@ -446,7 +446,7 @@ pub fn rectangle_hashes(
             "max_regions cannot be equal to zero",
         ));
     }
-    let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
+    let full_geohash_bounding_box: GeohashBoundingBox = (*rectangle).into();
 
     let mapping_fn = |precision| full_geohash_bounding_box.geohash_regions(precision, max_regions);
     create_hashes(mapping_fn)

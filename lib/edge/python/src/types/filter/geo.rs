@@ -1,13 +1,48 @@
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
-use pyo3::IntoPyObjectExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::*;
 
+#[pyclass(name = "GeoPoint")]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyGeoPoint(pub GeoPoint);
+
+#[pymethods]
+impl PyGeoPoint {
+    #[new]
+    pub fn new(lon: f64, lat: f64) -> Result<Self, PyErr> {
+        let point =
+            GeoPoint::new(lon, lat).map_err(|err| PyValueError::new_err(err.to_string()))?;
+
+        Ok(Self(point))
+    }
+
+    #[getter]
+    pub fn lon(&self) -> f64 {
+        self.0.lon.into_inner()
+    }
+
+    #[getter]
+    pub fn lat(&self) -> f64 {
+        self.0.lat.into_inner()
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyGeoPoint {
+    type Target = PyGeoPoint;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(*self, py)
+    }
+}
+
 #[pyclass(name = "GeoBoundingBox")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoBoundingBox(pub GeoBoundingBox);
 
 #[pymethods]
@@ -19,10 +54,20 @@ impl PyGeoBoundingBox {
             bottom_right: GeoPoint::from(bottom_right),
         })
     }
+
+    #[getter]
+    pub fn top_left(&self) -> PyGeoPoint {
+        PyGeoPoint(self.0.top_left)
+    }
+
+    #[getter]
+    pub fn bottom_right(&self) -> PyGeoPoint {
+        PyGeoPoint(self.0.bottom_right)
+    }
 }
 
 #[pyclass(name = "GeoRadius")]
-#[derive(Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoRadius(pub GeoRadius);
 
 #[pymethods]
@@ -33,6 +78,16 @@ impl PyGeoRadius {
             center: GeoPoint::from(center),
             radius: OrderedFloat(radius),
         })
+    }
+
+    #[getter]
+    pub fn center(&self) -> PyGeoPoint {
+        PyGeoPoint(self.0.center)
+    }
+
+    #[getter]
+    pub fn radius(&self) -> f64 {
+        self.0.radius.into_inner()
     }
 }
 
@@ -58,21 +113,18 @@ impl PyGeoPolygon {
 
         Ok(Self(polygon))
     }
-}
 
-#[pyclass(name = "GeoPoint")]
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyGeoPoint(pub GeoPoint);
+    #[getter]
+    pub fn exterior(&self) -> &PyGeoLineString {
+        PyGeoLineString::wrap_ref(&self.0.exterior)
+    }
 
-#[pymethods]
-impl PyGeoPoint {
-    #[new]
-    pub fn new(lon: f64, lat: f64) -> Result<Self, PyErr> {
-        let point =
-            GeoPoint::new(lon, lat).map_err(|err| PyValueError::new_err(err.to_string()))?;
-
-        Ok(Self(point))
+    #[getter]
+    pub fn interiors(&self) -> Option<&[PyGeoLineString]> {
+        self.0
+            .interiors
+            .as_ref()
+            .map(|interiors| PyGeoLineString::wrap_slice(interiors))
     }
 }
 
@@ -98,6 +150,16 @@ impl<'py> IntoPyObject<'py> for PyGeoLineString {
     type Error = PyErr; // Infallible
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        PyGeoPoint::wrap_vec(self.0.points).into_bound_py_any(py)
+        IntoPyObject::into_pyobject(&self, py)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyGeoLineString {
+    type Target = PyAny; // PyList
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        PyGeoPoint::wrap_slice(&self.0.points).into_pyobject(py)
     }
 }

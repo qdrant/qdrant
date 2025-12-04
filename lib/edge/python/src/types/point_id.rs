@@ -19,6 +19,13 @@ impl PyPointId {
     {
         unsafe { mem::transmute(set) }
     }
+
+    pub fn wrap_set_ref(set: &ahash::HashSet<PointIdType>) -> &ahash::HashSet<Self>
+    where
+        Self: TransparentWrapper<PointIdType>,
+    {
+        unsafe { mem::transmute(set) }
+    }
 }
 
 impl FromPyObject<'_, '_> for PyPointId {

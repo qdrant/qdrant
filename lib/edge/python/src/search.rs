@@ -41,7 +41,7 @@ impl PySearchRequest {
 
 #[pyclass(name = "SearchParams")]
 #[derive(Copy, Clone, Debug, Into)]
-pub struct PySearchParams(SearchParams);
+pub struct PySearchParams(pub SearchParams);
 
 #[pymethods]
 impl PySearchParams {
@@ -61,6 +61,31 @@ impl PySearchParams {
             acorn: acorn.map(AcornSearchParams::from),
         })
     }
+
+    #[getter]
+    pub fn hnsw_ef(&self) -> Option<usize> {
+        self.0.hnsw_ef
+    }
+
+    #[getter]
+    pub fn exact(&self) -> bool {
+        self.0.exact
+    }
+
+    #[getter]
+    pub fn quantization(&self) -> Option<PyQuantizationSearchParams> {
+        self.0.quantization.map(PyQuantizationSearchParams)
+    }
+
+    #[getter]
+    pub fn indexed_only(&self) -> bool {
+        self.0.indexed_only
+    }
+
+    #[getter]
+    pub fn acorn(&self) -> Option<PyAcornSearchParams> {
+        self.0.acorn.map(PyAcornSearchParams)
+    }
 }
 
 #[pyclass(name = "QuantizationSearchParams")]
@@ -77,6 +102,21 @@ impl PyQuantizationSearchParams {
             oversampling,
         })
     }
+
+    #[getter]
+    pub fn ignore(&self) -> bool {
+        self.0.ignore
+    }
+
+    #[getter]
+    pub fn rescore(&self) -> Option<bool> {
+        self.0.rescore
+    }
+
+    #[getter]
+    pub fn oversampling(&self) -> Option<f64> {
+        self.0.oversampling
+    }
 }
 
 #[pyclass(name = "AcornSearchParams")]
@@ -91,6 +131,18 @@ impl PyAcornSearchParams {
             enable,
             max_selectivity: max_selectivity.map(OrderedFloat),
         })
+    }
+
+    #[getter]
+    pub fn enable(&self) -> bool {
+        self.0.enable
+    }
+
+    #[getter]
+    pub fn max_selectivity(&self) -> Option<f64> {
+        self.0
+            .max_selectivity
+            .map(|selectivity| selectivity.into_inner())
     }
 }
 
@@ -282,8 +334,8 @@ impl PyScoredPoint {
     }
 
     #[getter]
-    pub fn vector(&self) -> Option<PyVector> {
-        self.0.vector.clone().map(PyVector::from)
+    pub fn vector(&self) -> Option<&PyVectorInternal> {
+        self.0.vector.as_ref().map(PyVectorInternal::wrap_ref)
     }
 
     #[getter]

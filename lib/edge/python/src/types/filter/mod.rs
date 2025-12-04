@@ -43,4 +43,33 @@ impl PyFilter {
             min_should: min_should.map(MinShould::from),
         })
     }
+
+    #[getter]
+    pub fn must(&self) -> Option<&[PyCondition]> {
+        self.0
+            .must
+            .as_ref()
+            .map(|must| PyCondition::wrap_slice(must))
+    }
+
+    #[getter]
+    pub fn should(&self) -> Option<&[PyCondition]> {
+        self.0
+            .should
+            .as_ref()
+            .map(|should| PyCondition::wrap_slice(should))
+    }
+
+    #[getter]
+    pub fn must_not(&self) -> Option<&[PyCondition]> {
+        self.0
+            .must_not
+            .as_ref()
+            .map(|must_not| PyCondition::wrap_slice(must_not))
+    }
+
+    #[getter]
+    pub fn min_should(&self) -> Option<PyMinShould> {
+        self.0.min_should.clone().map(PyMinShould)
+    }
 }

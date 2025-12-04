@@ -47,7 +47,7 @@ impl From<Direction> for Order {
     }
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum StartFrom {
     Integer(IntPayloadType),

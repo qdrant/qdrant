@@ -13,7 +13,7 @@ use super::*;
 
 #[pyclass(name = "Formula")]
 #[derive(Clone, Debug, Into)]
-pub struct PyFormula(ParsedFormula);
+pub struct PyFormula(pub ParsedFormula);
 
 #[pymethods]
 impl PyFormula {

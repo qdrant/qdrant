@@ -1,3 +1,4 @@
+use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
 use pyo3::{pyclass, pymethods};
 use segment::types::PointIdType;
@@ -26,7 +27,7 @@ impl PyPointVectors {
     }
 
     #[getter]
-    fn vector(&self) -> PyVector {
-        PyVector::from(self.0.vector.clone())
+    fn vector(&self) -> &PyVector {
+        PyVector::wrap_ref(&self.0.vector)
     }
 }

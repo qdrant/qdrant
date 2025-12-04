@@ -9,6 +9,7 @@ pub mod query;
 pub mod record;
 pub mod value;
 pub mod vector;
+pub mod vector_internal;
 
 pub use self::filter::*;
 pub use self::formula::*;
@@ -21,3 +22,4 @@ pub use self::query::*;
 pub use self::record::*;
 pub use self::value::*;
 pub use self::vector::*;
+pub use self::vector_internal::*;

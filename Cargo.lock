@@ -1939,6 +1939,8 @@ dependencies = [
  "bytemuck",
  "derive_more 2.0.1",
  "edge",
+ "fnv",
+ "indexmap 2.11.4",
  "ordered-float 5.1.0",
  "pyo3",
  "segment",

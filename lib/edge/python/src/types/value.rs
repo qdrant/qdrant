@@ -120,7 +120,7 @@ pub fn value_map_into_py<'py>(map: &ValueMap, py: Python<'py>) -> PyResult<Bound
 
     for (key, value) in map {
         let key = PyString::new(py, key);
-        let value = PyValue::wrap_ref(value).into_bound_py_any(py)?;
+        let value = PyValue::wrap_ref(value).into_pyobject(py)?;
         dict.set_item(key, value)?;
     }
 

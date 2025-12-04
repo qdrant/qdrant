@@ -65,6 +65,16 @@ impl<'py> IntoPyObject<'py> for PyCondition {
     }
 }
 
+impl<'py> IntoPyObject<'py> for &PyCondition {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
+    }
+}
+
 #[pyclass(name = "IsEmptyCondition")]
 #[derive(Clone, Debug, Into)]
 pub struct PyIsEmptyCondition(pub IsEmptyCondition);
@@ -72,12 +82,17 @@ pub struct PyIsEmptyCondition(pub IsEmptyCondition);
 #[pymethods]
 impl PyIsEmptyCondition {
     #[new]
-    pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
-        Ok(Self(IsEmptyCondition {
+    pub fn new(key: PyJsonPath) -> Self {
+        Self(IsEmptyCondition {
             is_empty: PayloadField {
                 key: JsonPath::from(key),
             },
-        }))
+        })
+    }
+
+    #[getter]
+    pub fn key(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.is_empty.key)
     }
 }
 
@@ -88,12 +103,17 @@ pub struct PyIsNullCondition(pub IsNullCondition);
 #[pymethods]
 impl PyIsNullCondition {
     #[new]
-    pub fn new(key: PyJsonPath) -> Result<Self, PyErr> {
-        Ok(Self(IsNullCondition {
+    pub fn new(key: PyJsonPath) -> Self {
+        Self(IsNullCondition {
             is_null: PayloadField {
                 key: JsonPath::from(key),
             },
-        }))
+        })
+    }
+
+    #[getter]
+    pub fn key(&self) -> &PyJsonPath {
+        PyJsonPath::wrap_ref(&self.0.is_null.key)
     }
 }
 
@@ -104,10 +124,15 @@ pub struct PyHasIdCondition(pub HasIdCondition);
 #[pymethods]
 impl PyHasIdCondition {
     #[new]
-    pub fn new(point_ids: ahash::HashSet<PyPointId>) -> Result<Self, PyErr> {
-        Ok(Self(HasIdCondition {
+    pub fn new(point_ids: ahash::HashSet<PyPointId>) -> Self {
+        Self(HasIdCondition {
             has_id: MaybeArc::NoArc(ahash::AHashSet::from(PyPointId::peel_set(point_ids))),
-        }))
+        })
+    }
+
+    #[getter]
+    pub fn point_ids(&self) -> &ahash::HashSet<PyPointId> {
+        PyPointId::wrap_set_ref(&self.0.has_id)
     }
 }
 
@@ -120,5 +145,10 @@ impl PyHasVectorCondition {
     #[new]
     pub fn new(vector: VectorNameBuf) -> Self {
         Self(HasVectorCondition { has_vector: vector })
+    }
+
+    #[getter]
+    pub fn vector(&self) -> &str {
+        &self.0.has_vector
     }
 }

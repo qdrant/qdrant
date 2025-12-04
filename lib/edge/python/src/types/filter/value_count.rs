@@ -18,4 +18,24 @@ impl PyValuesCount {
     ) -> Self {
         Self(ValuesCount { lt, gt, lte, gte })
     }
+
+    #[getter]
+    pub fn lt(&self) -> Option<usize> {
+        self.0.lt
+    }
+
+    #[getter]
+    pub fn gt(&self) -> Option<usize> {
+        self.0.gt
+    }
+
+    #[getter]
+    pub fn lte(&self) -> Option<usize> {
+        self.0.lte
+    }
+
+    #[getter]
+    pub fn gte(&self) -> Option<usize> {
+        self.0.gte
+    }
 }
