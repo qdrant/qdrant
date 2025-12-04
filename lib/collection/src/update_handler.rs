@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{QuantizationConfig, SeqNumberType};
+use shard::operations::UpdateType;
 use shard::wal::WalError;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -30,6 +31,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
+use crate::common::update_queue::{AtomicUpdateQueueCounter, UpdateQueueReceiver};
 use crate::config::CollectionParams;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::generalizer::Generalizer;
@@ -38,6 +40,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
+use crate::shards::telemetry::UpdateQueueTelemetry;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::wal_delta::LockedWal;
 
@@ -140,6 +143,7 @@ pub struct UpdateHandler {
     scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 
     pub(crate) update_tracker: UpdateTracker,
+    update_queue_counter: Option<Arc<AtomicUpdateQueueCounter>>,
 }
 
 impl UpdateHandler {
@@ -186,10 +190,11 @@ impl UpdateHandler {
             has_triggered_optimizers: Default::default(),
             scroll_read_lock,
             update_tracker,
+            update_queue_counter: None,
         }
     }
 
-    pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
+    pub fn run_workers(&mut self, update_receiver: UpdateQueueReceiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 
         self.optimizer_worker = Some(self.runtime_handle.spawn(Self::optimization_worker_fn(
@@ -214,6 +219,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+        self.update_queue_counter = Some(update_receiver.counter().clone());
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             collection_name,
             update_receiver,
@@ -808,14 +814,25 @@ impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     async fn update_worker_fn(
         collection_name: CollectionId,
-        mut receiver: Receiver<UpdateSignal>,
+        mut receiver: UpdateQueueReceiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) {
-        while let Some(signal) = receiver.recv().await {
+        let to_update_type_fn = |signal: &UpdateSignal| -> Option<UpdateType> {
+            match signal {
+                UpdateSignal::Operation(operation_data) => {
+                    Some(operation_data.operation.update_type())
+                }
+                UpdateSignal::Stop => None,
+                UpdateSignal::Nop => None,
+                UpdateSignal::Plunger(_) => None,
+            }
+        };
+
+        while let Some(signal) = receiver.recv(to_update_type_fn).await {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -1013,6 +1030,14 @@ impl UpdateHandler {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
+    }
+
+    /// Returns the amount of (waiting) updates in the update queue.
+    pub fn update_queue_len(&self) -> UpdateQueueTelemetry {
+        self.update_queue_counter
+            .as_ref()
+            .map(|counter| counter.to_telemetry())
+            .unwrap_or_default()
     }
 }
 

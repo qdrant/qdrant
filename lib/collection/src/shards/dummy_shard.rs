@@ -74,7 +74,8 @@ impl DummyShard {
             optimizations: Default::default(),
             async_scorer: None,
             indexed_only_excluded_vectors: None,
-            running_update_operations: None,
+            update_queue_len_total: None,
+            update_queue_counter: None,
         }
     }
 

@@ -14,7 +14,7 @@ use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::shard::ShardId;
-use crate::shards::telemetry::ReplicaSetTelemetry;
+use crate::shards::telemetry::{ReplicaSetTelemetry, UpdateQueueTelemetry};
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionTelemetry {
@@ -116,13 +116,27 @@ impl CollectionTelemetry {
             )
     }
 
-    pub fn updates_running(&self) -> usize {
+    /// Returns the total amount of queue length, including currently running updates.
+    pub fn update_queue_total(&self) -> usize {
         self.shards
             .iter()
             .flatten()
             .filter_map(|shard| shard.local.as_ref())
-            .filter_map(|i| i.running_update_operations)
+            .filter_map(|i| i.update_queue_len_total)
             .sum()
+    }
+
+    /// Returns update queue counters, separated by update type.
+    pub fn update_queue(&self) -> UpdateQueueTelemetry {
+        self.shards
+            .iter()
+            .flatten()
+            .filter_map(|shard| shard.local.as_ref())
+            .filter_map(|i| i.update_queue_counter)
+            .fold(UpdateQueueTelemetry::default(), |mut acc, item| {
+                acc += item;
+                acc
+            })
     }
 }
 

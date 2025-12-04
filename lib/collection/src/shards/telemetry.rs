@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::AddAssign;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -73,7 +74,50 @@ pub struct LocalShardTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexed_only_excluded_vectors: Option<HashMap<String, usize>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub running_update_operations: Option<usize>,
+    pub update_queue_len_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_queue_counter: Option<UpdateQueueTelemetry>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, JsonSchema, Anonymize, Default)]
+pub struct UpdateQueueTelemetry {
+    pub point_updates: usize,
+    pub vector_updates: usize,
+    pub index_updates: usize,
+    pub payload_updates: usize,
+    pub other: usize,
+}
+
+impl UpdateQueueTelemetry {
+    /// Returns the total queue size, which is the sum of all individual counters.
+    pub fn total(&self) -> usize {
+        let UpdateQueueTelemetry {
+            point_updates,
+            vector_updates,
+            index_updates,
+            payload_updates,
+            other,
+        } = self;
+        point_updates + vector_updates + index_updates + payload_updates + other
+    }
+}
+
+impl AddAssign for UpdateQueueTelemetry {
+    fn add_assign(&mut self, rhs: Self) {
+        let UpdateQueueTelemetry {
+            point_updates,
+            vector_updates,
+            index_updates,
+            payload_updates,
+            other,
+        } = rhs;
+
+        self.point_updates += point_updates;
+        self.vector_updates += vector_updates;
+        self.index_updates += index_updates;
+        self.payload_updates += payload_updates;
+        self.other += other;
+    }
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
