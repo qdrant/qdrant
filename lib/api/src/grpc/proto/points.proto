@@ -126,6 +126,7 @@ message UpsertPoints {
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
   optional Filter update_filter = 6; // If specified, only points that match this filter will be updated, others will be inserted
+  optional uint64 timeout = 7; // Timeout for the request in seconds
 }
 
 message DeletePoints {
@@ -134,6 +135,7 @@ message DeletePoints {
   PointsSelector points = 3; // Affected points
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional uint64 timeout = 6; // Timeout for the request in seconds
 }
 
 message GetPoints {
@@ -154,6 +156,7 @@ message UpdatePointVectors {
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
   optional Filter update_filter = 6; // If specified, only points that match this filter will be updated
+  optional uint64 timeout = 7; // Timeout for the request in seconds
 }
 
 message PointVectors {
@@ -168,6 +171,7 @@ message DeletePointVectors {
   VectorsSelector vectors = 4; // List of vector names to delete
   optional WriteOrdering ordering = 5; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 6; // Option for custom sharding to specify used shard keys
+  optional uint64 timeout = 7; // Timeout for the request in seconds
 }
 
 message SetPayloadPoints {
@@ -179,6 +183,7 @@ message SetPayloadPoints {
   optional WriteOrdering ordering = 6; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 7; // Option for custom sharding to specify used shard keys
   optional string key = 8; // Option for indicate property of payload
+  optional uint64 timeout = 9; // Timeout for the request in seconds
 }
 
 message DeletePayloadPoints {
@@ -189,6 +194,7 @@ message DeletePayloadPoints {
   optional PointsSelector points_selector = 5; // Affected points
   optional WriteOrdering ordering = 6; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 7; // Option for custom sharding to specify used shard keys
+  optional uint64 timeout = 8; // Timeout for the request in seconds
 }
 
 message ClearPayloadPoints {
@@ -197,6 +203,7 @@ message ClearPayloadPoints {
   PointsSelector points = 3; // Affected points
   optional WriteOrdering ordering = 4; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 5; // Option for custom sharding to specify used shard keys
+  optional uint64 timeout = 6; // Timeout for the request in seconds
 }
 
 enum FieldType {
@@ -314,7 +321,7 @@ message AcornSearchParams {
   If estimated filters selectivity is higher than this value,
   ACORN will not be used. Selectivity is estimated as:
   `estimated number of points satisfying the filters / total number of points`.
-    
+
   0.0 for never, 1.0 for always. Default is 0.4.
   */
   optional double max_selectivity = 2;
@@ -876,6 +883,7 @@ message UpdateBatchPoints {
   optional bool wait = 2; // Wait until the changes have been applied?
   repeated PointsUpdateOperation operations = 3;
   optional WriteOrdering ordering = 4; // Write ordering guarantees
+  optional uint64 timeout = 5; // Timeout for the operation in seconds
 }
 
 // ---------------------------------------------
