@@ -49,7 +49,6 @@ async fn upsert_points(
     );
     let timing = Instant::now();
 
-    // Update operation doesn't have timeout yet
     let inference_params = InferenceParams::new(inference_token, params.timeout);
 
     let result_with_usage = do_upsert_points(
