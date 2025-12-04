@@ -52,10 +52,7 @@ impl LocalShard {
         tokio::time::timeout(timeout, all_scroll_results)
             .await
             .map_err(|_| {
-                log::debug!(
-                    "Query scroll timeout reached: {} milliseconds",
-                    timeout.as_millis()
-                );
+                log::debug!("Query scroll timeout reached: {timeout:?}");
                 CollectionError::timeout(timeout, "Query scroll")
             })?
     }

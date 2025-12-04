@@ -120,8 +120,7 @@ impl ProxyShard {
             // So we will timeout and try again
             if timeout(attempt_timeout, rx).await.is_err() {
                 log::warn!(
-                    "Timeout {} milliseconds while waiting for the wrapped shard to finish the update queue, retrying",
-                    attempt_timeout.as_millis(),
+                    "Timeout {attempt_timeout:?} while waiting for the wrapped shard to finish the update queue, retrying",
                 );
                 attempt += 1;
                 if attempt_timeout > UPDATE_QUEUE_CLEAR_MAX_TIMEOUT {

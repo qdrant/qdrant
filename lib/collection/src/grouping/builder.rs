@@ -73,10 +73,7 @@ where
             tokio::time::timeout(timeout, self.run())
                 .await
                 .map_err(|_| {
-                    log::debug!(
-                        "GroupBy timeout reached: {} milliseconds",
-                        timeout.as_millis()
-                    );
+                    log::debug!("GroupBy timeout reached: {timeout:?}");
                     CollectionError::timeout(timeout, "GroupBy")
                 })?
         } else {

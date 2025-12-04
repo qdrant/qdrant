@@ -2,6 +2,7 @@ use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
 use io::file_operations::FileStorageError;
@@ -116,7 +117,7 @@ impl OperationError {
         }
     }
 
-    pub fn timeout(timeout: std::time::Duration, operation: impl Into<String>) -> Self {
+    pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
                 "Operation '{}' timed out after {:?}",
