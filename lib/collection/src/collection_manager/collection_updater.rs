@@ -100,7 +100,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::{
-        build_segment_1, build_segment_2, build_test_holder,
+        TEST_TIMEOUT, build_segment_1, build_segment_2, build_test_holder,
     };
     use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
@@ -194,6 +194,7 @@ mod tests {
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -231,6 +232,7 @@ mod tests {
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -274,6 +276,7 @@ mod tests {
             &points,
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -311,6 +314,7 @@ mod tests {
             &[3.into()],
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -328,6 +332,7 @@ mod tests {
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -352,6 +357,7 @@ mod tests {
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -424,6 +430,7 @@ mod tests {
             &points,
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )
@@ -487,6 +494,7 @@ mod tests {
             &points,
             &WithPayload::from(true),
             &false.into(),
+            TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
         )

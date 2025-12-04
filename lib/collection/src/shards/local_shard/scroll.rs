@@ -204,6 +204,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                timeout,
                 hw_measurement_acc,
             ),
         )
@@ -299,6 +300,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                timeout,
                 hw_measurement_acc,
             ),
         )
@@ -438,6 +440,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                timeout,
                 hw_measurement_acc,
             ),
         )

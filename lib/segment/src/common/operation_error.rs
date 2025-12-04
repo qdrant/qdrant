@@ -48,6 +48,8 @@ pub enum OperationError {
     OutOfMemory { description: String, free: u64 },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
+    #[error("Timeout error: {description}")]
+    Timeout { description: String },
     #[error("Validation failed: {description}")]
     ValidationError { description: String },
     #[error("Wrong usage of sparse vectors")]
@@ -81,36 +83,45 @@ pub enum OperationError {
 impl OperationError {
     /// Create a new service error with a description and a backtrace
     /// Warning: capturing a backtrace can be an expensive operation on some platforms, so this should be used with caution in performance-sensitive parts of code.
-    pub fn service_error(description: impl Into<String>) -> OperationError {
-        OperationError::ServiceError {
+    pub fn service_error(description: impl Into<String>) -> Self {
+        Self::ServiceError {
             description: description.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 
     /// Create a new service error with a description and no backtrace
-    pub fn service_error_light(description: impl Into<String>) -> OperationError {
-        OperationError::ServiceError {
+    pub fn service_error_light(description: impl Into<String>) -> Self {
+        Self::ServiceError {
             description: description.into(),
             backtrace: None,
         }
     }
 
-    pub fn validation_error(description: impl Into<String>) -> OperationError {
-        OperationError::ValidationError {
+    pub fn validation_error(description: impl Into<String>) -> Self {
+        Self::ValidationError {
             description: description.into(),
         }
     }
 
-    pub fn inconsistent_storage(description: impl Into<String>) -> OperationError {
-        OperationError::InconsistentStorage {
+    pub fn inconsistent_storage(description: impl Into<String>) -> Self {
+        Self::InconsistentStorage {
             description: description.into(),
         }
     }
 
-    pub fn vector_name_not_exists(vector_name: impl Into<String>) -> OperationError {
-        OperationError::VectorNameNotExists {
+    pub fn vector_name_not_exists(vector_name: impl Into<String>) -> Self {
+        Self::VectorNameNotExists {
             received_name: vector_name.into(),
+        }
+    }
+
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+        Self::Timeout {
+            description: format!(
+                "Operation '{}' timed out after {timeout_sec} seconds",
+                operation.into()
+            ),
         }
     }
 }
