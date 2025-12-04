@@ -35,7 +35,7 @@ impl LocalShard {
                 // blocking sync lock
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
                     return Err(CollectionError::timeout(
-                        timeout.as_secs() as usize,
+                        timeout.as_millis(),
                         "shard telemetry",
                     ));
                 };
@@ -48,7 +48,7 @@ impl LocalShard {
                     // blocking sync lock
                     let Some(segment_guard) = segment.get().try_read_for(timeout) else {
                         return Err(CollectionError::timeout(
-                            timeout.as_secs() as usize,
+                            timeout.as_millis(),
                             "shard telemetry",
                         ));
                     };
@@ -128,7 +128,7 @@ impl LocalShard {
             // blocking sync lock
             let Some(segments) = segments.try_read_for(timeout) else {
                 return Err(CollectionError::timeout(
-                    timeout.as_secs() as usize,
+                    timeout.as_millis(),
                     "optimization status",
                 ));
             };
@@ -148,7 +148,7 @@ impl LocalShard {
             // blocking sync lock
             let Some(segments) = segments.try_read_for(timeout) else {
                 return Err(CollectionError::timeout(
-                    timeout.as_secs() as usize,
+                    timeout.as_millis(),
                     "get size stats",
                 ));
             };

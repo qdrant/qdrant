@@ -116,11 +116,19 @@ impl OperationError {
         }
     }
 
-    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+    pub fn timeout(timeout_ms: u128, operation: impl Into<String>) -> Self {
+        let timeout_str = if timeout_ms < 1000 {
+            format!("{timeout_ms} milliseconds")
+        } else if timeout_ms % 1000 == 0 {
+            format!("{} seconds", timeout_ms / 1000)
+        } else {
+            format!("{:.3} seconds", timeout_ms as f64 / 1000.0)
+        };
         Self::Timeout {
             description: format!(
-                "Operation '{}' timed out after {timeout_sec} seconds",
-                operation.into()
+                "Operation '{}' timed out after {}",
+                operation.into(),
+                timeout_str
             ),
         }
     }
@@ -259,6 +267,55 @@ impl From<CancelledError> for OperationError {
         OperationError::Cancelled {
             description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_timeout_error_formatting() {
+        // Test sub-second timeout (500ms)
+        let timeout = Duration::from_millis(500);
+        let error = OperationError::timeout(timeout.as_millis(), "test operation");
+        let error_msg = format!("{}", error);
+        assert!(
+            error_msg.contains("500 milliseconds"),
+            "Expected '500 milliseconds' but got: {}",
+            error_msg
+        );
+
+        // Test exact second timeout (1000ms = 1s)
+        let timeout = Duration::from_millis(1000);
+        let error = OperationError::timeout(timeout.as_millis(), "test operation");
+        let error_msg = format!("{}", error);
+        assert!(
+            error_msg.contains("1 seconds"),
+            "Expected '1 seconds' but got: {}",
+            error_msg
+        );
+
+        // Test multi-second timeout with sub-second precision (2500ms = 2.5s)
+        let timeout = Duration::from_millis(2500);
+        let error = OperationError::timeout(timeout.as_millis(), "test operation");
+        let error_msg = format!("{}", error);
+        assert!(
+            error_msg.contains("2.500 seconds"),
+            "Expected '2.500 seconds' but got: {}",
+            error_msg
+        );
+
+        // Test large timeout (60000ms = 60s)
+        let timeout = Duration::from_millis(60000);
+        let error = OperationError::timeout(timeout.as_millis(), "test operation");
+        let error_msg = format!("{}", error);
+        assert!(
+            error_msg.contains("60 seconds"),
+            "Expected '60 seconds' but got: {}",
+            error_msg
+        );
     }
 }
 

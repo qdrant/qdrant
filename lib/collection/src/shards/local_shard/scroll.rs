@@ -53,10 +53,10 @@ impl LocalShard {
             .await
             .map_err(|_| {
                 log::debug!(
-                    "Query scroll timeout reached: {} seconds",
-                    timeout.as_secs()
+                    "Query scroll timeout reached: {} milliseconds",
+                    timeout.as_millis()
                 );
-                CollectionError::timeout(timeout.as_secs() as usize, "Query scroll")
+                CollectionError::timeout(timeout.as_millis(), "Query scroll")
             })?
     }
 
@@ -183,7 +183,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "scroll_by_id"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "scroll_by_id"))??;
 
         let point_ids = all_reads
             .into_iter()
@@ -209,7 +209,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "retrieve"))??;
 
         drop(update_operation_lock);
 
@@ -272,7 +272,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "scroll_by_field"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "scroll_by_field"))??;
 
         let all_reads = all_reads.into_iter().collect::<Result<Vec<_>, _>>()?;
 
@@ -305,7 +305,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "retrieve"))??;
 
         drop(update_operation_lock);
 
@@ -375,7 +375,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "scroll_randomly"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "scroll_randomly"))??;
 
         let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
 
@@ -445,7 +445,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "retrieve"))??;
 
         drop(update_operation_lock);
 

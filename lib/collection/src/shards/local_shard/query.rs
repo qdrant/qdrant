@@ -138,7 +138,7 @@ impl LocalShard {
             ),
         )
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
+        .map_err(|_| CollectionError::timeout(timeout.as_millis(), "retrieve"))??;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results

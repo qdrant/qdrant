@@ -767,8 +767,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         if !is_leader_established {
             return Err(StorageError::service_error(format!(
-                "Failed to propose operation: leader is not established within {} secs",
-                wait_timeout.as_secs()
+                "Failed to propose operation: leader is not established within {} milliseconds",
+                wait_timeout.as_millis()
             )));
         }
 

@@ -41,7 +41,7 @@ impl LocalShard {
         let res = tokio::time::timeout(timeout, future)
             .await
             .map_err(|_elapsed| {
-                CollectionError::timeout(timeout.as_secs() as usize, "rescore_with_formula")
+                CollectionError::timeout(timeout.as_millis(), "rescore_with_formula")
             })??;
 
         Ok(res)

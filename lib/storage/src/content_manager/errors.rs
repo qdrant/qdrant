@@ -100,11 +100,19 @@ impl StorageError {
         }
     }
 
-    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+    pub fn timeout(timeout_ms: u128, operation: impl Into<String>) -> Self {
+        let timeout_str = if timeout_ms < 1000 {
+            format!("{timeout_ms} milliseconds")
+        } else if timeout_ms % 1000 == 0 {
+            format!("{} seconds", timeout_ms / 1000)
+        } else {
+            format!("{:.3} seconds", timeout_ms as f64 / 1000.0)
+        };
         Self::Timeout {
             description: format!(
-                "Operation '{}' timed out after {timeout_sec} seconds",
-                operation.into()
+                "Operation '{}' timed out after {}",
+                operation.into(),
+                timeout_str
             ),
         }
     }

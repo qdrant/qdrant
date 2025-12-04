@@ -488,9 +488,9 @@ impl ShardReplicaSet {
                     if !shards_disabled {
                         return Err(CollectionError::service_error(format!(
                             "Some replica of shard {} failed to apply operation and deactivation \
-                            timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
+                            timed out after {} milliseconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
                             self.shard_id,
-                            timeout.as_secs(),
+                            timeout.as_millis(),
                         )));
                     }
                 }
