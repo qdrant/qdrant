@@ -585,6 +585,7 @@ impl RemoteShard {
                         shard_id.unwrap_or(0),
                         op.duration
                     );
+                    timer.set_success(true);
                     return Ok(UpdateResult {
                         operation_id: None,
                         status: crate::operations::types::UpdateStatus::Completed,

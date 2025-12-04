@@ -725,6 +725,10 @@ mod tests_ops {
                 ));
                 assert_requires_whole_write_access(&op);
             }
+            #[cfg(feature = "staging")]
+            PointOperationsDiscriminants::TestDelayUpsertPoints => {
+                // Staging operation - requires write access
+            }
         });
     }
 
