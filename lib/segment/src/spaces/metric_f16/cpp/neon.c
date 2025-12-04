@@ -1,8 +1,7 @@
 #if !defined PC_VER
 #include <arm_neon.h>
-#endif
 
-#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+#if defined(_MSC_VER) || defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
 #include <arm_fp16.h>
 float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, uint32_t blockSize)
 {
@@ -134,4 +133,5 @@ float32_t manhattanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
 
     return manhattanDistance;
 }
+#endif
 #endif
