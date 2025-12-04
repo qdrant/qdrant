@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::grpc;
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};
+use itertools::Itertools;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -13,11 +16,14 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
+use tonic::Status;
 use uuid::Uuid;
 
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
-use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
+use crate::common::telemetry_ops::collections_telemetry::{
+    CollectionTelemetryEnum, CollectionsTelemetry,
+};
 use crate::common::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
@@ -137,6 +143,43 @@ impl TelemetryCollector {
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
+        })
+    }
+}
+
+impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
+    type Error = Status;
+
+    fn try_from(value: grpc::PeerTelemetry) -> Result<Self, Self::Error> {
+        let grpc::PeerTelemetry {
+            collections,
+            cluster,
+        } = value;
+
+        let collections = collections
+            .into_values()
+            .map(|collection| {
+                Ok(CollectionTelemetryEnum::Full(Box::new(
+                    CollectionTelemetry::try_from(collection)?,
+                )))
+            })
+            .try_collect::<_, Vec<_>, Status>()?;
+
+        let cluster = cluster.map(ClusterTelemetry::try_from).transpose()?;
+
+        Ok(TelemetryData {
+            id: "".to_string(),
+            app: None,
+            collections: CollectionsTelemetry {
+                number_of_collections: collections.len(),
+                max_collections: None,
+                collections: Some(collections),
+                snapshots: None,
+            },
+            cluster,
+            requests: None,
+            memory: None,
+            hardware: None,
         })
     }
 }
