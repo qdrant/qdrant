@@ -33,6 +33,7 @@ impl PyVectorDataConfig {
 #[pymethods]
 impl PyVectorDataConfig {
     #[new]
+    #[pyo3(signature = (size, distance, storage_type, index, quantization_config=None, multivector_config=None, datatype=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
