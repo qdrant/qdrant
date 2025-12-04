@@ -94,6 +94,7 @@ pub async fn delete(
     internal_params: InternalUpdateParams,
     access: Access,
     request_hw_counter: RequestHwCounter,
+    inference_params: InferenceParams,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -114,7 +115,7 @@ pub async fn delete(
         collection_name,
         points_selector,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(wait, ordering, inference_params.timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -194,6 +195,7 @@ pub async fn delete_vectors(
     internal_params: InternalUpdateParams,
     access: Access,
     request_hw_counter: RequestHwCounter,
+    inference_params: InferenceParams,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -225,7 +227,7 @@ pub async fn delete_vectors(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, None)?,
+        UpdateParams::from_grpc(wait, ordering, inference_params.timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
