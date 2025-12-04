@@ -917,7 +917,7 @@ mod tests {
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
         );
-        matches!(records, Err(OperationError::Timeout { .. }));
+        assert!(matches!(records, Err(OperationError::Timeout { .. })));
     }
 
     #[test]
