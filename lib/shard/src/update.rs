@@ -56,6 +56,12 @@ pub fn process_point_operation(
             )?;
             Ok(deleted + new + updated)
         }
+        #[cfg(feature = "staging")]
+        PointOperations::TestDelayUpsertPoints(operation) => {
+            operation.execute();
+            segments.read().bump_max_segment_version_overwrite(op_num);
+            Ok(0)
+        }
     }
 }
 

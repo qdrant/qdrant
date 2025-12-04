@@ -430,6 +430,70 @@ async fn delete_field_index(
     process_response(response, timing, None)
 }
 
+/// Request body for the staging test delay endpoint.
+/// Only available when the `staging` feature is enabled.
+#[cfg(feature = "staging")]
+#[derive(Debug, Deserialize, Validate)]
+pub struct TestDelayRequest {
+    /// Duration of the delay in seconds (default: 1.0, max: 300.0).
+    #[serde(default = "default_test_delay_duration")]
+    #[validate(range(min = 0.0, max = 300.0))]
+    pub duration: f64,
+}
+
+#[cfg(feature = "staging")]
+fn default_test_delay_duration() -> f64 {
+    1.0
+}
+
+/// Staging endpoint that introduces an artificial delay for testing purposes.
+/// Only available when the `staging` feature is enabled.
+#[cfg(feature = "staging")]
+#[post("/collections/{name}/points/staging")]
+async fn staging_test_delay(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    operation: Json<TestDelayRequest>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    use collection::operations::point_ops::PointOperations;
+    use collection::operations::verification::new_unchecked_verification_pass;
+    use ordered_float::OrderedFloat;
+    use shard::operations::CollectionUpdateOperations;
+    use shard::operations::point_ops::TestDelayUpsertPointsOperation;
+
+    let timing = Instant::now();
+    let operation = operation.into_inner();
+    let collection_name = collection.into_inner().name;
+
+    let point_operation = PointOperations::TestDelayUpsertPoints(TestDelayUpsertPointsOperation {
+        duration: OrderedFloat(operation.duration),
+    });
+
+    let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
+
+    // Get TOC with unchecked verification pass (staging operations don't need strict mode)
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&access, &pass);
+
+    let result = crate::common::update::update(
+        toc,
+        &collection_name,
+        collection_operation,
+        InternalUpdateParams::default(),
+        UpdateParams {
+            wait: true,
+            ordering: Default::default(),
+        },
+        None, // shard_key
+        access,
+        HwMeasurementAcc::disposable(),
+    )
+    .await;
+
+    process_response(result, timing, None)
+}
+
 // Configure services
 pub fn config_update_api(cfg: &mut web::ServiceConfig) {
     cfg.service(upsert_points)
@@ -443,4 +507,7 @@ pub fn config_update_api(cfg: &mut web::ServiceConfig) {
         .service(create_field_index)
         .service(delete_field_index)
         .service(update_batch);
+
+    #[cfg(feature = "staging")]
+    cfg.service(staging_test_delay);
 }

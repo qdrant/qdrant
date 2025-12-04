@@ -301,6 +301,11 @@ impl RemoteShard {
                         )?;
                         Update::Sync(request)
                     }
+                    #[cfg(feature = "staging")]
+                    PointOperations::TestDelayUpsertPoints(_) => {
+                        // Staging test delay operations should not be forwarded to remote shards
+                        continue;
+                    }
                 },
                 CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
                     VectorOperations::UpdateVectors(update_operation) => {
@@ -570,6 +575,21 @@ impl RemoteShard {
                     })
                     .await?
                     .into_inner()
+                }
+                #[cfg(feature = "staging")]
+                PointOperations::TestDelayUpsertPoints(op) => {
+                    // TODO: Add gRPC support to forward staging operations to remote shards
+                    // For now, staging test delay operations only execute on local shards
+                    log::debug!(
+                        "TestDelayUpsertPoints: skipping remote shard {} (duration: {}s)",
+                        shard_id.unwrap_or(0),
+                        op.duration
+                    );
+                    return Ok(UpdateResult {
+                        operation_id: None,
+                        status: crate::operations::types::UpdateStatus::Completed,
+                        clock_tag: operation.clock_tag,
+                    });
                 }
             },
             CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {

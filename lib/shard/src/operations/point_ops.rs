@@ -105,7 +105,13 @@ pub enum PointOperations {
     DeletePointsByFilter(Filter),
     /// Points Sync
     SyncPoints(PointSyncOperation),
+    /// Introduce artificial delay for testing purposes
+    #[cfg(feature = "staging")]
+    TestDelayUpsertPoints(super::staging::TestDelayUpsertPointsOperation),
 }
+
+#[cfg(feature = "staging")]
+pub use super::staging::TestDelayUpsertPointsOperation;
 
 impl PointOperations {
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
@@ -115,6 +121,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => Some(ids.clone()),
             Self::DeletePointsByFilter(_) => None,
             Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
+            #[cfg(feature = "staging")]
+            Self::TestDelayUpsertPoints(_) => None,
         }
     }
 
@@ -130,6 +138,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => ids.retain(filter),
             Self::DeletePointsByFilter(_) => (),
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
+            #[cfg(feature = "staging")]
+            Self::TestDelayUpsertPoints(_) => (),
         }
     }
 }
