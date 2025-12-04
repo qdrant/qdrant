@@ -810,8 +810,10 @@ impl Collection {
             };
 
             shard_optimization_statuses.push(shard_optimization_status);
-
-            vectors += shard.get_size_stats().await.num_vectors;
+            let size_stats = shard
+                .get_size_stats(timeout.saturating_sub(start.elapsed()))
+                .await?;
+            vectors += size_stats.num_vectors;
         }
 
         let optimizers_status = shard_optimization_statuses

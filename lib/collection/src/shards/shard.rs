@@ -113,13 +113,13 @@ impl Shard {
         }
     }
 
-    pub async fn get_size_stats(&self) -> SizeStats {
+    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
         match self {
-            Shard::Local(local_shard) => local_shard.get_size_stats().await,
-            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats().await,
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats().await,
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.get_size_stats(),
+            Shard::Local(local_shard) => local_shard.get_size_stats(timeout).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(timeout).await,
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(timeout).await,
+            Shard::Dummy(dummy_shard) => Ok(dummy_shard.get_size_stats()),
         }
     }
 

@@ -372,8 +372,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.get_optimization_status(timeout).await
     }
 
-    pub async fn get_size_stats(&self) -> SizeStats {
-        self.wrapped_shard.get_size_stats().await
+    pub async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
+        self.wrapped_shard.get_size_stats(timeout).await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
