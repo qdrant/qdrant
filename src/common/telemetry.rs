@@ -114,7 +114,7 @@ impl TelemetryCollector {
         let collections_telemetry = tokio::time::timeout(timeout, collections_telemetry_handle)
             .await
             .map_err(|_: Elapsed| {
-                StorageError::timeout(timeout.as_millis(), "collections telemetry")
+                StorageError::timeout(timeout, "collections telemetry")
             })???;
 
         Ok(TelemetryData {

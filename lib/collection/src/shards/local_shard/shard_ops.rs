@@ -260,7 +260,7 @@ impl ShardOperation for LocalShard {
             )
             .await
             .map_err(|_: Elapsed| {
-                CollectionError::timeout(timeout.as_millis(), "count")
+                CollectionError::timeout(timeout, "count")
             })??;
             all_points.len()
         } else {
@@ -301,7 +301,7 @@ impl ShardOperation for LocalShard {
             ),
         )
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_millis(), "retrieve"))??;
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "retrieve"))??;
 
         let ordered_records = request
             .ids

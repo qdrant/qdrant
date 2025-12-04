@@ -28,7 +28,7 @@ pub fn retrieve_blocking(
 
     let Some(segments_guard) = segments.try_read_for(timeout) else {
         return Err(OperationError::timeout(
-            timeout.as_millis(),
+            timeout,
             "retrieve points",
         ));
     };

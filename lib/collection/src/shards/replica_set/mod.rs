@@ -589,7 +589,7 @@ impl ShardReplicaSet {
                 Ok(())
             } else {
                 Err(CollectionError::timeout(
-                    timeout.as_millis(),
+                    timeout,
                     "wait for replica set state",
                 ))
             }

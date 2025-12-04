@@ -140,7 +140,7 @@ impl LocalShard {
             .map_err(|_| {
                 log::debug!("Search timeout reached: {} milliseconds", timeout.as_millis());
                 // StoppingGuard takes care of setting is_stopped to true
-                CollectionError::timeout(timeout.as_millis(), "Search")
+                CollectionError::timeout(timeout, "Search")
             })??;
 
         let top_results = res

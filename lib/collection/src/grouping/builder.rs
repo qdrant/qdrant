@@ -74,7 +74,7 @@ where
                 .await
                 .map_err(|_| {
                     log::debug!("GroupBy timeout reached: {} milliseconds", timeout.as_millis());
-                    CollectionError::timeout(timeout.as_millis(), "GroupBy")
+                    CollectionError::timeout(timeout, "GroupBy")
                 })?
         } else {
             self.run().await
