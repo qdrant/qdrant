@@ -24,8 +24,9 @@ use ::api::grpc::qdrant::qdrant_server::{Qdrant, QdrantServer};
 use ::api::grpc::qdrant::shard_snapshots_server::ShardSnapshotsServer;
 use ::api::grpc::qdrant::snapshots_server::SnapshotsServer;
 use ::api::grpc::qdrant::{
-    GetConsensusCommitRequest, GetConsensusCommitResponse, HealthCheckReply, HealthCheckRequest,
-    WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
+    GetConsensusCommitRequest, GetConsensusCommitResponse, GetPeerTelemetryRequest,
+    GetPeerTelemetryResponse, HealthCheckReply, HealthCheckRequest, WaitOnConsensusCommitRequest,
+    WaitOnConsensusCommitResponse,
 };
 use ::api::rest::models::VersionInfo;
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -124,6 +125,13 @@ impl QdrantInternal for QdrantInternalService {
             .await
             .is_ok();
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
+    }
+
+    async fn get_peer_telemetry(
+        &self,
+        _request: Request<GetPeerTelemetryRequest>,
+    ) -> Result<Response<GetPeerTelemetryResponse>, Status> {
+        Err(Status::unimplemented("Not implemented"))
     }
 }
 
