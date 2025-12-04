@@ -455,7 +455,7 @@ impl MetricsProvider for CollectionsTelemetry {
             prefix,
         ));
 
-        metrics.push(metric_family(
+        metrics.push_metric(metric_family(
             "collection_running_updates",
             "currently running shard updates",
             MetricType::GAUGE,
