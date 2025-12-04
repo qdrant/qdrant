@@ -34,10 +34,7 @@ impl LocalShard {
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
-                    return Err(CollectionError::timeout(
-                        timeout,
-                        "shard telemetry",
-                    ));
+                    return Err(CollectionError::timeout(timeout, "shard telemetry"));
                 };
                 let mut segments_telemetry = Vec::with_capacity(segments_guard.len());
                 for (_id, segment) in segments_guard.iter() {
@@ -47,10 +44,7 @@ impl LocalShard {
 
                     // blocking sync lock
                     let Some(segment_guard) = segment.get().try_read_for(timeout) else {
-                        return Err(CollectionError::timeout(
-                            timeout,
-                            "shard telemetry",
-                        ));
+                        return Err(CollectionError::timeout(timeout, "shard telemetry"));
                     };
 
                     segments_telemetry.push(segment_guard.get_telemetry_data(detail))
@@ -127,10 +121,7 @@ impl LocalShard {
         let status = tokio::task::spawn_blocking(move || {
             // blocking sync lock
             let Some(segments) = segments.try_read_for(timeout) else {
-                return Err(CollectionError::timeout(
-                    timeout,
-                    "optimization status",
-                ));
+                return Err(CollectionError::timeout(timeout, "optimization status"));
             };
 
             match &segments.optimizer_errors {
@@ -147,10 +138,7 @@ impl LocalShard {
         let stats = tokio::task::spawn_blocking(move || {
             // blocking sync lock
             let Some(segments) = segments.try_read_for(timeout) else {
-                return Err(CollectionError::timeout(
-                    timeout,
-                    "get size stats",
-                ));
+                return Err(CollectionError::timeout(timeout, "get size stats"));
             };
 
             let SizeStats {
