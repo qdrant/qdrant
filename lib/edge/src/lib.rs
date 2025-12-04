@@ -183,4 +183,5 @@ fn default_wal_options() -> WalOptions {
     }
 }
 
-pub const DEFAULT_EDGE_TIMEOUT: Duration = Duration::from_hours(1);
+// Default timeout of 1h used as a placeholder in Edge
+pub(crate) const DEFAULT_EDGE_TIMEOUT: Duration = Duration::from_secs(3600);
