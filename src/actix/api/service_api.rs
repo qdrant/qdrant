@@ -56,11 +56,11 @@ fn telemetry(
             level: details_level,
             histograms: false,
         };
-        let telemetry_collector = telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector
+            .lock()
+            .await
             .prepare_data(&access, detail, params.timeout())
             .await?;
-        drop(telemetry_collector);
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -95,8 +95,9 @@ async fn metrics(
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
-    let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector
+        .lock()
+        .await
         .prepare_data(
             &access,
             TelemetryDetail {
@@ -106,7 +107,6 @@ async fn metrics(
             params.timeout(),
         )
         .await;
-    drop(telemetry_collector);
     match telemetry_data {
         Err(err) => process_response_error(err, Instant::now(), None),
         Ok(telemetry_data) => {
