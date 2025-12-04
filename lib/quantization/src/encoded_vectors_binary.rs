@@ -180,7 +180,7 @@ impl BitsStoreType for u8 {
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
             unsafe {
                 if v1.len() > 16 {
@@ -209,7 +209,7 @@ impl BitsStoreType for u8 {
     fn xor_popcnt_scalar(vector: &[Self], query: &[Self], query_bits_count: usize) -> usize {
         debug_assert!(query.len() >= vector.len() * query_bits_count);
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
             if query_bits_count == 8 {
                 unsafe {
@@ -312,7 +312,7 @@ impl BitsStoreType for u128 {
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
             unsafe {
                 return impl_xor_popcnt_neon_uint128(
@@ -333,7 +333,7 @@ impl BitsStoreType for u128 {
     fn xor_popcnt_scalar(vector: &[Self], query: &[Self], query_bits_count: usize) -> usize {
         debug_assert!(query.len() >= vector.len() * query_bits_count);
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
             if query_bits_count == 8 {
                 unsafe {
@@ -1008,7 +1008,7 @@ unsafe extern "C" {
     ) -> u32;
 }
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 unsafe extern "C" {
     fn impl_xor_popcnt_neon_uint128(query_ptr: *const u8, vector_ptr: *const u8, count: u32)
     -> u32;
