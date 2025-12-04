@@ -739,7 +739,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -765,13 +765,13 @@ impl ScalarQuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ScalarQuantization {
     #[validate(nested)]
     pub scalar: ScalarQuantizationConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct ProductQuantizationConfig {
     pub compression: CompressionRatio,
@@ -791,7 +791,7 @@ impl ProductQuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ProductQuantization {
     #[validate(nested)]
     pub product: ProductQuantizationConfig,
@@ -821,7 +821,7 @@ impl BinaryQuantizationEncoding {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct BinaryQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -837,13 +837,15 @@ pub struct BinaryQuantizationConfig {
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct BinaryQuantization {
     #[validate(nested)]
     pub binary: BinaryQuantizationConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize,
+)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
 pub enum QuantizationConfig {

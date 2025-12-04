@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use segment::types::*;
 
 use super::quantization::*;
+use crate::repr::Repr;
 
 #[pyclass(name = "VectorDataConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -76,7 +77,7 @@ impl PyVectorDataConfig {
 
     #[getter]
     pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
-        self.0.quantization_config.clone().map(PyQuantizationConfig)
+        self.0.quantization_config.map(PyQuantizationConfig)
     }
 
     #[getter]
@@ -87,6 +88,26 @@ impl PyVectorDataConfig {
     #[getter]
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyVectorDataConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "VectorDataConfig(size={}, distance={}, storage_type={}, index={}, quantization_config={}, multivector_config={}, datatype={})",
+            self.size(),
+            self.distance(),
+            self.storage_type(),
+            self.index(),
+            Repr(self.quantization_config()),
+            Repr(self.multivector_config()),
+            Repr(self.datatype()),
+        )
     }
 }
 
@@ -107,6 +128,26 @@ pub enum PyDistance {
     Euclid,
     Dot,
     Manhattan,
+}
+
+#[pymethods]
+impl PyDistance {
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyDistance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Cosine => "Cosine",
+            Self::Euclid => "Euclid",
+            Self::Dot => "Dot",
+            Self::Manhattan => "Manhattan",
+        };
+
+        write!(f, "Distance.{repr}")
+    }
 }
 
 impl From<Distance> for PyDistance {
@@ -140,6 +181,26 @@ pub enum PyVectorStorageType {
     InRamChunkedMmap,
 }
 
+#[pymethods]
+impl PyVectorStorageType {
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyVectorStorageType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Memory => "Memory",
+            Self::Mmap => "Mmap",
+            Self::ChunkedMmap => "ChunkedMmap",
+            Self::InRamChunkedMmap => "InRamChunkedMmap",
+        };
+
+        write!(f, "VectorStorageType.{repr}")
+    }
+}
+
 impl From<VectorStorageType> for PyVectorStorageType {
     fn from(storage_type: VectorStorageType) -> Self {
         match storage_type {
@@ -162,7 +223,8 @@ impl From<PyVectorStorageType> for VectorStorageType {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyIndexes(Indexes);
 
 impl FromPyObject<'_, '_> for PyIndexes {
@@ -204,6 +266,15 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
     }
 }
 
+impl fmt::Display for PyIndexes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Indexes::Plain {} => PyPlainIndexConfig.fmt(f),
+            Indexes::Hnsw(hnsw) => PyHnswIndexConfig::wrap_ref(hnsw).fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "PlainIndexConfig")]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
@@ -214,10 +285,21 @@ impl PyPlainIndexConfig {
     pub fn new() -> Self {
         Self
     }
+
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyPlainIndexConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PlainIndexConfig()")
+    }
 }
 
 #[pyclass(name = "HnswIndexConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyHnswIndexConfig(HnswConfig);
 
 #[pymethods]
@@ -272,10 +354,30 @@ impl PyHnswIndexConfig {
     pub fn inline_storage(&self) -> Option<bool> {
         self.0.inline_storage
     }
+
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyHnswIndexConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "HnswIndexConfig(m={}, ef_construct={}, full_scan_threshold={}, on_disk={}, payload_m={}, inline_storage={})",
+            self.m(),
+            self.ef_construct(),
+            self.full_scan_threshold(),
+            Repr(self.on_disk().map(Repr)),
+            Repr(self.payload_m()),
+            Repr(self.inline_storage().map(Repr)),
+        )
+    }
 }
 
 #[pyclass(name = "MultiVectorConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMultiVectorConfig(MultiVectorConfig);
 
 #[pymethods]
@@ -291,12 +393,39 @@ impl PyMultiVectorConfig {
     pub fn comparator(&self) -> PyMultiVectorComparator {
         PyMultiVectorComparator::from(self.0.comparator)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyMultiVectorConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "MultiVectorConfig(comparator={})", self.comparator())
+    }
 }
 
 #[pyclass(name = "MultiVectorComparator")]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
     MaxSim,
+}
+
+#[pymethods]
+impl PyMultiVectorComparator {
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyMultiVectorComparator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::MaxSim => "MaxSim",
+        };
+
+        write!(f, "MultiVectorComparator.{repr}")
+    }
 }
 
 impl From<MultiVectorComparator> for PyMultiVectorComparator {
@@ -321,6 +450,25 @@ pub enum PyVectorStorageDatatype {
     Float32,
     Float16,
     Uint8,
+}
+
+#[pymethods]
+impl PyVectorStorageDatatype {
+    pub fn __repr__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for PyVectorStorageDatatype {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Float32 => "Float32",
+            Self::Float16 => "Float16",
+            Self::Uint8 => "Uint8",
+        };
+
+        write!(f, "VectorStorageDatatype.{repr}")
+    }
 }
 
 impl From<VectorStorageDatatype> for PyVectorStorageDatatype {
