@@ -57,13 +57,13 @@ impl ShardReplicaSet {
         Some(local.get_optimization_status(timeout).await)
     }
 
-    pub(crate) async fn get_size_stats(&self) -> SizeStats {
+    pub(crate) async fn get_size_stats(&self, timeout: Duration) -> CollectionResult<SizeStats> {
         let local_shard = self.local.read().await;
 
         let Some(local) = local_shard.deref() else {
-            return SizeStats::default();
+            return Ok(SizeStats::default());
         };
 
-        local.get_size_stats().await
+        local.get_size_stats(timeout).await
     }
 }
