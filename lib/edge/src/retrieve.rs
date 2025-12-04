@@ -1,5 +1,4 @@
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::OperationResult;
@@ -7,7 +6,7 @@ use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVec
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 
-use crate::Shard;
+use crate::{DEFAULT_EDGE_TIMEOUT, Shard};
 
 impl Shard {
     pub fn retrieve(
@@ -25,7 +24,7 @@ impl Shard {
             point_ids,
             &with_payload,
             &with_vector,
-            Duration::from_hours(1),
+            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable(),
         )?;

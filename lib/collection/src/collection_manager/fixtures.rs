@@ -24,7 +24,7 @@ use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 
-pub const TEST_TIMEOUT: Duration = Duration::from_hours(1);
+pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()

@@ -1,7 +1,6 @@
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Duration;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -23,6 +22,7 @@ use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
 use super::Shard;
+use crate::DEFAULT_EDGE_TIMEOUT;
 
 impl Shard {
     pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
@@ -404,7 +404,7 @@ impl Shard {
             &point_ids,
             &WithPayload::from(with_payload),
             &with_vector,
-            Duration::from_hours(1),
+            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
         )?;

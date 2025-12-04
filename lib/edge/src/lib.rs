@@ -8,6 +8,7 @@ use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
@@ -181,3 +182,5 @@ fn default_wal_options() -> WalOptions {
         retain_closed: NonZero::new(1).unwrap(),
     }
 }
+
+pub const DEFAULT_EDGE_TIMEOUT: Duration = Duration::from_hours(1);
