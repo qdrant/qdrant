@@ -55,6 +55,10 @@ impl UpdateParams {
 
         Ok(params)
     }
+
+    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
+        self.timeout.map(|timeout| timeout.as_secs() as usize)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -290,7 +294,12 @@ pub async fn do_upsert_points(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let (operation, shard_key, usage, update_filter) = match operation {
@@ -353,7 +362,7 @@ pub async fn do_delete_points(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&points, &collection_name, None, &access)
+        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &access)
         .await?;
 
     let (operation, shard_key) = match points {
@@ -392,7 +401,12 @@ pub async fn do_update_vectors(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let UpdateVectors {
@@ -438,7 +452,12 @@ pub async fn do_delete_vectors(
     // TODO: Is this cancel safe!?
 
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let DeleteVectors {
@@ -815,7 +834,7 @@ pub async fn do_create_index(
     // TODO: Is this cancel safe!?
 
     // Default consensus timeout will be used
-    let wait_timeout: Option<Duration> = None; // ToDo: make it configurable
+    let wait_timeout = params.timeout;
 
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
@@ -908,7 +927,7 @@ pub async fn do_delete_index(
     });
 
     // Default consensus timeout will be used
-    let wait_timeout = None; // ToDo: make it configurable
+    let wait_timeout = params.timeout;
 
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
