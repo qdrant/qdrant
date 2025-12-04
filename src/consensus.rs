@@ -27,6 +27,7 @@ use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
 use crate::common::helpers;
+use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
@@ -68,7 +69,8 @@ impl Consensus {
         settings: Settings,
         channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
-        telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+        telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+        tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
         reinit: bool,
@@ -156,6 +158,7 @@ impl Consensus {
                     toc,
                     state_ref,
                     telemetry_collector,
+                    tonic_telemetry_collector,
                     settings,
                     p2p_host,
                     p2p_port,
