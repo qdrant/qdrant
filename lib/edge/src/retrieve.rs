@@ -6,7 +6,7 @@ use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVec
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 
-use crate::Shard;
+use crate::{DEFAULT_EDGE_TIMEOUT, Shard};
 
 impl Shard {
     pub fn retrieve(
@@ -24,6 +24,7 @@ impl Shard {
             point_ids,
             &with_payload,
             &with_vector,
+            DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable(),
         )?;

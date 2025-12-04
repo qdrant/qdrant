@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -362,6 +363,7 @@ impl SegmentsSearcher {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         runtime_handle: &Handle,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
@@ -378,6 +380,7 @@ impl SegmentsSearcher {
                     &points,
                     &with_payload,
                     &with_vector,
+                    timeout,
                     &is_stopped,
                     hw_measurement_acc,
                 )
@@ -890,11 +893,31 @@ mod tests {
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             &true.into(),
+            Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
         )
         .unwrap();
         assert_eq!(records.len(), 3);
+    }
+
+    #[test]
+    fn test_retrieve_timeout() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let segment_holder = build_test_holder(dir.path());
+        let segment_holder = Arc::new(segment_holder);
+        // keep write guard to prevent subsequent read
+        let _segment_holder_write_guard = segment_holder.write();
+        let records = retrieve_blocking(
+            segment_holder.clone(),
+            &[1.into(), 2.into(), 3.into()],
+            &WithPayload::from(true),
+            &true.into(),
+            Duration::from_secs(1),
+            &AtomicBool::new(false),
+            HwMeasurementAcc::new(),
+        );
+        assert!(matches!(records, Err(OperationError::Timeout { .. })));
     }
 
     #[test]

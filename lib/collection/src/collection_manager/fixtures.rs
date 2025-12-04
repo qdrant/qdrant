@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::Path;
+use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
@@ -22,6 +23,8 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()

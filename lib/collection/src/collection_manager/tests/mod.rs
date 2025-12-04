@@ -17,7 +17,9 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
-use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
+use crate::collection_manager::fixtures::{
+    TEST_TIMEOUT, build_segment_1, build_segment_2, empty_segment,
+};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -290,6 +292,7 @@ fn test_delete_all_point_versions() {
         &[point_id],
         &WithPayload::from(false),
         &WithVector::from(true),
+        TEST_TIMEOUT,
         &AtomicBool::new(false),
         HwMeasurementAcc::new(),
     )
@@ -335,6 +338,7 @@ fn test_delete_all_point_versions() {
         &[point_id],
         &WithPayload::from(false),
         &WithVector::from(false),
+        TEST_TIMEOUT,
         &AtomicBool::new(false),
         HwMeasurementAcc::new(),
     )
@@ -451,6 +455,7 @@ fn test_proxy_shared_updates() {
         &ids,
         &with_payload,
         &with_vector,
+        TEST_TIMEOUT,
         &is_stopped,
         HwMeasurementAcc::new(),
     )
@@ -586,6 +591,7 @@ fn test_proxy_shared_updates_same_version() {
         &ids,
         &with_payload,
         &with_vector,
+        TEST_TIMEOUT,
         &is_stopped,
         HwMeasurementAcc::new(),
     )
