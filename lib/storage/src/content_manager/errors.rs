@@ -404,3 +404,38 @@ impl From<cancel::Error> for StorageError {
         CollectionError::from(err).into()
     }
 }
+
+impl From<tonic::Status> for StorageError {
+    fn from(err: tonic::Status) -> Self {
+        match err.code() {
+            tonic::Code::Ok => unreachable!("Code Ok means it is not an error"),
+            tonic::Code::InvalidArgument => Self::BadInput {
+                description: err.to_string(),
+            },
+            tonic::Code::DeadlineExceeded => Self::Timeout {
+                description: err.to_string(),
+            },
+            tonic::Code::NotFound => Self::not_found(err.to_string()),
+            tonic::Code::AlreadyExists => Self::already_exists(err.to_string()),
+            tonic::Code::FailedPrecondition => Self::PreconditionFailed {
+                description: err.to_string(),
+            },
+            tonic::Code::OutOfRange => Self::BadInput {
+                description: err.to_string(),
+            },
+            tonic::Code::Unavailable => Self::ShardUnavailable {
+                description: err.to_string(),
+            },
+            tonic::Code::PermissionDenied | tonic::Code::Unauthenticated => {
+                Self::forbidden(err.to_string())
+            }
+            tonic::Code::ResourceExhausted
+            | tonic::Code::Aborted
+            | tonic::Code::DataLoss
+            | tonic::Code::Unimplemented
+            | tonic::Code::Internal
+            | tonic::Code::Cancelled
+            | tonic::Code::Unknown => Self::service_error(err.to_string()),
+        }
+    }
+}
