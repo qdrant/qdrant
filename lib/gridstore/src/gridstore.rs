@@ -1559,4 +1559,94 @@ mod tests {
             "expect 1 pending update",
         );
     }
+
+    /// Test that data is only actually flushed when we didn't bump the flusher lease
+    ///
+    /// Specifically:
+    /// - ensure that 'late' flushers don't write any data if already invalidated
+    #[test]
+    fn test_skip_deferred_flush_after_clear() {
+        let (dir, mut storage) = empty_storage();
+        let path = dir.path().to_path_buf();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let get_payload = |storage: &Gridstore<Payload>| {
+            storage
+                .get_value::<false>(0, &hw_counter)
+                .expect("offset exists")
+                .0
+                .get("key")
+                .expect("key exists")
+                .as_str()
+                .expect("value is a string")
+                .to_owned()
+        };
+        let put_payload =
+            |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+                let mut payload = Payload::default();
+                payload.0.insert(
+                    "key".to_string(),
+                    serde_json::Value::String(payload_value.to_string()),
+                );
+
+                storage.put_value(0, &payload, hw_counter_ref).unwrap();
+                assert_eq!(storage.pages.read().len(), 1);
+                assert_eq!(storage.tracker.read().mapping_len(), 1);
+
+                let page_mapping = storage.get_pointer(0).unwrap();
+                assert_eq!(page_mapping.page_id, 0); // first page
+                assert_eq!(page_mapping.block_offset, expected_block_offset);
+
+                let hw_counter = HardwareCounterCell::new();
+                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                assert!(stored_payload.is_some());
+                assert_eq!(stored_payload.unwrap(), payload);
+            };
+
+        put_payload(&mut storage, "value 1", 0);
+        assert_eq!(get_payload(&storage), "value 1");
+
+        let flusher = storage.flusher();
+
+        put_payload(&mut storage, "value 2", 1);
+        assert_eq!(get_payload(&storage), "value 2");
+
+        // We flush the first value and still expect to read the second value
+        flusher().unwrap();
+        assert_eq!(get_payload(&storage), "value 2");
+
+        put_payload(&mut storage, "value 3", 2);
+        assert_eq!(get_payload(&storage), "value 3");
+
+        let flusher = storage.flusher();
+
+        put_payload(&mut storage, "value 4", 3);
+        assert_eq!(get_payload(&storage), "value 4");
+
+        // We clear the storage, pending flusher must not write anything anymore
+        storage.clear().unwrap();
+
+        // Flusher is invalidated and does nothing
+        // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
+        // TODO(timvisee): doesn't appear to break in earlier versions, fix test!
+        flusher().unwrap();
+
+        // We expect the storage to be empty
+        assert_eq!(
+            storage.get_value::<false>(0, &hw_counter),
+            None,
+            "point must not exist"
+        );
+
+        // If we reopen the storage it must still be empty
+        drop(storage);
+        let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+        assert_eq!(
+            storage.get_value::<false>(0, &hw_counter),
+            None,
+            "point must not exist"
+        );
+    }
 }
