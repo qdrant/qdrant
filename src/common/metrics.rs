@@ -521,7 +521,6 @@ impl MetricsProvider for ClusterStatusTelemetry {
         // Initialize all states so that every state has a zeroed metric by default.
         let mut state_working = 0.0;
         let mut state_stopped = 0.0;
-        let mut error = None::<String>;
 
         match &self.consensus_thread_status {
             ConsensusThreadStatus::Working { last_update } => {
@@ -538,22 +537,14 @@ impl MetricsProvider for ClusterStatusTelemetry {
 
                 state_working = 1.0;
             }
-            ConsensusThreadStatus::Stopped => state_stopped = 1.0,
-            ConsensusThreadStatus::StoppedWithErr { err } => {
+            ConsensusThreadStatus::Stopped | ConsensusThreadStatus::StoppedWithErr { err: _ } => {
                 state_stopped = 1.0;
-                error = Some(err.clone());
             }
         }
 
         let working_states = vec![
             gauge(state_working, &[("state", "working")]),
-            gauge(
-                state_stopped,
-                &[
-                    ("state", "stopped"),
-                    ("error", error.as_deref().unwrap_or("")),
-                ],
-            ),
+            gauge(state_stopped, &[("state", "stopped")]),
         ];
 
         metrics.push_metric(metric_family(
