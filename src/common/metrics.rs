@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::telemetry::UpdateQueueTelemetry;
+use collection::telemetry::CollectionTelemetry;
 use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
@@ -214,6 +216,9 @@ impl MetricsProvider for CollectionsTelemetry {
 
         let mut vector_count_by_name = Vec::with_capacity(num_collections);
 
+        let mut collection_updates = vec![];
+        let mut collection_update_queue = vec![];
+
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
                 CollectionTelemetryEnum::Full(collection_telemetry) => collection_telemetry,
@@ -222,8 +227,15 @@ impl MetricsProvider for CollectionsTelemetry {
                 }
             };
 
+            collect_update_queue_metrics(collection, &mut collection_update_queue);
+
             total_optimizations_running.push(gauge(
                 collection.count_optimizers_running() as f64,
+                &[("id", &collection.id)],
+            ));
+
+            collection_updates.push(gauge(
+                collection.update_queue_total() as f64,
                 &[("id", &collection.id)],
             ));
 
@@ -448,7 +460,62 @@ impl MetricsProvider for CollectionsTelemetry {
             snapshots_created_total,
             prefix,
         ));
+
+        metrics.push_metric(metric_family(
+            "collection_update_queue_total",
+            "currently running and enqueued shard updates",
+            MetricType::GAUGE,
+            collection_updates,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_update_queue_size",
+            "update queue of a collection separated by points, vectors, index, payloads and other (such as control signals)",
+            MetricType::GAUGE,
+            collection_update_queue,
+            prefix,
+        ));
     }
+}
+
+fn collect_update_queue_metrics(collection_telemetry: &CollectionTelemetry, out: &mut Vec<Metric>) {
+    let UpdateQueueTelemetry {
+        point_updates,
+        vector_updates,
+        index_updates,
+        payload_updates,
+        other,
+    } = collection_telemetry.update_queue();
+
+    let collection_id = &collection_telemetry.id;
+
+    const UPDATE_TYPE_LBL: &str = "update_type";
+
+    out.push(gauge(
+        point_updates as f64,
+        &[("id", collection_id), (UPDATE_TYPE_LBL, "points")],
+    ));
+
+    out.push(gauge(
+        vector_updates as f64,
+        &[("id", collection_id), (UPDATE_TYPE_LBL, "vectors")],
+    ));
+
+    out.push(gauge(
+        index_updates as f64,
+        &[("id", collection_id), (UPDATE_TYPE_LBL, "index")],
+    ));
+
+    out.push(gauge(
+        payload_updates as f64,
+        &[("id", collection_id), (UPDATE_TYPE_LBL, "payloads")],
+    ));
+
+    out.push(gauge(
+        other as f64,
+        &[("id", collection_id), (UPDATE_TYPE_LBL, "other")],
+    ));
 }
 
 impl MetricsProvider for ClusterTelemetry {

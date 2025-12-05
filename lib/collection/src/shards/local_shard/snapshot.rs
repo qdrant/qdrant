@@ -81,7 +81,7 @@ impl LocalShard {
             // It will notify us when all submitted updates so far have been processed.
             let (tx, rx) = oneshot::channel();
             let plunger = UpdateSignal::Plunger(tx);
-            self.update_sender.load().send(plunger).await?;
+            self.update_sender.load().send(plunger, None).await?;
             rx.await?;
         }
 

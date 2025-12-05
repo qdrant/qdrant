@@ -12176,6 +12176,22 @@
               "minimum": 0
             },
             "nullable": true
+          },
+          "update_queue_len_total": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "update_queue_counter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateQueueTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12889,6 +12905,43 @@
             "additionalProperties": false
           }
         ]
+      },
+      "UpdateQueueTelemetry": {
+        "type": "object",
+        "required": [
+          "index_updates",
+          "other",
+          "payload_updates",
+          "point_updates",
+          "vector_updates"
+        ],
+        "properties": {
+          "point_updates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "vector_updates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "index_updates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "payload_updates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "other": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       },
       "RemoteShardTelemetry": {
         "type": "object",

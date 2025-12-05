@@ -113,7 +113,7 @@ impl ProxyShard {
             self.wrapped_shard
                 .update_sender
                 .load()
-                .send(plunger)
+                .send(plunger, None)
                 .await?;
             let attempt_timeout = UPDATE_QUEUE_CLEAR_TIMEOUT * 2_u32.pow(attempt);
             // It is possible, that the queue is recreated while we are waiting for plunger.

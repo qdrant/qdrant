@@ -51,8 +51,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
+use tokio::sync::{Mutex, RwLock as TokioRwLock};
 use tokio_util::task::AbortOnDropHandle;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -66,6 +65,7 @@ use crate::collection_manager::holders::segment_holder::{
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::file_utils::{move_dir, move_file};
+use crate::common::update_queue::{UpdateQueueSender, new_update_queue_channel};
 use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -77,6 +77,7 @@ use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_s
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::telemetry::UpdateQueueTelemetry;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal_delta::RecoverableWal;
 
@@ -104,7 +105,7 @@ pub struct LocalShard {
     pub(crate) payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     pub(super) wal: RecoverableWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
-    pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
+    pub(super) update_sender: ArcSwap<UpdateQueueSender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
@@ -239,7 +240,7 @@ impl LocalShard {
         );
 
         let (update_sender, update_receiver) =
-            mpsc::channel(shared_storage_config.update_queue_size);
+            new_update_queue_channel(shared_storage_config.update_queue_size);
         update_handler.run_workers(update_receiver);
 
         let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
@@ -1002,6 +1003,18 @@ impl LocalShard {
                 })?;
         }
         Ok(())
+    }
+
+    /// Returns the update queue length, including currently running updates.
+    pub async fn update_queue_len_total(&self) -> usize {
+        let update_handler = self.update_handler.lock().await;
+        update_handler.update_tracker.running_updates() + update_handler.update_queue_len().total()
+    }
+
+    /// Returns the amount of (waiting) updates in the update queue.
+    pub async fn update_queue_len(&self) -> UpdateQueueTelemetry {
+        let update_handler = self.update_handler.lock().await;
+        update_handler.update_queue_len()
     }
 }
 

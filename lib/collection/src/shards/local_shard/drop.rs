@@ -51,7 +51,7 @@ impl Drop for LocalShard {
 
                 // This can block longer, if the channel is full
                 // If channel is closed, assume it is already stopped
-                if let Err(err) = update_sender.blocking_send(UpdateSignal::Stop) {
+                if let Err(err) = update_sender.blocking_send(UpdateSignal::Stop, None) {
                     log::trace!("Error sending update signal to update handler: {err}");
                 }
                 false
