@@ -12,11 +12,11 @@ use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
+use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
 use segment::segment_constructor::load_segment;
 use segment::types::SegmentConfig;
-use shard::measurable_rwlock::measurable_parking_lot::{Mutex, RwLock};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
 use shard::wal::SerdeWal;

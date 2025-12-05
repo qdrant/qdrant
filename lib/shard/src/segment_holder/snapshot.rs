@@ -4,6 +4,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
+use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
@@ -11,9 +12,6 @@ use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
 
 use crate::locked_segment::LockedSegment;
-use crate::measurable_rwlock::measurable_parking_lot::{
-    RwLockUpgradableReadGuard, RwLockWriteGuard,
-};
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::{SegmentHolder, SegmentId};
@@ -35,14 +33,14 @@ impl SegmentHolder {
     /// Proxy all shard segments for [`proxy_all_segments_and_apply`].
     #[allow(clippy::type_complexity)]
     pub fn proxy_all_segments<'a>(
-        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        segments_lock: parking_lot::RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
         SegmentId,
-        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        parking_lot::RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
         // This counter will be used to measure operations on temp segment,
         // which is part of internal process and can be ignored
@@ -95,7 +93,7 @@ impl SegmentHolder {
         // Replace all segments with proxies
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
-        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        let mut write_segments = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (segment_id, proxy) in new_proxies {
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
@@ -117,7 +115,7 @@ impl SegmentHolder {
         // Make sure at least one appendable segment exists
         let temp_segment_id = write_segments.add_new_locked(tmp_segment);
 
-        let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
+        let segments_lock = parking_lot::RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
         Ok((proxies, temp_segment_id, segments_lock))
     }

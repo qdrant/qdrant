@@ -18,6 +18,7 @@ use segment::types::{
     WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
+use shard::measurable_rwlock::MeasureRead;
 use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
@@ -554,6 +555,8 @@ fn search_in_segment(
     use_sampling: bool,
     segment_query_context: &SegmentQueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
+    let _measure = MeasureRead::default();
+
     if segment_query_context.is_stopped() {
         return Err(CollectionError::cancelled(
             "Search in segment was cancelled",

@@ -3,6 +3,7 @@ use segment::data_types::query_context::QueryContext;
 use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
+use crate::measurable_rwlock::MeasureRead;
 use crate::search::CoreSearchRequest;
 use crate::segment_holder::LockedSegmentHolder;
 
@@ -34,6 +35,8 @@ pub fn fill_query_context(
     mut query_context: QueryContext,
     segments: LockedSegmentHolder,
 ) -> Option<QueryContext> {
+    let _measure = MeasureRead::default();
+
     let segments = segments.read();
 
     if segments.is_empty() {

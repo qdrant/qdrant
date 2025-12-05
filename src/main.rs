@@ -20,7 +20,6 @@ use std::time::Duration;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
-use shard::measurable_rwlock::{log_metrics, READ_MEASURABLE_RWLOCK_METRICS, WRITE_MEASURABLE_RWLOCK_METRICS};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -30,6 +29,9 @@ use consensus::Consensus;
 use fs_err as fs;
 use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use memory::mmap_ops::MULTI_MMAP_SUPPORT_CHECK_RESULT;
+use shard::measurable_rwlock::{
+    READ_MEASURABLE_RWLOCK_METRICS, WRITE_MEASURABLE_RWLOCK_METRICS, log_metrics,
+};
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;

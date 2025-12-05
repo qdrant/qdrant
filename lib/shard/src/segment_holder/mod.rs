@@ -17,6 +17,7 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
+use parking_lot::RwLock as PLRwLock;
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -29,6 +30,7 @@ use crate::locked_segment::LockedSegment;
 use crate::measurable_rwlock::measurable_parking_lot::{
     Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
+use crate::measurable_rwlock::{MeasureRead, MeasureWrite};
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
@@ -86,7 +88,7 @@ impl Drop for SegmentHolder {
     }
 }
 
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
+pub type LockedSegmentHolder = Arc<PLRwLock<SegmentHolder>>;
 
 impl SegmentHolder {
     /// Iterate over all segments with their IDs
@@ -123,6 +125,8 @@ impl SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
+        let _measure_read = MeasureRead::default();
+
         let segment_id = self.generate_new_key();
         self.add_existing(segment_id, segment);
         segment_id
@@ -891,6 +895,7 @@ impl SegmentHolder {
     pub fn deduplicate_points_tasks(&self) -> Vec<impl Fn() -> OperationResult<usize> + 'static> {
         let points_to_remove = self.find_duplicated_points();
 
+        let _measure = MeasureWrite::default();
         points_to_remove
             .into_iter()
             .map(|(segment_id, points)| {
@@ -919,6 +924,8 @@ impl SegmentHolder {
     }
 
     fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
+        let _measure = MeasureRead::default();
+
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))

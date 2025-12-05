@@ -2,6 +2,7 @@
 
 use std::sync::atomic::AtomicBool;
 
+use ::parking_lot::RwLock as PLRwLock;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
@@ -15,7 +16,7 @@ use segment::types::{
     SeqNumberType, VectorNameBuf,
 };
 
-use crate::measurable_rwlock::measurable_parking_lot::{RwLock, RwLockWriteGuard};
+use crate::measurable_rwlock::measurable_parking_lot::RwLockWriteGuard;
 use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
@@ -25,7 +26,7 @@ use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, Vect
 use crate::segment_holder::SegmentHolder;
 
 pub fn process_point_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &PLRwLock<SegmentHolder>,
     op_num: SeqNumberType,
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
@@ -69,7 +70,7 @@ pub fn process_point_operation(
 }
 
 pub fn process_vector_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &PLRwLock<SegmentHolder>,
     op_num: SeqNumberType,
     vector_operation: VectorOperations,
     hw_counter: &HardwareCounterCell,
@@ -92,7 +93,7 @@ pub fn process_vector_operation(
 }
 
 pub fn process_payload_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &PLRwLock<SegmentHolder>,
     op_num: SeqNumberType,
     payload_operation: PayloadOps,
     hw_counter: &HardwareCounterCell,
@@ -160,7 +161,7 @@ pub fn process_payload_operation(
 }
 
 pub fn process_field_index_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &PLRwLock<SegmentHolder>,
     op_num: SeqNumberType,
     field_index_operation: &FieldIndexOperations,
     hw_counter: &HardwareCounterCell,

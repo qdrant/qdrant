@@ -7,6 +7,7 @@ use std::time::Duration;
 use common::panic;
 use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
+use shard::measurable_rwlock::MeasureWrite;
 use shard::segment_holder::LockedSegmentHolder;
 use shard::wal::WalError;
 use tokio::sync::oneshot;
@@ -126,6 +127,8 @@ impl UpdateWorkers {
             let shard_path_clone = shard_path.clone();
 
             tokio::task::spawn_blocking(move || {
+                let _measure = MeasureWrite::default();
+
                 Self::flush_worker_internal(
                     segments_clone,
                     wal_clone,

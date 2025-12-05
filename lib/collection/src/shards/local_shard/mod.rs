@@ -40,13 +40,14 @@ use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
+use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
-use shard::measurable_rwlock::measurable_parking_lot::{Mutex as ParkingMutex, RwLock};
+use shard::measurable_rwlock::MeasureRead;
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;
@@ -293,6 +294,8 @@ impl LocalShard {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
+        let _measure = MeasureRead::default();
+
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
