@@ -65,9 +65,7 @@ impl Generalizer for PointOperations {
                 PointOperations::SyncPoints(sync_operation.remove_details())
             }
             #[cfg(feature = "staging")]
-            PointOperations::TestDelayUpsertPoints(op) => {
-                PointOperations::TestDelayUpsertPoints(op.clone())
-            }
+            PointOperations::TestDelay(op) => PointOperations::TestDelay(op.clone()),
         }
     }
 }

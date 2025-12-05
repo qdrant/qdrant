@@ -59,7 +59,7 @@ impl CollectionUpdateOperations {
                     Some(op.points.iter().map(|point| point.id).collect())
                 }
                 #[cfg(feature = "staging")]
-                PointOperations::TestDelayUpsertPoints(_) => None,
+                PointOperations::TestDelay(_) => None,
             },
             Self::VectorOperation(_) => None,
             Self::PayloadOperation(_) => None,

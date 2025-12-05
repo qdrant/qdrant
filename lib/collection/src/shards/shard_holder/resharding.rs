@@ -582,9 +582,9 @@ impl OperationsByMode {
                     )]
                 }
                 #[cfg(feature = "staging")]
-                PointOperations::TestDelayUpsertPoints(op) => {
+                PointOperations::TestDelay(op) => {
                     vec![CollectionUpdateOperations::PointOperation(
-                        PointOperations::TestDelayUpsertPoints(op),
+                        PointOperations::TestDelay(op),
                     )]
                 }
             },

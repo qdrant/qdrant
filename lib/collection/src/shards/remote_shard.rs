@@ -302,7 +302,7 @@ impl RemoteShard {
                         Update::Sync(request)
                     }
                     #[cfg(feature = "staging")]
-                    PointOperations::TestDelayUpsertPoints(_) => {
+                    PointOperations::TestDelay(_) => {
                         // Staging test delay operations should not be forwarded to remote shards
                         continue;
                     }
@@ -577,13 +577,13 @@ impl RemoteShard {
                     .into_inner()
                 }
                 #[cfg(feature = "staging")]
-                PointOperations::TestDelayUpsertPoints(op) => {
+                PointOperations::TestDelay(op) => {
                     // TODO: Add gRPC support to forward staging operations to remote shards
                     // For now, staging test delay operations only execute on local shards
+                    let delay = std::time::Duration::from_secs_f64(op.duration.into_inner());
                     log::debug!(
-                        "TestDelayUpsertPoints: skipping remote shard {} (duration: {}s)",
-                        shard_id.unwrap_or(0),
-                        op.duration
+                        "TestDelay: skipping remote shard {} (duration: {delay:?})",
+                        self.id
                     );
                     timer.set_success(true);
                     return Ok(UpdateResult {

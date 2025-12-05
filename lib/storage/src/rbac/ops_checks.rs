@@ -726,8 +726,15 @@ mod tests_ops {
                 assert_requires_whole_write_access(&op);
             }
             #[cfg(feature = "staging")]
-            PointOperationsDiscriminants::TestDelayUpsertPoints => {
-                // Staging operation - requires write access
+            PointOperationsDiscriminants::TestDelay => {
+                use ordered_float::OrderedFloat;
+                use shard::operations::point_ops::TestDelayOperation;
+                let op = CollectionUpdateOperations::PointOperation(PointOperations::TestDelay(
+                    TestDelayOperation {
+                        duration: OrderedFloat(1.0),
+                    },
+                ));
+                assert_requires_whole_write_access(&op);
             }
         });
     }

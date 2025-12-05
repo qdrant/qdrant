@@ -460,13 +460,13 @@ async fn staging_test_delay(
     use collection::operations::verification::new_unchecked_verification_pass;
     use ordered_float::OrderedFloat;
     use shard::operations::CollectionUpdateOperations;
-    use shard::operations::point_ops::TestDelayUpsertPointsOperation;
+    use shard::operations::point_ops::TestDelayOperation;
 
     let timing = Instant::now();
     let operation = operation.into_inner();
     let collection_name = collection.into_inner().name;
 
-    let point_operation = PointOperations::TestDelayUpsertPoints(TestDelayUpsertPointsOperation {
+    let point_operation = PointOperations::TestDelay(TestDelayOperation {
         duration: OrderedFloat(operation.duration),
     });
 

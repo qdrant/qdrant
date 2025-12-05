@@ -9,17 +9,22 @@ use serde::{Deserialize, Serialize};
 
 /// Test operation that introduces an artificial delay.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
-pub struct TestDelayUpsertPointsOperation {
+pub struct TestDelayOperation {
     /// Duration of the delay in seconds.
     pub duration: OrderedFloat<f64>,
 }
 
-impl TestDelayUpsertPointsOperation {
+impl TestDelayOperation {
     /// Execute the delay operation (blocking).
     pub fn execute(&self) {
         let duration_secs = self.duration.into_inner();
-        log::debug!("TestDelayUpsertPoints: sleeping for {duration_secs}s");
-        std::thread::sleep(Duration::from_secs_f64(duration_secs));
-        log::debug!("TestDelayUpsertPoints: finished sleeping");
+        if duration_secs < 0.0 {
+            log::warn!("TestDelay: negative duration {duration_secs}s, skipping");
+            return;
+        }
+        let delay = Duration::from_secs_f64(duration_secs);
+        log::debug!("TestDelay: sleeping for {delay:?}");
+        std::thread::sleep(delay);
+        log::debug!("TestDelay: finished sleeping");
     }
 }

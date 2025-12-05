@@ -69,7 +69,7 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                 ))
             }
             #[cfg(feature = "staging")]
-            point_ops::PointOperations::TestDelayUpsertPoints(_) => OperationEffectArea::Empty,
+            point_ops::PointOperations::TestDelay(_) => OperationEffectArea::Empty,
         }
     }
 }

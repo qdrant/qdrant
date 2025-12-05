@@ -107,11 +107,11 @@ pub enum PointOperations {
     SyncPoints(PointSyncOperation),
     /// Introduce artificial delay for testing purposes
     #[cfg(feature = "staging")]
-    TestDelayUpsertPoints(super::staging::TestDelayUpsertPointsOperation),
+    TestDelay(super::staging::TestDelayOperation),
 }
 
 #[cfg(feature = "staging")]
-pub use super::staging::TestDelayUpsertPointsOperation;
+pub use super::staging::TestDelayOperation;
 
 impl PointOperations {
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
@@ -122,7 +122,7 @@ impl PointOperations {
             Self::DeletePointsByFilter(_) => None,
             Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
             #[cfg(feature = "staging")]
-            Self::TestDelayUpsertPoints(_) => None,
+            Self::TestDelay(_) => None,
         }
     }
 
@@ -139,7 +139,7 @@ impl PointOperations {
             Self::DeletePointsByFilter(_) => (),
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
             #[cfg(feature = "staging")]
-            Self::TestDelayUpsertPoints(_) => (),
+            Self::TestDelay(_) => (),
         }
     }
 }
