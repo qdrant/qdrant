@@ -352,8 +352,14 @@ impl CollectionsTelemetry {
                 }
             }
 
-            shard_transfers_in.push(gauge(incoming_transfers as f64, &[("id", &collection.id)]));
-            shard_transfers_out.push(gauge(outgoing_transfers as f64, &[("id", &collection.id)]));
+            shard_transfers_in.push(gauge(
+                f64::from(incoming_transfers),
+                &[("id", &collection.id)],
+            ));
+            shard_transfers_out.push(gauge(
+                f64::from(outgoing_transfers),
+                &[("id", &collection.id)],
+            ));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
