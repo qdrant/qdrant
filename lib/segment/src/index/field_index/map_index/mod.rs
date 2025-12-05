@@ -279,7 +279,7 @@ where
         format!("{field}_map")
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             MapIndex::Mutable(index) => index.flusher(),
             MapIndex::Immutable(index) => index.flusher(),
@@ -718,7 +718,7 @@ where
                 "MapIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flush_all()?;
         Ok(index)
     }
 }
@@ -732,7 +732,7 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         MapIndex::flusher(self)
     }
 
@@ -880,7 +880,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         MapIndex::flusher(self)
     }
 
@@ -1069,7 +1069,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         self.wipe()
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         MapIndex::flusher(self)
     }
 

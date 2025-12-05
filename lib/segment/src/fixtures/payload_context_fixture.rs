@@ -149,12 +149,12 @@ impl IdTracker for FixtureIdTracker {
         self.deleted_count
     }
 
-    fn mapping_flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), Box::new(|| Ok(())))
     }
 
-    fn versions_flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), Box::new(|| Ok(())))
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {

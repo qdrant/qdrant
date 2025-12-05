@@ -59,6 +59,6 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn flush(&self) -> bool {
-        self.flusher()().is_ok()
+        self.flush_all().is_ok()
     }
 }

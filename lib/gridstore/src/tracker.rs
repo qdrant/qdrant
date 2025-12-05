@@ -37,16 +37,49 @@ impl ValuePointer {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct PointerUpdates {
     /// Whether the latest pointer is set (`true`) or unset (`false`).
     /// If this is `true`, then history must have at least one element.
     latest_is_set: bool,
     /// List of pointers where the value has been written
     history: SmallVec<[ValuePointer; 1]>,
+    /// Whether this pointer updates set contains the last update for this pointer
+    ///
+    /// Using [`into_split_update_deletes`] may create two separate update structures of which one
+    /// does not have the latest update.
+    ///
+    /// When persisting the pointer, we only unset the mapping if the latest update is not a set.
+    has_latest_update: bool,
 }
 
 impl PointerUpdates {
+    /// Construct new empty updates structure, assume this is the latest
+    pub fn new() -> Self {
+        Self {
+            latest_is_set: false,
+            history: SmallVec::new(),
+            has_latest_update: true,
+        }
+    }
+
+    /// Construct a updates structure from separate set and unsets
+    fn from_set_unset(
+        set: Option<ValuePointer>,
+        unsets: SmallVec<[ValuePointer; 1]>,
+        has_latest_update: bool,
+    ) -> Self {
+        let mut updates = Self {
+            latest_is_set: false,
+            history: unsets,
+            has_latest_update,
+        };
+        if let Some(set) = set {
+            updates.set(set);
+        }
+        updates
+    }
+
     /// Set the current latest pointer
     fn set(&mut self, pointer: ValuePointer) {
         self.history.push(pointer);
@@ -71,17 +104,46 @@ impl PointerUpdates {
         }
     }
 
+    /// Split these updates in pointers we set and unset
+    fn split_set_unset(&self) -> (Option<ValuePointer>, &[ValuePointer]) {
+        if self.latest_is_set {
+            (
+                self.history.last().copied(),
+                &self.history.as_slice()[..self.history.len().saturating_sub(1)],
+            )
+        } else {
+            (None, self.history.as_slice())
+        }
+    }
+
     /// Returns pointers that need to be freed, i.e. They have been written, and are no longer needed
     fn to_outdated_pointers(&self) -> impl Iterator<Item = ValuePointer> {
-        let take = if self.latest_is_set {
-            // all but the latest one
-            self.history.len().saturating_sub(1)
-        } else {
-            // all of them
-            self.history.len()
-        };
+        self.split_set_unset().1.iter().copied()
+    }
 
-        self.history.iter().copied().take(take)
+    /// Split this pointer update structure into two
+    ///
+    /// A structure that only sets the pointer, and a structure that only unsets pointers.
+    pub fn into_split_update_deletes(self) -> (Option<Self>, Option<Self>) {
+        let (set, unsets) = self.split_set_unset();
+
+        // We only have a set structure if a pointer is set
+        let set = set.map(|pointer| PointerUpdates {
+            latest_is_set: true,
+            history: SmallVec::from([pointer]),
+            // A set is always considered the last update
+            has_latest_update: true,
+        });
+
+        // We only have a unset structure if any pointer is unset
+        let unsets = (!unsets.is_empty()).then(|| PointerUpdates {
+            latest_is_set: false,
+            history: SmallVec::from_slice(unsets),
+            // The last unset is only considered the last update if we don't have a set
+            has_latest_update: set.is_none(),
+        });
+
+        (set, unsets)
     }
 
     /// Bump this pointer updates structure to drain all details that have been persisted
@@ -121,20 +183,27 @@ impl PointerUpdates {
 
         // If both are the same, we have persisted the entry and can drop the pending change
         if self == persisted {
+            self.latest_is_set = false;
+            self.history.clear();
             return true;
         }
 
-        // Pointers we consider persisted
-        // If latest_is_set is different, the last pointer has new changes so we cannot consider it
-        // persisted
-        let mut persisted_pointers = persisted.history.as_slice();
-        if self.latest_is_set != persisted.latest_is_set {
-            persisted_pointers = &persisted_pointers[..persisted_pointers.len().saturating_sub(1)];
+        let (mut our_set, our_unsets) = self.split_set_unset();
+        let (persisted_set, persisted_unsets) = persisted.split_set_unset();
+
+        // If we have persisted this exact set, we don't have to persist it again
+        if our_set == persisted_set {
+            our_set = None;
         }
 
-        // Remove all persisted pointers from history
-        self.history
-            .retain(|pointer| !persisted_pointers.contains(pointer));
+        // Remove all persisted unsets
+        let mut our_unsets = SmallVec::from_slice(our_unsets);
+        our_unsets.retain(|pointer| !persisted_unsets.contains(pointer));
+
+        // Rebuild our updates structure
+        let new_pointer =
+            PointerUpdates::from_set_unset(our_set, our_unsets, self.has_latest_update);
+        *self = new_pointer;
 
         // Drop entry if history is exhausted
         self.history.is_empty()
@@ -245,10 +314,11 @@ impl Tracker {
                     // write the new pointer
                     self.persist_pointer(point_offset, Some(new_pointer));
                 }
-                None => {
-                    // write the new None pointer
+                // If this is the last update and have no set, we can nullify the pointer on disk
+                None if updates.has_latest_update => {
                     self.persist_pointer(point_offset, None);
                 }
+                None => {}
             }
             old_pointers.extend(updates.to_outdated_pointers());
 
@@ -367,7 +437,7 @@ impl Tracker {
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
         self.pending_updates
             .entry(point_offset)
-            .or_default()
+            .or_insert_with(PointerUpdates::new)
             .set(value_pointer);
         self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
     }
@@ -379,7 +449,7 @@ impl Tracker {
         if let Some(pointer) = pointer_opt {
             self.pending_updates
                 .entry(point_offset)
-                .or_default()
+                .or_insert_with(PointerUpdates::new)
                 .unset(pointer);
         }
 
@@ -587,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_value_pointer_drain() {
-        let mut updates = PointerUpdates::default();
+        let mut updates = PointerUpdates::new();
         updates.set(ValuePointer::new(1, 1, 1));
 
         // When all updates are persisted, drop the entry
@@ -612,7 +682,13 @@ mod tests {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted_and_drop(&persisted));
             assert!(updates.latest_is_set);
-            assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 3, 1)]);
+            assert_eq!(
+                updates.history.as_slice(),
+                &[
+                    ValuePointer::new(1, 2, 1), // unset
+                    ValuePointer::new(1, 3, 1), // set
+                ]
+            );
         }
 
         updates.set(ValuePointer::new(1, 4, 1));
@@ -624,7 +700,11 @@ mod tests {
             assert!(updates.latest_is_set);
             assert_eq!(
                 updates.history.as_slice(),
-                &[ValuePointer::new(1, 3, 1), ValuePointer::new(1, 4, 1)]
+                &[
+                    ValuePointer::new(1, 2, 1), // unset
+                    ValuePointer::new(1, 3, 1), // unset
+                    ValuePointer::new(1, 4, 1), // set
+                ]
             );
         }
 

@@ -462,14 +462,17 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        (Box::new(|| Ok(())), self.deleted_wrapper.flusher())
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version_wrapper.flusher()
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
+        (
+            self.internal_to_version_wrapper.flusher(),
+            Box::new(|| Ok(())),
+        )
     }
 
     fn total_point_count(&self) -> usize {
@@ -652,8 +655,8 @@ pub(super) mod test {
                 }
             }
 
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
 
             (dropped_points, custom_version)
         };
@@ -738,8 +741,8 @@ pub(super) mod test {
                 .expect("Point to delete exists.");
             assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
-            id_tracker.mapping_flusher()().unwrap();
-            id_tracker.versions_flusher()().unwrap();
+            id_tracker.flush_mappings().unwrap();
+            id_tracker.flush_versions().unwrap();
             id_tracker.mappings
         };
 

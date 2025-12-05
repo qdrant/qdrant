@@ -116,15 +116,15 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
+        (Box::new(|| Ok(())), Box::new(|| Ok(())))
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         debug_assert!(false, "InMemoryIdTracker should not be flushed");
-        Box::new(|| Ok(()))
+        (Box::new(|| Ok(())), Box::new(|| Ok(())))
     }
 
     fn total_point_count(&self) -> usize {

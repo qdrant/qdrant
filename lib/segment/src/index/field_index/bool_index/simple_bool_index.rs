@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use self::memory::{BoolMemory, BooleanItem};
 use super::BoolIndex;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -337,7 +338,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         self.db_wrapper.remove_column_family()
     }
 
-    fn flusher(&self) -> crate::common::Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         self.db_wrapper.flusher()
     }
 

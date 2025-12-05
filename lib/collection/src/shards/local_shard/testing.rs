@@ -12,7 +12,7 @@ impl LocalShard {
                 LockedSegment::Original(raw_segment_lock) => {
                     let raw_segment = raw_segment_lock.read();
 
-                    raw_segment.id_tracker.borrow().mapping_flusher()().unwrap();
+                    raw_segment.id_tracker.borrow().flush_mappings().unwrap();
                 }
                 LockedSegment::Proxy(_) => {} // Skipping
             }
