@@ -20,6 +20,7 @@ use std::time::Duration;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
+use shard::measurable_rwlock::{log_metrics, READ_MEASURABLE_RWLOCK_METRICS, WRITE_MEASURABLE_RWLOCK_METRICS};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -385,42 +386,14 @@ fn main() -> anyhow::Result<()> {
     toc.clear_all_tmp_directories()?;
 
     runtime_handle.spawn(async {
-        use std::sync::atomic::Ordering::Relaxed;
-
         use tokio::signal::unix::{SignalKind, signal};
 
         let mut stream = signal(SignalKind::user_defined1()).unwrap();
         loop {
             stream.recv().await;
 
-            let m = &shard::measurable_rwlock::MEASURABLE_RWLOCK_METRICS_DISABLED;
-            let read_time = m.read_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let reads = m.read_counter.load(Relaxed);
-            let write_time = m.write_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let writes = m.write_counter.load(Relaxed);
-            let upgrade_time = m.upgrade_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let upgrades = m.upgrade_counter.load(Relaxed);
-
-            let try_read_for_time =
-                m.try_read_for_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let try_reads_for = m.try_read_for_counter.load(Relaxed);
-
-            let read_for_update_time =
-                m.read_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let reads_for_update = m.read_for_update_counter.load(Relaxed);
-            let write_for_update_time =
-                m.write_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-            let writes_for_update = m.write_for_update_counter.load(Relaxed);
-
-            log::info!(
-                "MeasurableRwLock wait times (s): read: {read_time} ({reads}), write: {write_time} ({writes}), upgrade: {upgrade_time} ({upgrades})"
-            );
-            log::info!(
-                "MeasurableRwLock try_read_for times (s): {try_read_for_time} ({try_reads_for})"
-            );
-            log::info!(
-                "MeasurableRwLock wait update times (s): read: {read_for_update_time} ({reads_for_update}), write: {write_for_update_time} ({writes_for_update})"
-            );
+            log_metrics("Read", &READ_MEASURABLE_RWLOCK_METRICS);
+            log_metrics("Write", &WRITE_MEASURABLE_RWLOCK_METRICS);
         }
     });
 
