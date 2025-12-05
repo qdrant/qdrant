@@ -602,6 +602,7 @@ impl<V> Gridstore<V> {
             let flusher_lease = flusher_lease.read();
             if *flusher_lease != assigned_flush_lease {
                 log::debug!("Aborting old Gridstore flusher, flush lease mismatch");
+                return Ok(());
             }
 
             let (Some(pages), Some(tracker), Some(bitmask)) =
