@@ -5,7 +5,7 @@ use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
 use crate::spaces::metric_f16::neon::dot::neon_dot_similarity_half;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::spaces::metric_f16::sse::dot::sse_dot_similarity_half;
@@ -14,7 +14,7 @@ use crate::spaces::simple::MIN_DIM_SIZE_AVX;
 use crate::spaces::simple::{CosineMetric, MIN_DIM_SIZE_SIMD, cosine_preprocess};
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple_avx::*;
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
 use crate::spaces::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::spaces::simple_sse::*;
@@ -44,7 +44,7 @@ impl Metric<VectorElementTypeHalf> for CosineMetric {
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
         {
             if std::arch::is_aarch64_feature_detected!("neon")
                 && std::arch::is_aarch64_feature_detected!("fp16")
@@ -75,7 +75,7 @@ impl Metric<VectorElementTypeHalf> for CosineMetric {
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(windows)))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && vector.len() >= MIN_DIM_SIZE_SIMD
             {

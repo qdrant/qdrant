@@ -3,6 +3,11 @@
 
 #include "export_macro.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define __builtin_popcount __popcnt
+#endif
+
 EXPORT float impl_score_dot_neon(
     const uint8_t* query_ptr,
     const uint8_t* vector_ptr,
