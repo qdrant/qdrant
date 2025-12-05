@@ -41,8 +41,6 @@ pub struct Gridstore<V> {
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    ///
-    /// Additionally, this is also used as a barrier to wait for a flush to finish when [`wipe`](Self::wipe)'ing.
     bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
