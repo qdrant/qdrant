@@ -47,6 +47,17 @@ pub struct Gridstore<V> {
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
     _value_type: std::marker::PhantomData<V>,
+    /// Structure to invalidate old flush tasks
+    ///
+    /// Flushing is asynchronous. Creating and invoking the flush task is usually done at different
+    /// times. At creation, we copy the current lease. When invoking the flusher, we only actually
+    /// flush if the current lease is still valid. When a wipe/clear operation is invoked, we bump
+    /// the lease to invalidate and abort any pending flushes.
+    ///
+    /// This structure primarily fulfills two goals:
+    /// - in wipe/clear: function as barrier for any ongoing flush operation, block until it's done
+    /// - in flusher tasks: abort pending flushes if invalidated by a wipe/clear operation
+    flusher_lease: Arc<RwLock<FlushLease>>,
 }
 
 #[inline]
@@ -145,6 +156,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
+            flusher_lease: Default::default(),
         };
 
         // create first page to be covered by the bitmask
@@ -188,6 +200,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
+            flusher_lease: Default::default(),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -466,6 +479,9 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
+        // Barrier to wait on any ongoing flush, bumps flush lease to invalidate any pending flush
+        self.flusher_lease.write().bump();
+
         // Wipe
         self.pages.write().clear();
         fs::remove_dir_all(&base_path)
@@ -485,8 +501,8 @@ impl<V: Blob> Gridstore<V> {
     pub fn wipe(self) -> Result<()> {
         let base_path = self.base_path.clone();
 
-        // Barrier to wait for any ongoing flush to finish
-        drop(self.bitmask.write());
+        // Barrier to wait on any ongoing flush, bumps flush lease to invalidate any pending flush
+        self.flusher_lease.write().bump();
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
@@ -572,18 +588,27 @@ impl<V> Gridstore<V> {
 
     /// Create flusher that durably persists all pending changes when invoked
     pub fn flusher(&self) -> Flusher {
+        let assigned_flush_lease = *self.flusher_lease.read();
+
         let pending_updates = self.tracker.read().pending_updates.clone();
 
+        let flusher_lease = self.flusher_lease.clone();
         let pages = Arc::downgrade(&self.pages);
         let tracker = Arc::downgrade(&self.tracker);
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
         Box::new(move || {
+            // Abort flusher if current lease was invalidated
+            // Happens if lease is bumped since this flusher was created, e.g. when wipe is invoked
+            let flusher_lease = flusher_lease.read();
+            if *flusher_lease != assigned_flush_lease {
+                log::debug!("Aborting old Gridstore flusher, flush lease mismatch");
+            }
+
             let (Some(pages), Some(tracker), Some(bitmask)) =
                 (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
             else {
-                log::debug!("Aborted flushing on a dropped Gridstore instance");
                 return Ok(());
             };
 
@@ -633,6 +658,15 @@ impl<V> Gridstore<V> {
         }
         self.bitmask.read().clear_cache()?;
         Ok(())
+    }
+}
+
+#[derive(Default, Debug, Eq, PartialEq, Copy, Clone)]
+struct FlushLease(usize);
+
+impl FlushLease {
+    fn bump(&mut self) {
+        self.0 += 1;
     }
 }
 
