@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use api::rest::models::HardwareUsage;
-use chrono::Utc;
 use collection::shards::replica_set::ReplicaState;
 use itertools::Itertools;
 use prometheus::TextEncoder;
@@ -528,7 +527,7 @@ impl MetricsProvider for ClusterStatusTelemetry {
 
                 metrics.push_metric(metric_family(
                     "cluster_last_update_timestamp_seconds",
-                    "time since last update",
+                    "unix timestamp of last update",
                     MetricType::GAUGE,
                     vec![gauge(timestamp as f64, &[])],
                     prefix,
