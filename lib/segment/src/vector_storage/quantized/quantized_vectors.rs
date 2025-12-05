@@ -761,7 +761,7 @@ impl QuantizedVectors {
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
-            quantization_config: quantization_config.clone(),
+            quantization_config: *quantization_config,
             vector_parameters,
             storage_type,
         };
@@ -864,7 +864,7 @@ impl QuantizedVectors {
         };
 
         let quantized_vectors_config = QuantizedVectorsConfig {
-            quantization_config: quantization_config.clone(),
+            quantization_config: *quantization_config,
             vector_parameters,
             storage_type,
         };

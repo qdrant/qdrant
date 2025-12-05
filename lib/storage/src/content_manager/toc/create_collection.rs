@@ -163,7 +163,7 @@ impl TableOfContent {
                 .storage_config
                 .collection
                 .as_ref()
-                .and_then(|i| i.quantization.clone()),
+                .and_then(|i| i.quantization),
             Some(diff) => Some(diff),
         };
 

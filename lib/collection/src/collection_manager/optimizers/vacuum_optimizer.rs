@@ -191,7 +191,7 @@ impl SegmentOptimizer for VacuumOptimizer {
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config.clone()
+        self.quantization_config
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
