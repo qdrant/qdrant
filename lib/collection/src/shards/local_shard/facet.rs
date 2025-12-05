@@ -60,7 +60,7 @@ impl LocalShard {
             )
         }
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "facet"))??;
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "facet"))??;
 
         let merged_hits = process_results(all_reads, |reads| {
             reads.reduce(|mut acc, map| {
@@ -139,7 +139,7 @@ impl LocalShard {
             future::try_join_all(hits_futures),
         )
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "facet"))??;
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "facet"))??;
 
         Ok(hits)
     }
@@ -188,7 +188,7 @@ impl LocalShard {
             )
         }
         .await
-        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "facet"))??;
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout, "facet"))??;
 
         let all_values =
             process_results(all_reads, |reads| reads.flatten().collect::<BTreeSet<_>>())?;

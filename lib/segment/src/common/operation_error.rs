@@ -2,6 +2,7 @@ use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
 use io::file_operations::FileStorageError;
@@ -116,11 +117,11 @@ impl OperationError {
         }
     }
 
-    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+    pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
-                "Operation '{}' timed out after {timeout_sec} seconds",
-                operation.into()
+                "Operation '{}' timed out after {timeout:?}",
+                operation.into(),
             ),
         }
     }
@@ -267,4 +268,50 @@ pub fn check_process_stopped(stopped: &AtomicBool) -> CancellableResult<()> {
         return Err(CancelledError);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn test_timeout_error_formatting() {
+        // Test sub-second timeout (500ms)
+        let timeout = Duration::from_millis(500);
+        let error = OperationError::timeout(timeout, "test operation");
+        let error_msg = format!("{error}");
+        assert!(
+            error_msg.contains("500ms"),
+            "Expected '500ms' but got: {error_msg}"
+        );
+
+        // Test exact second timeout (1000ms = 1s)
+        let timeout = Duration::from_millis(1000);
+        let error = OperationError::timeout(timeout, "test operation");
+        let error_msg = format!("{error}");
+        assert!(
+            error_msg.contains("1s"),
+            "Expected '1s' but got: {error_msg}"
+        );
+
+        // Test multi-second timeout with sub-second precision (2500ms = 2.5s)
+        let timeout = Duration::from_millis(2500);
+        let error = OperationError::timeout(timeout, "test operation");
+        let error_msg = format!("{error}");
+        assert!(
+            error_msg.contains("2.5s"),
+            "Expected '2.5s' but got: {error_msg}"
+        );
+
+        // Test large timeout (60000ms = 60s)
+        let timeout = Duration::from_millis(60000);
+        let error = OperationError::timeout(timeout, "test operation");
+        let error_msg = format!("{error}");
+        assert!(
+            error_msg.contains("60s"),
+            "Expected '60s' but got: {error_msg}"
+        );
+    }
 }

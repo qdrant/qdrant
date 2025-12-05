@@ -39,7 +39,7 @@ pub async fn mmr_from_points_with_vector(
 
     let result = tokio::time::timeout(timeout, task)
         .await
-        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "mmr"))???;
+        .map_err(|_| CollectionError::timeout(timeout, "mmr"))???;
 
     Ok(result)
 }
