@@ -932,12 +932,11 @@ pub enum CollectionError {
 }
 
 impl CollectionError {
-    pub fn timeout(timeout: std::time::Duration, operation: impl Into<String>) -> Self {
+    pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
-                "Operation '{}' timed out after {:?}",
+                "Operation '{}' timed out after {timeout:?}",
                 operation.into(),
-                timeout
             ),
         }
     }

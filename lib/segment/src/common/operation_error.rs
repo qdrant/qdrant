@@ -120,9 +120,8 @@ impl OperationError {
     pub fn timeout(timeout: Duration, operation: impl Into<String>) -> Self {
         Self::Timeout {
             description: format!(
-                "Operation '{}' timed out after {:?}",
+                "Operation '{}' timed out after {timeout:?}",
                 operation.into(),
-                timeout
             ),
         }
     }
