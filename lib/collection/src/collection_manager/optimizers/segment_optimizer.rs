@@ -10,6 +10,7 @@ use common::disk::dir_disk_size;
 use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
+use parking_lot::{Mutex, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -21,9 +22,6 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
-};
-use shard::measurable_rwlock::measurable_parking_lot::{
-    Mutex, RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
 

@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
+use shard::measurable_rwlock::MeasureRead;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::task::AbortOnDropHandle;
@@ -1202,6 +1203,7 @@ impl ShardReplicaSet {
                     let mut total_payload_size = 0;
                     let mut total_points = 0;
 
+                    let _measure = MeasureRead::default();
                     for segment in local.segments.read().iter() {
                         let size_info = segment.1.get().read().size_info();
                         total_vector_size += size_info.vectors_size_bytes;

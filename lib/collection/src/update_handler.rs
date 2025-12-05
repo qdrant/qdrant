@@ -15,6 +15,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{QuantizationConfig, SeqNumberType};
+use shard::measurable_rwlock::MeasureWrite;
 use shard::wal::WalError;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -979,6 +980,8 @@ impl UpdateHandler {
             let shard_path_clone = shard_path.clone();
 
             tokio::task::spawn_blocking(move || {
+                let _measure = MeasureWrite::default();
+
                 Self::flush_worker_internal(
                     segments_clone,
                     wal_clone,

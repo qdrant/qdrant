@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use parking_lot::RwLock;
 use segment::types::SeqNumberType;
-use shard::measurable_rwlock::measurable_parking_lot::RwLock;
+use shard::measurable_rwlock::MeasureWrite;
 use shard::update::*;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -47,6 +48,8 @@ impl CollectionUpdater {
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
+        let _write = MeasureWrite::default();
+
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
             // Allow only one update at a time, ensure no data races between segments.
