@@ -37,19 +37,27 @@ pub struct UpdateParams {
     pub wait: bool,
     #[serde(default)]
     pub ordering: WriteOrdering,
+    #[serde(default)]
+    pub timeout: Option<Duration>,
 }
 
 impl UpdateParams {
     pub fn from_grpc(
         wait: Option<bool>,
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
+        timeout: Option<Duration>,
     ) -> tonic::Result<Self> {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
+            timeout,
         };
 
         Ok(params)
+    }
+
+    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
+        self.timeout.map(|timeout| timeout.as_secs() as usize)
     }
 }
 
@@ -286,7 +294,12 @@ pub async fn do_upsert_points(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let (operation, shard_key, usage, update_filter) = match operation {
@@ -349,7 +362,7 @@ pub async fn do_delete_points(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&points, &collection_name, None, &access)
+        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &access)
         .await?;
 
     let (operation, shard_key) = match points {
@@ -388,7 +401,12 @@ pub async fn do_update_vectors(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let UpdateVectors {
@@ -434,7 +452,12 @@ pub async fn do_delete_vectors(
     // TODO: Is this cancel safe!?
 
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let DeleteVectors {
@@ -811,7 +834,7 @@ pub async fn do_create_index(
     // TODO: Is this cancel safe!?
 
     // Default consensus timeout will be used
-    let wait_timeout: Option<Duration> = None; // ToDo: make it configurable
+    let wait_timeout = params.timeout;
 
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
@@ -904,7 +927,7 @@ pub async fn do_delete_index(
     });
 
     // Default consensus timeout will be used
-    let wait_timeout = None; // ToDo: make it configurable
+    let wait_timeout = params.timeout;
 
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
@@ -968,7 +991,11 @@ pub async fn update(
         clock_tag,
     } = internal_params;
 
-    let UpdateParams { wait, ordering } = params;
+    let UpdateParams {
+        wait,
+        ordering,
+        timeout: _,
+    } = params;
 
     let shard_selector = match operation {
         CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {

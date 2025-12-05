@@ -49,8 +49,7 @@ async fn upsert_points(
     );
     let timing = Instant::now();
 
-    // Update operation doesn't have timeout yet
-    let inference_params = InferenceParams::new(inference_token, None);
+    let inference_params = InferenceParams::new(inference_token, params.timeout);
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -130,7 +129,7 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    let inference_params = InferenceParams::new(inference_token, None);
+    let inference_params = InferenceParams::new(inference_token, params.timeout);
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -342,7 +341,7 @@ async fn update_batch(
     );
 
     // Update operation doesn't have timeout yet
-    let inference_params = InferenceParams::new(inference_token.clone(), None);
+    let inference_params = InferenceParams::new(inference_token.clone(), params.timeout);
 
     let timing = Instant::now();
 

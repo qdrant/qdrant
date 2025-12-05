@@ -52,6 +52,7 @@ pub async fn upsert(
         ordering,
         shard_key_selector,
         update_filter,
+        timeout,
     } = upsert_points;
 
     let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
@@ -72,7 +73,7 @@ pub async fn upsert(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         inference_params,
         request_hw_counter.get_counter(),
@@ -101,6 +102,7 @@ pub async fn delete(
         points,
         ordering,
         shard_key_selector,
+        timeout,
     } = delete_points;
 
     let points_selector = match points {
@@ -114,7 +116,7 @@ pub async fn delete(
         collection_name,
         points_selector,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -140,6 +142,7 @@ pub async fn update_vectors(
         ordering,
         shard_key_selector,
         update_filter,
+        timeout,
     } = update_point_vectors;
 
     // Build list of operation points
@@ -172,7 +175,7 @@ pub async fn update_vectors(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         inference_params,
         request_hw_counter.get_counter(),
@@ -202,6 +205,7 @@ pub async fn delete_vectors(
         vectors,
         ordering,
         shard_key_selector,
+        timeout,
     } = delete_point_vectors;
 
     let (points, filter) = extract_points_selector(points_selector)?;
@@ -225,7 +229,7 @@ pub async fn delete_vectors(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -251,6 +255,7 @@ pub async fn set_payload(
         ordering,
         shard_key_selector,
         key,
+        timeout,
     } = set_payload_points;
     let key = key.map(|k| json_path_from_proto(&k)).transpose()?;
 
@@ -271,7 +276,7 @@ pub async fn set_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -296,6 +301,7 @@ pub async fn overwrite_payload(
         points_selector,
         ordering,
         shard_key_selector,
+        timeout,
         ..
     } = set_payload_points;
 
@@ -317,7 +323,7 @@ pub async fn overwrite_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -342,6 +348,7 @@ pub async fn delete_payload(
         points_selector,
         ordering,
         shard_key_selector,
+        timeout,
     } = delete_payload_points;
     let keys = keys.iter().map(|k| json_path_from_proto(k)).try_collect()?;
 
@@ -361,7 +368,7 @@ pub async fn delete_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -385,6 +392,7 @@ pub async fn clear_payload(
         points,
         ordering,
         shard_key_selector,
+        timeout,
     } = clear_payload_points;
 
     let points_selector = match points {
@@ -398,7 +406,7 @@ pub async fn clear_payload(
         collection_name,
         points_selector,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -422,6 +430,7 @@ pub async fn update_batch(
         wait,
         operations,
         ordering,
+        timeout,
     } = update_batch_points;
 
     let timing = Instant::now();
@@ -449,6 +458,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         update_filter,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -466,6 +476,7 @@ pub async fn update_batch(
                         points: Some(points),
                         ordering,
                         shard_key_selector: None,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -491,6 +502,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         key,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -517,6 +529,7 @@ pub async fn update_batch(
                         shard_key_selector,
                         // overwrite operation doesn't support it
                         key: None,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -540,6 +553,7 @@ pub async fn update_batch(
                         points_selector,
                         ordering,
                         shard_key_selector,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -559,6 +573,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -582,6 +597,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         update_filter,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -606,6 +622,7 @@ pub async fn update_batch(
                         vectors,
                         ordering,
                         shard_key_selector,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -622,6 +639,7 @@ pub async fn update_batch(
                         points: Some(selector),
                         ordering,
                         shard_key_selector: None,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -641,6 +659,7 @@ pub async fn update_batch(
                         points,
                         ordering,
                         shard_key_selector,
+                        timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -681,6 +700,7 @@ pub async fn create_field_index(
         field_type,
         field_index_params,
         ordering,
+        timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -697,7 +717,7 @@ pub async fn create_field_index(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -722,6 +742,7 @@ pub async fn create_field_index_internal(
         field_type,
         field_index_params,
         ordering,
+        timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -734,7 +755,7 @@ pub async fn create_field_index_internal(
         field_name,
         field_schema,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -754,6 +775,7 @@ pub async fn delete_field_index(
         wait,
         field_name,
         ordering,
+        timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -764,7 +786,7 @@ pub async fn delete_field_index(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
@@ -784,6 +806,7 @@ pub async fn delete_field_index_internal(
         wait,
         field_name,
         ordering,
+        timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -794,7 +817,7 @@ pub async fn delete_field_index_internal(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -817,6 +840,7 @@ pub async fn sync(
         from_id,
         to_id,
         ordering,
+        timeout,
     } = sync_points;
 
     let timing = Instant::now();
@@ -842,7 +866,7 @@ pub async fn sync(
         &collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering)?,
+        UpdateParams::from_grpc(wait, ordering, timeout.map(std::time::Duration::from_secs))?,
         None,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured
