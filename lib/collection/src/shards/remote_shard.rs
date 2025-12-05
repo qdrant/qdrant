@@ -904,7 +904,7 @@ impl RemoteShard {
     ) -> CollectionResult<Option<Duration>> {
         match timeout {
             None => Ok(timeout),
-            Some(t) if t.is_zero() => Err(CollectionError::timeout(0, operation)),
+            Some(t) if t.is_zero() => Err(CollectionError::timeout(Duration::ZERO, operation)),
             Some(t) => {
                 // round up to avoid losing completely timeouts that are under 1 second
                 let timeout_secs = t.as_secs_f32().ceil() as u64;

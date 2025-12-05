@@ -138,9 +138,9 @@ impl LocalShard {
         let res = tokio::time::timeout(timeout, search_request)
             .await
             .map_err(|_| {
-                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
+                log::debug!("Search timeout reached: {timeout:?}");
                 // StoppingGuard takes care of setting is_stopped to true
-                CollectionError::timeout(timeout.as_secs() as usize, "Search")
+                CollectionError::timeout(timeout, "Search")
             })??;
 
         let top_results = res

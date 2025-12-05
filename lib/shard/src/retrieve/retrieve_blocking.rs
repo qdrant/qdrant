@@ -27,10 +27,7 @@ pub fn retrieve_blocking(
     let hw_counter = hw_measurement_acc.get_counter_cell();
 
     let Some(segments_guard) = segments.try_read_for(timeout) else {
-        return Err(OperationError::timeout(
-            timeout.as_secs() as usize,
-            "retrieve points",
-        ));
+        return Err(OperationError::timeout(timeout, "retrieve points"));
     };
 
     segments_guard.read_points(points, is_stopped, |id, segment| {
