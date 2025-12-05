@@ -258,6 +258,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
+    use common::progress_tracker::ProgressTracker;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
@@ -362,6 +363,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -394,6 +396,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -523,6 +526,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -563,6 +567,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -698,6 +703,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -741,6 +747,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");

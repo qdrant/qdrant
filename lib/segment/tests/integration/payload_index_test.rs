@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
 use fs_err as fs;
@@ -292,8 +293,11 @@ impl TestSegments {
         builder.update(&[plain_segment], &stopped).unwrap();
         let permit = ResourcePermit::dummy(1);
         let hw_counter = HardwareCounterCell::new();
+        let progress = ProgressTracker::new_for_test();
 
-        let mut segment = builder.build(permit, &stopped, rng, &hw_counter).unwrap();
+        let mut segment = builder
+            .build(permit, &stopped, rng, &hw_counter, progress)
+            .unwrap();
         let opnum = segment.version() + 1;
 
         segment

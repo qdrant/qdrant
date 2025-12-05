@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
@@ -22,6 +23,7 @@ use tokio::sync::{RwLock, oneshot};
 use tokio::time::timeout;
 
 use super::update_tracker::UpdateTracker;
+use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
@@ -164,6 +166,10 @@ impl ProxyShard {
 
     pub fn update_tracker(&self) -> &UpdateTracker {
         self.wrapped_shard.update_tracker()
+    }
+
+    pub fn optimizers_log(&self) -> Arc<ParkingMutex<TrackerLog>> {
+        self.wrapped_shard.optimizers_log()
     }
 
     pub async fn estimate_cardinality(

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
+use common::progress_tracker::ProgressTracker;
 use common::tar_ext;
 use fs_err as fs;
 use fs_err::File;
@@ -145,6 +146,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
             &false.into(),
             &mut rng,
             &HardwareCounterCell::new(),
+            ProgressTracker::new_for_test(),
         )
         .unwrap();
 

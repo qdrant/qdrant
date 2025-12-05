@@ -25,6 +25,7 @@ use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
 use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
+use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -218,6 +219,10 @@ impl QueueProxyShard {
 
     pub fn update_tracker(&self) -> &UpdateTracker {
         self.inner_unchecked().wrapped_shard.update_tracker()
+    }
+
+    pub fn optimizers_log(&self) -> Arc<ParkingMutex<TrackerLog>> {
+        self.inner_unchecked().wrapped_shard.optimizers_log()
     }
 
     /// Check if the queue proxy shard is already finalized

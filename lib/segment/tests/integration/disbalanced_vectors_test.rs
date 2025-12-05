@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::progress_tracker::ProgressTracker;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
@@ -105,9 +106,10 @@ fn test_rebuild_with_removed_vectors() {
     let hw_counter = HardwareCounterCell::new();
 
     let mut rng = rand::rng();
+    let progress = ProgressTracker::new_for_test();
 
     let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter)
+        .build(permit, &stopped, &mut rng, &hw_counter, progress)
         .unwrap();
 
     let merged_points_count = merged_segment.available_point_count();

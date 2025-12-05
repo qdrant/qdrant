@@ -161,6 +161,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::budget::ResourceBudget;
+    use common::progress_tracker::ProgressTracker;
     use parking_lot::RwLock;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
@@ -256,6 +257,7 @@ mod tests {
                 permit,
                 budget,
                 &AtomicBool::new(false),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
 

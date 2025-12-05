@@ -12,6 +12,7 @@ use api::rest::{
     SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
+use common::progress_tracker::ProgressTree;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -280,6 +281,13 @@ pub struct CollectionClusterInfo {
     // TODO(resharding): remove this skip when releasing resharding
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resharding_operations: Option<Vec<ReshardingInfo>>,
+}
+
+/// Indexing progress for the collection
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct IndexingProgress {
+    pub ongoing: Vec<ProgressTree>,
+    pub completed: Vec<ProgressTree>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]

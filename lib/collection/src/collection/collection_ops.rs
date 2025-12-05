@@ -1,4 +1,4 @@
-use std::cmp;
+use std::cmp::{self, Reverse};
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -8,6 +8,7 @@ use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
 use super::Collection;
+use crate::collection_manager::optimizers::IndexingProgressViews;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -412,6 +413,30 @@ impl Collection {
             resharding_operations,
         };
         Ok(info)
+    }
+
+    pub async fn indexing_progress(
+        &self,
+        completed_limit: usize,
+    ) -> CollectionResult<IndexingProgress> {
+        let mut r = IndexingProgressViews::default();
+        let shards_holder = self.shards_holder.read().await;
+        for (_shard_id, replica_set) in shards_holder.get_shards() {
+            let Some(log) = replica_set.optimizers_log().await else {
+                continue;
+            };
+            let IndexingProgressViews { ongoing, completed } = log.lock().progress_views();
+            r.ongoing.extend(ongoing);
+            r.completed.extend(completed);
+        }
+        r.ongoing.sort_by_key(|v| Reverse(v.started_at()));
+        r.completed.sort_by_key(|v| Reverse(v.started_at()));
+        r.completed.truncate(completed_limit);
+        let root = "Segment Optimizing";
+        Ok(IndexingProgress {
+            ongoing: r.ongoing.into_iter().map(|v| v.snapshot(root)).collect(),
+            completed: r.completed.into_iter().map(|v| v.snapshot(root)).collect(),
+        })
     }
 
     pub async fn print_warnings(&self) {

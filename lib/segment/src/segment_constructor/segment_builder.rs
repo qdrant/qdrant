@@ -12,6 +12,7 @@ use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
+use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -465,6 +466,7 @@ impl SegmentBuilder {
         stopped: &AtomicBool,
         rng: &mut R,
         hw_counter: &HardwareCounterCell,
+        progress_segment: ProgressTracker,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
             let SegmentBuilder {
@@ -479,6 +481,19 @@ impl SegmentBuilder {
                 indexed_fields,
                 defragment_keys: _,
             } = self;
+
+            let progress_quantization = progress_segment.subtask("quantization");
+            let progress_payload_index = progress_segment.subtask("payload_index");
+            let indexed_fields = indexed_fields
+                .into_iter()
+                .map(|(field, payload_schema)| {
+                    let progress = progress_payload_index
+                        .subtask(format!("{}:{field}", payload_schema.name()));
+                    (field, payload_schema, progress)
+                })
+                .collect::<Vec<(PayloadKeyType, PayloadFieldSchema, ProgressTracker)>>();
+            let progress_vector_index = progress_segment.subtask("vector_index");
+            let progress_sparse_vector_index = progress_segment.subtask("sparse_vector_index");
 
             let appendable_flag = segment_config.is_appendable();
 
@@ -511,6 +526,7 @@ impl SegmentBuilder {
                 temp_dir.path(),
                 &permit,
                 stopped,
+                progress_quantization,
             )?;
 
             let mut vector_storages_arc = HashMap::new();
@@ -548,6 +564,7 @@ impl SegmentBuilder {
 
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
+            progress_payload_index.start();
             let mut payload_index = StructPayloadIndex::open(
                 payload_storage_arc.clone(),
                 id_tracker_arc.clone(),
@@ -556,10 +573,12 @@ impl SegmentBuilder {
                 appendable_flag,
                 true,
             )?;
-            for (field, payload_schema) in indexed_fields {
+            for (field, payload_schema, progress) in indexed_fields {
+                progress.start();
                 payload_index.set_indexed(&field, payload_schema, hw_counter)?;
                 check_process_stopped(stopped)?;
             }
+            drop(progress_payload_index);
 
             payload_index.flusher()()?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
@@ -579,6 +598,7 @@ impl SegmentBuilder {
             // Arc permit to share it with each vector store
             let permit = Arc::new(permit);
 
+            progress_vector_index.start();
             for (vector_name, vector_config) in &segment_config.vector_data {
                 let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
                 let quantized_vectors =
@@ -601,6 +621,7 @@ impl SegmentBuilder {
                         rng,
                         hnsw_global_config: &hnsw_global_config,
                         feature_flags: feature_flags(),
+                        progress: progress_vector_index.running_subtask(vector_name),
                     },
                 )?;
 
@@ -618,7 +639,9 @@ impl SegmentBuilder {
                 // So we may clear unconditionally
                 index.clear_cache()?;
             }
+            drop(progress_vector_index);
 
+            progress_sparse_vector_index.start();
             for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
                 let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
 
@@ -644,6 +667,7 @@ impl SegmentBuilder {
                     index.clear_cache()?;
                 }
             }
+            drop(progress_sparse_vector_index);
 
             if segment_config.payload_storage_type.is_on_disk() {
                 // If payload storage is expected to be on-disk, we need to clear cache
@@ -697,7 +721,9 @@ impl SegmentBuilder {
         temp_path: &Path,
         permit: &ResourcePermit,
         stopped: &AtomicBool,
+        progress: ProgressTracker,
     ) -> OperationResult<HashMap<VectorNameBuf, QuantizedVectors>> {
+        progress.start();
         let config = segment_config.clone();
 
         let mut quantized_vectors_map = HashMap::new();
@@ -722,6 +748,8 @@ impl SegmentBuilder {
                     continue;
                 }
 
+                let progress_vector = progress.running_subtask(vector_name);
+
                 let segment_path = temp_path;
                 let quantized_storage_type = if is_appendable {
                     QuantizedVectorsStorageType::Mutable
@@ -741,6 +769,8 @@ impl SegmentBuilder {
                 )?;
 
                 quantized_vectors_map.insert(vector_name.to_owned(), quantized_vectors);
+
+                drop(progress_vector);
             }
         }
         Ok(quantized_vectors_map)
