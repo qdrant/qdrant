@@ -524,14 +524,13 @@ impl MetricsProvider for ClusterStatusTelemetry {
 
         match &self.consensus_thread_status {
             ConsensusThreadStatus::Working { last_update } => {
-                let delta = Utc::now() - last_update;
-                let delta_secs = delta.as_seconds_f64();
+                let timestamp = last_update.timestamp();
 
                 metrics.push_metric(metric_family(
-                    "cluster_last_update_seconds",
+                    "cluster_last_update_timestamp_seconds",
                     "time since last update",
                     MetricType::GAUGE,
-                    vec![gauge(delta_secs, &[])],
+                    vec![gauge(timestamp as f64, &[])],
                     prefix,
                 ));
 
