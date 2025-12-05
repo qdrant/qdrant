@@ -727,12 +727,9 @@ mod tests_ops {
             }
             #[cfg(feature = "staging")]
             PointOperationsDiscriminants::TestDelay => {
-                use ordered_float::OrderedFloat;
-                use shard::operations::point_ops::TestDelayOperation;
+                use shard::operations::staging::TestDelayOperation;
                 let op = CollectionUpdateOperations::PointOperation(PointOperations::TestDelay(
-                    TestDelayOperation {
-                        duration: OrderedFloat(1.0),
-                    },
+                    TestDelayOperation::new(1.0),
                 ));
                 assert_requires_whole_write_access(&op);
             }

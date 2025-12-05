@@ -15,6 +15,13 @@ pub struct TestDelayOperation {
 }
 
 impl TestDelayOperation {
+    /// Create a new TestDelayOperation with the given duration in seconds.
+    pub fn new(duration_secs: f64) -> Self {
+        Self {
+            duration: OrderedFloat(duration_secs),
+        }
+    }
+
     /// Execute the delay operation (blocking).
     pub fn execute(&self) {
         let duration_secs = self.duration.into_inner();

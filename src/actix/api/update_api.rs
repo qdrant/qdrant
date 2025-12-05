@@ -454,11 +454,11 @@ async fn staging_test_delay(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<TestDelayRequest>,
+    params: Query<UpdateParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     use collection::operations::point_ops::PointOperations;
     use collection::operations::verification::new_unchecked_verification_pass;
-    use ordered_float::OrderedFloat;
     use shard::operations::CollectionUpdateOperations;
     use shard::operations::staging::TestDelayOperation;
 
@@ -466,9 +466,7 @@ async fn staging_test_delay(
     let operation = operation.into_inner();
     let collection_name = collection.into_inner().name;
 
-    let point_operation = PointOperations::TestDelay(TestDelayOperation {
-        duration: OrderedFloat(operation.duration),
-    });
+    let point_operation = PointOperations::TestDelay(TestDelayOperation::new(operation.duration));
 
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
@@ -481,10 +479,7 @@ async fn staging_test_delay(
         &collection_name,
         collection_operation,
         InternalUpdateParams::default(),
-        UpdateParams {
-            wait: true,
-            ordering: Default::default(),
-        },
+        params.into_inner(),
         None, // shard_key
         access,
         HwMeasurementAcc::disposable(),
