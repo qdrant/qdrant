@@ -528,8 +528,8 @@ impl MetricsProvider for ClusterStatusTelemetry {
                 metrics.push_metric(metric_family(
                     "cluster_last_update_timestamp_seconds",
                     "unix timestamp of last update",
-                    MetricType::GAUGE,
-                    vec![gauge(timestamp as f64, &[])],
+                    MetricType::COUNTER,
+                    vec![counter(timestamp as f64, &[])],
                     prefix,
                 ));
 
