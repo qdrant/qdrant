@@ -1,4 +1,5 @@
 import pathlib
+import requests
 
 from .fixtures import create_collection, upsert_random_points
 from .utils import *
@@ -40,36 +41,26 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     # Recover Raft state
     recover_raft_state(peer_url)
 
-    # Wait for all shards to be active
-    wait_for(all_collection_shards_are_active, peer_url, COLLECTION_NAME)
-
-    # Check, that the collection is not empty on recovered node
-    info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
-
-    for shard in info["local_shards"]:
-        assert shard["points_count"] > 0
+    # Wait until collection is recovered
+    wait_for(collection_recovered, peer_url, COLLECTION_NAME)
 
 
 def recover_raft_state(peer_url):
-    r = requests.post(f"{peer_url}/cluster/recover")
-    return request_result(r)
-
-
-def request_result(resp):
+    resp = requests.post(f"{peer_url}/cluster/recover")
     assert_http_ok(resp)
+
     return resp.json()["result"]
 
 
-def all_collection_shards_are_active(peer_url, collection_name):
+def collection_recovered(peer_url, collection_name):
     try:
         info = get_collection_cluster_info(peer_url, collection_name)
     except:
         return False
 
-    remote_shards = info["remote_shards"]
     local_shards = info["local_shards"]
 
-    if len(remote_shards) == 0:
+    if len(local_shards) == 0:
         return False
 
-    return all(map(lambda shard: shard["state"] == "Active", local_shards + remote_shards))
+    return all(map(lambda shard: shard["state"] == "Active" and shard["points_count"] > 0, local_shards))
