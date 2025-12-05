@@ -110,9 +110,6 @@ pub enum PointOperations {
     TestDelay(super::staging::TestDelayOperation),
 }
 
-#[cfg(feature = "staging")]
-pub use super::staging::TestDelayOperation;
-
 impl PointOperations {
     pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
