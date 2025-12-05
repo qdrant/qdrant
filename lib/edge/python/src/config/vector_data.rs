@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use segment::types::*;
 
 use super::quantization::*;
-use crate::repr::Repr;
+use crate::repr::{Repr, ReprDisplay};
 
 #[pyclass(name = "VectorDataConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -91,22 +91,22 @@ impl PyVectorDataConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyVectorDataConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyVectorDataConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
             "VectorDataConfig(size={}, distance={}, storage_type={}, index={}, quantization_config={}, multivector_config={}, datatype={})",
-            self.size(),
-            self.distance(),
-            self.storage_type(),
-            self.index(),
-            Repr(self.quantization_config()),
-            Repr(self.multivector_config()),
-            Repr(self.datatype()),
+            ReprDisplay(self.size()),
+            ReprDisplay(self.distance()),
+            ReprDisplay(self.storage_type()),
+            ReprDisplay(self.index()),
+            ReprDisplay(self.quantization_config()),
+            ReprDisplay(self.multivector_config()),
+            ReprDisplay(self.datatype()),
         )
     }
 }
@@ -133,12 +133,12 @@ pub enum PyDistance {
 #[pymethods]
 impl PyDistance {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyDistance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyDistance {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Cosine => "Cosine",
             Self::Euclid => "Euclid",
@@ -184,12 +184,12 @@ pub enum PyVectorStorageType {
 #[pymethods]
 impl PyVectorStorageType {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyVectorStorageType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyVectorStorageType {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Memory => "Memory",
             Self::Mmap => "Mmap",
@@ -266,8 +266,8 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
     }
 }
 
-impl fmt::Display for PyIndexes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyIndexes {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         match &self.0 {
             Indexes::Plain {} => PyPlainIndexConfig.fmt(f),
             Indexes::Hnsw(hnsw) => PyHnswIndexConfig::wrap_ref(hnsw).fmt(f),
@@ -287,12 +287,12 @@ impl PyPlainIndexConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyPlainIndexConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyPlainIndexConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(f, "PlainIndexConfig()")
     }
 }
@@ -356,21 +356,21 @@ impl PyHnswIndexConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyHnswIndexConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyHnswIndexConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
             "HnswIndexConfig(m={}, ef_construct={}, full_scan_threshold={}, on_disk={}, payload_m={}, inline_storage={})",
-            self.m(),
-            self.ef_construct(),
-            self.full_scan_threshold(),
-            Repr(self.on_disk().map(Repr)),
-            Repr(self.payload_m()),
-            Repr(self.inline_storage().map(Repr)),
+            ReprDisplay(self.m()),
+            ReprDisplay(self.ef_construct()),
+            ReprDisplay(self.full_scan_threshold()),
+            ReprDisplay(self.on_disk()),
+            ReprDisplay(self.payload_m()),
+            ReprDisplay(self.inline_storage()),
         )
     }
 }
@@ -395,13 +395,17 @@ impl PyMultiVectorConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyMultiVectorConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MultiVectorConfig(comparator={})", self.comparator())
+impl Repr for PyMultiVectorConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
+        write!(
+            f,
+            "MultiVectorConfig(comparator={})",
+            ReprDisplay(self.comparator())
+        )
     }
 }
 
@@ -414,12 +418,12 @@ pub enum PyMultiVectorComparator {
 #[pymethods]
 impl PyMultiVectorComparator {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyMultiVectorComparator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyMultiVectorComparator {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::MaxSim => "MaxSim",
         };
@@ -455,12 +459,12 @@ pub enum PyVectorStorageDatatype {
 #[pymethods]
 impl PyVectorStorageDatatype {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyVectorStorageDatatype {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyVectorStorageDatatype {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Float32 => "Float32",
             Self::Float16 => "Float16",

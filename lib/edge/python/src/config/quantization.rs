@@ -6,7 +6,7 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 
-use crate::repr::Repr;
+use crate::repr::{Repr, ReprDisplay};
 
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -59,8 +59,8 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
     }
 }
 
-impl fmt::Display for PyQuantizationConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyQuantizationConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         match &self.0 {
             QuantizationConfig::Scalar(scalar) => {
                 PyScalarQuantizationConfig::wrap_ref(&scalar.scalar).fmt(f)
@@ -108,18 +108,18 @@ impl PyScalarQuantizationConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyScalarQuantizationConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyScalarQuantizationConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
-            "ScalarQuantizationConfig(type: {}, quantile: {}, always_ram: {})",
-            self.r#type(),
-            Repr(self.quantile()),
-            Repr(self.always_ram()),
+            "ScalarQuantizationConfig(type={}, quantile={}, always_ram={})",
+            ReprDisplay(self.r#type()),
+            ReprDisplay(self.quantile()),
+            ReprDisplay(self.always_ram()),
         )
     }
 }
@@ -133,12 +133,12 @@ pub enum PyScalarType {
 #[pymethods]
 impl PyScalarType {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyScalarType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyScalarType {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Int8 => "Int8",
         };
@@ -190,17 +190,17 @@ impl PyProductQuantizationConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyProductQuantizationConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyProductQuantizationConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
-            "ProductQuantizationConfig(compression: {}, always_ram: {})",
-            self.compression(),
-            Repr(self.always_ram()),
+            "ProductQuantizationConfig(compression={}, always_ram={})",
+            ReprDisplay(self.compression()),
+            ReprDisplay(self.always_ram()),
         )
     }
 }
@@ -218,12 +218,12 @@ pub enum PyCompressionRatio {
 #[pymethods]
 impl PyCompressionRatio {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyCompressionRatio {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyCompressionRatio {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::X4 => "X4",
             Self::X8 => "X8",
@@ -299,18 +299,18 @@ impl PyBinaryQuantizationConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyBinaryQuantizationConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyBinaryQuantizationConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
-            "BinaryQuantizationConfig(always_ram: {}, encoding: {}, query_encoding: {})",
-            Repr(self.always_ram()),
-            Repr(self.encoding()),
-            Repr(self.query_encoding()),
+            "BinaryQuantizationConfig(always_ram={}, encoding={}, query_encoding={})",
+            ReprDisplay(self.always_ram()),
+            ReprDisplay(self.encoding()),
+            ReprDisplay(self.query_encoding()),
         )
     }
 }
@@ -326,19 +326,19 @@ pub enum PyBinaryQuantizationEncoding {
 #[pymethods]
 impl PyBinaryQuantizationEncoding {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyBinaryQuantizationEncoding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyBinaryQuantizationEncoding {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::OneBit => "OneBit",
             Self::TwoBits => "TwoBits",
             Self::OneAndHalfBits => "OneAndHalfBits",
         };
 
-        write!(f, "PyBinaryQuantizationEncoding.{repr}")
+        write!(f, "BinaryQuantizationEncoding.{repr}")
     }
 }
 
@@ -378,12 +378,12 @@ pub enum PyBinaryQuantizationQueryEncoding {
 #[pymethods]
 impl PyBinaryQuantizationQueryEncoding {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyBinaryQuantizationQueryEncoding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyBinaryQuantizationQueryEncoding {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Default => "Default",
             Self::Binary => "Binary",
@@ -391,7 +391,7 @@ impl fmt::Display for PyBinaryQuantizationQueryEncoding {
             Self::Scalar8Bits => "Scalar8Bits",
         };
 
-        write!(f, "PyBinaryQuantizationQueryEncoding.{repr}")
+        write!(f, "BinaryQuantizationQueryEncoding.{repr}")
     }
 }
 

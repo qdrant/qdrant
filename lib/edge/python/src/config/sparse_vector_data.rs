@@ -9,7 +9,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::*;
 
 use super::vector_data::*;
-use crate::repr::Repr;
+use crate::repr::{Repr, ReprDisplay};
 
 #[pyclass(name = "SparseVectorDataConfig")]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
@@ -63,18 +63,18 @@ impl PySparseVectorDataConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PySparseVectorDataConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PySparseVectorDataConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
             "SparseVectorDataConfig(index={}, storage_type={}, modifier={})",
-            self.index(),
-            self.storage_type(),
-            Repr(self.modifier()),
+            ReprDisplay(self.index()),
+            ReprDisplay(self.storage_type()),
+            ReprDisplay(self.modifier()),
         )
     }
 }
@@ -125,18 +125,18 @@ impl PySparseIndexConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PySparseIndexConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PySparseIndexConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
             "SparseIndexConfig(full_scan_threshold={}, index_type={}, datatype={})",
-            Repr(self.full_scan_threshold()),
-            self.index_type(),
-            Repr(self.datatype()),
+            ReprDisplay(self.full_scan_threshold()),
+            ReprDisplay(self.index_type()),
+            ReprDisplay(self.datatype()),
         )
     }
 }
@@ -152,12 +152,12 @@ pub enum PySparseIndexType {
 #[pymethods]
 impl PySparseIndexType {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PySparseIndexType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PySparseIndexType {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::MutableRam => "MutableRam",
             Self::ImmutableRam => "ImmutableRam",
@@ -197,12 +197,12 @@ pub enum PySparseVectorStorageType {
 #[pymethods]
 impl PySparseVectorStorageType {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PySparseVectorStorageType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PySparseVectorStorageType {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::Mmap => "Mmap",
         };
@@ -240,12 +240,12 @@ pub enum PyModifier {
 #[pymethods]
 impl PyModifier {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyModifier {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyModifier {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
             Self::None => "None",
             Self::Idf => "Idf",

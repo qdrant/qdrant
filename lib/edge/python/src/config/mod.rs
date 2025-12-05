@@ -13,7 +13,7 @@ use segment::types::*;
 pub use self::quantization::*;
 pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
-use crate::repr::Repr;
+use crate::repr::{Repr, ReprDisplay};
 
 #[pyclass(name = "SegmentConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -51,18 +51,18 @@ impl PySegmentConfig {
     }
 
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PySegmentConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PySegmentConfig {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         write!(
             f,
             "SegmentConfig(vector_data={}, sparse_vector_data={}, payload_storage_type={})",
-            Repr(self.vector_data()),
-            Repr(self.sparse_vector_data()),
-            self.payload_storage_type(),
+            ReprDisplay(self.vector_data()),
+            ReprDisplay(self.sparse_vector_data()),
+            ReprDisplay(self.payload_storage_type()),
         )
     }
 }
@@ -77,15 +77,15 @@ pub enum PyPayloadStorageType {
 #[pymethods]
 impl PyPayloadStorageType {
     pub fn __repr__(&self) -> String {
-        self.to_string()
+        self.repr()
     }
 }
 
-impl fmt::Display for PyPayloadStorageType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Repr for PyPayloadStorageType {
+    fn fmt(&self, f: &mut dyn fmt::Write) -> fmt::Result {
         let repr = match self {
-            Self::Mmap => "Mmap",
-            Self::InRamMmap => "InRamMmap",
+            PyPayloadStorageType::Mmap => "Mmap",
+            PyPayloadStorageType::InRamMmap => "InRamMmap",
         };
 
         write!(f, "PayloadStorageType.{repr}")
