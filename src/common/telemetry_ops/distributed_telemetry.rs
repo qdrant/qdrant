@@ -13,7 +13,7 @@ use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 use crate::common::telemetry_ops::collections_telemetry::CollectionTelemetryEnum;
 
 #[derive(Serialize, JsonSchema)]
-pub struct DistributedTelemetry {
+pub struct DistributedTelemetryData {
     collections: HashMap<String, DistributedCollectionTelemetry>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,7 +74,7 @@ pub struct DistributedPeerInfo {
     consensus_thread_status: Option<ConsensusThreadStatus>,
 }
 
-impl DistributedTelemetry {
+impl DistributedTelemetryData {
     pub fn resolve_telemetries(
         mut telemetries: Vec<TelemetryData>,
         missing_peers: Vec<PeerId>,
@@ -104,7 +104,7 @@ impl DistributedTelemetry {
         let collections =
             aggregate_collections(telemetry_by_peer, base_telemetry).unwrap_or_default();
 
-        Ok(DistributedTelemetry {
+        Ok(DistributedTelemetryData {
             collections,
             cluster,
         })

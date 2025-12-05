@@ -31,7 +31,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::types::ClusterStatus;
 
 use crate::common::telemetry::TelemetryData;
-use crate::common::telemetry_ops::distributed_telemetry::DistributedClusterTelemetry;
+use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
 use crate::common::update::{CreateFieldIndex, UpdateOperations};
 
 mod actix;
@@ -99,7 +99,7 @@ struct AllDefinitions {
     bn: Usage,
     bo: ShardKeysResponse,
     bp: OptimizationsResponse,
-    bq: DistributedClusterTelemetry,
+    bq: DistributedTelemetryData,
 }
 
 fn save_schema<T: JsonSchema>() {
