@@ -1,5 +1,7 @@
 pub mod payload_ops;
 pub mod point_ops;
+#[cfg(feature = "staging")]
+pub mod staging;
 pub mod vector_ops;
 
 use segment::json_path::JsonPath;
@@ -56,6 +58,8 @@ impl CollectionUpdateOperations {
                 PointOperations::SyncPoints(op) => {
                     Some(op.points.iter().map(|point| point.id).collect())
                 }
+                #[cfg(feature = "staging")]
+                PointOperations::TestDelay(_) => None,
             },
             Self::VectorOperation(_) => None,
             Self::PayloadOperation(_) => None,

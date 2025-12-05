@@ -68,6 +68,8 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                     sync_op.points.iter().map(|x| x.id).collect(),
                 ))
             }
+            #[cfg(feature = "staging")]
+            point_ops::PointOperations::TestDelay(_) => OperationEffectArea::Empty,
         }
     }
 }

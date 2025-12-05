@@ -725,6 +725,14 @@ mod tests_ops {
                 ));
                 assert_requires_whole_write_access(&op);
             }
+            #[cfg(feature = "staging")]
+            PointOperationsDiscriminants::TestDelay => {
+                use shard::operations::staging::TestDelayOperation;
+                let op = CollectionUpdateOperations::PointOperation(PointOperations::TestDelay(
+                    TestDelayOperation::new(1.0),
+                ));
+                assert_requires_whole_write_access(&op);
+            }
         });
     }
 

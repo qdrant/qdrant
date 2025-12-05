@@ -13,6 +13,7 @@ workspace = true
 
 [features]
 testing = []
+staging = []
 
 [dependencies]
 api = { path = "../api" }

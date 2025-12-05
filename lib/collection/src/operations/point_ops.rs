@@ -79,6 +79,8 @@ impl SplitByShard for PointOperations {
                 #[cfg(not(debug_assertions))]
                 OperationToShard::by_shard(vec![])
             }
+            #[cfg(feature = "staging")]
+            test_delay @ PointOperations::TestDelay(_) => OperationToShard::to_all(test_delay),
         }
     }
 }
