@@ -6,6 +6,7 @@ use itertools::Itertools;
 use prometheus::TextEncoder;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
+use storage::types::ConsensusThreadStatus;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry::TelemetryData;
@@ -515,6 +516,42 @@ impl MetricsProvider for ClusterStatusTelemetry {
                 prefix,
             ));
         }
+
+        // Initialize all states so that every state has a zeroed metric by default.
+        let mut state_working = 0.0;
+        let mut state_stopped = 0.0;
+
+        match &self.consensus_thread_status {
+            ConsensusThreadStatus::Working { last_update } => {
+                let timestamp = last_update.timestamp();
+
+                metrics.push_metric(metric_family(
+                    "cluster_last_update_timestamp_seconds",
+                    "unix timestamp of last update",
+                    MetricType::COUNTER,
+                    vec![counter(timestamp as f64, &[])],
+                    prefix,
+                ));
+
+                state_working = 1.0;
+            }
+            ConsensusThreadStatus::Stopped | ConsensusThreadStatus::StoppedWithErr { err: _ } => {
+                state_stopped = 1.0;
+            }
+        }
+
+        let working_states = vec![
+            gauge(state_working, &[("state", "working")]),
+            gauge(state_stopped, &[("state", "stopped")]),
+        ];
+
+        metrics.push_metric(metric_family(
+            "cluster_working_state",
+            "working state of the cluster",
+            MetricType::GAUGE,
+            working_states,
+            prefix,
+        ));
     }
 }
 
