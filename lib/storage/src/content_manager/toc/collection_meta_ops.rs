@@ -91,6 +91,13 @@ impl TableOfContent {
                     .await
                     .map(|_| true)
             }
+            CollectionMetaOperations::MultiSourceTransferShard(collection, operation) => {
+                log::debug!("Transferring shards {operation:?} of {collection}");
+
+                self.handle_multi_source_transfer(collection, operation)
+                    .await
+                    .map(|_| true)
+            }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {operation:?} of {collection}");
 
@@ -386,6 +393,35 @@ impl TableOfContent {
             }
         }
 
+        Ok(())
+    }
+
+    async fn handle_multi_source_transfer(
+        &self,
+        collection_id: CollectionId,
+        operation: MultiSourceTransferShardOperation,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection_unchecked(&collection_id).await?;
+
+        match operation {
+            MultiSourceTransferShardOperation::Start(key) => {
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ));
+                    }
+                };
+
+                collection
+                    .start_multi_source_transfer_shard(key, shard_consensus)
+                    .await?;
+            }
+            MultiSourceTransferShardOperation::Finish(key) => {
+                collection.finish_multi_source_transfer_shard(key).await?;
+            }
+        };
         Ok(())
     }
 
