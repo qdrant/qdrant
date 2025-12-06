@@ -5,11 +5,12 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
+    AverageVectorRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
+use api::rest::{AverageVectorResponse, VectorOutput};
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
 };
@@ -230,9 +231,131 @@ async fn recommend_point_groups(
 
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
+
+#[post("/collections/{name}/points/average_vector")]
+async fn compute_average_vector(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    request: Json<AverageVectorRequest>,
+    params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    use collection::common::fetch_vectors::{convert_to_vectors, resolve_referenced_vectors_batch};
+    use collection::common::retrieve_request_trait::RetrieveRequest;
+    use collection::operations::types::RecommendRequestInternal;
+    use collection::recommendations::avg_vectors;
+
+    let AverageVectorRequest {
+        examples,
+        using,
+        lookup_from,
+        shard_key,
+    } = request.into_inner();
+
+    if examples.is_empty() {
+        return process_response_error(
+            StorageError::bad_input("Examples list cannot be empty"),
+            Instant::now(),
+            None,
+        );
+    }
+
+    // Create a minimal RecommendRequestInternal just to use the existing vector resolution infrastructure
+    let dummy_request = RecommendRequestInternal {
+        positive: examples.clone(),
+        negative: vec![],
+        filter: None,
+        params: None,
+        limit: 1,
+        offset: None,
+        with_payload: None,
+        with_vector: None,
+        score_threshold: None,
+        using: using.clone(),
+        lookup_from: lookup_from.clone(),
+        strategy: None,
+    };
+
+    let pass = match check_strict_mode(
+        &AverageVectorRequest {
+            examples: examples.clone(),
+            using: using.clone(),
+            lookup_from: lookup_from.clone(),
+            shard_key: shard_key.clone(),
+        },
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now(), None),
+    };
+
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
+
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+        None,
+    );
+
+    let timing = Instant::now();
+
+    // Compute average vector
+    let result = async {
+        use storage::rbac::AccessRequirements;
+
+        let toc = dispatcher.toc(&access, &pass);
+        let collection_pass = access.check_collection_access(&collection.name, AccessRequirements::new())?;
+        let collection_obj = toc.get_collection(&collection_pass).await?;
+
+        // Determine vector name
+        let lookup_vector_name = dummy_request.get_lookup_vector_name();
+        let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);
+
+        // Resolve referenced vectors using existing infrastructure
+        let referenced_vectors = resolve_referenced_vectors_batch(
+            &[(dummy_request, shard_selection)],
+            &*collection_obj,
+            |_| async { None },
+            params.consistency,
+            params.timeout(),
+            request_hw_counter.get_counter(),
+        )
+        .await?;
+
+        // Convert to VectorRef iterators
+        let vectors = convert_to_vectors(
+            examples.iter(),
+            &referenced_vectors,
+            &lookup_vector_name,
+            lookup_collection_name,
+        );
+
+        // Compute average
+        let avg_vector = avg_vectors(vectors)?;
+
+        Ok::<_, StorageError>(AverageVectorResponse {
+            vector: VectorOutput::from(avg_vector),
+        })
+    }
+    .await;
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+}
+
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {
     cfg.service(recommend_points)
         .service(recommend_batch_points)
-        .service(recommend_point_groups);
+        .service(recommend_point_groups)
+        .service(compute_average_vector);
 }

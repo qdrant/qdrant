@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
-    ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
+    AverageVectorPointsInternal, AverageVectorResponse, ClearPayloadPointsInternal,
+    CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, FacetCountsInternal,
     FacetResponseInternal, GetPointsInternal, GetResponse, IntermediateResult,
@@ -843,6 +844,16 @@ impl PointsInternal for PointsInternalService {
             request_inner.collection_name.clone(),
         );
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
+    }
+
+    async fn average_vector(
+        &self,
+        _request: Request<AverageVectorPointsInternal>,
+    ) -> Result<Response<AverageVectorResponse>, Status> {
+        // TODO: Implement gRPC handler for average_vector
+        Err(Status::unimplemented(
+            "AverageVector gRPC endpoint is not yet implemented. Please use the REST API endpoint instead.",
+        ))
     }
 }
 
