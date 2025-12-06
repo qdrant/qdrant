@@ -7,10 +7,11 @@ use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, clock_set};
+use super::{ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_trait::ShardOperation as _;
 
@@ -176,7 +177,7 @@ impl ShardReplicaSet {
 
     fn highest_alive_replica_peer_id(&self) -> Option<PeerId> {
         let read_lock = self.replica_state.read();
-        let peer_ids = read_lock.peers.keys().cloned().collect::<Vec<_>>();
+        let peer_ids = read_lock.peers().keys().cloned().collect::<Vec<_>>();
         drop(read_lock);
 
         peer_ids
@@ -186,7 +187,7 @@ impl ShardReplicaSet {
     }
 
     fn highest_replica_peer_id(&self) -> Option<PeerId> {
-        self.replica_state.read().peers.keys().max().cloned()
+        self.replica_state.read().peers().keys().max().cloned()
     }
 
     /// # Cancel safety
@@ -468,14 +469,11 @@ impl ShardReplicaSet {
                                         // Not found means that peer is dead
 
                                         // Wait for replica deactivation.
-                                        let is_active = matches!(
-                                            state.peers.get(peer_id),
-                                            Some(
-                                                ReplicaState::Active
-                                                    | ReplicaState::Resharding
-                                                    | ReplicaState::ReshardingScaleDown
-                                            )
-                                        );
+                                        let is_active = state
+                                            .peers()
+                                            .get(peer_id)
+                                            .map(|state| state.can_be_source_of_truth())
+                                            .unwrap_or(false);
 
                                         !is_active
                                     })

@@ -28,7 +28,8 @@ use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
+use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::{PeerId, ShardId};
 
 const DIM: u64 = 4;

@@ -13,7 +13,8 @@ use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::replica_set::{Change, ReplicaState};
+use crate::shards::replica_set::Change;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
 
 lazy_static! {

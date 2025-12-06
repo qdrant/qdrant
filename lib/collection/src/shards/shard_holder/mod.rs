@@ -47,7 +47,8 @@ use crate::operations::types::{
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
-use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
+use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};

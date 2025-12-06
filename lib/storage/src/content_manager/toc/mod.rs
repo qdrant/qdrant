@@ -23,7 +23,8 @@ use collection::config::{
 };
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
+use collection::shards::replica_set::AbortShardTransfer;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
 use common::budget::ResourceBudget;
