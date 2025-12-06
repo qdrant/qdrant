@@ -173,7 +173,8 @@ mod test {
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
     use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
+    use crate::shards::replica_set::replica_set_state::ReplicaState;
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
     use crate::shards::shard_holder::SHARD_KEY_MAPPING_FILE;
 
     const COLLECTION_TEST_NAME: &str = "shard_key_test";

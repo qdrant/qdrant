@@ -20,8 +20,8 @@ pub mod toc;
 
 pub mod consensus_ops {
     use collection::operations::types::PeerMetadata;
-    use collection::shards::replica_set::ReplicaState;
-    use collection::shards::replica_set::ReplicaState::Initializing;
+    use collection::shards::replica_set::replica_set_state::ReplicaState;
+    use collection::shards::replica_set::replica_set_state::ReplicaState::Initializing;
     use collection::shards::resharding::ReshardKey;
     use collection::shards::shard::PeerId;
     use collection::shards::transfer::ShardTransfer;

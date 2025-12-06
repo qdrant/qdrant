@@ -2,7 +2,7 @@ use std::cmp;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use super::ReplicaState;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
 
 #[derive(Clone, Debug, Default)]
