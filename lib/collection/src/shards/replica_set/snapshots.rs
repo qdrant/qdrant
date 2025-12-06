@@ -91,11 +91,12 @@ impl ShardReplicaSet {
         }
 
         replica_state.write(|state| {
+            let old_peer_id = state.this_peer_id;
             state.this_peer_id = this_peer_id;
             if is_distributed {
                 state
                     .peers
-                    .remove(&this_peer_id)
+                    .remove(&old_peer_id)
                     .and_then(|replica_state| state.peers.insert(this_peer_id, replica_state));
             } else {
                 // In local mode we don't want any remote peers
