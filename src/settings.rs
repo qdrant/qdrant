@@ -14,6 +14,7 @@ use validator::{Validate, ValidationError};
 
 use crate::common::debugger::DebuggerConfig;
 use crate::common::inference::config::InferenceConfig;
+use crate::common::telemetry_ops::app_telemetry::CloudParams;
 use crate::tracing;
 
 const MAX_PEER_ID: u64 = (1 << 53) - 1;
@@ -230,6 +231,9 @@ pub struct Settings {
     pub gpu: Option<GpuConfig>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    /// Extra parameters configured in cloud, propagated to telemetry
+    #[serde(default)]
+    pub cloud_params: Option<CloudParams>,
 }
 
 impl Settings {

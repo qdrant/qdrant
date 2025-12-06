@@ -11704,6 +11704,16 @@
           "startup": {
             "type": "string",
             "format": "date-time"
+          },
+          "cloud_params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloudParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11876,6 +11886,34 @@
         "properties": {
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "CloudParams": {
+        "type": "object",
+        "properties": {
+          "is_cloud": {
+            "description": "Indicates if current qdrant instance is running in cloud",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
+          },
+          "is_free": {
+            "default": null,
+            "type": "boolean",
+            "nullable": true
+          },
+          "cluster_name": {
+            "description": "Cluster name to display",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "backlink": {
+            "description": "Link to cluster page",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
