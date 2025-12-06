@@ -26,6 +26,21 @@ def match_results(results1: List[dict], results2: List[dict]):
     return True, ""
 
 
+def scroll_points(peer_url, shard_key, limit=10):
+    resp = requests.post(
+        f"{peer_url}/collections/{COLLECTION_NAME}/points/scroll",
+        json={
+            "limit": limit,
+            "with_payload": True,
+            "with_vector": False,
+            "shard_key": shard_key,
+        }
+    )
+    assert_http_ok(resp)
+
+    results = resp.json()["result"]["points"]
+    return results
+
 def search_points(peer_url):
     query_vector = [0.1, 0.2, 0.3, 0.4]
     resp = requests.post(
@@ -117,6 +132,12 @@ def test_tenant_promotion_simple(tmp_path: pathlib.Path):
     result2 = search_points(peer_api_uris[0])
     match, msg = match_results(results, result2)
     assert match, f"Results differ after tenant1 shard creation: {msg}"
+
+    # Check that global read requests work
+    _scroll = scroll_points(peer_api_uris[0], shard_key=None, limit=10)
+
+    # Check that collection info is still available
+    _info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
 
     n_points = 100
     upsert_random_points(
