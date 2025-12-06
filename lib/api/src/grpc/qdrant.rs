@@ -5483,6 +5483,9 @@ pub struct SearchPointGroups {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     #[prost(message, optional, tag = "16")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
+    /// Offset of the first group to return
+    #[prost(uint32, optional, tag = "17")]
+    pub offset: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5744,6 +5747,9 @@ pub struct RecommendPointGroups {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "21")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Offset of the first group to return
+    #[prost(uint32, optional, tag = "22")]
+    pub offset: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6396,6 +6402,9 @@ pub struct QueryPointGroups {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "17")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Offset of the first group to return
+    #[prost(uint64, optional, tag = "18")]
+    pub offset: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

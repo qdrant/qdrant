@@ -2971,6 +2971,7 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
             with_vectors,
             group_by,
             group_size,
+            offset,
             read_consistency,
             with_lookup,
             timeout,
@@ -3026,6 +3027,7 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
                 group_by: json::json_path_from_proto(&group_by)?,
                 limit,
                 group_size,
+                offset,
                 with_lookup: with_lookup
                     .map(rest::WithLookupInterface::try_from)
                     .transpose()?,
