@@ -39,7 +39,8 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::update_handler::{Optimizer, UpdateHandler};
+use crate::update_handler::Optimizer;
+use crate::update_workers::UpdateWorkers;
 
 #[tokio::test]
 async fn test_optimization_process() {
@@ -72,7 +73,7 @@ async fn test_optimization_process() {
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let total_optimized_points = Arc::new(AtomicUsize::new(0));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
-    let handles = UpdateHandler::launch_optimization(
+    let handles = UpdateWorkers::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
@@ -115,7 +116,7 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    let handles = UpdateHandler::launch_optimization(
+    let handles = UpdateWorkers::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
@@ -172,7 +173,7 @@ async fn test_cancel_optimization() {
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let total_optimized_points = Arc::new(AtomicUsize::new(0));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
-    let handles = UpdateHandler::launch_optimization(
+    let handles = UpdateWorkers::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
@@ -259,7 +260,7 @@ async fn test_new_segment_when_all_over_capacity() {
     assert_eq!(segments.read().len(), 5);
 
     // On optimization we expect one new segment to be created, all are over capacity
-    UpdateHandler::ensure_appendable_segment_with_capacity(
+    UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
         &collection_params,
@@ -271,7 +272,7 @@ async fn test_new_segment_when_all_over_capacity() {
     assert_eq!(segments.read().len(), 6);
 
     // On reoptimization we don't expect another segment, we have one segment with capacity
-    UpdateHandler::ensure_appendable_segment_with_capacity(
+    UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
         &collection_params,
@@ -317,7 +318,7 @@ async fn test_new_segment_when_all_over_capacity() {
     }
 
     // On reoptimization we expect one more segment to be created, all are over capacity
-    UpdateHandler::ensure_appendable_segment_with_capacity(
+    UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
         &collection_params,

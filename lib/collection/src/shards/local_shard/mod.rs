@@ -96,6 +96,7 @@ const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
 ///
 /// Holds all object, required for collection functioning
+#[must_use = "Local Shard must be explicitly handled"]
 pub struct LocalShard {
     collection_name: CollectionId,
     pub(super) segments: LockedSegmentHolder,
