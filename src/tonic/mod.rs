@@ -213,7 +213,7 @@ pub fn init(
                         )
                         .clone(),
                 )
-                .map(auth::AuthLayer::new)
+                .map(|auth_keys| auth::AuthLayer::new(auth_keys, settings.service.read_only_mode))
             })
             .into_inner();
 

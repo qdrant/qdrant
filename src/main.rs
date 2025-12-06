@@ -136,6 +136,13 @@ struct Args {
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Enable read-only mode.
+    /// When enabled, the instance serves reads and rejects updates (e.g., HTTP 403 / gRPC PERMISSION_DENIED).
+    /// Assumes changes have been applied and flushed to storage; WAL replay is skipped.
+    /// Incompatible with distributed deployments.
+    #[arg(long, action, default_value_t = false, env = "QDRANT_READ_ONLY")]
+    read_only: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -150,7 +157,21 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
+
+    // Apply CLI arguments that override config settings
+    if args.read_only {
+        settings.service.read_only_mode = true;
+        settings.storage.read_only_mode = true;
+    } else {
+        // Ensure both are set to maintain consistency
+        if settings.service.read_only_mode || settings.storage.read_only_mode {
+            settings.service.read_only_mode = true;
+            settings.storage.read_only_mode = true;
+        }
+    }
+
+    let read_only_effective = settings.service.read_only_mode || settings.storage.read_only_mode;
 
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
@@ -166,7 +187,11 @@ fn main() -> anyhow::Result<()> {
             .with_top_level_directive(settings.log_level.clone()),
     )?;
 
-    remove_started_file_indicator();
+    if !read_only_effective {
+        remove_started_file_indicator();
+    } else {
+        log::debug!("Skipping start-indicator removal in read-only mode");
+    }
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
@@ -287,6 +312,14 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let is_distributed_deployment = settings.cluster.enabled;
+
+    // Validate that read-only mode is not enabled for distributed deployments
+    if read_only_effective && is_distributed_deployment {
+        return Err(anyhow::anyhow!(
+            "Read-only mode cannot be enabled for distributed deployments. \
+             Distributed deployments require consensus operations which are not compatible with read-only mode."
+        ));
+    }
 
     let temp_path = settings.storage.temp_path.as_deref();
 
@@ -640,7 +673,11 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
     }
 
-    touch_started_file_indicator();
+    if !read_only_effective {
+        touch_started_file_indicator();
+    } else {
+        log::debug!("Skipping start-indicator creation in read-only mode");
+    }
 
     for handle in handles {
         log::debug!(
