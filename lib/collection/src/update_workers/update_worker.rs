@@ -134,8 +134,8 @@ impl UpdateWorkers {
             &segments,
             op_num,
             operation,
-            update_operation_lock.clone(),
-            update_tracker.clone(),
+            update_operation_lock,
+            update_tracker,
             &hw_measurements.get_counter_cell(),
         );
 
