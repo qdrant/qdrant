@@ -34,7 +34,7 @@ use crate::wal_delta::LockedWal;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
-/// The longer the duration, the longer it  takes for panicked tasks to be reported.
+/// The longer the duration, the longer it takes for panicked tasks to be reported.
 const OPTIMIZER_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 
 impl UpdateWorkers {
