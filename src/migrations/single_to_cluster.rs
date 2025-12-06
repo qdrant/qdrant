@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use collection::collection_state::State;
 use collection::config::{CollectionConfigInternal, ShardingMethod};
-use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation, CreateShardKey,

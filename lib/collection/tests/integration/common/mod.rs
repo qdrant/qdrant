@@ -10,7 +10,8 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::CollectionId;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use common::budget::ResourceBudget;
 use segment::types::Distance;
 

@@ -5,7 +5,7 @@ use collection::collection::Collection;
 use collection::collection_state;
 use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 
 use super::TableOfContent;
