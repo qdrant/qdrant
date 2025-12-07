@@ -206,8 +206,6 @@ pub struct GpuConfig {
     /// Default: false
     #[serde(default)]
     pub allow_emulated: bool,
-    #[serde(default)]
-    pub allow_emulated: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]

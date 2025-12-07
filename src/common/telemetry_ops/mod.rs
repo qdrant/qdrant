@@ -4,3 +4,4 @@ pub mod collections_telemetry;
 pub mod hardware;
 pub mod memory_telemetry;
 pub mod requests_telemetry;
+pub mod request_context;

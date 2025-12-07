@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use common::types::TelemetryDetail;
 use common::types::TelemetryDetail;
 use lru::LruCache;
 use parking_lot::Mutex;
@@ -17,7 +15,7 @@ use storage::rbac::{Access, AccessRequirements};
 
 pub type HttpStatusCode = u16;
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug, Serialize, JsonSchema)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug, Serialize, JsonSchema, Anonymize)]
 pub struct CollectionEndpointKey {
     pub collection: String,
     pub endpoint: String,
@@ -42,7 +40,7 @@ pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
-#[derive(Default)]
+
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     pub methods_by_collection: LruCache<CollectionEndpointKey, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
@@ -52,7 +50,7 @@ pub struct TonicTelemetryCollector {
     pub workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
 }
 
-#[derive(Default)]
+
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
     pub methods_by_collection: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
@@ -111,12 +109,31 @@ impl TonicTelemetryCollector {
 }
 
 impl TonicWorkerTelemetryCollector {
-    pub fn add_response(&mut self, method: String, instant: std::time::Instant) {
+    pub fn add_response(
+        &mut self,
+        method: String,
+        instant: std::time::Instant,
+        collection_name: Option<String>,
+    ) {
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        if let Some(collection_name) = collection_name {
+            let key = CollectionEndpointKey {
+                collection: collection_name,
+                endpoint: method,
+            };
+            let aggregator = self
+                .methods_by_collection
+                .get_or_insert_mut(key, || {
+                     // LruCache value initialization
+                     OperationDurationsAggregator::new()
+                });
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
