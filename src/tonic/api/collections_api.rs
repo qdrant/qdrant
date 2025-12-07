@@ -143,12 +143,10 @@ impl Collections for CollectionsService {
                     api::grpc::qdrant::alias_operations::Action::CreateAlias(alias) => {
                         set_collection_context(&alias.collection_name);
                     }
-                    api::grpc::qdrant::alias_operations::Action::RenameAlias(alias) => {
-                        set_collection_context(&alias.old_alias_name); // This is alias name, not collection name? Wait.
-                    }
-                    api::grpc::qdrant::alias_operations::Action::DeleteAlias(alias) => {
-                        set_collection_context(&alias.alias_name); // This is alias, not collection.
-                    }
+                    // RenameAlias and DeleteAlias only have alias names, not collection names
+                    // Skip setting collection context for these operations
+                    api::grpc::qdrant::alias_operations::Action::RenameAlias(_) => {}
+                    api::grpc::qdrant::alias_operations::Action::DeleteAlias(_) => {}
                 }
             }
         }

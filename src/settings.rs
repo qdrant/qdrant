@@ -214,6 +214,7 @@ pub struct TelemetryConfig {
     pub per_collection_metrics: bool,
 
     #[serde(default = "default_max_collections_metrics")]
+    #[validate(range(min = 1))]
     pub max_collections_in_metrics: usize,
 }
 
