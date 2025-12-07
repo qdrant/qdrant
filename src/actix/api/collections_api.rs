@@ -88,6 +88,18 @@ async fn get_collection_existence(
     .await
 }
 
+/// Handle the edge case where empty collection name results in /collections/exists
+/// This happens because URL //exists gets normalized to /exists by HTTP clients
+#[get("/collections/exists")]
+async fn handle_empty_collection_name() -> HttpResponse {
+    HttpResponse::UnprocessableEntity().json(serde_json::json!({
+        "status": {
+            "error": "Validation error in path parameters: [name: collection name cannot be empty]"
+        },
+        "time": 0.0
+    }))
+}
+
 #[get("/collections/{name}/aliases")]
 async fn get_collection_aliases(
     dispatcher: web::Data<Dispatcher>,
@@ -234,10 +246,12 @@ async fn update_collection_cluster(
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
     // See: <https://github.com/qdrant/qdrant/issues/3543>
+    // More specific routes must come before more general routes
     cfg.service(update_aliases)
         .service(get_collections)
+        .service(handle_empty_collection_name) // Must be before get_collection (more specific)
+        .service(get_collection_existence) // Must be before get_collection
         .service(get_collection)
-        .service(get_collection_existence)
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)
