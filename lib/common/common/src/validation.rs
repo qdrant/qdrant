@@ -85,6 +85,28 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 ///
 /// This does not check the length of the name.
 pub fn validate_collection_name_legacy(value: &str) -> Result<(), ValidationError> {
+    // Reject empty strings explicitly to prevent routing issues
+    if value.is_empty() {
+        let mut err = ValidationError::new("empty_collection_name");
+        err.message
+            .replace("collection name cannot be empty".into());
+        return Err(err);
+    }
+
+    // Reject control characters (0x00-0x1F and 0x7F) to prevent routing and display issues
+    if let Some(c) = value.chars().find(|c| c.is_control()) {
+        let mut err = ValidationError::new("invalid_control_character");
+        err.add_param(Cow::from("char_code"), &format!("0x{:02X}", c as u32));
+        err.message.replace(
+            format!(
+                "collection name cannot contain control character (code: 0x{:02X})",
+                c as u32
+            )
+            .into(),
+        );
+        return Err(err);
+    }
+
     // Disallowed characters on on both Linux/Windows, sourced from: <https://stackoverflow.com/a/31976060/1000145>
     const INVALID_CHARS: [char; 2] = ['/', '\0'];
 
@@ -328,12 +350,27 @@ mod tests {
         assert!(validate_collection_name("?").is_err());
         assert!(validate_collection_name("\0").is_err());
 
+        // Legacy validation tests
         assert!(validate_collection_name_legacy("test_collection").is_ok());
-        assert!(validate_collection_name_legacy("").is_ok());
+        assert!(validate_collection_name_legacy("valid-name_123").is_ok());
+
+        // Empty string should now be rejected
+        assert!(validate_collection_name_legacy("").is_err());
+
+        // Filesystem-invalid characters
         assert!(validate_collection_name_legacy("no/path").is_err());
+        assert!(validate_collection_name_legacy("\0").is_err());
+
+        // Control characters should now be rejected
+        assert!(validate_collection_name_legacy("\t").is_err());
+        assert!(validate_collection_name_legacy("\n").is_err());
+        assert!(validate_collection_name_legacy("\r").is_err());
+        assert!(validate_collection_name_legacy("name\twith\ttabs").is_err());
+        assert!(validate_collection_name_legacy("name\nwith\nnewlines").is_err());
+
+        // Legacy: these special chars are still allowed
         assert!(validate_collection_name_legacy("no*path").is_ok());
         assert!(validate_collection_name_legacy("?").is_ok());
-        assert!(validate_collection_name_legacy("\0").is_err());
     }
 
     #[test]
