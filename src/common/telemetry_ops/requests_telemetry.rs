@@ -143,14 +143,31 @@ impl ActixWorkerTelemetryCollector {
         method: String,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
+        collection_name: Option<String>,
     ) {
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        if let Some(collection_name) = collection_name {
+            let key = CollectionEndpointKey {
+                collection: collection_name,
+                endpoint: method,
+            };
+            let aggregator = self
+                .methods_by_collection
+                .get_or_insert_mut(key, || {
+                    // LruCache value initialization
+                    HashMap::new()
+                })
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {

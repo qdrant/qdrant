@@ -585,6 +585,27 @@ impl MetricsProvider for WebApiTelemetry {
                 );
             }
         }
+        for (key, responses) in &self.responses_by_collection {
+            let Some((method, endpoint)) = key.endpoint.split_once(' ') else {
+                continue;
+            };
+            // Endpoint must be whitelisted
+            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                continue;
+            }
+            for (status, stats) in responses {
+                builder.add(
+                    stats,
+                    &[
+                        ("method", method),
+                        ("endpoint", endpoint),
+                        ("status", &status.to_string()),
+                        ("collection", &key.collection),
+                    ],
+                    *status == REST_TIMINGS_FOR_STATUS,
+                );
+            }
+        }
         builder.build(prefix, "rest", metrics);
     }
 }
@@ -601,6 +622,21 @@ impl MetricsProvider for GrpcTelemetry {
                 continue;
             }
             builder.add(stats, &[("endpoint", endpoint.as_str())], true);
+        }
+
+        for (key, stats) in &self.responses_by_collection {
+            // Endpoint must be whitelisted
+            if GRPC_ENDPOINT_WHITELIST
+                .binary_search(&key.endpoint.as_str())
+                .is_err()
+            {
+                continue;
+            }
+            builder.add(
+                stats,
+                &[("endpoint", key.endpoint.as_str()), ("collection", &key.collection)],
+                true,
+            );
         }
         builder.build(prefix, "grpc", metrics);
     }

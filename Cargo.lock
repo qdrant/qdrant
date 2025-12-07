@@ -3721,6 +3721,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+dependencies = [
+ "hashbrown 0.15.2",
+]
+
+[[package]]
 name = "lz4-sys"
 version = "1.11.1+lz4-1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5173,6 +5182,7 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken",
  "log",
+ "lru",
  "memory",
  "mockito",
  "murmur3",

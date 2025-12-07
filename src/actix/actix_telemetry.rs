@@ -40,6 +40,10 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
+        let collection_name = request
+            .match_info()
+            .get("name")
+            .map(ToString::to_string);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -48,7 +52,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(request_key, status, instant, collection_name);
             Ok(response)
         })
     }
