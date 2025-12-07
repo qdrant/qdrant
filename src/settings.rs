@@ -114,6 +114,15 @@ impl Default for P2pConfig {
     }
 }
 
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        TelemetryConfig {
+            per_collection_metrics: default_per_collection_metrics(),
+            max_collections_in_metrics: default_max_collections_metrics(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct ConsensusConfig {
     #[serde(default = "default_max_message_queue_size")]
@@ -197,6 +206,25 @@ pub struct GpuConfig {
     /// Default: false
     #[serde(default)]
     pub allow_emulated: bool,
+    #[serde(default)]
+    pub allow_emulated: bool,
+}
+
+#[derive(Debug, Deserialize, Clone, Validate)]
+pub struct TelemetryConfig {
+    #[serde(default = "default_per_collection_metrics")]
+    pub per_collection_metrics: bool,
+
+    #[serde(default = "default_max_collections_metrics")]
+    pub max_collections_in_metrics: usize,
+}
+
+const fn default_per_collection_metrics() -> bool {
+    true
+}
+
+const fn default_max_collections_metrics() -> usize {
+    1000
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -214,6 +242,9 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    #[serde(default)]
+    #[validate(nested)]
+    pub telemetry_config: TelemetryConfig,
     #[validate(nested)]
     pub tls: Option<TlsConfig>,
     #[serde(default)]

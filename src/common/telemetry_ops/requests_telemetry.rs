@@ -1,7 +1,11 @@
 use std::collections::HashMap;
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use common::types::TelemetryDetail;
+use common::types::TelemetryDetail;
+use lru::LruCache;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -13,15 +17,25 @@ use storage::rbac::{Access, AccessRequirements};
 
 pub type HttpStatusCode = u16;
 
+#[derive(Hash, Eq, PartialEq, Clone, Debug, Serialize, JsonSchema)]
+pub struct CollectionEndpointKey {
+    pub collection: String,
+    pub endpoint: String,
+}
+
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    #[serde(skip)]
+    pub responses_by_collection: HashMap<CollectionEndpointKey, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
 pub struct GrpcTelemetry {
     #[anonymize(with = anonymize_collection_values)]
     pub responses: HashMap<String, OperationDurationStatistics>,
+    #[serde(skip)]
+    pub responses_by_collection: HashMap<CollectionEndpointKey, OperationDurationStatistics>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -31,6 +45,7 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    pub methods_by_collection: LruCache<CollectionEndpointKey, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
 }
 
 pub struct TonicTelemetryCollector {
@@ -40,6 +55,25 @@ pub struct TonicTelemetryCollector {
 #[derive(Default)]
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
+    pub methods_by_collection: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
+}
+
+impl Default for ActixWorkerTelemetryCollector {
+    fn default() -> Self {
+        Self {
+            methods: Default::default(),
+            methods_by_collection: LruCache::new(NonZeroUsize::new(1000).unwrap()),
+        }
+    }
+}
+
+impl Default for TonicWorkerTelemetryCollector {
+    fn default() -> Self {
+        Self {
+            methods: Default::default(),
+            methods_by_collection: LruCache::new(NonZeroUsize::new(1000).unwrap()),
+        }
+    }
 }
 
 impl ActixTelemetryCollector {
@@ -90,7 +124,16 @@ impl TonicWorkerTelemetryCollector {
         for (method, aggregator) in self.methods.iter() {
             responses.insert(method.clone(), aggregator.lock().get_statistics(detail));
         }
-        GrpcTelemetry { responses }
+
+        let mut responses_by_collection = HashMap::new();
+        for (key, aggregator) in self.methods_by_collection.iter() {
+            responses_by_collection.insert(key.clone(), aggregator.lock().get_statistics(detail));
+        }
+
+        GrpcTelemetry {
+            responses,
+            responses_by_collection,
+        }
     }
 }
 
@@ -119,7 +162,20 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+
+        let mut responses_by_collection = HashMap::new();
+        for (key, status_codes) in self.methods_by_collection.iter() {
+            let mut status_codes_map = HashMap::new();
+            for (status_code, aggregator) in status_codes {
+                status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+            }
+            responses_by_collection.insert(key.clone(), status_codes_map);
+        }
+
+        WebApiTelemetry {
+            responses,
+            responses_by_collection,
+        }
     }
 }
 
@@ -129,6 +185,13 @@ impl GrpcTelemetry {
             let entry = self.responses.entry(method.clone()).or_default();
             *entry = entry.clone() + other_statistics.clone();
         }
+        for (key, other_statistics) in &other.responses_by_collection {
+            let entry = self
+                .responses_by_collection
+                .entry(key.clone())
+                .or_default();
+            *entry = entry.clone() + other_statistics.clone();
+        }
     }
 }
 
@@ -136,6 +199,16 @@ impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
+            for (status_code, statistics) in status_codes {
+                let entry = status_codes_map.entry(*status_code).or_default();
+                *entry = entry.clone() + statistics.clone();
+            }
+        }
+        for (key, status_codes) in &other.responses_by_collection {
+            let status_codes_map = self
+                .responses_by_collection
+                .entry(key.clone())
+                .or_default();
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
@@ -176,6 +249,9 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        WebApiTelemetry {
+            responses,
+            responses_by_collection: Default::default(),
+        }
     }
 }
