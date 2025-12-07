@@ -206,7 +206,6 @@ impl Collections for CollectionsService {
         mut request: Request<CollectionExistsRequest>,
     ) -> Result<Response<CollectionExistsResponse>, Status> {
 
-
         let timing = Instant::now();
         validate(request.get_ref())?;
         set_collection_context(&request.get_ref().collection_name);
@@ -311,6 +310,7 @@ impl Collections for CollectionsService {
         mut request: Request<CreateShardKeyRequest>,
     ) -> Result<Response<CreateShardKeyResponse>, Status> {
 
+        validate(request.get_ref())?;
         set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
@@ -347,6 +347,7 @@ impl Collections for CollectionsService {
         mut request: Request<DeleteShardKeyRequest>,
     ) -> Result<Response<DeleteShardKeyResponse>, Status> {
 
+        validate(request.get_ref())?;
         set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
