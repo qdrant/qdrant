@@ -63,6 +63,7 @@ impl TelemetryCollector {
     }
 
     pub fn new(settings: Settings, dispatcher: Arc<Dispatcher>, id: Uuid) -> Self {
+        let telemetry_config = settings.telemetry_config.clone();
         Self {
             process_id: id,
             settings,
@@ -70,9 +71,13 @@ impl TelemetryCollector {
             app_telemetry_collector: AppBuildTelemetryCollector::new(),
             actix_telemetry_collector: Arc::new(Mutex::new(ActixTelemetryCollector {
                 workers: Vec::new(),
+                per_collection_metrics: telemetry_config.per_collection_metrics,
+                max_collections: telemetry_config.max_collections_in_metrics,
             })),
             tonic_telemetry_collector: Arc::new(Mutex::new(TonicTelemetryCollector {
                 workers: Vec::new(),
+                per_collection_metrics: telemetry_config.per_collection_metrics,
+                max_collections: telemetry_config.max_collections_in_metrics,
             })),
         }
     }

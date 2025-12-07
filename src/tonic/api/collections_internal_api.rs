@@ -13,6 +13,7 @@ use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
+use crate::common::telemetry_ops::request_context::set_collection_context;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -39,6 +40,9 @@ impl CollectionsInternal for CollectionsInternalService {
         request: Request<GetCollectionInfoRequestInternal>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().get_collection_info_request {
+            set_collection_context(&r.collection_name);
+        }
         let GetCollectionInfoRequestInternal {
             get_collection_info_request,
             shard_id,
@@ -63,6 +67,7 @@ impl CollectionsInternal for CollectionsInternalService {
         // TODO: Ensure cancel safety!
 
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
         let timing = Instant::now();
         let InitiateShardTransferRequest {
             collection_name,
@@ -87,6 +92,7 @@ impl CollectionsInternal for CollectionsInternalService {
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         let request = request.into_inner();
         validate_and_log(&request);
+        set_collection_context(&request.collection_name);
 
         let timing = Instant::now();
         let WaitForShardStateRequest {
@@ -130,6 +136,7 @@ impl CollectionsInternal for CollectionsInternalService {
         request: Request<GetShardRecoveryPointRequest>,
     ) -> Result<Response<GetShardRecoveryPointResponse>, Status> {
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
 
         let timing = Instant::now();
         let GetShardRecoveryPointRequest {
@@ -169,6 +176,7 @@ impl CollectionsInternal for CollectionsInternalService {
         request: Request<UpdateShardCutoffPointRequest>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
 
         let timing = Instant::now();
         let UpdateShardCutoffPointRequest {

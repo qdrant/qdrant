@@ -31,6 +31,7 @@ use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_access;
+use crate::common::telemetry_ops::request_context::set_collection_context;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -65,7 +66,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
@@ -91,7 +94,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -112,6 +117,7 @@ impl Points for PointsService {
 
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -134,7 +140,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         // Nothing to verify here.
 
@@ -162,7 +170,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -186,7 +196,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -209,7 +221,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -232,7 +246,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -255,7 +271,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -279,6 +297,7 @@ impl Points for PointsService {
         mut request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
@@ -304,6 +323,7 @@ impl Points for PointsService {
         mut request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
@@ -325,7 +345,9 @@ impl Points for PointsService {
         &self,
         mut request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -344,6 +366,7 @@ impl Points for PointsService {
         mut request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
@@ -366,6 +389,7 @@ impl Points for PointsService {
         mut request: Request<SearchBatchPoints>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -411,6 +435,7 @@ impl Points for PointsService {
         mut request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -431,6 +456,7 @@ impl Points for PointsService {
         mut request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
 
@@ -454,6 +480,7 @@ impl Points for PointsService {
         mut request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -473,6 +500,7 @@ impl Points for PointsService {
         mut request: Request<RecommendBatchPoints>,
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let RecommendBatchPoints {
             collection_name,
@@ -503,6 +531,7 @@ impl Points for PointsService {
         mut request: Request<RecommendPointGroups>,
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
@@ -523,6 +552,7 @@ impl Points for PointsService {
         mut request: Request<DiscoverPoints>,
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
 
@@ -543,6 +573,7 @@ impl Points for PointsService {
         mut request: Request<DiscoverBatchPoints>,
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let DiscoverBatchPoints {
             collection_name,
@@ -572,6 +603,7 @@ impl Points for PointsService {
         mut request: Request<CountPoints>,
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
@@ -593,6 +625,7 @@ impl Points for PointsService {
         mut request: Request<QueryPoints>,
     ) -> Result<Response<QueryResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let inference_params = InferenceParams::new(
@@ -620,6 +653,7 @@ impl Points for PointsService {
         mut request: Request<QueryBatchPoints>,
     ) -> Result<Response<QueryBatchResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let inference_params = InferenceParams::new(
@@ -657,6 +691,7 @@ impl Points for PointsService {
         mut request: Request<QueryPointGroups>,
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let inference_params = InferenceParams::new(
@@ -683,6 +718,7 @@ impl Points for PointsService {
         mut request: Request<FacetCounts>,
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let hw_metrics = self.get_request_collection_hw_usage_counter(
             request.get_ref().collection_name.clone(),
@@ -702,6 +738,7 @@ impl Points for PointsService {
         mut request: Request<SearchMatrixPoints>,
     ) -> Result<Response<SearchMatrixPairsResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
@@ -728,6 +765,7 @@ impl Points for PointsService {
         mut request: Request<SearchMatrixPoints>,
     ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();

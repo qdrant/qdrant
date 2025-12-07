@@ -23,7 +23,9 @@ use tonic::{Request, Response, Status};
 use super::validate;
 use crate::common::collections::*;
 use crate::tonic::api::collections_common::get;
+
 use crate::tonic::auth::extract_access;
+use crate::common::telemetry_ops::request_context::set_collection_context;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
@@ -65,7 +67,9 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         // Nothing to verify here.
@@ -101,7 +105,9 @@ impl Collections for CollectionsService {
         &self,
         request: Request<CreateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         self.perform_operation(request).await
     }
 
@@ -109,7 +115,9 @@ impl Collections for CollectionsService {
         &self,
         request: Request<UpdateCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         self.perform_operation(request).await
     }
 
@@ -117,7 +125,9 @@ impl Collections for CollectionsService {
         &self,
         request: Request<DeleteCollection>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         self.perform_operation(request).await
     }
 
@@ -125,7 +135,24 @@ impl Collections for CollectionsService {
         &self,
         request: Request<ChangeAliases>,
     ) -> Result<Response<CollectionOperationResponse>, Status> {
+
         validate(request.get_ref())?;
+        for action in &request.get_ref().actions {
+            if let Some(action) = &action.action {
+                match action {
+                    api::grpc::qdrant::alias_operations::Action::CreateAlias(alias) => {
+                        set_collection_context(&alias.collection_name);
+                    }
+                    api::grpc::qdrant::alias_operations::Action::RenameAlias(alias) => {
+                        set_collection_context(&alias.old_alias_name); // This is alias name, not collection name? Wait.
+                    }
+                    api::grpc::qdrant::alias_operations::Action::DeleteAlias(alias) => {
+                        set_collection_context(&alias.alias_name); // This is alias, not collection.
+                    }
+                }
+            }
+        }
+
         self.perform_operation(request).await
     }
 
@@ -133,7 +160,9 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<ListCollectionAliasesRequest>,
     ) -> Result<Response<ListAliasesResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let timing = Instant::now();
         let access = extract_access(&mut request);
 
@@ -178,8 +207,11 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CollectionExistsRequest>,
     ) -> Result<Response<CollectionExistsResponse>, Status> {
+
+
         let timing = Instant::now();
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         // Nothing to verify here.
@@ -204,7 +236,9 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CollectionClusterInfoRequest>,
     ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         // Nothing to verify here.
@@ -225,7 +259,9 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<UpdateCollectionClusterSetupRequest>,
     ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let UpdateCollectionClusterSetupRequest {
             collection_name,
@@ -252,7 +288,9 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<ListShardKeysRequest>,
     ) -> Result<Response<ListShardKeysResponse>, Status> {
+
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let timing = Instant::now();
         let access = extract_access(&mut request);
 
@@ -274,6 +312,8 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CreateShardKeyRequest>,
     ) -> Result<Response<CreateShardKeyResponse>, Status> {
+
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         let CreateShardKeyRequest {
@@ -308,6 +348,8 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<DeleteShardKeyRequest>,
     ) -> Result<Response<DeleteShardKeyResponse>, Status> {
+
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
 
         let DeleteShardKeyRequest {

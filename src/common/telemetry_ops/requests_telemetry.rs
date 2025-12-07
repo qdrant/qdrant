@@ -38,22 +38,28 @@ pub struct GrpcTelemetry {
 
 pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
+    pub per_collection_metrics: bool,
+    pub max_collections: usize,
 }
 
 
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     pub methods_by_collection: LruCache<CollectionEndpointKey, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    pub per_collection_metrics: bool,
 }
 
 pub struct TonicTelemetryCollector {
     pub workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
+    pub per_collection_metrics: bool,
+    pub max_collections: usize,
 }
 
 
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
     pub methods_by_collection: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
+    pub per_collection_metrics: bool,
 }
 
 impl Default for ActixWorkerTelemetryCollector {
@@ -61,6 +67,7 @@ impl Default for ActixWorkerTelemetryCollector {
         Self {
             methods: Default::default(),
             methods_by_collection: LruCache::new(NonZeroUsize::new(1000).unwrap()),
+            per_collection_metrics: true,
         }
     }
 }
@@ -70,13 +77,18 @@ impl Default for TonicWorkerTelemetryCollector {
         Self {
             methods: Default::default(),
             methods_by_collection: LruCache::new(NonZeroUsize::new(1000).unwrap()),
+            per_collection_metrics: true,
         }
     }
 }
 
 impl ActixTelemetryCollector {
     pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<ActixWorkerTelemetryCollector>> {
-        let worker: Arc<Mutex<_>> = Default::default();
+        let worker: Arc<Mutex<_>> = Arc::new(Mutex::new(ActixWorkerTelemetryCollector {
+             methods: Default::default(),
+             methods_by_collection: LruCache::new(NonZeroUsize::new(self.max_collections).unwrap()),
+             per_collection_metrics: self.per_collection_metrics,
+        }));
         self.workers.push(worker.clone());
         worker
     }
@@ -93,7 +105,11 @@ impl ActixTelemetryCollector {
 
 impl TonicTelemetryCollector {
     pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TonicWorkerTelemetryCollector>> {
-        let worker: Arc<Mutex<_>> = Default::default();
+        let worker: Arc<Mutex<_>> = Arc::new(Mutex::new(TonicWorkerTelemetryCollector {
+            methods: Default::default(),
+            methods_by_collection: LruCache::new(NonZeroUsize::new(self.max_collections).unwrap()),
+            per_collection_metrics: self.per_collection_metrics,
+        }));
         self.workers.push(worker.clone());
         worker
     }
@@ -121,18 +137,20 @@ impl TonicWorkerTelemetryCollector {
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
 
-        if let Some(collection_name) = collection_name {
-            let key = CollectionEndpointKey {
-                collection: collection_name,
-                endpoint: method,
-            };
-            let aggregator = self
-                .methods_by_collection
-                .get_or_insert_mut(key, || {
-                     // LruCache value initialization
-                     OperationDurationsAggregator::new()
-                });
-            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        if self.per_collection_metrics {
+            if let Some(collection_name) = collection_name {
+                let key = CollectionEndpointKey {
+                    collection: collection_name,
+                    endpoint: method,
+                };
+                let aggregator = self
+                    .methods_by_collection
+                    .get_or_insert_mut(key, || {
+                        // LruCache value initialization
+                        OperationDurationsAggregator::new()
+                    });
+                ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+            }
         }
     }
 
@@ -170,20 +188,22 @@ impl ActixWorkerTelemetryCollector {
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
 
-        if let Some(collection_name) = collection_name {
-            let key = CollectionEndpointKey {
-                collection: collection_name,
-                endpoint: method,
-            };
-            let aggregator = self
-                .methods_by_collection
-                .get_or_insert_mut(key, || {
-                    // LruCache value initialization
-                    HashMap::new()
-                })
-                .entry(status_code)
-                .or_insert_with(OperationDurationsAggregator::new);
-            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        if self.per_collection_metrics {
+            if let Some(collection_name) = collection_name {
+                let key = CollectionEndpointKey {
+                    collection: collection_name,
+                    endpoint: method,
+                };
+                let aggregator = self
+                    .methods_by_collection
+                    .get_or_insert_mut(key, || {
+                        // LruCache value initialization
+                        HashMap::new()
+                    })
+                    .entry(status_code)
+                    .or_insert_with(OperationDurationsAggregator::new);
+                ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+            }
         }
     }
 
