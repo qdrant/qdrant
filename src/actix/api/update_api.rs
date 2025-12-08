@@ -446,7 +446,7 @@ async fn staging_operation(
     let operation = operation.into_inner();
     let collection_name = collection.into_inner().name;
 
-    let collection_operation: CollectionUpdateOperations = operation.into();
+    let collection_operation = CollectionUpdateOperations::from(operation);
 
     // Get TOC with unchecked verification pass (staging operations don't need strict mode)
     let pass = new_unchecked_verification_pass();
