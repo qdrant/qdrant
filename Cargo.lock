@@ -4844,6 +4844,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
+]
+
+[[package]]
 name = "prost-build"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4889,6 +4899,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-build"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
+dependencies = [
+ "heck 0.5.0",
+ "itertools 0.14.0",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease 0.2.37",
+ "prost 0.14.1",
+ "prost-types 0.14.1",
+ "regex",
+ "syn 2.0.111",
+ "tempfile",
+]
+
+[[package]]
 name = "prost-derive"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4928,6 +4958,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4955,14 +4998,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "prost-wkt"
-version = "0.5.1"
+name = "prost-types"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fb7ec2850c138ebaa7ab682503b5d08c3cb330343e9c94776612928b6ddb53f"
+checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
+dependencies = [
+ "prost 0.14.1",
+]
+
+[[package]]
+name = "prost-wkt"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "655944d0ce015e71b3ec21279437e6a09e58433e50c7b0677901f3d5235e74f5"
 dependencies = [
  "chrono",
  "inventory",
- "prost 0.12.6",
+ "prost 0.14.1",
  "serde",
  "serde_derive",
  "serde_json",
@@ -4971,27 +5023,27 @@ dependencies = [
 
 [[package]]
 name = "prost-wkt-build"
-version = "0.5.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "598b7365952c2ed4e32902de0533653aafbe5ae3da436e8e2335c7d375a1cef3"
+checksum = "f869f1443fee474b785e935d92e1007f57443e485f51668ed41943fc01a321a2"
 dependencies = [
  "heck 0.5.0",
- "prost 0.12.6",
- "prost-build 0.12.6",
- "prost-types 0.12.6",
+ "prost 0.14.1",
+ "prost-build 0.14.1",
+ "prost-types 0.14.1",
  "quote",
 ]
 
 [[package]]
 name = "prost-wkt-types"
-version = "0.5.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a8eadc2381640a49c1fbfb9f4a857794b4e5bf5a2cbc2d858cfdb74f64dcd22"
+checksum = "eeeffd6b9becd4600dd461399f3f71aeda2ff0848802a9ed526cf12e8f42902a"
 dependencies = [
  "chrono",
- "prost 0.12.6",
- "prost-build 0.12.6",
- "prost-types 0.12.6",
+ "prost 0.14.1",
+ "prost-build 0.14.1",
+ "prost-types 0.14.1",
  "prost-wkt",
  "prost-wkt-build",
  "regex",
