@@ -346,7 +346,8 @@ impl CollectionsTelemetry {
                 for transfer in collection.transfers.iter().flatten() {
                     if transfer.to == this_peer_id {
                         incoming_transfers += 1;
-                    } else if transfer.from == this_peer_id {
+                    }
+                    if transfer.from == this_peer_id {
                         outgoing_transfers += 1;
                     }
                 }
