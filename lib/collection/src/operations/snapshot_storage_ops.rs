@@ -6,6 +6,7 @@ use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::StreamExt;
 use object_store::WriteMultipart;
+use segment::common::BYTES_IN_MB;
 use tokio::io::AsyncWriteExt;
 
 use super::snapshot_ops::SnapshotDescription;
@@ -196,6 +197,7 @@ pub async fn download_snapshot(
     path: &Path,
     target_path: &Path,
 ) -> CollectionResult<()> {
+    let download_start_time = tokio::time::Instant::now();
     let s3_path = trim_dot_slash(path)?;
     let download = client.get(&s3_path).await.map_err(|e| match e {
         object_store::Error::NotFound { .. } => {
@@ -231,6 +233,17 @@ pub async fn download_snapshot(
     file.flush()
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {e}")))?;
+
+    let download_duration = download_start_time.elapsed();
+    let total_size_mb = total_size as f64 / BYTES_IN_MB as f64;
+    let download_speed_mbps = total_size_mb / download_duration.as_secs_f64();
+    log::debug!(
+        "Object storage snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s",
+        target_path.display(),
+        total_size_mb,
+        download_duration.as_secs_f64(),
+        download_speed_mbps
+    );
 
     // check len to file len
     let file_meta = tokio_fs::metadata(target_path).await?;
