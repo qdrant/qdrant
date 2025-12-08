@@ -21,3 +21,4 @@ pub mod events;
 mod tests;
 
 pub mod profiling;
+pub mod update_workers;
