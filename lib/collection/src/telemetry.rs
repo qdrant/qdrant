@@ -428,18 +428,18 @@ mod internal_conversions {
             grpc::CollectionTelemetry {
                 id,
                 transfers: transfers
-                    .unwrap_or_default()
                     .into_iter()
+                    .flatten()
                     .map(grpc::ShardTransferTelemetry::from)
                     .collect(),
                 resharding: resharding
-                    .unwrap_or_default()
                     .into_iter()
+                    .flatten()
                     .map(grpc::ReshardingTelemetry::from)
                     .collect(),
                 shard_clean_tasks: shard_clean_tasks
-                    .unwrap_or_default()
                     .into_iter()
+                    .flatten()
                     .map(|(shard_id, telemetry)| {
                         (shard_id, grpc::ShardCleanStatusTelemetry::from(telemetry))
                     })

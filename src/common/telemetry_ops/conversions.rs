@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use api::grpc::qdrant as grpc;
-use storage::types::{ConsensusThreadStatus, StateRole};
+use storage::types::{ConsensusThreadStatus, PeerInfo, StateRole};
 use tonic::Status;
 
 use super::cluster_telemetry::ClusterStatusTelemetry;
@@ -81,13 +83,18 @@ impl TryFrom<grpc::ClusterTelemetry> for ClusterTelemetry {
     type Error = Status;
 
     fn try_from(value: grpc::ClusterTelemetry) -> Result<Self, Self::Error> {
-        let grpc::ClusterTelemetry { status } = value;
+        let grpc::ClusterTelemetry { status, peers } = value;
+
+        let peers = peers
+            .into_iter()
+            .map(|(peer_id, grpc::PeerInfo { uri })| (peer_id, PeerInfo { uri }))
+            .collect::<HashMap<_, _>>();
 
         Ok(ClusterTelemetry {
             enabled: true, // Not provided in gRPC, default to true if we have telemetry
             status: status.map(ClusterStatusTelemetry::try_from).transpose()?,
-            config: None,        // Not provided in gRPC
-            peers: None,         // Not provided in gRPC
+            config: None, // Not provided in gRPC
+            peers: (!peers.is_empty()).then_some(peers),
             peer_metadata: None, // Not provided in gRPC
             metadata: None,      // Not provided in gRPC
         })
@@ -100,13 +107,20 @@ impl From<ClusterTelemetry> for grpc::ClusterTelemetry {
             enabled: _,
             status,
             config: _,
-            peers: _,
+            peers,
             peer_metadata: _,
             metadata: _,
         } = value;
 
+        let peers = peers
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(peer_id, PeerInfo { uri })| (peer_id, grpc::PeerInfo { uri }))
+            .collect();
+
         grpc::ClusterTelemetry {
             status: status.map(grpc::ClusterStatusTelemetry::from),
+            peers,
         }
     }
 }

@@ -101,7 +101,7 @@ message ShardCleanStatusTelemetry {
 message ClusterTelemetry {
     ClusterStatusTelemetry status = 1;
     reserved 2; // config
-    reserved 3; // peers
+    map<uint64, PeerInfo> peers = 3; // peers
     reserved 4; // peer_metadata
     reserved 5; // metadata
 }
@@ -136,6 +136,9 @@ message ConsensusThreadStatus {
     }
 }
 
+message PeerInfo {
+    string uri = 1;
+}
 
 enum StateRole {
     FOLLOWER = 0;
