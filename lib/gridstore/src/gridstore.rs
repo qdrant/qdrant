@@ -1007,8 +1007,11 @@ mod tests {
                 Operation::FlushDelay(delay) => {
                     let mut flush_lock_guard = has_flusher_lock.lock();
                     if *flush_lock_guard {
-                        log::debug!("Skip flushing because a flusher has already been created");
+                        log::debug!(
+                            "op:{i} Skip flushing because a Flusher has already been created"
+                        );
                     } else {
+                        log::debug!("op:{i} Scheduling flush in {delay:?}");
                         let flusher = storage.flusher();
                         *flush_lock_guard = true;
                         drop(flush_lock_guard);
@@ -1018,9 +1021,12 @@ mod tests {
                             .spawn(move || {
                                 thread::sleep(delay); // keep flusher alive while other operation are applied
                                 let mut flush_lock_guard = flush_lock.lock();
-                                log::debug!("op:{i} FLUSH DELAY...");
+                                assert!(
+                                    *flush_lock_guard,
+                                    "there must be a flusher marked as alive"
+                                );
                                 match flusher() {
-                                    Ok(_) => log::debug!("op:{i} FLUSH done"),
+                                    Ok(_) => log::debug!("op:{i} FLUSHED after {delay:?}"),
                                     Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
                                 }
                                 *flush_lock_guard = false; // no flusher alive
