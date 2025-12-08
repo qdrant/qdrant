@@ -18,6 +18,7 @@ use fs_err::tokio as tokio_fs;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
+use segment::common::BYTES_IN_MB;
 use segment::data_types::manifest::SnapshotManifest;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::{StorageError, StorageResult};
@@ -798,16 +799,13 @@ async fn recover_partial_snapshot_from(
             };
 
         let download_duration = download_start_time.elapsed();
-        let download_speed_mbps = if download_duration.as_secs_f64() > 0.0 {
-            (bytes_downloaded as f64 / 1_048_576.0) / download_duration.as_secs_f64()
-        } else {
-            0.0
-        };
+        let total_size_mb = bytes_downloaded as f64 / BYTES_IN_MB as f64;
+        let download_speed_mbps = total_size_mb / download_duration.as_secs_f64();
 
         log::debug!(
             "Partial snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s, shard_id={}",
             partial_snapshot_temp_path.display(),
-            bytes_downloaded as f64 / 1_048_576.0,
+            total_size_mb,
             download_duration.as_secs_f64(),
             download_speed_mbps,
             shard_id

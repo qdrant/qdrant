@@ -4,6 +4,7 @@ use std::path::Path;
 use common::tempfile_ext::MaybeTempPath;
 use fs_err::tokio as tokio_fs;
 use futures::StreamExt;
+use segment::common::BYTES_IN_MB;
 use tap::Tap;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -63,15 +64,12 @@ async fn download_file(
     file.flush().await?;
 
     let download_duration = download_start_time.elapsed();
-    let download_speed_mbps = if download_duration.as_secs_f64() > 0.0 {
-        (total_bytes_downloaded as f64 / 1_048_576.0) / download_duration.as_secs_f64()
-    } else {
-        0.0
-    };
+    let total_size_mb = total_bytes_downloaded as f64 / BYTES_IN_MB as f64;
+    let download_speed_mbps = total_size_mb / download_duration.as_secs_f64();
     log::debug!(
         "Snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s",
         temp_path.display(),
-        total_bytes_downloaded as f64 / 1_048_576.0,
+        total_size_mb,
         download_duration.as_secs_f64(),
         download_speed_mbps
     );
