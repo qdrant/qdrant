@@ -427,45 +427,26 @@ async fn delete_field_index(
     process_response(response, timing, None)
 }
 
-/// Request body for the staging test delay endpoint.
+/// Staging endpoint for testing and debugging operations.
+/// Accepts any staging operation and executes it on the collection.
 /// Only available when the `staging` feature is enabled.
 #[cfg(feature = "staging")]
-#[derive(Debug, Deserialize, Validate)]
-pub struct TestDelayRequest {
-    /// Duration of the delay in seconds (default: 1.0, max: 300.0).
-    #[serde(default = "default_test_delay_duration")]
-    #[validate(range(min = 0.0, max = 300.0))]
-    pub duration: f64,
-}
-
-#[cfg(feature = "staging")]
-fn default_test_delay_duration() -> f64 {
-    1.0
-}
-
-/// Staging endpoint that introduces an artificial delay for testing purposes.
-/// Only available when the `staging` feature is enabled.
-#[cfg(feature = "staging")]
-#[post("/collections/{name}/points/staging")]
-async fn staging_test_delay(
+#[post("/collections/{name}/staging")]
+async fn staging_operation(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    operation: Json<TestDelayRequest>,
+    operation: Json<shard::operations::staging::StagingOperations>,
     params: Query<UpdateParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    use collection::operations::point_ops::PointOperations;
     use collection::operations::verification::new_unchecked_verification_pass;
     use shard::operations::CollectionUpdateOperations;
-    use shard::operations::staging::TestDelayOperation;
 
     let timing = Instant::now();
     let operation = operation.into_inner();
     let collection_name = collection.into_inner().name;
 
-    let point_operation = PointOperations::TestDelay(TestDelayOperation::new(operation.duration));
-
-    let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
+    let collection_operation: CollectionUpdateOperations = operation.into();
 
     // Get TOC with unchecked verification pass (staging operations don't need strict mode)
     let pass = new_unchecked_verification_pass();
@@ -501,5 +482,5 @@ pub fn config_update_api(cfg: &mut web::ServiceConfig) {
         .service(update_batch);
 
     #[cfg(feature = "staging")]
-    cfg.service(staging_test_delay);
+    cfg.service(staging_operation);
 }

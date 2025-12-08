@@ -42,6 +42,14 @@ impl Shard {
                     &hw_counter,
                 )
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::TestDelay(test_delay_operation) => {
+                shard::update::process_test_delay_operation(
+                    &self.segments,
+                    operation_id,
+                    test_delay_operation,
+                )
+            }
         };
 
         result.map(|_| ())
