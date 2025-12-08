@@ -1558,72 +1558,60 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-        let get_payload = |storage: &Gridstore<Payload>| {
-            storage
-                .get_value::<false>(0, &hw_counter)
-                .expect("offset exists")
-                .0
-                .get("key")
-                .expect("key exists")
-                .as_str()
-                .expect("value is a string")
-                .to_owned()
-        };
         let put_payload =
-            |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+            |storage: &mut Gridstore<Payload>, point_offset: u32, payload_value: &str| {
                 let mut payload = Payload::default();
                 payload.0.insert(
                     "key".to_string(),
                     serde_json::Value::String(payload_value.to_string()),
                 );
 
-                storage.put_value(0, &payload, hw_counter_ref).unwrap();
+                storage
+                    .put_value(point_offset, &payload, hw_counter_ref)
+                    .unwrap();
                 assert_eq!(storage.pages.read().len(), 1);
-                assert_eq!(storage.tracker.read().mapping_len(), 1);
-
-                let page_mapping = storage.get_pointer(0).unwrap();
-                assert_eq!(page_mapping.page_id, 0); // first page
-                assert_eq!(page_mapping.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };
 
-        put_payload(&mut storage, "value 1", 0);
-        assert_eq!(get_payload(&storage), "value 1");
+        // Write enough new pointers so that they don't fit in the default tracker file size
+        // On flush, the tracker file will be resized and reopened, significant for this test
+        let file_size = storage.tracker.read().mmap_file_size();
+        const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
+        for i in 0..file_size / POINTER_SIZE {
+            put_payload(&mut storage, i as u32, "value x");
+        }
 
         let flusher = storage.flusher();
 
-        put_payload(&mut storage, "value 2", 1);
-        assert_eq!(get_payload(&storage), "value 2");
-
-        // We flush the first value and still expect to read the second value
-        flusher().unwrap();
-        assert_eq!(get_payload(&storage), "value 2");
-
-        put_payload(&mut storage, "value 3", 2);
-        assert_eq!(get_payload(&storage), "value 3");
-
-        let flusher = storage.flusher();
-
-        put_payload(&mut storage, "value 4", 3);
-        assert_eq!(get_payload(&storage), "value 4");
+        // Clone arcs to keep storage alive after clear
+        // Necessary for this test to allow the flusher task to still upgrade its weak arcs when we
+        // call the flusher. This allows us to trigger broken flush behavior in old versions.
+        // The same is possible without cloning these arcs, but it would require specific timing
+        // conditions. Cloning arcs here is much more reliable for this test case.
+        let _arcs = (
+            Arc::clone(&storage.pages),
+            Arc::clone(&storage.tracker),
+            Arc::clone(&storage.bitmask),
+        );
 
         // We clear the storage, pending flusher must not write anything anymore
         storage.clear().unwrap();
 
         // Flusher is invalidated and does nothing
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
-        // TODO(timvisee): doesn't appear to break in earlier versions, fix test!
         flusher().unwrap();
+
+        drop(_arcs);
 
         // We expect the storage to be empty
         assert_eq!(
             storage.get_value::<false>(0, &hw_counter),
             None,
-            "point must not exist"
+            "point must not exist",
         );
 
         // If we reopen the storage it must still be empty
@@ -1633,7 +1621,8 @@ mod tests {
         assert_eq!(
             storage.get_value::<false>(0, &hw_counter),
             None,
-            "point must not exist"
+            "point must not exist",
         );
+        assert_eq!(storage.max_point_id(), 0, "must have zero points");
     }
 }
