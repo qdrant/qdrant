@@ -65,6 +65,7 @@ fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 impl<V: Blob> Gridstore<V> {
     /// LZ4 compression
     fn compress(&self, value: Vec<u8>) -> Vec<u8> {
+        log::debug!("compress len {} {:?}", value.len(), self.config.compression);
         match self.config.compression {
             Compression::None => value,
             Compression::LZ4 => compress_lz4(&value),
@@ -73,6 +74,11 @@ impl<V: Blob> Gridstore<V> {
 
     /// LZ4 decompression
     fn decompress(&self, value: Vec<u8>) -> Vec<u8> {
+        log::debug!(
+            "decompress len {} {:?}",
+            value.len(),
+            self.config.compression
+        );
         match self.config.compression {
             Compression::None => value,
             Compression::LZ4 => decompress_lz4(&value),
@@ -958,6 +964,7 @@ mod tests {
         for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
+                    log::debug!("PUT {point_offset}");
                     let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
@@ -969,6 +976,7 @@ mod tests {
                     );
                 }
                 Operation::Delete(point_offset) => {
+                    log::debug!("DELETE {point_offset}");
                     let old1 = storage.delete_value(point_offset);
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
@@ -977,12 +985,14 @@ mod tests {
                     );
                 }
                 Operation::Update(point_offset, payload) => {
+                    log::debug!("UPDATE {point_offset}");
                     storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
                 Operation::Get(point_offset) => {
+                    log::debug!("GET {point_offset}");
                     let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
                     let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
                     let v2 = model_hashmap.get(&point_offset).cloned();
@@ -996,10 +1006,12 @@ mod tests {
                     );
                 }
                 Operation::Flush => {
+                    log::debug!("FLUSH");
                     let _flush_lock_guard = flush_lock.lock();
                     storage.flusher()().unwrap()
                 }
                 Operation::FlushDelay => {
+                    log::debug!("FLUSH DELAY");
                     let flush_lock = flush_lock.clone();
                     let flusher = storage.flusher();
                     std::thread::Builder::new()
