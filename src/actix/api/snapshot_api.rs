@@ -805,7 +805,7 @@ async fn recover_partial_snapshot_from(
         };
 
         log::debug!(
-            "Partial snapshot download completed: path={}, size={} MB, duration={:.2}s, speed={:.2} MB/s, shard_id={}",
+            "Partial snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s, shard_id={}",
             partial_snapshot_temp_path.display(),
             bytes_downloaded as f64 / 1_048_576.0,
             download_duration.as_secs_f64(),
