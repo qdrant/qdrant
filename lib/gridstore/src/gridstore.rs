@@ -902,12 +902,13 @@ mod tests {
         Update(PointOffset, Payload),
         Get(PointOffset),
         Flush,
+        FlushDelay,
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..4);
+            let operation = rng.random_range(0..=5);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -922,7 +923,8 @@ mod tests {
                 }
                 3 => Operation::Get(point_offset),
                 4 => Operation::Flush,
-                _ => unreachable!(),
+                5 => Operation::FlushDelay,
+                op => panic!("{op} out of range"),
             }
         }
     }
@@ -932,6 +934,8 @@ mod tests {
         #[values(1_048_576, 2_097_152, DEFAULT_PAGE_SIZE_BYTES)] page_size: usize,
     ) {
         use ahash::AHashMap;
+
+        let _ = env_logger::builder().is_test(true).try_init();
 
         let (dir, mut storage) = empty_storage_sized(page_size);
 
@@ -946,6 +950,9 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+        // ensure no concurrent flushing
+        let flush_lock = Arc::new(parking_lot::Mutex::new(()));
 
         // apply operations to storage and model_hashmap
         for operation in operations {
@@ -988,7 +995,21 @@ mod tests {
                         "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
                     );
                 }
-                Operation::Flush => storage.flusher()().unwrap(),
+                Operation::Flush => {
+                    let _flush_lock_guard = flush_lock.lock();
+                    storage.flusher()().unwrap()
+                }
+                Operation::FlushDelay => {
+                    let flush_lock = flush_lock.clone();
+                    let flusher = storage.flusher();
+                    std::thread::Builder::new()
+                        .name("background_flush".to_string())
+                        .spawn(move || {
+                            let _flush_lock_guard = flush_lock.lock();
+                            flusher()
+                        })
+                        .unwrap();
+                }
             }
         }
 
