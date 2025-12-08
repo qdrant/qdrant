@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn test_write_across_pages() {
         let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-        let (_dir, mut storage) = empty_storage_sized(page_size);
+        let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
 
         storage.create_new_page().unwrap();
 
@@ -915,12 +915,14 @@ mod tests {
                 0 => {
                     let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
+                    assert!(!payload.to_bytes().is_empty());
                     Operation::Put(point_offset, payload)
                 }
                 1 => Operation::Delete(point_offset),
                 2 => {
                     let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
+                    assert!(!payload.to_bytes().is_empty());
                     Operation::Update(point_offset, payload)
                 }
                 3 => Operation::Get(point_offset),
@@ -942,14 +944,14 @@ mod tests {
 
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let (dir, mut storage) = empty_storage_sized(page_size);
+        let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 10000u32;
+        let max_point_offset = 10_000u32;
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100000u32)
+        let operations = (0..100_000u32)
             .map(|_| Operation::random(rng, max_point_offset))
             .collect::<Vec<_>>();
 
@@ -1025,8 +1027,9 @@ mod tests {
                                     *flush_lock_guard,
                                     "there must be a flusher marked as alive"
                                 );
+                                log::debug!("op:{i} STARTING FLUSH after {delay:?}");
                                 match flusher() {
-                                    Ok(_) => log::debug!("op:{i} FLUSHED after {delay:?}"),
+                                    Ok(_) => log::debug!("op:{i} FLUSH DONE"),
                                     Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
                                 }
                                 *flush_lock_guard = false; // no flusher alive
