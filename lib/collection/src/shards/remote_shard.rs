@@ -301,11 +301,6 @@ impl RemoteShard {
                         )?;
                         Update::Sync(request)
                     }
-                    #[cfg(feature = "staging")]
-                    PointOperations::TestDelay(_) => {
-                        // Staging test delay operations should not be forwarded to remote shards
-                        continue;
-                    }
                 },
                 CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
                     VectorOperations::UpdateVectors(update_operation) => {
@@ -426,6 +421,11 @@ impl RemoteShard {
                             Update::DeleteFieldIndex(request)
                         }
                     }
+                }
+                #[cfg(feature = "staging")]
+                CollectionUpdateOperations::TestDelay(_) => {
+                    // Staging test delay operations should not be forwarded to remote shards
+                    continue;
                 }
             };
             updates.push(UpdateOperation {
@@ -575,22 +575,6 @@ impl RemoteShard {
                     })
                     .await?
                     .into_inner()
-                }
-                #[cfg(feature = "staging")]
-                PointOperations::TestDelay(op) => {
-                    // TODO: Add gRPC support to forward staging operations to remote shards
-                    // For now, staging test delay operations only execute on local shards
-                    let delay = std::time::Duration::from_secs_f64(op.duration.into_inner());
-                    log::debug!(
-                        "TestDelay: skipping remote shard {} (duration: {delay:?})",
-                        self.id
-                    );
-                    timer.set_success(true);
-                    return Ok(UpdateResult {
-                        operation_id: None,
-                        status: crate::operations::types::UpdateStatus::Completed,
-                        clock_tag: operation.clock_tag,
-                    });
                 }
             },
             CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
@@ -772,6 +756,22 @@ impl RemoteShard {
                     .into_inner()
                 }
             },
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::TestDelay(op) => {
+                // TODO: Add gRPC support to forward staging operations to remote shards
+                // For now, staging test delay operations only execute on local shards
+                let delay = std::time::Duration::from_secs_f64(op.duration.into_inner());
+                log::debug!(
+                    "TestDelay: skipping remote shard {} (duration: {delay:?})",
+                    self.id
+                );
+                timer.set_success(true);
+                return Ok(UpdateResult {
+                    operation_id: None,
+                    status: crate::operations::types::UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                });
+            }
         };
 
         if let Some(hw_usage) = point_operation_response.hardware_usage {

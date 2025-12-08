@@ -40,6 +40,10 @@ impl Generalizer for CollectionUpdateOperations {
             CollectionUpdateOperations::FieldIndexOperation(field_operation) => {
                 CollectionUpdateOperations::FieldIndexOperation(field_operation.remove_details())
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::TestDelay(op) => {
+                CollectionUpdateOperations::TestDelay(op.clone())
+            }
         }
     }
 }
@@ -64,8 +68,6 @@ impl Generalizer for PointOperations {
             PointOperations::SyncPoints(sync_operation) => {
                 PointOperations::SyncPoints(sync_operation.remove_details())
             }
-            #[cfg(feature = "staging")]
-            PointOperations::TestDelay(op) => PointOperations::TestDelay(op.clone()),
         }
     }
 }

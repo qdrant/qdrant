@@ -5,12 +5,42 @@
 use std::time::Duration;
 
 use ordered_float::OrderedFloat;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::Validate;
+
+use super::CollectionUpdateOperations;
+
+/// Staging operations enum - all staging-only operations that can be sent to the staging endpoint.
+/// New staging operations should be added here to be immediately usable via the API.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StagingOperations {
+    /// Introduce an artificial delay for testing purposes
+    Delay(TestDelayOperation),
+}
+
+impl Validate for StagingOperations {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            StagingOperations::Delay(op) => op.validate(),
+        }
+    }
+}
+
+impl From<StagingOperations> for CollectionUpdateOperations {
+    fn from(op: StagingOperations) -> Self {
+        match op {
+            StagingOperations::Delay(delay_op) => CollectionUpdateOperations::TestDelay(delay_op),
+        }
+    }
+}
 
 /// Test operation that introduces an artificial delay.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Hash)]
 pub struct TestDelayOperation {
-    /// Duration of the delay in seconds.
+    /// Duration of the delay in seconds (0.0 to 300.0).
+    #[validate(range(min = 0.0, max = 300.0))]
     pub duration: OrderedFloat<f64>,
 }
 
