@@ -718,6 +718,7 @@ async fn recover_partial_snapshot_from(
 
     let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         let _recovery_lock = recovery_lock;
+        let download_start_time = tokio::time::Instant::now();
 
         let cancel_safe = async {
             let toc = dispatcher.toc(&access, &pass);
@@ -773,24 +774,44 @@ async fn recover_partial_snapshot_from(
                 tokio::io::BufWriter::new(tokio_fs::File::from_std(partial_snapshot_file));
 
             let mut partial_snapshot_stream = response.bytes_stream();
+            let mut total_bytes_downloaded = 0u64;
 
             while let Some(chunk) = partial_snapshot_stream.next().await {
-                partial_snapshot_file.write_all(&chunk?).await?;
+                let chunk = chunk?;
+                total_bytes_downloaded += chunk.len() as u64;
+                partial_snapshot_file.write_all(&chunk).await?;
             }
 
             partial_snapshot_file.flush().await?;
 
-            StorageResult::Ok((collection, partial_snapshot_temp_path))
+            StorageResult::Ok((collection, partial_snapshot_temp_path, total_bytes_downloaded))
         };
 
         let create_partial_snapshot_result =
             cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await?;
 
-        let (collection, partial_snapshot_temp_path) = match create_partial_snapshot_result {
-            Ok(output) => output,
-            Err(StorageError::EmptyPartialSnapshot { .. }) => return Ok(false),
-            Err(err) => return Err(err),
+        let (collection, partial_snapshot_temp_path, bytes_downloaded) =
+            match create_partial_snapshot_result {
+                Ok(output) => output,
+                Err(StorageError::EmptyPartialSnapshot { .. }) => return Ok(false),
+                Err(err) => return Err(err),
+            };
+
+        let download_duration = download_start_time.elapsed();
+        let download_speed_mbps = if download_duration.as_secs_f64() > 0.0 {
+            (bytes_downloaded as f64 / 1_048_576.0) / download_duration.as_secs_f64()
+        } else {
+            0.0
         };
+
+        log::debug!(
+            "Partial snapshot download completed: path={}, size={} MB, duration={:.2}s, speed={:.2} MB/s, shard_id={}",
+            partial_snapshot_temp_path.display(),
+            bytes_downloaded as f64 / 1_048_576.0,
+            download_duration.as_secs_f64(),
+            download_speed_mbps,
+            shard_id
+        );
 
         common::snapshots::recover_shard_snapshot_impl(
             dispatcher.toc(&access, &pass),
