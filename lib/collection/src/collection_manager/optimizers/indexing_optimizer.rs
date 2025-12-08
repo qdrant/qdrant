@@ -5,6 +5,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
+use shard::measurable_rwlock::MeasureRead;
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -96,6 +97,8 @@ impl IndexingOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
+        let _measure = MeasureRead::default();
+
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()

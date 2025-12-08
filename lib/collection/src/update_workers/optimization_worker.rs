@@ -12,6 +12,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
+use shard::measurable_rwlock::MeasureRead;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::Mutex as TokioMutex;
@@ -262,6 +263,8 @@ impl UpdateWorkers {
     where
         F: Fn(bool) + Send + Clone + Sync + 'static,
     {
+        let _measure = MeasureRead::default();
+
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
@@ -338,6 +341,8 @@ impl UpdateWorkers {
                         let resource_budget = optimizer_resource_budget.clone();
                         let segments = segments.clone();
                         move |stopped| {
+                            let _measure = MeasureRead::default();
+
                             // Track optimizer status
                             let (tracker, progress) =
                                 Tracker::start(optimizer.as_ref().name(), nsi.clone());
@@ -429,6 +434,8 @@ impl UpdateWorkers {
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
+        let measure = MeasureRead::default();
+
         let no_segment_with_capacity = {
             let segments_read = segments.read();
             segments_read
@@ -448,8 +455,10 @@ impl UpdateWorkers {
                     max_vector_size_bytes >= max_segment_size_bytes
                 })
         };
+        std::mem::drop(measure);
 
         if no_segment_with_capacity {
+            let measure = MeasureWrite::default();
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
             let segment_config = collection_params
