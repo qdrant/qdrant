@@ -56,6 +56,15 @@ pub fn process_point_operation(
             )?;
             Ok(deleted + new + updated)
         }
+        #[cfg(feature = "staging")]
+        PointOperations::TestDelay(operation) => {
+            operation.execute();
+
+            // This operation doesn't directly affect segment/point versions, so we bump it here
+            segments.read().bump_max_segment_version_overwrite(op_num);
+
+            Ok(0)
+        }
     }
 }
 
