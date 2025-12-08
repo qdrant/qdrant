@@ -65,7 +65,6 @@ fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 impl<V: Blob> Gridstore<V> {
     /// LZ4 compression
     fn compress(&self, value: Vec<u8>) -> Vec<u8> {
-        log::debug!("compress len {} {:?}", value.len(), self.config.compression);
         match self.config.compression {
             Compression::None => value,
             Compression::LZ4 => compress_lz4(&value),
@@ -74,11 +73,6 @@ impl<V: Blob> Gridstore<V> {
 
     /// LZ4 decompression
     fn decompress(&self, value: Vec<u8>) -> Vec<u8> {
-        log::debug!(
-            "decompress len {} {:?}",
-            value.len(),
-            self.config.compression
-        );
         match self.config.compression {
             Compression::None => value,
             Compression::LZ4 => decompress_lz4(&value),
@@ -666,6 +660,9 @@ impl<V> Gridstore<V> {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+    use std::time::Duration;
+
     use fs_err::File;
     use itertools::Itertools;
     use rand::distr::Uniform;
@@ -907,14 +904,13 @@ mod tests {
         Delete(PointOffset),
         Update(PointOffset, Payload),
         Get(PointOffset),
-        Flush,
-        FlushDelay,
+        FlushDelay(Duration),
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..=5);
+            let operation = rng.random_range(0..=4);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -928,8 +924,11 @@ mod tests {
                     Operation::Update(point_offset, payload)
                 }
                 3 => Operation::Get(point_offset),
-                4 => Operation::Flush,
-                5 => Operation::FlushDelay,
+                4 => {
+                    let delay_ms = rng.random_range(0..=20);
+                    let delay = Duration::from_millis(delay_ms);
+                    Operation::FlushDelay(delay)
+                }
                 op => panic!("{op} out of range"),
             }
         }
@@ -957,8 +956,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
-        // ensure no concurrent flushing
-        let flush_lock = Arc::new(parking_lot::Mutex::new(()));
+        // ensure no concurrent flushing & flusher instances
+        let has_flusher_lock = Arc::new(parking_lot::Mutex::new(false));
 
         // apply operations to storage and model_hashmap
         for (i, operation) in operations.into_iter().enumerate() {
@@ -1005,27 +1004,30 @@ mod tests {
                         "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
                     );
                 }
-                Operation::Flush => {
-                    let flush_lock_guard = flush_lock.lock();
-                    log::debug!("op:{i} FLUSH");
-                    storage.flusher()().unwrap();
-                    drop(flush_lock_guard)
-                }
-                Operation::FlushDelay => {
-                    let flush_lock = flush_lock.clone();
-                    let flusher = storage.flusher();
-                    std::thread::Builder::new()
-                        .name("background_flush".to_string())
-                        .spawn(move || {
-                            let flush_lock_guard = flush_lock.lock();
-                            log::debug!("op:{i} FLUSH DELAY...");
-                            match flusher() {
-                                Ok(_) => log::debug!("op:{i} FLUSH done"),
-                                Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
-                            }
-                            drop(flush_lock_guard);
-                        })
-                        .unwrap();
+                Operation::FlushDelay(delay) => {
+                    let mut flush_lock_guard = has_flusher_lock.lock();
+                    if *flush_lock_guard {
+                        log::debug!("Skip flushing because a flusher has already been created");
+                    } else {
+                        let flusher = storage.flusher();
+                        *flush_lock_guard = true;
+                        drop(flush_lock_guard);
+                        let flush_lock = has_flusher_lock.clone();
+                        std::thread::Builder::new()
+                            .name("background_flush".to_string())
+                            .spawn(move || {
+                                thread::sleep(delay); // keep flusher alive while other operation are applied
+                                let mut flush_lock_guard = flush_lock.lock();
+                                log::debug!("op:{i} FLUSH DELAY...");
+                                match flusher() {
+                                    Ok(_) => log::debug!("op:{i} FLUSH done"),
+                                    Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
+                                }
+                                *flush_lock_guard = false; // no flusher alive
+                                drop(flush_lock_guard);
+                            })
+                            .unwrap();
+                    }
                 }
             }
         }
