@@ -1549,16 +1549,10 @@ mod tests {
 
     /// Test that data is only actually flushed when we didn't bump the flusher lease
     ///
-    /// We cover both the new (fixed) and old (broken) behavior. When testing the old behavior with
-    /// `break_flushing = true` we simulate the broken behavior by re-marking the storage as alive
-    /// and expect data to be incorrectly flushed.
-    ///
     /// Specifically:
     /// - ensure that 'late' flushers don't write any data if already invalidated
-    #[rstest]
-    #[case(false)]
-    #[case(true)]
-    fn test_skip_deferred_flush_after_clear(#[case] break_flushing: bool) {
+    #[test]
+    fn test_skip_deferred_flush_after_clear() {
         let (dir, mut storage) = empty_storage();
         let path = dir.path().to_path_buf();
 
@@ -1606,15 +1600,7 @@ mod tests {
         );
 
         // We clear the storage, pending flusher must not write anything anymore
-        let old_storage_is_alive = Arc::clone(&storage.is_alive_flush_lock);
         storage.clear().unwrap();
-
-        // Purposefully break flushing by marking storage as alive again
-        // This imitates the old (broken) behavior where we didn't have the is_alive flag
-        // and we kept all pending flushers 'alive'
-        if break_flushing {
-            *old_storage_is_alive.lock() = true;
-        }
 
         // Flusher is invalidated and does nothing
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
@@ -1623,26 +1609,13 @@ mod tests {
         drop(_arcs);
 
         // We expect the storage to be empty
-        assert_eq!(
-            storage.get_value::<false>(0, &hw_counter),
-            None,
-            "point must not exist",
-        );
+        assert!(storage.get_pointer(0).is_none(), "point must not exist");
 
         // If we reopen the storage it must still be empty
         drop(storage);
         let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.read().len(), 1);
-
-        if !break_flushing {
-            assert!(storage.get_pointer(0).is_none(), "point must not exist");
-            assert_eq!(storage.max_point_id(), 0, "must have zero points");
-        } else {
-            assert!(
-                storage.get_pointer(last_point_offset).is_some(),
-                "point must exist",
-            );
-            assert_ne!(storage.max_point_id(), 0, "must have points");
-        }
+        assert!(storage.get_pointer(0).is_none(), "point must not exist");
+        assert_eq!(storage.max_point_id(), 0, "must have zero points");
     }
 }
