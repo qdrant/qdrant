@@ -42,7 +42,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{
-    CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo,
+    CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo, ShardTransferStatus,
 };
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
@@ -51,6 +51,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::transfer::transfer_tasks_pool::TaskResult;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
@@ -524,6 +525,16 @@ impl ShardHolder {
             let sync = shard_transfer.sync;
             let method = shard_transfer.method;
             let status = tasks_pool.get_task_status(&shard_transfer.key());
+
+            let failed = status.map(|i| i.result == TaskResult::Failed);
+            let running = status.map(|i| i.result == TaskResult::Running);
+            let shard_transfer_status = ShardTransferStatus {
+                running,
+                failed,
+                points_transferred: status.map(|i| i.points_transferred),
+                points_total: status.map(|i| i.points_total),
+            };
+
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
                 to_shard_id,
@@ -531,7 +542,8 @@ impl ShardHolder {
                 to,
                 sync,
                 method,
-                comment: status.map(|p| p.comment),
+                comment: status.map(|p| p.comment()),
+                status: shard_transfer_status,
             })
         }
         shard_transfers.sort_by_key(|k| k.shard_id);

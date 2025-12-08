@@ -2,7 +2,9 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
+use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 
 use crate::common::eta_calculator::EtaCalculator;
@@ -27,16 +29,40 @@ pub struct TransferTaskProgress {
     pub eta: EtaCalculator,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum TaskResult {
     Running,
     Finished,
     Failed,
 }
 
+#[derive(Clone, Copy)]
 pub struct TransferTaskStatus {
     pub result: TaskResult,
-    pub comment: String,
+    pub points_transferred: usize,
+    pub points_total: usize,
+    pub eta: Option<Duration>,
+    pub started_at: DateTime<Utc>,
+}
+
+impl TransferTaskStatus {
+    pub fn comment(&self) -> String {
+        let mut comment = format!(
+            "Transferring records ({}/{}), started {}s ago, ETA: ",
+            self.points_transferred,
+            self.points_total,
+            chrono::Utc::now()
+                .signed_duration_since(self.started_at)
+                .num_seconds(),
+        );
+        if let Some(eta) = self.eta {
+            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
+        } else {
+            comment.push('-');
+        }
+
+        comment
+    }
 }
 
 impl TransferTaskProgress {
@@ -60,6 +86,10 @@ impl TransferTaskProgress {
         self.points_total = total;
         self.eta.set_progress(transferred);
     }
+
+    pub fn total(&self) -> usize {
+        max(self.points_total, self.points_transferred)
+    }
 }
 
 impl TransferTasksPool {
@@ -81,22 +111,15 @@ impl TransferTasksPool {
         };
 
         let progress = task.progress.lock();
-        let total = max(progress.points_transferred, progress.points_total);
-        let mut comment = format!(
-            "Transferring records ({}/{}), started {}s ago, ETA: ",
-            progress.points_transferred,
-            total,
-            chrono::Utc::now()
-                .signed_duration_since(task.started_at)
-                .num_seconds(),
-        );
-        if let Some(eta) = progress.eta.estimate(total) {
-            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
-        } else {
-            comment.push('-');
-        }
+        let total = progress.total();
 
-        Some(TransferTaskStatus { result, comment })
+        Some(TransferTaskStatus {
+            result,
+            points_transferred: progress.points_transferred,
+            points_total: total,
+            eta: progress.eta.estimate(total),
+            started_at: task.started_at,
+        })
     }
 
     /// Stop the task and return the result. If the task is not found, return None.

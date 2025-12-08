@@ -328,6 +328,27 @@ pub struct ShardTransferInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
+
+    /// Internal status of the shard transfer, do not expose.
+    #[serde(skip)]
+    #[schemars(skip)]
+    #[anonymize(false)]
+    pub status: ShardTransferStatus,
+}
+
+#[derive(Debug, Clone, Anonymize)]
+pub struct ShardTransferStatus {
+    #[anonymize(false)]
+    pub running: Option<bool>,
+
+    #[anonymize(false)]
+    pub failed: Option<bool>,
+
+    #[anonymize(false)]
+    pub points_transferred: Option<usize>,
+
+    #[anonymize(false)]
+    pub points_total: Option<usize>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
