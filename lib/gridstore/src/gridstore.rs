@@ -1583,7 +1583,7 @@ mod tests {
         const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
         let last_point_offset = (file_size / POINTER_SIZE) as u32;
         for i in 0..=last_point_offset {
-            put_payload(&mut storage, i as u32, "value x");
+            put_payload(&mut storage, i, "value x");
         }
 
         let flusher = storage.flusher();
@@ -1593,7 +1593,7 @@ mod tests {
         // call the flusher. This allows us to trigger broken flush behavior in old versions.
         // The same is possible without cloning these arcs, but it would require specific timing
         // conditions. Cloning arcs here is much more reliable for this test case.
-        let _arcs = (
+        let storage_arcs = (
             Arc::clone(&storage.pages),
             Arc::clone(&storage.tracker),
             Arc::clone(&storage.bitmask),
@@ -1606,7 +1606,7 @@ mod tests {
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
         flusher().unwrap();
 
-        drop(_arcs);
+        drop(storage_arcs);
 
         // We expect the storage to be empty
         assert!(storage.get_pointer(0).is_none(), "point must not exist");
