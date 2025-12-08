@@ -11,7 +11,7 @@ use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
@@ -45,17 +45,11 @@ pub struct Gridstore<V> {
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
     _value_type: std::marker::PhantomData<V>,
-    /// Structure to invalidate old flush tasks
-    ///
-    /// Flushing is asynchronous. Creating and invoking the flush task is usually done at different
-    /// times. At creation, we copy the current lease. When invoking the flusher, we only actually
-    /// flush if the current lease is still valid. When a wipe/clear operation is invoked, we bump
-    /// the lease to invalidate and abort any pending flushes.
-    ///
-    /// This structure primarily fulfills two goals:
-    /// - in wipe/clear: function as barrier for any ongoing flush operation, block until it's done
-    /// - in flusher tasks: abort pending flushes if invalidated by a wipe/clear operation
-    flusher_lease: Arc<RwLock<FlushLease>>,
+
+    /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
+    /// Default value is true - means segment is alive and flushes can be performed.
+    /// If value is false - means segment was dropped and no further flush is required.
+    is_alive_flush_lock: Arc<Mutex<bool>>,
 }
 
 #[inline]
@@ -154,7 +148,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
-            flusher_lease: Default::default(),
+            is_alive_flush_lock: Arc::new(Mutex::new(true)),
         };
 
         // create first page to be covered by the bitmask
@@ -198,7 +192,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
-            flusher_lease: Default::default(),
+            is_alive_flush_lock: Arc::new(Mutex::new(true)),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -477,8 +471,10 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
-        // Barrier to wait on any ongoing flush, bumps flush lease to invalidate any pending flush
-        self.flusher_lease.write().bump();
+        // Wait for all background flush operations to finish, abort pending flushes
+        // Below we create a new Gridstore instance with a new boolean, so flushers created on the
+        // new instance work as expected
+        *self.is_alive_flush_lock.lock() = false;
 
         // Wipe
         self.pages.write().clear();
@@ -489,6 +485,7 @@ impl<V: Blob> Gridstore<V> {
         fs::create_dir_all(&base_path)
             .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
         *self = Self::new(base_path, create_options)?;
+
         Ok(())
     }
 
@@ -499,8 +496,8 @@ impl<V: Blob> Gridstore<V> {
     pub fn wipe(self) -> Result<()> {
         let base_path = self.base_path.clone();
 
-        // Barrier to wait on any ongoing flush, bumps flush lease to invalidate any pending flush
-        self.flusher_lease.write().bump();
+        // Wait for all background flush operations to finish, abort pending flushes
+        *self.is_alive_flush_lock.lock() = false;
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
@@ -586,22 +583,21 @@ impl<V> Gridstore<V> {
 
     /// Create flusher that durably persists all pending changes when invoked
     pub fn flusher(&self) -> Flusher {
-        let assigned_flush_lease = *self.flusher_lease.read();
-
         let pending_updates = self.tracker.read().pending_updates.clone();
 
-        let flusher_lease = self.flusher_lease.clone();
         let pages = Arc::downgrade(&self.pages);
         let tracker = Arc::downgrade(&self.tracker);
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         Box::new(move || {
-            // Abort flusher if current lease was invalidated
-            // Happens if lease is bumped since this flusher was created, e.g. when wipe is invoked
-            let flusher_lease = flusher_lease.read();
-            if *flusher_lease != assigned_flush_lease {
-                log::debug!("Aborting old Gridstore flusher, flush lease mismatch");
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Segment is cleared, skip flush
                 return Ok(());
             }
 
@@ -657,15 +653,6 @@ impl<V> Gridstore<V> {
         }
         self.bitmask.read().clear_cache()?;
         Ok(())
-    }
-}
-
-#[derive(Default, Debug, Eq, PartialEq, Copy, Clone)]
-struct FlushLease(usize);
-
-impl FlushLease {
-    fn bump(&mut self) {
-        self.0 += 1;
     }
 }
 
