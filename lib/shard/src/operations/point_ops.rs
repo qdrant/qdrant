@@ -105,6 +105,9 @@ pub enum PointOperations {
     DeletePointsByFilter(Filter),
     /// Points Sync
     SyncPoints(PointSyncOperation),
+    /// Introduce artificial delay for testing purposes
+    #[cfg(feature = "staging")]
+    TestDelay(super::staging::TestDelayOperation),
 }
 
 impl PointOperations {
@@ -115,6 +118,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => Some(ids.clone()),
             Self::DeletePointsByFilter(_) => None,
             Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
+            #[cfg(feature = "staging")]
+            Self::TestDelay(_) => None,
         }
     }
 
@@ -130,6 +135,8 @@ impl PointOperations {
             Self::DeletePoints { ids } => ids.retain(filter),
             Self::DeletePointsByFilter(_) => (),
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
+            #[cfg(feature = "staging")]
+            Self::TestDelay(_) => (),
         }
     }
 }
