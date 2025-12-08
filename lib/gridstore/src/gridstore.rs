@@ -1549,10 +1549,16 @@ mod tests {
 
     /// Test that data is only actually flushed when we didn't bump the flusher lease
     ///
+    /// We cover both the new (fixed) and old (broken) behavior. When testing the old behavior with
+    /// `break_flushing = true` we simulate the broken behavior by re-marking the storage as alive
+    /// and expect data to be incorrectly flushed.
+    ///
     /// Specifically:
     /// - ensure that 'late' flushers don't write any data if already invalidated
-    #[test]
-    fn test_skip_deferred_flush_after_clear() {
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_skip_deferred_flush_after_clear(#[case] break_flushing: bool) {
         let (dir, mut storage) = empty_storage();
         let path = dir.path().to_path_buf();
 
@@ -1581,7 +1587,8 @@ mod tests {
         // On flush, the tracker file will be resized and reopened, significant for this test
         let file_size = storage.tracker.read().mmap_file_size();
         const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
-        for i in 0..file_size / POINTER_SIZE {
+        let last_point_offset = (file_size / POINTER_SIZE) as u32;
+        for i in 0..=last_point_offset {
             put_payload(&mut storage, i as u32, "value x");
         }
 
@@ -1599,7 +1606,15 @@ mod tests {
         );
 
         // We clear the storage, pending flusher must not write anything anymore
+        let old_storage_is_alive = Arc::clone(&storage.is_alive_flush_lock);
         storage.clear().unwrap();
+
+        // Purposefully break flushing by marking storage as alive again
+        // This imitates the old (broken) behavior where we didn't have the is_alive flag
+        // and we kept all pending flushers 'alive'
+        if break_flushing {
+            *old_storage_is_alive.lock() = true;
+        }
 
         // Flusher is invalidated and does nothing
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
@@ -1618,11 +1633,16 @@ mod tests {
         drop(storage);
         let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.read().len(), 1);
-        assert_eq!(
-            storage.get_value::<false>(0, &hw_counter),
-            None,
-            "point must not exist",
-        );
-        assert_eq!(storage.max_point_id(), 0, "must have zero points");
+
+        if !break_flushing {
+            assert!(storage.get_pointer(0).is_none(), "point must not exist");
+            assert_eq!(storage.max_point_id(), 0, "must have zero points");
+        } else {
+            assert!(
+                storage.get_pointer(last_point_offset).is_some(),
+                "point must exist",
+            );
+            assert_ne!(storage.max_point_id(), 0, "must have points");
+        }
     }
 }
