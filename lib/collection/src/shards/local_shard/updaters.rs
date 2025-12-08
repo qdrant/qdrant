@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
-
+use crate::common::update_queue::new_update_queue_channel;
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::build_optimizers;
 use crate::shards::local_shard::LocalShard;
@@ -12,7 +11,7 @@ impl LocalShard {
         // Send a trigger signal and ignore errors because all error cases are acceptable:
         // - If receiver is already dead - we do not care
         // - If channel is full - optimization will be triggered by some other signal
-        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
+        let _ = self.update_sender.load().try_send(UpdateSignal::Nop, None);
     }
 
     pub async fn stop_flush_worker(&self) {
@@ -36,10 +35,11 @@ impl LocalShard {
         let mut update_handler = self.update_handler.lock().await;
 
         let (update_sender, update_receiver) =
-            mpsc::channel(self.shared_storage_config.update_queue_size);
+            new_update_queue_channel(self.shared_storage_config.update_queue_size);
+
         // makes sure that the Stop signal is the last one in this channel
         let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop).await?;
+        old_sender.send(UpdateSignal::Stop, None).await?;
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
@@ -56,7 +56,10 @@ impl LocalShard {
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
 
-        self.update_sender.load().send(UpdateSignal::Nop).await?;
+        self.update_sender
+            .load()
+            .send(UpdateSignal::Nop, None)
+            .await?;
 
         Ok(())
     }

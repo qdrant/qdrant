@@ -68,7 +68,9 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
-            let channel_permit = update_sender.reserve().await?;
+            let channel_permit = update_sender
+                .reserve(Some(operation.operation.update_type()))
+                .await?;
 
             // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
             //
@@ -391,7 +393,12 @@ impl ShardOperation for LocalShard {
 
     /// Finishes ongoing update tasks
     async fn stop_gracefully(mut self) {
-        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
+        if let Err(err) = self
+            .update_sender
+            .load()
+            .send(UpdateSignal::Stop, None)
+            .await
+        {
             log::warn!("Error sending stop signal to update handler: {err}");
         }
 

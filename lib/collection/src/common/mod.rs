@@ -11,3 +11,4 @@ pub mod snapshots_manager;
 pub mod stoppable_task;
 pub mod stoppable_task_async;
 pub mod transpose_iterator;
+pub mod update_queue;

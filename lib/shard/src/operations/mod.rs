@@ -22,7 +22,24 @@ pub enum CollectionUpdateOperations {
     FieldIndexOperation(FieldIndexOperations),
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum UpdateType {
+    Point,
+    Vector,
+    FieldIndex,
+    Payload,
+}
+
 impl CollectionUpdateOperations {
+    pub fn update_type(&self) -> UpdateType {
+        match self {
+            CollectionUpdateOperations::PointOperation(_) => UpdateType::Point,
+            CollectionUpdateOperations::VectorOperation(_) => UpdateType::Vector,
+            CollectionUpdateOperations::PayloadOperation(_) => UpdateType::Payload,
+            CollectionUpdateOperations::FieldIndexOperation(_) => UpdateType::FieldIndex,
+        }
+    }
+
     pub fn is_upsert_points(&self) -> bool {
         matches!(
             self,
