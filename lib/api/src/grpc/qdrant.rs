@@ -12602,6 +12602,9 @@ pub mod shard_clean_status_telemetry {
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
+    /// peers
+    #[prost(map = "uint64, message", tag = "3")]
+    pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12664,6 +12667,13 @@ pub mod consensus_thread_status {
         #[prost(message, tag = "3")]
         StoppedWithErr(StoppedWithErr),
     }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerInfo {
+    #[prost(string, tag = "1")]
+    pub uri: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
