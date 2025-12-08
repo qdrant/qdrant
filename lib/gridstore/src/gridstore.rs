@@ -961,10 +961,10 @@ mod tests {
         let flush_lock = Arc::new(parking_lot::Mutex::new(()));
 
         // apply operations to storage and model_hashmap
-        for operation in operations {
+        for (i, operation) in operations.into_iter().enumerate() {
             match operation {
                 Operation::Put(point_offset, payload) => {
-                    log::debug!("PUT {point_offset}");
+                    log::debug!("op:{i} PUT {point_offset}");
                     let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
@@ -976,7 +976,7 @@ mod tests {
                     );
                 }
                 Operation::Delete(point_offset) => {
-                    log::debug!("DELETE {point_offset}");
+                    log::debug!("op:{i} DELETE {point_offset}");
                     let old1 = storage.delete_value(point_offset);
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
@@ -985,14 +985,14 @@ mod tests {
                     );
                 }
                 Operation::Update(point_offset, payload) => {
-                    log::debug!("UPDATE {point_offset}");
+                    log::debug!("op:{i} UPDATE {point_offset}");
                     storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
                 Operation::Get(point_offset) => {
-                    log::debug!("GET {point_offset}");
+                    log::debug!("op:{i} GET {point_offset}");
                     let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
                     let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
                     let v2 = model_hashmap.get(&point_offset).cloned();
@@ -1006,19 +1006,24 @@ mod tests {
                     );
                 }
                 Operation::Flush => {
-                    log::debug!("FLUSH");
-                    let _flush_lock_guard = flush_lock.lock();
-                    storage.flusher()().unwrap()
+                    let flush_lock_guard = flush_lock.lock();
+                    log::debug!("op:{i} FLUSH");
+                    storage.flusher()().unwrap();
+                    drop(flush_lock_guard)
                 }
                 Operation::FlushDelay => {
-                    log::debug!("FLUSH DELAY");
                     let flush_lock = flush_lock.clone();
                     let flusher = storage.flusher();
                     std::thread::Builder::new()
                         .name("background_flush".to_string())
                         .spawn(move || {
-                            let _flush_lock_guard = flush_lock.lock();
-                            flusher()
+                            let flush_lock_guard = flush_lock.lock();
+                            log::debug!("op:{i} FLUSH DELAY...");
+                            match flusher() {
+                                Ok(_) => log::debug!("op:{i} FLUSH done"),
+                                Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
+                            }
+                            drop(flush_lock_guard);
                         })
                         .unwrap();
                 }
