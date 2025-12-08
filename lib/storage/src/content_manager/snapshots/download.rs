@@ -61,13 +61,20 @@ async fn download_file(
     }
 
     file.flush().await?;
+
     let download_duration = download_start_time.elapsed();
     let download_speed_mbps = if download_duration.as_secs_f64() > 0.0 {
         (total_bytes_downloaded as f64 / 1_048_576.0) / download_duration.as_secs_f64()
     } else {
         0.0
     };
-    log::debug!("Snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s", temp_path.display(), total_bytes_downloaded as f64 / 1_048_576.0, download_duration.as_secs_f64(), download_speed_mbps);
+    log::debug!(
+        "Snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s",
+        temp_path.display(),
+        total_bytes_downloaded as f64 / 1_048_576.0,
+        download_duration.as_secs_f64(),
+        download_speed_mbps
+    );
 
     Ok(temp_path)
 }
