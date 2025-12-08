@@ -29,6 +29,7 @@ async fn download_file(
     url: &Url,
     dir_path: &Path,
 ) -> Result<TempPath, StorageError> {
+    let download_start_time = tokio::time::Instant::now();
     let (file, temp_path) = tempfile::Builder::new()
         .prefix(&snapshot_prefix(url))
         .suffix(".download")
@@ -51,13 +52,22 @@ async fn download_file(
     }
 
     let mut stream = response.bytes_stream();
+    let mut total_bytes_downloaded = 0u64;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
+        total_bytes_downloaded += chunk.len() as u64;
         file.write_all(&chunk).await?;
     }
 
     file.flush().await?;
+    let download_duration = download_start_time.elapsed();
+    let download_speed_mbps = if download_duration.as_secs_f64() > 0.0 {
+        (total_bytes_downloaded as f64 / 1_048_576.0) / download_duration.as_secs_f64()
+    } else {
+        0.0
+    };
+    log::debug!("Snapshot download completed: path={}, size={:.2} MB, duration={:.2}s, speed={:.2} MB/s", temp_path.display(), total_bytes_downloaded as f64 / 1_048_576.0, download_duration.as_secs_f64(), download_speed_mbps);
 
     Ok(temp_path)
 }
