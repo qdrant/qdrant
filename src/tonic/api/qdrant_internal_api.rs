@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    ClusterTelemetry, CollectionTelemetry, GetConsensusCommitRequest, GetConsensusCommitResponse,
-    GetPeerTelemetryRequest, GetPeerTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
+    GetConsensusCommitRequest, GetConsensusCommitResponse, GetPeerTelemetryRequest,
+    GetPeerTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
     WaitOnConsensusCommitResponse,
 };
 use common::types::{DetailsLevel, TelemetryDetail};
@@ -13,8 +13,7 @@ use storage::rbac::Access;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
-use crate::common::telemetry::{TelemetryCollector, TelemetryData};
-use crate::common::telemetry_ops::collections_telemetry::CollectionTelemetryEnum;
+use crate::common::telemetry::TelemetryCollector;
 use crate::settings::Settings;
 
 pub struct QdrantInternalService {
@@ -98,38 +97,8 @@ impl QdrantInternal for QdrantInternalService {
             .prepare_data(&access, detail, Some(timeout))
             .await?;
 
-        let TelemetryData {
-            id: _,
-            app: _,
-            collections,
-            cluster,
-            requests: _,
-            memory: _,
-            hardware: _,
-        } = telemetry_data;
-
-        let collections = collections
-            .collections
-            .into_iter()
-            .flatten()
-            .filter_map(|telemetry_enum| {
-                match telemetry_enum {
-                    CollectionTelemetryEnum::Full(collection_telemetry) => {
-                        let telemetry = CollectionTelemetry::from(*collection_telemetry);
-                        let collection_name = telemetry.id.clone();
-                        Some((collection_name, telemetry))
-                    }
-                    // This only happens when details_level is < 2, which we explicitly fail
-                    CollectionTelemetryEnum::Aggregated(_) => None,
-                }
-            })
-            .collect();
-
         let response = GetPeerTelemetryResponse {
-            result: Some(PeerTelemetry {
-                collections,
-                cluster: cluster.map(ClusterTelemetry::from),
-            }),
+            result: Some(PeerTelemetry::try_from(telemetry_data)?),
             time: timing.elapsed().as_secs_f64(),
         };
 
