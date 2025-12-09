@@ -585,6 +585,11 @@ impl ShardHolder {
                 debug_assert!(false, "Do not expect empty shard selector")
             }
             ShardSelectorInternal::All => {
+                let is_custom_sharding = match self.sharding_method {
+                    ShardingMethod::Auto => false,
+                    ShardingMethod::Custom => true,
+                };
+
                 for (&shard_id, shard) in self.shards.iter() {
                     // Ignore a new resharding shard until it completed point migration
                     // The shard will be marked as active at the end of the migration stage
@@ -595,6 +600,15 @@ impl ShardHolder {
                                 && state.stage < ReshardStage::ReadHashRingCommitted
                         });
                     if resharding_migrating_up {
+                        continue;
+                    }
+
+                    // Technically, we could skip inactive shards regardless of sharding method,
+                    // as we do not expect that shard id can even become inactive on all replicas.
+                    // (if it happens, means there is a bug)
+                    // But for earlier detection of such issues, we only do this check for custom sharding,
+                    // where this situation is expected for the case of tenant promotion.
+                    if is_custom_sharding && !shard.shard_is_active() {
                         continue;
                     }
 
