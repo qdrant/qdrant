@@ -266,7 +266,7 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-
+        log::trace!("get_value offset:{point_offset} block_offset:{block_offset} length:{length}");
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -437,6 +437,9 @@ impl<V: Blob> Gridstore<V> {
         // update the pointer
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
+        log::trace!(
+            "put_value offset:{point_offset} unset page_id:{start_page_id} block:{block_offset} length:{value_size}"
+        );
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -458,6 +461,9 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
+        log::trace!(
+            "delete_value offset:{point_offset} unset page_id:{page_id} block:{block_offset} length:{length}"
+        );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
@@ -902,7 +908,6 @@ mod tests {
     enum Operation {
         Put(PointOffset, Payload),
         Delete(PointOffset),
-        Update(PointOffset, Payload),
         Get(PointOffset),
         FlushDelay(Duration),
     }
@@ -910,7 +915,7 @@ mod tests {
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..=4);
+            let operation = rng.random_range(0..=3);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -919,15 +924,9 @@ mod tests {
                     Operation::Put(point_offset, payload)
                 }
                 1 => Operation::Delete(point_offset),
-                2 => {
-                    let size_factor = rng.random_range(1..10);
-                    let payload = random_payload(rng, size_factor);
-                    assert!(!payload.to_bytes().is_empty());
-                    Operation::Update(point_offset, payload)
-                }
-                3 => Operation::Get(point_offset),
-                4 => {
-                    let delay_ms = rng.random_range(0..=20);
+                2 => Operation::Get(point_offset),
+                3 => {
+                    let delay_ms = rng.random_range(0..=500);
                     let delay = Duration::from_millis(delay_ms);
                     Operation::FlushDelay(delay)
                 }
@@ -965,19 +964,22 @@ mod tests {
         for (i, operation) in operations.into_iter().enumerate() {
             match operation {
                 Operation::Put(point_offset, payload) => {
-                    log::debug!("op:{i} PUT {point_offset}");
+                    log::debug!("op:{i} PUT offset:{point_offset}");
                     let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
-                    let old2 = model_hashmap.insert(point_offset, payload);
+                    let old2 = model_hashmap.insert(point_offset, payload.clone());
                     assert_eq!(
                         old1,
                         old2.is_some(),
                         "put failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
                     );
+                    // sanity check for read after write
+                    let read = storage.get_value::<false>(point_offset, &hw_counter);
+                    assert_eq!(read, Some(payload));
                 }
                 Operation::Delete(point_offset) => {
-                    log::debug!("op:{i} DELETE {point_offset}");
+                    log::debug!("op:{i} DELETE offset:{point_offset}");
                     let old1 = storage.delete_value(point_offset);
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
@@ -985,15 +987,8 @@ mod tests {
                         "same deletion failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
                     );
                 }
-                Operation::Update(point_offset, payload) => {
-                    log::debug!("op:{i} UPDATE {point_offset}");
-                    storage
-                        .put_value(point_offset, &payload, hw_counter_ref)
-                        .unwrap();
-                    model_hashmap.insert(point_offset, payload);
-                }
                 Operation::Get(point_offset) => {
-                    log::debug!("op:{i} GET {point_offset}");
+                    log::debug!("op:{i} GET offset:{point_offset}");
                     let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
                     let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
                     let v2 = model_hashmap.get(&point_offset).cloned();
@@ -1027,7 +1022,7 @@ mod tests {
                                     *flush_lock_guard,
                                     "there must be a flusher marked as alive"
                                 );
-                                log::debug!("op:{i} STARTING FLUSH after {delay:?}");
+                                log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                                 match flusher() {
                                     Ok(_) => log::debug!("op:{i} FLUSH DONE"),
                                     Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
@@ -1040,6 +1035,8 @@ mod tests {
                 }
             }
         }
+
+        log::debug!("All operations succesfully applied - now checking consistency...");
 
         // asset same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
