@@ -607,6 +607,7 @@ impl SegmentEntry for Segment {
     }
 
     fn size_info(&self) -> SegmentInfo {
+        let segment_id = self.segment_id().unwrap_or_else(|_| "").to_string();
         let num_vectors = self
             .vector_data
             .values()
@@ -665,6 +666,7 @@ impl SegmentEntry for Segment {
             .unwrap_or(0);
 
         SegmentInfo {
+            segment_id,
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,

@@ -599,47 +599,11 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn size_info(&self) -> SegmentInfo {
-        // To reduce code complexity for estimations, we use `.info()` directly here.
-        self.info()
+        self.wrapped_segment.get().read().size_info()
     }
 
     fn info(&self) -> SegmentInfo {
-        let wrapped_info = self.wrapped_segment.get().read().info();
-
-        let vector_name_count =
-            self.config().vector_data.len() + self.config().sparse_vector_data.len();
-        let deleted_points_count = self.deleted_points.len();
-
-        // This is a best estimate
-        let num_vectors = wrapped_info
-            .num_vectors
-            .saturating_sub(deleted_points_count * vector_name_count);
-
-        let num_indexed_vectors = if wrapped_info.segment_type == SegmentType::Indexed {
-            wrapped_info
-                .num_vectors
-                .saturating_sub(deleted_points_count * vector_name_count)
-        } else {
-            0
-        };
-
-        let vector_data = wrapped_info.vector_data;
-
-        SegmentInfo {
-            segment_type: SegmentType::Special,
-            num_vectors,
-            num_indexed_vectors,
-            num_points: self.available_point_count(),
-            num_deleted_vectors: wrapped_info.num_deleted_vectors
-                + deleted_points_count * vector_name_count,
-            vectors_size_bytes: wrapped_info.vectors_size_bytes, //  + write_info.vectors_size_bytes,
-            payloads_size_bytes: wrapped_info.payloads_size_bytes,
-            ram_usage_bytes: wrapped_info.ram_usage_bytes,
-            disk_usage_bytes: wrapped_info.disk_usage_bytes,
-            is_appendable: false,
-            index_schema: wrapped_info.index_schema,
-            vector_data,
-        }
+        self.wrapped_segment.get().read().info()
     }
 
     fn config(&self) -> &SegmentConfig {
