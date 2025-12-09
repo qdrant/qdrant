@@ -43,10 +43,11 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
-use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
-use crate::shards::replica_set::{
-    ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
+use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::replica_set::replica_set_state::ReplicaState::{
+    Active, Dead, Initializing, Listener,
 };
+use crate::shards::replica_set::{ChangePeerFromState, ChangePeerState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};

@@ -21,6 +21,7 @@ use collection::operations::types::{
 };
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set;
+use collection::shards::replica_set::replica_set_state;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{
@@ -500,7 +501,8 @@ pub async fn do_update_collection_cluster(
 
             if let Some(initial_state) = create_sharding_key.initial_state {
                 match initial_state {
-                    replica_set::ReplicaState::Active | replica_set::ReplicaState::Partial => {}
+                    replica_set_state::ReplicaState::Active
+                    | replica_set_state::ReplicaState::Partial => {}
                     _ => {
                         return Err(StorageError::bad_request(format!(
                             "Initial state cannot be {initial_state:?}, only Active or Partial are allowed",
@@ -835,8 +837,8 @@ pub async fn do_update_collection_cluster(
             };
 
             let from_state = match state.direction {
-                ReshardingDirection::Up => replica_set::ReplicaState::Resharding,
-                ReshardingDirection::Down => replica_set::ReplicaState::ReshardingScaleDown,
+                ReshardingDirection::Up => replica_set_state::ReplicaState::Resharding,
+                ReshardingDirection::Down => replica_set_state::ReplicaState::ReshardingScaleDown,
             };
 
             dispatcher
@@ -845,7 +847,7 @@ pub async fn do_update_collection_cluster(
                         collection_name: collection_name.clone(),
                         shard_id,
                         peer_id,
-                        state: replica_set::ReplicaState::Active,
+                        state: replica_set_state::ReplicaState::Active,
                         from_state: Some(from_state),
                     }),
                     access,

@@ -9,7 +9,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
-use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
+use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId, ShardsPlacement};
 
 impl Collection {

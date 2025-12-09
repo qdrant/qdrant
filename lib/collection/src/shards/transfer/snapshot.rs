@@ -13,7 +13,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::ReplicaState;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
