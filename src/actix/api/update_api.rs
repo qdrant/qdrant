@@ -47,8 +47,8 @@ async fn upsert_points(
         service_config.hardware_reporting(),
         Some(params.wait),
     );
-    let timing = Instant::now();
 
+    let timing = Instant::now();
     let inference_params = InferenceParams::new(inference_token, params.timeout);
 
     let result_with_usage = do_upsert_points(

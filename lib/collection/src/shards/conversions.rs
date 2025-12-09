@@ -33,7 +33,6 @@ pub fn internal_sync_points(
     points_sync_operation: PointSyncOperation,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> CollectionResult<SyncPointsInternal> {
     let PointSyncOperation {
         points,
@@ -65,7 +64,6 @@ pub fn internal_upsert_points(
     point_insert_operations: PointInsertOperationsInternal,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> CollectionResult<UpsertPointsInternal> {
     Ok(UpsertPointsInternal {
         shard_id,
@@ -95,7 +93,6 @@ pub fn internal_conditional_upsert_points(
     point_condition_upsert_operations: ConditionalInsertOperationInternal,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> CollectionResult<UpsertPointsInternal> {
     let ConditionalInsertOperationInternal {
         points_op: point_insert_operations,
@@ -130,7 +127,6 @@ pub fn internal_delete_points(
     ids: Vec<PointIdType>,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id,
@@ -157,7 +153,6 @@ pub fn internal_delete_points_by_filter(
     filter: Filter,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id,
@@ -182,7 +177,6 @@ pub fn internal_update_vectors(
     update_vectors: UpdateVectorsOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> CollectionResult<UpdateVectorsInternal> {
     let UpdateVectorsOp {
         points,
@@ -221,7 +215,6 @@ pub fn internal_delete_vectors(
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
         shard_id,
@@ -252,7 +245,6 @@ pub fn internal_delete_vectors_by_filter(
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
         shard_id,
@@ -280,7 +272,6 @@ pub fn internal_set_payload(
     set_payload: SetPayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> SetPayloadPointsInternal {
     let points_selector = if let Some(points) = set_payload.points {
         Some(PointsSelector {
@@ -317,7 +308,6 @@ pub fn internal_delete_payload(
     delete_payload: DeletePayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeletePayloadPointsInternal {
     let points_selector = if let Some(points) = delete_payload.points {
         Some(PointsSelector {
@@ -357,7 +347,6 @@ pub fn internal_clear_payload(
     points: Vec<PointIdType>,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
         shard_id,
@@ -408,7 +397,6 @@ pub fn internal_create_index(
     create_index: CreateIndex,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> CreateFieldIndexCollectionInternal {
     let (field_type, field_index_params) = create_index
         .field_schema
@@ -446,7 +434,6 @@ pub fn internal_delete_index(
     delete_index: JsonPath,
     wait: bool,
     ordering: Option<WriteOrdering>,
-    // timeout: Option<u64>,
 ) -> DeleteFieldIndexCollectionInternal {
     DeleteFieldIndexCollectionInternal {
         shard_id,
