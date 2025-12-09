@@ -183,3 +183,41 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
         })
     }
 }
+
+impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
+    type Error = Status;
+
+    fn try_from(telemetry_data: TelemetryData) -> Result<Self, Self::Error> {
+        let TelemetryData {
+            id: _,
+            app: _,
+            collections,
+            cluster,
+            requests: _,
+            memory: _,
+            hardware: _,
+        } = telemetry_data;
+
+        let collections = collections
+            .collections
+            .into_iter()
+            .flatten()
+            .map(|telemetry_enum| {
+                match telemetry_enum {
+                    CollectionTelemetryEnum::Full(collection_telemetry) => {
+                        let telemetry = grpc::CollectionTelemetry::from(*collection_telemetry);
+                        let collection_name = telemetry.id.clone();
+                        Ok((collection_name, telemetry))
+                    }
+                    // This only happens when details_level is < 2, which we explicitly fail
+                    CollectionTelemetryEnum::Aggregated(_) => Err(Status::invalid_argument("Expected CollectionTelemetryEnum::Full variant, got CollectionTelemetryEnum::Aggregated")),
+                }
+            })
+            .try_collect()?;
+
+        Ok(grpc::PeerTelemetry {
+            collections,
+            cluster: cluster.map(grpc::ClusterTelemetry::from),
+        })
+    }
+}
