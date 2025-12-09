@@ -1080,6 +1080,18 @@ impl ShardReplicaSet {
         is_readable && !self.is_locally_disabled(peer_id)
     }
 
+    /// Check if this shard is active.
+    /// By active, we mean, that at least one replica have `is_active` state.
+    /// It is possible, that some replicas are not active, if they are created in a `Partial` state.
+    /// For example, during tenant promotion.
+    pub fn shard_is_active(&self) -> bool {
+        let replica_state = self.replica_state.read();
+        replica_state
+            .peers()
+            .values()
+            .any(|state| state.is_active())
+    }
+
     /// Check if this peer can be used as a source of truth within a shard_id.
     /// For instance:
     /// - It can be the only receiver of updates
