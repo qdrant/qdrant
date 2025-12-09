@@ -117,6 +117,24 @@ impl SegmentHolder {
         })
     }
 
+    /// Get filesystem aligned UUIDs instead of internal segment IDs for reporting in telemetry
+    pub fn segment_uuids(&self, segment_ids: &[SegmentId]) -> Vec<Option<String>> {
+        segment_ids
+            .iter()
+            .map(|id| {
+                self.appendable_segments
+                    .get(id)
+                    .or_else(|| self.non_appendable_segments.get(id))
+                    .and_then(|segment| {
+                        segment.get().read().segment_id().ok().or_else(|| {
+                            log::warn!("Failed to get UUID for segment with internal id {id}"); // Shouldn't happen
+                            None
+                        })
+                    })
+            })
+            .collect::<Vec<_>>()
+    }
+
     pub fn len(&self) -> usize {
         self.appendable_segments.len() + self.non_appendable_segments.len()
     }

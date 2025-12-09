@@ -287,10 +287,13 @@ impl UpdateWorkers {
                 break;
             }
 
+            let nonoptimal_segment_uuids =
+                    segments.read().segment_uuids(&nonoptimal_segment_ids);
+
             log::debug!(
                 "Optimizer '{}' running on segments: {:?}",
                 optimizer.name(),
-                &segments_to_merge
+                &nonoptimal_segment_uuids
             );
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it

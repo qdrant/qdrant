@@ -266,6 +266,9 @@ pub trait SegmentEntry: SnapshotEntry {
         Ok(max_size)
     }
 
+    /// Get segment ID (UUID for reporting)
+    fn segment_id(&self) -> OperationResult<String>;
+
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
 

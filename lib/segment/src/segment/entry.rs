@@ -7,6 +7,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use io::safe_delete::safe_delete_with_suffix;
+use uuid::Uuid;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -602,12 +603,32 @@ impl SegmentEntry for Segment {
         self.approximate_facet(request, is_stopped, hw_counter)
     }
 
+    fn segment_id(&self) -> OperationResult<String> {
+        let id = self
+            .current_path
+            .file_stem()
+            .and_then(|segment_dir| segment_dir.to_str())
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "failed to extract segment ID from segment path {}",
+                    self.current_path.display(),
+                ))
+            })?;
+
+        debug_assert!(
+            Uuid::try_parse(id).is_ok(),
+            "segment ID {id} is not a valid UUID",
+        );
+
+        Ok(id.to_string())
+    }
+
     fn segment_type(&self) -> SegmentType {
         self.segment_type
     }
 
     fn size_info(&self) -> SegmentInfo {
-        let segment_id = self.segment_id().unwrap_or_else(|_| "").to_string();
+        let segment_id = self.segment_id().ok().map(String::from);
         let num_vectors = self
             .vector_data
             .values()

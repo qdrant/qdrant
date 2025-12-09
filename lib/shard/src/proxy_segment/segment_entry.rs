@@ -594,6 +594,10 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
+    fn segment_id(&self) -> OperationResult<String> {
+        self.wrapped_segment.get().read().segment_id()
+    }
+
     fn segment_type(&self) -> SegmentType {
         SegmentType::Special
     }

@@ -8,7 +8,8 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 
-use super::holders::segment_holder::SegmentId;
+use crate::operations::types::PendingOptimizations;
+
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
@@ -96,8 +97,8 @@ impl TrackerLog {
 pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
-    /// Segment IDs being optimized
-    pub segment_ids: Vec<SegmentId>,
+    /// Segment IDs that were optimized
+    pub segment_ids: Vec<Option<String>>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
@@ -110,7 +111,7 @@ impl Tracker {
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
         name: impl Into<String>,
-        segment_ids: Vec<SegmentId>,
+        segment_ids: Vec<Option<String>>
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
@@ -147,7 +148,7 @@ pub struct TrackerTelemetry {
     #[anonymize(false)]
     pub name: String,
     /// Segment IDs being optimized
-    pub segment_ids: Vec<SegmentId>,
+    pub segment_ids: Vec<Option<String>>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer
