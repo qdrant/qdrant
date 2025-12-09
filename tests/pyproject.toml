@@ -29,6 +29,10 @@ markers = [
 addopts = """
     --dist=loadgroup
 """
+filterwarnings = [
+    "ignore:jsonschema.RefResolver is deprecated:DeprecationWarning:schemathesis",
+    "ignore:jsonschema.exceptions.RefResolutionError is deprecated:DeprecationWarning:schemathesis",
+]
 
 [build-system]
 requires = ["poetry-core"]
