@@ -10,11 +10,11 @@ use tokio::time::sleep;
 use super::CollectionId;
 use super::channel_service::ChannelService;
 use super::remote_shard::RemoteShard;
-use super::replica_set::ReplicaState;
 use super::resharding::ReshardKey;
 use super::shard::{PeerId, ShardId};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 
 pub mod driver;
 pub mod helpers;

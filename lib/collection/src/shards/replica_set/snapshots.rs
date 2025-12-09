@@ -9,10 +9,11 @@ use fs_err::{File, tokio as tokio_fs};
 use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
 use segment::types::SnapshotFormat;
 
-use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
+use super::{REPLICA_STATE_FILE, ShardReplicaSet};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
+use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
@@ -91,16 +92,9 @@ impl ShardReplicaSet {
         }
 
         replica_state.write(|state| {
-            state.this_peer_id = this_peer_id;
-            if is_distributed {
-                state
-                    .peers
-                    .remove(&this_peer_id)
-                    .and_then(|replica_state| state.peers.insert(this_peer_id, replica_state));
-            } else {
-                // In local mode we don't want any remote peers
-                state.peers.clear();
-                state.peers.insert(this_peer_id, ReplicaState::Active);
+            state.switch_peer_id(this_peer_id);
+            if !is_distributed {
+                state.force_local_active()
             }
         })?;
 

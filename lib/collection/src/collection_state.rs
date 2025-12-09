@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::config::CollectionConfigInternal;
-use crate::shards::replica_set::ReplicaState;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;

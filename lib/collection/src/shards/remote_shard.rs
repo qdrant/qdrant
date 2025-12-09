@@ -47,7 +47,6 @@ use super::conversions::{
     internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
-use super::replica_set::ReplicaState;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
@@ -67,6 +66,7 @@ use crate::shards::conversions::{
     internal_delete_points_by_filter, internal_set_payload, internal_sync_points,
     internal_upsert_points, try_scored_point_from_grpc,
 };
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;

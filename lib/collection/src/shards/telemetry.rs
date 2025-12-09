@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::collection_manager::optimizers::TrackerTelemetry;
 use crate::operations::types::{OptimizersStatus, ShardStatus};
-use crate::shards::replica_set::ReplicaState;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]

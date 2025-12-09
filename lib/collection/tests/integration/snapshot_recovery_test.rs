@@ -14,7 +14,7 @@ use collection::operations::types::{NodeType, VectorsConfig};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Distance, WithPayloadInterface, WithVector};

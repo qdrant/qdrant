@@ -15,7 +15,7 @@ use collection::operations::types::{
     UpdateStatus,
 };
 use collection::recommendations::recommend_by;
-use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
+use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err::File;
 use itertools::Itertools;
@@ -888,7 +888,7 @@ async fn test_collection_local_load_initializing_not_stuck() {
         let mut replica_set_state: ReplicaSetState =
             serde_json::from_reader(replica_state_file).unwrap();
 
-        for peer_id in replica_set_state.peers().into_keys() {
+        for peer_id in replica_set_state.peers().clone().into_keys() {
             replica_set_state.set_peer_state(peer_id, ReplicaState::Initializing);
         }
 
