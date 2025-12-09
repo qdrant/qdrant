@@ -379,7 +379,7 @@ impl SegmentHolder {
             AHashMap::with_capacity(ids.len());
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
-            let segment_lock = segment_arc.read_for_update();
+            let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
             for segment_point in segment_points {
                 let Some(point_version) = segment_lock.point_version(segment_point) else {
@@ -542,7 +542,7 @@ impl SegmentHolder {
         for (segment_id, points) in to_delete {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write_for_update();
+            let mut write_segment = segment_arc.write();
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
@@ -560,7 +560,7 @@ impl SegmentHolder {
         for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write_for_update();
+            let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
 
             for point_id in points {
@@ -629,7 +629,7 @@ impl SegmentHolder {
 
         let mut rng = rand::rng();
         let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
-        let mut segment_write = segment_lock.write_for_update();
+        let mut segment_write = segment_lock.write();
         apply(*segment_id, &mut segment_write)
     }
 

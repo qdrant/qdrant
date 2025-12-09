@@ -19,15 +19,11 @@ pub type MeasurableRwLockReadGuard<'rwlock, T> = RwLockReadGuard<'rwlock, T>;
 #[derive(Debug, Default)]
 pub struct MeasurableRwLockMetrics {
     pub read_counter: atomic::AtomicU64,
-    pub write_for_update_counter: atomic::AtomicU64,
-    pub read_for_update_counter: atomic::AtomicU64,
     pub write_counter: atomic::AtomicU64,
     pub upgrade_counter: atomic::AtomicU64,
     pub try_read_for_counter: atomic::AtomicU64,
     pub read_wait_time_us_counter: atomic::AtomicU64,
-    pub read_for_update_wait_time_us_counter: atomic::AtomicU64,
     pub write_wait_time_us_counter: atomic::AtomicU64,
-    pub write_for_update_wait_time_us_counter: atomic::AtomicU64,
     pub upgrade_wait_time_us_counter: atomic::AtomicU64,
     pub try_read_for_time_us_counter: atomic::AtomicU64,
 
@@ -38,15 +34,11 @@ pub struct MeasurableRwLockMetrics {
 
 pub static READ_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
     read_counter: atomic::AtomicU64::new(0),
-    read_for_update_counter: atomic::AtomicU64::new(0),
     write_counter: atomic::AtomicU64::new(0),
-    write_for_update_counter: atomic::AtomicU64::new(0),
     upgrade_counter: atomic::AtomicU64::new(0),
     try_read_for_counter: atomic::AtomicU64::new(0),
     read_wait_time_us_counter: atomic::AtomicU64::new(0),
-    read_for_update_wait_time_us_counter: atomic::AtomicU64::new(0),
     write_wait_time_us_counter: atomic::AtomicU64::new(0),
-    write_for_update_wait_time_us_counter: atomic::AtomicU64::new(0),
     upgrade_wait_time_us_counter: atomic::AtomicU64::new(0),
     try_read_for_time_us_counter: atomic::AtomicU64::new(0),
     total_time_us_counter: atomic::AtomicU64::new(0),
@@ -55,15 +47,11 @@ pub static READ_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableR
 
 pub static WRITE_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
     read_counter: atomic::AtomicU64::new(0),
-    read_for_update_counter: atomic::AtomicU64::new(0),
     write_counter: atomic::AtomicU64::new(0),
-    write_for_update_counter: atomic::AtomicU64::new(0),
     upgrade_counter: atomic::AtomicU64::new(0),
     try_read_for_counter: atomic::AtomicU64::new(0),
     read_wait_time_us_counter: atomic::AtomicU64::new(0),
-    read_for_update_wait_time_us_counter: atomic::AtomicU64::new(0),
     write_wait_time_us_counter: atomic::AtomicU64::new(0),
-    write_for_update_wait_time_us_counter: atomic::AtomicU64::new(0),
     upgrade_wait_time_us_counter: atomic::AtomicU64::new(0),
     try_read_for_time_us_counter: atomic::AtomicU64::new(0),
     total_time_us_counter: atomic::AtomicU64::new(0),
@@ -88,22 +76,15 @@ pub fn log_metrics(prefix: &str, m: &MeasurableRwLockMetrics) {
     let try_read_for_time = m.try_read_for_time_us_counter.load(Relaxed) as f64 / 1e6;
     let try_reads_for = m.try_read_for_counter.load(Relaxed);
 
-    let read_for_update_time = m.read_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-    let reads_for_update = m.read_for_update_counter.load(Relaxed);
-    let write_for_update_time = m.write_for_update_wait_time_us_counter.load(Relaxed) as f64 / 1e6;
-    let writes_for_update = m.write_for_update_counter.load(Relaxed);
-
     let total_time = m.total_time_us_counter.load(Relaxed) as f64 / 1e6;
     let total_count = m.total_counter.load(Relaxed);
 
-    log::info!(
-        "*** {prefix} wait times (s): read: {read_time} ({reads}), write: {write_time} ({writes}), upgrade: {upgrade_time} ({upgrades})"
-    );
-    log::info!("{prefix} try_read_for times (s): {try_read_for_time} ({try_reads_for})");
-    log::info!(
-        "{prefix} wait update times (s): read: {read_for_update_time} ({reads_for_update}), write: {write_for_update_time} ({writes_for_update})"
-    );
-    log::info!("{prefix} total operation time (s): {total_time} ({total_count})");
+    log::info!("*** {prefix}");
+    log::info!("|-> wait times (s): read: {read_time} ({reads}), ");
+    log::info!("    write: {write_time} ({writes}),");
+    log::info!("    upgrade: {upgrade_time} ({upgrades})");
+    log::info!("|-> try_read_for times (s): {try_read_for_time} ({try_reads_for})");
+    log::info!("\\-> total operation time (s): {total_time} ({total_count})");
 }
 
 pub struct MeasureOperation {
@@ -223,23 +204,6 @@ impl<T: ?Sized> MeasurableRwLock<T> {
         inner
     }
 
-    /// Same as read(), but increments read_for_update_counter instead of read_counter.
-    pub fn read_for_update(&self) -> RwLockReadGuard<'_, T> {
-        let metrics = get_current_measurable_rwlock_metrics().expect("Unitialized metrics");
-
-        let start = Instant::now();
-        let inner = self.inner.read();
-        let elapsed = start.elapsed();
-        metrics.read_for_update_wait_time_us_counter.fetch_add(
-            elapsed.as_micros() as _, // No way a lock can wait for 584942 years.
-            atomic::Ordering::Relaxed,
-        );
-        metrics
-            .read_for_update_counter
-            .fetch_add(1, atomic::Ordering::Relaxed);
-        inner
-    }
-
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
         self.inner.try_read()
     }
@@ -288,26 +252,6 @@ impl<T: ?Sized> MeasurableRwLock<T> {
             .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
         metrics
             .write_counter
-            .fetch_add(1, atomic::Ordering::Relaxed);
-        MeasurableRwLockWriteGuard {
-            upgrade_wait_us_counter: &metrics.upgrade_wait_time_us_counter,
-            upgrade_counter: &metrics.upgrade_counter,
-            inner,
-        }
-    }
-
-    /// Same as write(), but increments write_for_update_counter instead of write_counter.
-    pub fn write_for_update(&self) -> MeasurableRwLockWriteGuard<'_, T> {
-        let metrics = get_current_measurable_rwlock_metrics().expect("Unitialized metrics");
-
-        let start = Instant::now();
-        let inner = self.inner.write();
-        let elapsed = start.elapsed();
-        metrics
-            .write_for_update_wait_time_us_counter
-            .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
-        metrics
-            .write_for_update_counter
             .fetch_add(1, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
             upgrade_wait_us_counter: &metrics.upgrade_wait_time_us_counter,
