@@ -1947,26 +1947,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "edge-py"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "bytemuck",
- "derive_more 2.1.0",
- "edge",
- "edge-py-codegen",
- "fnv",
- "indexmap 2.12.1",
- "ordered-float 5.1.0",
- "pyo3",
- "segment",
- "serde_json",
- "shard",
- "sparse",
- "uuid",
-]
-
-[[package]]
 name = "edge-py-codegen"
 version = "0.1.0"
 dependencies = [
@@ -5269,6 +5249,26 @@ dependencies = [
  "uuid",
  "validator",
  "wal",
+]
+
+[[package]]
+name = "qdrant-edge-py"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "bytemuck",
+ "derive_more 2.1.0",
+ "edge",
+ "edge-py-codegen",
+ "fnv",
+ "indexmap 2.12.1",
+ "ordered-float 5.1.0",
+ "pyo3",
+ "segment",
+ "serde_json",
+ "shard",
+ "sparse",
+ "uuid",
 ]
 
 [[package]]
