@@ -39,10 +39,10 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Build
-      run: cargo build --features rocksdb --tests --locked
+      run: cargo build --workspace --features rocksdb --tests --locked
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --features rocksdb --profile ci --locked
+      run: cargo nextest run --workspace --features rocksdb --profile ci --locked
     - name: Upload test report
       uses: actions/upload-artifact@v5
       with:
