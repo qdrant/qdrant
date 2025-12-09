@@ -524,7 +524,12 @@ pub async fn do_set_payload(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let SetPayload {
@@ -566,7 +571,12 @@ pub async fn do_overwrite_payload(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let SetPayload {
@@ -609,7 +619,12 @@ pub async fn do_delete_payload(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
+        .check_strict_mode(
+            &operation,
+            &collection_name,
+            params.timeout_as_secs(),
+            &access,
+        )
         .await?;
 
     let DeletePayload {
@@ -649,7 +664,7 @@ pub async fn do_clear_payload(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&points, &collection_name, None, &access)
+        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &access)
         .await?;
 
     let (point_operation, shard_key) = match points {
@@ -692,7 +707,12 @@ pub async fn do_batch_update_points(
 
     for operation in &operations {
         toc = toc_provider
-            .check_strict_mode(operation, &collection_name, None, &access)
+            .check_strict_mode(
+                operation,
+                &collection_name,
+                params.timeout_as_secs(),
+                &access,
+            )
             .await?
             .into();
     }
