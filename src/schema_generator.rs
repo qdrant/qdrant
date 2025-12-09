@@ -17,9 +17,9 @@ use collection::operations::snapshot_ops::{
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
     CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
-    RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    GroupsResult, OptimizationsResponse, PointGroup, PointRequest, RecommendGroupsRequest,
+    RecommendRequest, RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest,
+    SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::DeleteVectors;
 use schemars::JsonSchema;
@@ -97,6 +97,7 @@ struct AllDefinitions {
     bm: FacetResponse,
     bn: Usage,
     bo: ShardKeysResponse,
+    bp: OptimizationsResponse,
 }
 
 fn save_schema<T: JsonSchema>() {

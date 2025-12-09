@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use fs_err::File;
 use io::storage_version::StorageVersion;
@@ -287,6 +288,7 @@ pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub stopped: &'a AtomicBool,
     pub hnsw_global_config: &'a HnswGlobalConfig,
     pub feature_flags: FeatureFlags,
+    pub progress: ProgressTracker,
 }
 
 pub(crate) fn open_vector_index(
