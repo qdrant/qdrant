@@ -340,9 +340,7 @@ async fn update_batch(
         Some(params.wait),
     );
 
-    // Update operation doesn't have timeout yet
     let inference_params = InferenceParams::new(inference_token.clone(), params.timeout);
-
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(
