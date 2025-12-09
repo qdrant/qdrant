@@ -111,7 +111,7 @@ impl Tracker {
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
         name: impl Into<String>,
-        segment_ids: Vec<Option<String>>
+        segment_ids: Vec<Option<String>>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
