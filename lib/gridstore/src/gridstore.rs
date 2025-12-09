@@ -1547,10 +1547,11 @@ mod tests {
         );
     }
 
-    /// Test that data is only actually flushed when we didn't bump the flusher lease
+    /// Test that data is only actually flushed when the Gridstore instance is still valid
     ///
     /// Specifically:
-    /// - ensure that 'late' flushers don't write any data if already invalidated
+    /// - ensure that 'late' flushers don't write any data if already invalidated by a clear or
+    ///   something else
     #[test]
     fn test_skip_deferred_flush_after_clear() {
         let (dir, mut storage) = empty_storage();
