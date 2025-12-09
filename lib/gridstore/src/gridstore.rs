@@ -11,7 +11,7 @@ use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
@@ -41,12 +41,15 @@ pub struct Gridstore<V> {
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    ///
-    /// Additionally, this is also used as a barrier to wait for a flush to finish when [`wipe`](Self::wipe)'ing.
     bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
     _value_type: std::marker::PhantomData<V>,
+
+    /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
+    /// Default value is true - means segment is alive and flushes can be performed.
+    /// If value is false - means segment was dropped and no further flush is required.
+    is_alive_flush_lock: Arc<Mutex<bool>>,
 }
 
 #[inline]
@@ -145,6 +148,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
+            is_alive_flush_lock: Arc::new(Mutex::new(true)),
         };
 
         // create first page to be covered by the bitmask
@@ -188,6 +192,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
+            is_alive_flush_lock: Arc::new(Mutex::new(true)),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -466,6 +471,11 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
+        // Wait for all background flush operations to finish, abort pending flushes
+        // Below we create a new Gridstore instance with a new boolean, so flushers created on the
+        // new instance work as expected
+        *self.is_alive_flush_lock.lock() = false;
+
         // Wipe
         self.pages.write().clear();
         fs::remove_dir_all(&base_path)
@@ -475,6 +485,7 @@ impl<V: Blob> Gridstore<V> {
         fs::create_dir_all(&base_path)
             .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
         *self = Self::new(base_path, create_options)?;
+
         Ok(())
     }
 
@@ -485,8 +496,8 @@ impl<V: Blob> Gridstore<V> {
     pub fn wipe(self) -> Result<()> {
         let base_path = self.base_path.clone();
 
-        // Barrier to wait for any ongoing flush to finish
-        drop(self.bitmask.write());
+        // Wait for all background flush operations to finish, abort pending flushes
+        *self.is_alive_flush_lock.lock() = false;
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
@@ -579,11 +590,20 @@ impl<V> Gridstore<V> {
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
         Box::new(move || {
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Segment is cleared, skip flush
+                return Ok(());
+            }
+
             let (Some(pages), Some(tracker), Some(bitmask)) =
                 (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
             else {
-                log::debug!("Aborted flushing on a dropped Gridstore instance");
                 return Ok(());
             };
 
@@ -1525,5 +1545,78 @@ mod tests {
             1,
             "expect 1 pending update",
         );
+    }
+
+    /// Test that data is only actually flushed when the Gridstore instance is still valid
+    ///
+    /// Specifically:
+    /// - ensure that 'late' flushers don't write any data if already invalidated by a clear or
+    ///   something else
+    #[test]
+    fn test_skip_deferred_flush_after_clear() {
+        let (dir, mut storage) = empty_storage();
+        let path = dir.path().to_path_buf();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let put_payload =
+            |storage: &mut Gridstore<Payload>, point_offset: u32, payload_value: &str| {
+                let mut payload = Payload::default();
+                payload.0.insert(
+                    "key".to_string(),
+                    serde_json::Value::String(payload_value.to_string()),
+                );
+
+                storage
+                    .put_value(point_offset, &payload, hw_counter_ref)
+                    .unwrap();
+                assert_eq!(storage.pages.read().len(), 1);
+
+                let hw_counter = HardwareCounterCell::new();
+                let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+                assert!(stored_payload.is_some());
+                assert_eq!(stored_payload.unwrap(), payload);
+            };
+
+        // Write enough new pointers so that they don't fit in the default tracker file size
+        // On flush, the tracker file will be resized and reopened, significant for this test
+        let file_size = storage.tracker.read().mmap_file_size();
+        const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
+        let last_point_offset = (file_size / POINTER_SIZE) as u32;
+        for i in 0..=last_point_offset {
+            put_payload(&mut storage, i, "value x");
+        }
+
+        let flusher = storage.flusher();
+
+        // Clone arcs to keep storage alive after clear
+        // Necessary for this test to allow the flusher task to still upgrade its weak arcs when we
+        // call the flusher. This allows us to trigger broken flush behavior in old versions.
+        // The same is possible without cloning these arcs, but it would require specific timing
+        // conditions. Cloning arcs here is much more reliable for this test case.
+        let storage_arcs = (
+            Arc::clone(&storage.pages),
+            Arc::clone(&storage.tracker),
+            Arc::clone(&storage.bitmask),
+        );
+
+        // We clear the storage, pending flusher must not write anything anymore
+        storage.clear().unwrap();
+
+        // Flusher is invalidated and does nothing
+        // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
+        flusher().unwrap();
+
+        drop(storage_arcs);
+
+        // We expect the storage to be empty
+        assert!(storage.get_pointer(0).is_none(), "point must not exist");
+
+        // If we reopen the storage it must still be empty
+        drop(storage);
+        let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
+        assert!(storage.get_pointer(0).is_none(), "point must not exist");
+        assert_eq!(storage.max_point_id(), 0, "must have zero points");
     }
 }
