@@ -136,4 +136,10 @@ impl ClusterTelemetry {
                 .flatten(),
         })
     }
+
+    pub fn this_peer_id(&self) -> Option<PeerId> {
+        self.enabled
+            .then(|| self.status.as_ref().and_then(|j| j.peer_id))
+            .flatten()
+    }
 }
