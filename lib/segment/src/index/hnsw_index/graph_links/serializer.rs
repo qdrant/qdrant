@@ -100,7 +100,6 @@ pub fn serialize_graph_links<W: Write + Seek>(
     let mut offsets = Vec::with_capacity(total_offsets_len as usize);
     offsets.push(0);
 
-    #[expect(clippy::needless_range_loop)]
     // this clippy lint is positively demented, can't wait till they remove it 🙄
     for level in 0..levels_count {
         let count = point_count_by_level.iter().skip(level).sum::<u64>() as usize;
