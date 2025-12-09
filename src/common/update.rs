@@ -853,7 +853,7 @@ pub async fn do_create_index(
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
-    // Default consensus timeout will be used
+    // Use per-request timeout from params if provided
     let wait_timeout = params.timeout;
 
     // Check strict mode before submitting consensus operation
@@ -946,7 +946,7 @@ pub async fn do_delete_index(
         field_name: index_name.clone(),
     });
 
-    // Default consensus timeout will be used
+    // Use per-request timeout from params if provided
     let wait_timeout = params.timeout;
 
     // Nothing to verify here.
