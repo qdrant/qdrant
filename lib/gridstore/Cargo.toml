@@ -10,7 +10,7 @@ publish = false
 workspace = true
 
 [features]
-bench_rocksdb = ["dep:rocksdb"]
+rocksdb = ["dep:rocksdb"]
 
 [dependencies]
 ahash = { workspace = true }
