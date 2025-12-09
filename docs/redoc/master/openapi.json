@@ -11763,7 +11763,6 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "app",
           "collections",
           "id"
         ],
@@ -11772,7 +11771,14 @@
             "type": "string"
           },
           "app": {
-            "$ref": "#/components/schemas/AppBuildTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppBuildTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "collections": {
             "$ref": "#/components/schemas/CollectionsTelemetry"
@@ -12105,9 +12111,7 @@
       "CollectionTelemetry": {
         "type": "object",
         "required": [
-          "config",
-          "id",
-          "init_time_ms"
+          "id"
         ],
         "properties": {
           "id": {
@@ -12116,10 +12120,18 @@
           "init_time_ms": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfigTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionConfigTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shards": {
             "type": "array",
