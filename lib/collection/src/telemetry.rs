@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::tiny_map::TinyMap;
@@ -13,6 +14,7 @@ use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
@@ -114,6 +116,68 @@ impl CollectionTelemetry {
                     acc
                 },
             )
+    }
+
+    pub fn active_replica_min_max(&self) -> Option<(usize, usize)> {
+        let min_max_active_replicas = self
+            .shards
+            .iter()
+            .flatten()
+            // While resharding up, some (shard) replica sets may still be incomplete during
+            // the resharding process. In that case we don't want to consider these replica
+            // sets at all in the active replica calculation. This is fine because searches nor
+            // updates don't depend on them being available yet.
+            //
+            // More specifically:
+            // - in stage 2 (migrate points) of resharding up we don't rely on the replica
+            //   to be available yet. In this stage, these replicas will have the `Resharding`
+            //   state.
+            // - in stage 3 (replicate) of resharding up we activate the the replica and
+            //   replicate to match the configuration replication factor. From this point on we
+            //   do rely on the replica to be available. Now one replica will be `Active`, and
+            //   the other replicas will be in a transfer state. No replica will have `Resharding`
+            //   state.
+            //
+            // So, during stage 2 of resharding up we don't want to adjust the minimum number
+            // of active replicas downwards. During stage 3 we do want it to affect the minimum
+            // available replica number. It will be 1 for some time until replication transfers
+            // complete.
+            //
+            // To ignore a (shard) replica set that is in stage 2 of resharding up, we simply
+            // check if any of it's replicas is in `Resharding` state.
+            .filter(|shard| {
+                !shard
+                    .replicate_states
+                    .values()
+                    .any(|i| matches!(i, ReplicaState::Resharding))
+            })
+            .map(|shard| {
+                shard
+                    .replicate_states
+                    .values()
+                    // While resharding down, all the replicas that we keep will get the
+                    // `ReshardingScaleDown` state for a period of time. We simply consider
+                    // these replicas to be active. The `is_active` function already accounts
+                    // this.
+                    .filter(|state| state.is_active())
+                    .count()
+            })
+            .minmax();
+
+        match min_max_active_replicas {
+            itertools::MinMaxResult::NoElements => None,
+            itertools::MinMaxResult::OneElement(one) => Some((one, one)),
+            itertools::MinMaxResult::MinMax(min, max) => Some((min, max)),
+        }
+    }
+
+    /// Returns the amount of non active replicas.
+    pub fn dead_replicas(&self) -> usize {
+        self.shards
+            .iter()
+            .flatten()
+            .filter(|i| i.replicate_states.values().any(|state| !state.is_active()))
+            .count()
     }
 }
 
