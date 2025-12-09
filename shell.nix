@@ -60,6 +60,10 @@ mkShell {
     python-env # used in tests
   ];
 
+  # Fix for tikv-jemalloc-sys
+  # https://github.com/tikv/jemallocator/issues/108
+  hardeningDisable = [ "fortify" ];
+
   shellHook = ''
     # Caching for C/C++ deps, particularly for librocksdb-sys
     export CC="ccache $CC"
@@ -72,10 +76,6 @@ mkShell {
     # Caching for lindera-unidic
     [ "''${LINDERA_CACHE+x}" ] ||
       export LINDERA_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/lindera"
-
-    # Fix for tikv-jemalloc-sys
-    # https://github.com/NixOS/nixpkgs/issues/370494#issuecomment-2625163369
-    export CFLAGS=-DJEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
 
     # Fix for older macOS
     # https://github.com/rust-rocksdb/rust-rocksdb/issues/776
