@@ -291,6 +291,7 @@ mod tests {
 
     use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::progress_tracker::ProgressTracker;
     use fs_err as fs;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
@@ -398,6 +399,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &stopped,
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
 
@@ -547,6 +549,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &stopped,
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         eprintln!("Done");
@@ -563,6 +566,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &stopped,
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
 
@@ -692,6 +696,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &stopped,
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
 
@@ -812,6 +817,7 @@ mod tests {
                     permit,
                     budget.clone(),
                     &stopped,
+                    ProgressTracker::new_for_test(),
                 )
                 .unwrap();
             numer_of_optimizations += 1;
@@ -981,6 +987,7 @@ mod tests {
                 permit,
                 budget.clone(),
                 &false.into(),
+                ProgressTracker::new_for_test(),
             )
             .unwrap();
         assert!(

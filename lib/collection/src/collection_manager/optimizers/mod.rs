@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use common::progress_tracker::{ProgressTracker, ProgressView, new_progress_tracker};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -24,6 +25,12 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IndexingProgressViews {
+    pub ongoing: Vec<ProgressView>,
+    pub completed: Vec<ProgressView>,
 }
 
 impl TrackerLog {
@@ -67,6 +74,22 @@ impl TrackerLog {
             .map(Tracker::to_telemetry)
             .collect()
     }
+
+    pub fn progress_views(&self) -> IndexingProgressViews {
+        let mut ongoing = Vec::new();
+        let mut completed = Vec::new();
+        for tracker in self.descriptions.iter().rev() {
+            let state = tracker.state.lock();
+            match state.status {
+                TrackerStatus::Optimizing => ongoing.push(tracker.progress_view.clone()),
+
+                TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
+                    completed.push(tracker.progress_view.clone());
+                }
+            }
+        }
+        IndexingProgressViews { ongoing, completed }
+    }
 }
 
 /// Tracks the state of an optimizer
@@ -77,20 +100,27 @@ pub struct Tracker {
     /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
     /// Start time of the optimizer
-    pub start_at: DateTime<Utc>,
-    /// Latest state of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
+    /// A read-only view to progress tracker
+    pub progress_view: ProgressView,
 }
 
 impl Tracker {
-    /// Start a new optimizer tracker
-    pub fn start(name: impl Into<String>, segment_ids: Vec<SegmentId>) -> Self {
-        Self {
+    /// Start a new optimizer tracker.
+    ///
+    /// Returns self (read-write) and a progress tracker (write-only).
+    pub fn start(
+        name: impl Into<String>,
+        segment_ids: Vec<SegmentId>,
+    ) -> (Tracker, ProgressTracker) {
+        let (progress_view, progress_tracker) = new_progress_tracker();
+        let tracker = Self {
             name: name.into(),
             segment_ids,
             state: Default::default(),
-            start_at: Utc::now(),
-        }
+            progress_view,
+        };
+        (tracker, progress_tracker)
     }
 
     /// Get handle to this tracker, allows updating state
@@ -105,7 +135,7 @@ impl Tracker {
             name: self.name.clone(),
             segment_ids: self.segment_ids.clone(),
             status: state.status.clone(),
-            start_at: self.start_at,
+            start_at: self.progress_view.started_at(),
             end_at: state.end_at,
         }
     }

@@ -339,18 +339,21 @@ impl UpdateWorkers {
                         let segments = segments.clone();
                         move |stopped| {
                             // Track optimizer status
-                            let tracker = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                            let (tracker, progress) =
+                                Tracker::start(optimizer.as_ref().name(), nsi.clone());
                             let tracker_handle = tracker.handle();
                             optimizers_log.lock().register(tracker);
 
                             // Optimize and handle result
-                            match optimizer.as_ref().optimize(
+                            let result = optimizer.as_ref().optimize(
                                 segments.clone(),
                                 nsi,
                                 permit,
                                 resource_budget,
                                 stopped,
-                            ) {
+                                progress,
+                            );
+                            match result {
                                 // Perform some actions when optimization if finished
                                 Ok(optimized_points) => {
                                     let is_optimized = optimized_points > 0;

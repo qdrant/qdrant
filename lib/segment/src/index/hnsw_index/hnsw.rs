@@ -1,7 +1,7 @@
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
@@ -13,6 +13,7 @@ use common::cow::BoxCow;
 use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
 use itertools::EitherOrBoth;
@@ -59,6 +60,7 @@ use crate::index::vector_index_search_common::{
 };
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
+use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
@@ -231,6 +233,7 @@ impl HNSWIndex {
             stopped,
             hnsw_global_config,
             feature_flags,
+            progress,
         } = build_args;
 
         fs::create_dir_all(path)?;
@@ -261,6 +264,36 @@ impl HNSWIndex {
             hnsw_config.payload_m,
             total_vector_count,
         );
+
+        #[allow(unused_mut)]
+        let mut build_main_graph = config.m > 0;
+        if !build_main_graph {
+            debug!("skip building main HNSW graph");
+        }
+
+        let payload_m = HnswM::new(
+            config.payload_m.unwrap_or(config.m),
+            config.payload_m0.unwrap_or(config.m0),
+        );
+
+        // Progress subtasks
+        let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
+        let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
+        let additional_links_params: Option<(ProgressTracker, Vec<(ProgressTracker, JsonPath)>)> =
+            (payload_m.m > 0)
+                .then(|| payload_index_ref.indexed_fields())
+                .filter(|fields| !fields.is_empty())
+                .map(|fields| {
+                    let progress_additional_links = progress.subtask("additional_links");
+                    let fields = fields
+                        .into_iter()
+                        .map(|(field, payload_schema)| {
+                            let subtask_name = format!("{}:{field}", payload_schema.name());
+                            (progress_additional_links.subtask(subtask_name), field)
+                        })
+                        .collect::<Vec<_>>();
+                    (progress_additional_links, fields)
+                });
 
         let old_index = old_indices
             .iter()
@@ -350,12 +383,6 @@ impl HNSWIndex {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
-        #[allow(unused_mut)]
-        let mut build_main_graph = config.m > 0;
-        if !build_main_graph {
-            debug!("skip building main HNSW graph");
-        }
-
         // Try to build the main graph on GPU if possible.
         // Store created gpu vectors to reuse them for payload links.
         #[cfg(feature = "gpu")]
@@ -387,11 +414,16 @@ impl HNSWIndex {
         };
 
         if build_main_graph {
+            let progress_main_graph = progress_main_graph.unwrap();
+            let progress_migrate = progress_migrate.unwrap();
+
             let mut ids = Vec::with_capacity(total_vector_count);
             let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
             let mut ids_iter = id_tracker_ref.iter_internal_excluding(deleted_bitslice);
             if let Some(old_index) = old_index {
+                progress_migrate.start();
+
                 let timer = std::time::Instant::now();
 
                 let mut healer = GraphLayersHealer::new(
@@ -419,8 +451,14 @@ impl HNSWIndex {
                 first_few_ids.extend(ids_iter.by_ref().take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
                 ids.extend(ids_iter);
             }
+            drop(progress_migrate);
 
             let timer = std::time::Instant::now();
+
+            progress_main_graph.start();
+            let counter = progress_main_graph
+                .track_progress(Some(first_few_ids.len() as u64 + ids.len() as u64));
+            let counter = counter.deref();
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
@@ -438,6 +476,8 @@ impl HNSWIndex {
 
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
 
+                counter.fetch_add(1, Ordering::Relaxed);
+
                 Ok::<_, OperationError>(())
             };
 
@@ -449,19 +489,15 @@ impl HNSWIndex {
                 pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
             }
 
+            drop(progress_main_graph);
             debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
         } else {
             drop(old_index);
         }
 
-        let payload_m = HnswM::new(
-            config.payload_m.unwrap_or(config.m),
-            config.payload_m0.unwrap_or(config.m0),
-        );
+        if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
+            progress_additional_links.start();
 
-        let indexed_fields = payload_index_ref.indexed_fields();
-
-        if payload_m.m > 0 && !indexed_fields.is_empty() {
             // Calculate true average number of links per vertex in the HNSW graph
             // to better estimate percolation threshold
             let average_links_per_0_level =
@@ -528,7 +564,9 @@ impl HNSWIndex {
             #[cfg(not(feature = "gpu"))]
             let mut gpu_insert_context = None;
 
-            for (index_pos, (field, _)) in indexed_fields.into_iter().enumerate() {
+            for (index_pos, (field_progress, field)) in indexed_fields.into_iter().enumerate() {
+                field_progress.start();
+
                 debug!("building additional index for field {}", &field);
 
                 let is_tenant = payload_index_ref.is_tenant(&field);
@@ -544,8 +582,11 @@ impl HNSWIndex {
                     usize::MAX
                 };
 
+                let counter = field_progress.track_progress(None);
+
                 for payload_block in payload_index_ref.payload_blocks(&field, full_scan_threshold) {
                     check_process_stopped(stopped)?;
+
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }
@@ -597,6 +638,7 @@ impl HNSWIndex {
                         points_to_index,
                         &mut block_filter_list,
                         &mut indexed_vectors_set,
+                        &counter,
                     )?;
                     graph_layers_builder.merge_from_other(additional_graph);
                 }
@@ -713,6 +755,7 @@ impl HNSWIndex {
         points_to_index: Vec<PointOffsetType>,
         block_filter_list: &mut VisitedListHandle,
         indexed_vectors_set: &mut BitVec,
+        counter: &AtomicU64,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
 
@@ -758,6 +801,8 @@ impl HNSWIndex {
             )?;
 
             graph_layers_builder.link_new_point(block_point_id, points_scorer);
+
+            counter.fetch_add(1, Ordering::Relaxed);
 
             Ok::<_, OperationError>(())
         };

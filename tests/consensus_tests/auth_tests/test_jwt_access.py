@@ -138,6 +138,12 @@ ACTION_ACCESS = {
         "GET /collections/{collection_name}/exists",
         "qdrant.Collections/CollectionExists",
     ),
+    "get_optimizations": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/optimizations",
+    ),
     "replicate_shard_operation": EndpointAccess(
         False,
         False,
@@ -975,6 +981,13 @@ def test_collection_exists():
         "collection_exists",
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME},
+    )
+
+
+def test_get_optimizations():
+    check_access(
+        "get_optimizations",
+        path_params={"collection_name": COLL_NAME},
     )
 
 

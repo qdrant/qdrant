@@ -11,6 +11,7 @@ use storage::content_manager::collection_meta_ops::{
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
 use storage::dispatcher::Dispatcher;
+use storage::rbac::AccessRequirements;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -230,6 +231,40 @@ async fn update_collection_cluster(
     process_response(response, timing, None)
 }
 
+#[derive(Deserialize, Copy, Clone, Validate)]
+struct OptimizationsParam {
+    completed: Option<bool>,
+    completed_limit: Option<u64>,
+}
+
+const DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT: u64 = 16;
+
+#[get("/collections/{name}/optimizations")]
+fn get_optimizations(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    ActixAccess(access): ActixAccess,
+    params: Query<OptimizationsParam>,
+) -> impl Future<Output = HttpResponse> {
+    let completed_limit = params.completed.unwrap_or(false).then(|| {
+        params
+            .completed_limit
+            .unwrap_or(DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT) as usize
+    });
+
+    helpers::time(async move {
+        let pass = new_unchecked_verification_pass();
+        let collection_pass =
+            access.check_collection_access(&collection.name, AccessRequirements::new())?;
+        Ok(dispatcher
+            .toc(&access, &pass)
+            .get_collection(&collection_pass)
+            .await?
+            .optimizations(completed_limit)
+            .await?)
+    })
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -244,6 +279,7 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_aliases)
         .service(get_collection_aliases)
         .service(get_cluster_info)
+        .service(get_optimizations)
         .service(update_collection_cluster);
 }
 

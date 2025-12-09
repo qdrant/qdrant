@@ -256,6 +256,41 @@ paths:
             type: integer
       responses: #@ response(type("boolean"))
 
+  /collections/{collection_name}/optimizations:
+    get:
+      tags:
+        - Collections
+      summary: Get optimization progress
+      description:
+        Get progress of ongoing and completed optimizations for a collection
+      operationId: get_optimizations
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: completed
+          in: query
+          description:
+            Also include completed operations in the response.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: completed_limit
+          in: query
+          description:
+            Maximum number of completed optimizations to return.
+            Ignored if completed is false.
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 16 #! Keep in sync with DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT
+      responses: #@ response(reference("OptimizationsResponse"))
+
   /collections/{collection_name}/aliases:
     get:
       tags:

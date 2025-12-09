@@ -6,6 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
@@ -158,6 +159,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
             feature_flags: FeatureFlags::default().tap_mut(|flags| {
                 flags.incremental_hnsw_building = true;
             }),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap()

@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
 use segment::data_types::vectors::{
@@ -134,6 +135,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();

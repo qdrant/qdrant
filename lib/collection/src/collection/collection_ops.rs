@@ -1,4 +1,4 @@
-use std::cmp;
+use std::cmp::{self, Reverse};
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -8,6 +8,7 @@ use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
 use super::Collection;
+use crate::collection_manager::optimizers::IndexingProgressViews;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -412,6 +413,39 @@ impl Collection {
             resharding_operations,
         };
         Ok(info)
+    }
+
+    pub async fn optimizations(
+        &self,
+        completed_limit: Option<usize>,
+    ) -> CollectionResult<OptimizationsResponse> {
+        let mut all_ongoing = Vec::new();
+        let mut all_completed = completed_limit.map(|_| Vec::new());
+
+        let shards_holder = self.shards_holder.read().await;
+        for (_shard_id, replica_set) in shards_holder.get_shards() {
+            let Some(log) = replica_set.optimizers_log().await else {
+                continue;
+            };
+            let IndexingProgressViews { ongoing, completed } = log.lock().progress_views();
+            all_ongoing.extend(ongoing);
+            if let Some(all_completed) = all_completed.as_mut() {
+                all_completed.extend(completed);
+            }
+        }
+        // Sort - see `OptimizationsResponse` doc
+        all_ongoing.sort_by_key(|v| Reverse(v.started_at()));
+        if let Some(all_completed) = all_completed.as_mut() {
+            all_completed.sort_by_key(|v| Reverse(v.started_at()));
+            // Unwrap is ok because `all_completed` and `completed_limit`
+            // either are both `Some` or both `None`.
+            all_completed.truncate(completed_limit.unwrap());
+        }
+        let root = "Segment Optimizing";
+        Ok(OptimizationsResponse {
+            ongoing: all_ongoing.into_iter().map(|v| v.snapshot(root)).collect(),
+            completed: all_completed.map(|c| c.into_iter().map(|v| v.snapshot(root)).collect()),
+        })
     }
 
     pub async fn print_warnings(&self) {

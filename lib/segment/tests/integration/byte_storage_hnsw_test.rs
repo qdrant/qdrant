@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
@@ -205,6 +206,7 @@ fn test_byte_storage_hnsw(
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();

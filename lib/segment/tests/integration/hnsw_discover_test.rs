@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::progress_tracker::ProgressTracker;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -119,6 +120,7 @@ fn hnsw_discover_precision() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();
@@ -246,6 +248,7 @@ fn filtered_hnsw_discover_precision() {
             stopped: &stopped,
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
+            progress: ProgressTracker::new_for_test(),
         },
     )
     .unwrap();
