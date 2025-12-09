@@ -1036,7 +1036,7 @@ mod tests {
             }
         }
 
-        log::debug!("All operations succesfully applied - now checking consistency...");
+        log::debug!("All operations successfully applied - now checking consistency...");
 
         // asset same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
