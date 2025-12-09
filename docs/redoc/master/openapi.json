@@ -678,6 +678,85 @@
         }
       }
     },
+    "/cluster/telemetry": {
+      "get": {
+        "tags": [
+          "Distributed"
+        ],
+        "summary": "Collect cluster telemetry data",
+        "description": "Get telemetry data, from the point of view of the cluster. This includes peers info, collections info, shard transfers, and resharding status",
+        "operationId": "cluster_telemetry",
+        "parameters": [
+          {
+            "name": "details_level",
+            "in": "query",
+            "description": "The level of detail to include in the response",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for this request",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/DistributedTelemetryData"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster/recover": {
       "post": {
         "tags": [
