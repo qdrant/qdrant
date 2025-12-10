@@ -12992,6 +12992,12 @@
               "$ref": "#/components/schemas/TrackerTelemetry"
             },
             "nullable": true
+          },
+          "time_spent": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
