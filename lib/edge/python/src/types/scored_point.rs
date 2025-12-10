@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -44,7 +46,7 @@ impl PyScoredPoint {
 }
 
 impl Repr for PyScoredPoint {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.class::<Self>(&[
             ("id", &self.id()),
             ("version", &self.version()),
