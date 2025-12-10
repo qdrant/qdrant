@@ -708,4 +708,43 @@ mod tests {
             assert!(updates.drain_persisted_and_drop(&persisted));
         }
     }
+
+    #[test]
+    fn test_value_pointer_drain_set_unset_set() {
+        // current:
+        // - latest: true
+        // - history: [block_offset:1, block_offset:2]
+        //
+        // persisted:
+        // - latest: false
+        // - history: [block_offset:1]
+        //
+        // expected current after drain:
+        // - latest: true
+        // - history: [block_offset:2]
+
+        let mut updates = PointerUpdates::default();
+
+        // Put and delete block offset 1
+        updates.set(ValuePointer::new(1, 1, 1));
+        updates.unset(ValuePointer::new(1, 1, 1));
+
+        // Clone this set of updates to flush later
+        let persisted = updates.clone();
+
+        // Put block offset 2
+        updates.set(ValuePointer::new(1, 2, 1));
+
+        // Drain persisted updates and don't drop, still need to persist block offset 2 later
+        let do_drop = updates.drain_persisted_and_drop(&persisted);
+        assert!(!do_drop, "must not drop entry");
+
+        // Pending updates must only have set for block offset 2
+        let expected = {
+            let mut expected = PointerUpdates::default();
+            expected.set(ValuePointer::new(1, 2, 1));
+            expected
+        };
+        assert_eq!(updates, expected, "must have correct remaining updates");
+    }
 }
