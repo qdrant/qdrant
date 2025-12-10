@@ -2,6 +2,7 @@ pub mod expression;
 pub mod expression_interface;
 
 use std::collections::HashMap;
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -14,6 +15,7 @@ use shard::query::formula::{ExpressionInternal, FormulaInternal};
 
 pub use self::expression::*;
 pub use self::expression_interface::*;
+use crate::repr::*;
 use crate::types::PyValue;
 
 #[pyclass(name = "Formula")]
@@ -34,6 +36,16 @@ impl PyFormula {
             .map_err(|err| PyValueError::new_err(format!("failed to parse formula: {err}")))?;
 
         Ok(Self(formula))
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyFormula {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[])
     }
 }
 
