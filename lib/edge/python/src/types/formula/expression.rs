@@ -1,8 +1,11 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use shard::query::formula::ExpressionInternal;
 
+use crate::repr::*;
 use crate::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -175,5 +178,92 @@ impl<'py> IntoPyObject<'py> for PyExpression {
         };
 
         Bound::new(py, helper)
+    }
+}
+
+impl Repr for PyExpression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (repr, fields): (_, &[(_, &dyn Repr)]) = match &self.0 {
+            ExpressionInternal::Constant(val) => ("Constant", &[("val", val)]),
+            ExpressionInternal::Variable(var) => ("Variable", &[("var", var)]),
+
+            ExpressionInternal::Condition(cond) => {
+                ("Condition", &[("cond", PyCondition::wrap_ref(cond))])
+            }
+
+            ExpressionInternal::GeoDistance { origin, to } => (
+                "GeoDistance",
+                &[
+                    ("origin", PyGeoPoint::wrap_ref(origin)),
+                    ("to", PyJsonPath::wrap_ref(to)),
+                ],
+            ),
+
+            ExpressionInternal::Datetime(date_time) => ("Datetime", &[("date_time", date_time)]),
+
+            ExpressionInternal::DatetimeKey(path) => {
+                ("DatetimeKey", &[("path", PyJsonPath::wrap_ref(path))])
+            }
+
+            ExpressionInternal::Mult(exprs) => {
+                ("Mult", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
+            ExpressionInternal::Sum(exprs) => {
+                ("Sum", &[("exprs", &PyExpression::wrap_slice(exprs))])
+            }
+
+            ExpressionInternal::Neg(expr) => ("Neg", &[("expr", PyExpression::wrap_ref(expr))]),
+
+            ExpressionInternal::Div {
+                left,
+                right,
+                by_zero_default,
+            } => (
+                "Div",
+                &[
+                    ("left", PyExpression::wrap_ref(left)),
+                    ("right", PyExpression::wrap_ref(right)),
+                    ("by_zero_default", by_zero_default),
+                ],
+            ),
+
+            ExpressionInternal::Sqrt(expr) => ("Sqrt", &[("expr", PyExpression::wrap_ref(expr))]),
+
+            ExpressionInternal::Pow { base, exponent } => (
+                "Pow",
+                &[
+                    ("base", PyExpression::wrap_ref(base)),
+                    ("exponent", PyExpression::wrap_ref(exponent)),
+                ],
+            ),
+
+            ExpressionInternal::Exp(expr) => ("Exp", &[("expr", PyExpression::wrap_ref(expr))]),
+            ExpressionInternal::Log10(expr) => ("Log10", &[("expr", PyExpression::wrap_ref(expr))]),
+            ExpressionInternal::Ln(expr) => ("Ln", &[("expr", PyExpression::wrap_ref(expr))]),
+            ExpressionInternal::Abs(expr) => ("Abs", &[("expr", PyExpression::wrap_ref(expr))]),
+
+            ExpressionInternal::Decay {
+                kind,
+                x,
+                target,
+                midpoint,
+                scale,
+            } => (
+                "Decay",
+                &[
+                    ("kind", &PyDecayKind::from(*kind)),
+                    ("x", PyExpression::wrap_ref(x)),
+                    (
+                        "target",
+                        &target.as_ref().map(|target| PyExpression::wrap_ref(target)),
+                    ),
+                    ("midpoint", midpoint),
+                    ("scale", scale),
+                ],
+            ),
+        };
+
+        f.complex_enum::<PyExpressionInterface>(repr, fields)
     }
 }

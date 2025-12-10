@@ -60,6 +60,25 @@ pub enum PyDecayKind {
     Exp,
 }
 
+#[pymethods]
+impl PyDecayKind {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyDecayKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            PyDecayKind::Lin => "Lin",
+            PyDecayKind::Gauss => "Gauss",
+            PyDecayKind::Exp => "Exp",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
 impl From<DecayKind> for PyDecayKind {
     fn from(decay_kind: DecayKind) -> Self {
         match decay_kind {
