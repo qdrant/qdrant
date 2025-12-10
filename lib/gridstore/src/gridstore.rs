@@ -614,7 +614,9 @@ impl<V> Gridstore<V> {
             }
 
             let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
-
+            if old_pointers.is_empty() {
+                return Ok(());
+            }
             // Update all free blocks in the bitmask
             bitmask_guard.with_upgraded(|guard| {
                 for (page_id, pointer_group) in
