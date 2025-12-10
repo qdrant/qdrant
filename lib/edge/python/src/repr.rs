@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use pyo3::PyTypeInfo;
@@ -20,9 +21,48 @@ impl<T: Repr + ?Sized> Repr for &T {
     }
 }
 
+impl Repr for bool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", if *self { "True" } else { "False" })
+    }
+}
+
+impl Repr for usize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Repr for f32 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl Repr for str {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl Repr for String {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
+impl<K: AsRef<str>, V: Repr, S> Repr for HashMap<K, V, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.map(self)
+    }
+}
+
+impl<T: Repr> Repr for Option<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Some(value) => value.fmt(f),
+            None => write!(f, "None"),
+        }
     }
 }
 
