@@ -47,8 +47,7 @@ mod qdrant_edge {
     };
     #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyQuantizationSearchParams, PyScoredPoint, PySearchParams,
-        PySearchRequest,
+        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
@@ -65,7 +64,7 @@ mod qdrant_edge {
         PyQueryInterface, PyRecommendQuery, PySimpleFeedbackStrategy,
     };
     #[pymodule_export]
-    use super::types::{PyPoint, PyPointVectors, PyRecord, PySparseVector};
+    use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
     #[pymodule_export]
     use super::update::PyUpdateOperation;
 }
