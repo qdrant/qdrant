@@ -97,6 +97,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/delete:
@@ -167,6 +174,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/vectors/delete:
@@ -202,6 +216,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload:
@@ -237,6 +258,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
     put:
       tags:
@@ -270,6 +298,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/delete:
@@ -305,6 +340,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/points/payload/clear:
@@ -340,6 +382,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
   /collections/{collection_name}/points/batch:
     post:
@@ -373,4 +422,11 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(array(reference("UpdateResult")))

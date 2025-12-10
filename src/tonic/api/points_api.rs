@@ -69,7 +69,8 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token, None);
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -94,7 +95,6 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
@@ -114,9 +114,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-
         let inner_request = request.into_inner();
-
         let hw_metrics = self
             .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
 
@@ -140,7 +138,8 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token, None);
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -282,7 +281,8 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token, None);
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -595,10 +595,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -622,10 +620,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
 
         let request = request.into_inner();
         let QueryBatchPoints {
@@ -659,10 +655,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(
-            inference_token,
-            request.get_ref().timeout.map(Duration::from_secs),
-        );
+        let timeout = request.get_ref().timeout.map(Duration::from_secs);
+        let inference_params = InferenceParams::new(inference_token, timeout);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
