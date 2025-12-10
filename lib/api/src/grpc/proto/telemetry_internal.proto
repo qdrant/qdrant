@@ -5,12 +5,12 @@ import "collections.proto";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-message GetPeerTelemetryRequest {
+message GetTelemetryRequest {
     uint32 details_level = 1; // The level of detail needed
     uint64 timeout = 2; // Timeout in secs for the request
 }
 
-message GetPeerTelemetryResponse {
+message GetTelemetryResponse {
     PeerTelemetry result = 1;
     double time = 2;
 }

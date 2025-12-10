@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use api::grpc::qdrant_internal_server::QdrantInternal;
 use api::grpc::{
-    GetConsensusCommitRequest, GetConsensusCommitResponse, GetPeerTelemetryRequest,
-    GetPeerTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
+    GetConsensusCommitRequest, GetConsensusCommitResponse, GetTelemetryRequest,
+    GetTelemetryResponse, PeerTelemetry, WaitOnConsensusCommitRequest,
     WaitOnConsensusCommitResponse,
 };
 use common::types::{DetailsLevel, TelemetryDetail};
@@ -68,10 +68,10 @@ impl QdrantInternal for QdrantInternalService {
         Ok(Response::new(WaitOnConsensusCommitResponse { ok }))
     }
 
-    async fn get_peer_telemetry(
+    async fn get_telemetry(
         &self,
-        request: Request<GetPeerTelemetryRequest>,
-    ) -> Result<Response<GetPeerTelemetryResponse>, Status> {
+        request: Request<GetTelemetryRequest>,
+    ) -> Result<Response<GetTelemetryResponse>, Status> {
         let request = request.into_inner();
 
         if request.details_level < 2 {
@@ -97,7 +97,7 @@ impl QdrantInternal for QdrantInternalService {
             .prepare_data(&access, detail, Some(timeout))
             .await?;
 
-        let response = GetPeerTelemetryResponse {
+        let response = GetTelemetryResponse {
             result: Some(PeerTelemetry::try_from(telemetry_data)?),
             time: timing.elapsed().as_secs_f64(),
         };
