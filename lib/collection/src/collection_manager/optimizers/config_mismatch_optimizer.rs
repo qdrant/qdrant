@@ -218,20 +218,20 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
             .read()
             .iter()
             // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _)| !excluded_ids.contains(idx))
-            .filter_map(|(idx, segment)| {
+            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
+            .filter_map(|(segment_id, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 self.config_mismatch(&*read_segment).then(|| {
                     let vector_size = read_segment
                         .max_available_vectors_size_in_bytes()
                         .unwrap_or_default();
-                    return Some((idx, vector_size));
+                    Some((segment_id, vector_size))
                 })?
             })
             // Select segment with largest vector size
-            .max_by_key(|(_, vector_size)| *vector_size)
-            .map(|(segment_id, _)| segment_id)
+            .max_by_key(|(_segment_id, vector_size)| *vector_size)
+            .map(|(segment_id, _vector_size)| segment_id)
             .into_iter()
             .collect()
     }
