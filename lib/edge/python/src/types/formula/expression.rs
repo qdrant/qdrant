@@ -14,44 +14,58 @@ impl FromPyObject<'_, '_> for PyExpression {
 
     fn extract(helper: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let expr = match helper.extract()? {
-            PyExpressionInterface::Constant(val) => ExpressionInternal::Constant(val),
-            PyExpressionInterface::Variable(var) => ExpressionInternal::Variable(var),
-            PyExpressionInterface::Condition(cond) => {
-                ExpressionInternal::Condition(Box::new(cond.into()))
+            PyExpressionInterface::Constant { val } => ExpressionInternal::Constant(val),
+            PyExpressionInterface::Variable { var } => ExpressionInternal::Variable(var),
+
+            PyExpressionInterface::Condition { cond } => {
+                ExpressionInternal::Condition(cond.into_box())
             }
+
             PyExpressionInterface::GeoDistance { origin, to } => ExpressionInternal::GeoDistance {
                 origin: origin.into(),
                 to: to.into(),
             },
-            PyExpressionInterface::Datetime(dt) => ExpressionInternal::Datetime(dt),
-            PyExpressionInterface::DatetimeKey(path) => {
+
+            PyExpressionInterface::Datetime { date_time } => {
+                ExpressionInternal::Datetime(date_time)
+            }
+
+            PyExpressionInterface::DatetimeKey { path } => {
                 ExpressionInternal::DatetimeKey(path.into())
             }
-            PyExpressionInterface::Mult(exprs) => {
+
+            PyExpressionInterface::Mult { exprs } => {
                 ExpressionInternal::Mult(PyExpression::peel_vec(exprs))
             }
-            PyExpressionInterface::Sum(exprs) => {
+
+            PyExpressionInterface::Sum { exprs } => {
                 ExpressionInternal::Sum(PyExpression::peel_vec(exprs))
             }
-            PyExpressionInterface::Neg(expr) => ExpressionInternal::Neg(Box::new(expr.into())),
+
+            PyExpressionInterface::Neg { expr } => ExpressionInternal::Neg(expr.into_box()),
+
             PyExpressionInterface::Div {
                 left,
                 right,
                 by_zero_default,
             } => ExpressionInternal::Div {
-                left: Box::new(left.into()),
-                right: Box::new(right.into()),
+                left: left.into_box(),
+                right: right.into_box(),
                 by_zero_default,
             },
-            PyExpressionInterface::Sqrt(expr) => ExpressionInternal::Sqrt(Box::new(expr.into())),
+
+            PyExpressionInterface::Sqrt { expr } => ExpressionInternal::Sqrt(expr.into_box()),
+
             PyExpressionInterface::Pow { base, exponent } => ExpressionInternal::Pow {
-                base: Box::new(base.into()),
-                exponent: Box::new(exponent.into()),
+                base: base.into_box(),
+                exponent: exponent.into_box(),
             },
-            PyExpressionInterface::Exp(expr) => ExpressionInternal::Exp(Box::new(expr.into())),
-            PyExpressionInterface::Log10(expr) => ExpressionInternal::Log10(Box::new(expr.into())),
-            PyExpressionInterface::Ln(expr) => ExpressionInternal::Ln(Box::new(expr.into())),
-            PyExpressionInterface::Abs(expr) => ExpressionInternal::Abs(Box::new(expr.into())),
+
+            PyExpressionInterface::Exp { expr } => ExpressionInternal::Exp(expr.into_box()),
+            PyExpressionInterface::Log10 { expr } => ExpressionInternal::Log10(expr.into_box()),
+            PyExpressionInterface::Ln { expr } => ExpressionInternal::Ln(expr.into_box()),
+            PyExpressionInterface::Abs { expr } => ExpressionInternal::Abs(expr.into_box()),
+
             PyExpressionInterface::Decay {
                 kind,
                 x,
@@ -60,8 +74,8 @@ impl FromPyObject<'_, '_> for PyExpression {
                 scale,
             } => ExpressionInternal::Decay {
                 kind: kind.into(),
-                x: Box::new(x.into()),
-                target: target.map(|target| Box::new(target.into())),
+                x: x.into_box(),
+                target: target.map(Boxed::into_box),
                 midpoint,
                 scale,
             },
@@ -78,44 +92,73 @@ impl<'py> IntoPyObject<'py> for PyExpression {
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let helper = match self.0 {
-            ExpressionInternal::Constant(var) => PyExpressionInterface::Constant(var),
-            ExpressionInternal::Variable(var) => PyExpressionInterface::Variable(var),
-            ExpressionInternal::Condition(cond) => {
-                PyExpressionInterface::Condition(PyCondition(*cond))
-            }
+            ExpressionInternal::Constant(val) => PyExpressionInterface::Constant { val },
+            ExpressionInternal::Variable(var) => PyExpressionInterface::Variable { var },
+
+            ExpressionInternal::Condition(cond) => PyExpressionInterface::Condition {
+                cond: Boxed::from_box(cond),
+            },
+
             ExpressionInternal::GeoDistance { origin, to } => PyExpressionInterface::GeoDistance {
                 origin: PyGeoPoint(origin),
                 to: PyJsonPath(to),
             },
-            ExpressionInternal::Datetime(dt) => PyExpressionInterface::Datetime(dt),
-            ExpressionInternal::DatetimeKey(path) => {
-                PyExpressionInterface::DatetimeKey(PyJsonPath(path))
+
+            ExpressionInternal::Datetime(date_time) => {
+                PyExpressionInterface::Datetime { date_time }
             }
-            ExpressionInternal::Mult(exprs) => {
-                PyExpressionInterface::Mult(PyExpression::wrap_vec(exprs))
-            }
-            ExpressionInternal::Sum(exprs) => {
-                PyExpressionInterface::Sum(PyExpression::wrap_vec(exprs))
-            }
-            ExpressionInternal::Neg(expr) => PyExpressionInterface::Neg(PyExpression(*expr)),
+
+            ExpressionInternal::DatetimeKey(path) => PyExpressionInterface::DatetimeKey {
+                path: PyJsonPath(path),
+            },
+
+            ExpressionInternal::Mult(exprs) => PyExpressionInterface::Mult {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
+            ExpressionInternal::Sum(exprs) => PyExpressionInterface::Sum {
+                exprs: PyExpression::wrap_vec(exprs),
+            },
+
+            ExpressionInternal::Neg(expr) => PyExpressionInterface::Neg {
+                expr: Boxed::from_box(expr),
+            },
+
             ExpressionInternal::Div {
                 left,
                 right,
                 by_zero_default,
             } => PyExpressionInterface::Div {
-                left: PyExpression(*left),
-                right: PyExpression(*right),
+                left: Boxed::from_box(left),
+                right: Boxed::from_box(right),
                 by_zero_default,
             },
-            ExpressionInternal::Sqrt(expr) => PyExpressionInterface::Sqrt(PyExpression(*expr)),
-            ExpressionInternal::Pow { base, exponent } => PyExpressionInterface::Pow {
-                base: PyExpression(*base),
-                exponent: PyExpression(*exponent),
+
+            ExpressionInternal::Sqrt(expr) => PyExpressionInterface::Sqrt {
+                expr: Boxed::from_box(expr),
             },
-            ExpressionInternal::Exp(expr) => PyExpressionInterface::Exp(PyExpression(*expr)),
-            ExpressionInternal::Log10(expr) => PyExpressionInterface::Log10(PyExpression(*expr)),
-            ExpressionInternal::Ln(expr) => PyExpressionInterface::Ln(PyExpression(*expr)),
-            ExpressionInternal::Abs(expr) => PyExpressionInterface::Abs(PyExpression(*expr)),
+
+            ExpressionInternal::Pow { base, exponent } => PyExpressionInterface::Pow {
+                base: Boxed::from_box(base),
+                exponent: Boxed::from_box(exponent),
+            },
+
+            ExpressionInternal::Exp(expr) => PyExpressionInterface::Exp {
+                expr: Boxed::from_box(expr),
+            },
+
+            ExpressionInternal::Log10(expr) => PyExpressionInterface::Log10 {
+                expr: Boxed::from_box(expr),
+            },
+
+            ExpressionInternal::Ln(expr) => PyExpressionInterface::Ln {
+                expr: Boxed::from_box(expr),
+            },
+
+            ExpressionInternal::Abs(expr) => PyExpressionInterface::Abs {
+                expr: Boxed::from_box(expr),
+            },
+
             ExpressionInternal::Decay {
                 kind,
                 x,
@@ -124,8 +167,8 @@ impl<'py> IntoPyObject<'py> for PyExpression {
                 scale,
             } => PyExpressionInterface::Decay {
                 kind: kind.into(),
-                x: PyExpression(*x),
-                target: target.map(|target| PyExpression(*target)),
+                x: Boxed::from_box(x),
+                target: target.map(Boxed::from_box),
                 midpoint,
                 scale,
             },
