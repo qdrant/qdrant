@@ -431,7 +431,7 @@ async fn delete_field_index(
 /// Accepts any staging operation and executes it on the collection.
 /// Only available when the `staging` feature is enabled.
 #[cfg(feature = "staging")]
-#[post("/collections/{name}/staging")]
+#[post("/collections/{name}/debug")]
 async fn staging_operation(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
