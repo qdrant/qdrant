@@ -28,6 +28,7 @@ impl CollectionsTelemetry {
 
         // Optimizers
         let mut total_optimizations_running = Vec::with_capacity(num_collections);
+        let mut total_optimizers_time_spent: Vec<Metric> = Vec::with_capacity(num_collections);
 
         // Min/Max/Expected/Active replicas over all shards.
         let mut total_min_active_replicas = usize::MAX;
@@ -86,6 +87,11 @@ impl CollectionsTelemetry {
             points_excluded_from_index_only_metric(collection, &mut indexed_only_excluded);
 
             total_dead_replicas += collection.dead_replicas();
+
+            total_optimizers_time_spent.push(counter(
+                collection.optimization_time_spent() as f64,
+                &[("id", &collection.id)],
+            ));
 
             shard_transfer_metrics(
                 collection,
@@ -163,6 +169,14 @@ impl CollectionsTelemetry {
             "number of currently running optimization tasks per collection",
             MetricType::GAUGE,
             total_optimizations_running,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_optimizations_time_seconds",
+            "total (cpu) time spent on optimizations in seconds",
+            MetricType::COUNTER,
+            total_optimizers_time_spent,
             prefix,
         ));
 

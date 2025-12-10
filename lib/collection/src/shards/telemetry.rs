@@ -80,6 +80,8 @@ pub struct OptimizerTelemetry {
     pub optimizations: OperationDurationStatistics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log: Option<Vec<TrackerTelemetry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_spent: Option<usize>,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema, Anonymize)]
