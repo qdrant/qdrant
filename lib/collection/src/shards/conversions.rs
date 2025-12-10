@@ -52,6 +52,7 @@ pub fn internal_sync_points(
             from_id: from_id.map(|x| x.into()),
             to_id: to_id.map(|x| x.into()),
             ordering: ordering.map(write_ordering_to_proto),
+            timeout: None,
         }),
     })
 }
@@ -80,6 +81,7 @@ pub fn internal_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: None,
+            timeout: None,
         }),
     })
 }
@@ -113,6 +115,7 @@ pub fn internal_conditional_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: Some(api::grpc::Filter::from(condition)),
+            timeout: None,
         }),
     })
 }
@@ -138,6 +141,7 @@ pub fn internal_delete_points(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -161,6 +165,7 @@ pub fn internal_delete_points_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -197,6 +202,7 @@ pub fn internal_update_vectors(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: update_filter.map(api::grpc::Filter::from),
+            timeout: None,
         }),
     })
 }
@@ -226,6 +232,7 @@ pub fn internal_delete_vectors(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -253,6 +260,7 @@ pub fn internal_delete_vectors_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -288,6 +296,7 @@ pub fn internal_set_payload(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             key: set_payload.key.map(|key| key.to_string()),
+            timeout: None,
         }),
     }
 }
@@ -326,6 +335,7 @@ pub fn internal_delete_payload(
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -351,6 +361,7 @@ pub fn internal_clear_payload(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -374,6 +385,7 @@ pub fn internal_clear_payload_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            timeout: None,
         }),
     }
 }
@@ -410,6 +422,7 @@ pub fn internal_create_index(
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
+            timeout: None,
         }),
     }
 }
@@ -430,6 +443,7 @@ pub fn internal_delete_index(
             wait: Some(wait),
             field_name: delete_index.to_string(),
             ordering: ordering.map(write_ordering_to_proto),
+            timeout: None,
         }),
     }
 }

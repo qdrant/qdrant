@@ -3837,6 +3837,16 @@
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4051,6 +4061,16 @@
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4157,6 +4177,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4265,6 +4295,16 @@
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4369,6 +4409,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
@@ -4477,6 +4527,16 @@
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4584,6 +4644,16 @@
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4690,6 +4760,16 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/WriteOrdering"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for the operation",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
