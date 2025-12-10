@@ -27,6 +27,12 @@ impl Repr for bool {
     }
 }
 
+impl Repr for u64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl Repr for usize {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{self}")
@@ -63,6 +69,12 @@ impl<T: Repr> Repr for Option<T> {
             Some(value) => value.fmt(f),
             None => write!(f, "None"),
         }
+    }
+}
+
+impl Repr for uuid::Uuid {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{self}\"")
     }
 }
 
