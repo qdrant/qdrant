@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 pub use edge_py_codegen::pyclass_repr;
@@ -91,6 +91,12 @@ impl<T: Repr> Repr for Vec<T> {
 impl<K: AsRef<str>, V: Repr, S> Repr for HashMap<K, V, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.map(self)
+    }
+}
+
+impl<T: Repr, S> Repr for HashSet<T, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.set(self)
     }
 }
 

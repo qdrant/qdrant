@@ -1,3 +1,4 @@
+use std::fmt;
 use std::hash::Hash;
 
 use bytemuck::TransparentWrapper;
@@ -6,6 +7,8 @@ use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use segment::types::*;
+
+use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -66,8 +69,22 @@ impl<'py> IntoPyObject<'py> for PyMatch {
     }
 }
 
+impl Repr for PyMatch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Match::Value(value) => PyMatchValue::wrap_ref(value).fmt(f),
+            Match::Text(text) => PyMatchText::wrap_ref(text).fmt(f),
+            Match::TextAny(text_any) => PyMatchTextAny::wrap_ref(text_any).fmt(f),
+            Match::Phrase(phrase) => PyMatchPhrase::wrap_ref(phrase).fmt(f),
+            Match::Any(any) => PyMatchAny::wrap_ref(any).fmt(f),
+            Match::Except(except) => PyMatchExcept::wrap_ref(except).fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "MatchValue")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchValue(pub MatchValue);
 
 #[pymethods]
@@ -82,6 +99,12 @@ impl PyMatchValue {
     #[getter]
     pub fn value(&self) -> &PyValueVariants {
         PyValueVariants::wrap_ref(&self.0.value)
+    }
+}
+
+impl Repr for PyMatchValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("value", &self.value())])
     }
 }
 
@@ -142,8 +165,19 @@ impl<'py> IntoPyObject<'py> for &PyValueVariants {
     }
 }
 
+impl Repr for PyValueVariants {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            ValueVariants::String(str) => str.fmt(f),
+            ValueVariants::Integer(int) => int.fmt(f),
+            ValueVariants::Bool(bool) => bool.fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "MatchText")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchText(pub MatchText);
 
 #[pymethods]
@@ -157,10 +191,21 @@ impl PyMatchText {
     pub fn text(&self) -> &str {
         &self.0.text
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMatchText {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("text", &self.text())])
+    }
 }
 
 #[pyclass(name = "MatchTextAny")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchTextAny(pub MatchTextAny);
 
 #[pymethods]
@@ -174,10 +219,21 @@ impl PyMatchTextAny {
     pub fn text_any(&self) -> &str {
         &self.0.text_any
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMatchTextAny {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("text_any", &self.text_any())])
+    }
 }
 
 #[pyclass(name = "MatchPhrase")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchPhrase(pub MatchPhrase);
 
 #[pymethods]
@@ -191,10 +247,21 @@ impl PyMatchPhrase {
     pub fn phrase(&self) -> &str {
         &self.0.phrase
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMatchPhrase {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("phrase", &self.phrase())])
+    }
 }
 
 #[pyclass(name = "MatchAny")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchAny(pub MatchAny);
 
 #[pymethods]
@@ -210,10 +277,21 @@ impl PyMatchAny {
     pub fn value(&self) -> &PyAnyVariants {
         PyAnyVariants::wrap_ref(&self.0.any)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMatchAny {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("value", &self.value())])
+    }
 }
 
 #[pyclass(name = "MatchExcept")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMatchExcept(pub MatchExcept);
 
 #[pymethods]
@@ -228,6 +306,16 @@ impl PyMatchExcept {
     #[getter]
     pub fn value(&self) -> &PyAnyVariants {
         PyAnyVariants::wrap_ref(&self.0.except)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMatchExcept {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("value", &self.value())])
     }
 }
 
@@ -280,6 +368,15 @@ impl<'py> IntoPyObject<'py> for &PyAnyVariants {
         match &self.0 {
             AnyVariants::Strings(str) => index_set_into_py::<String>(str, py),
             AnyVariants::Integers(int) => index_set_into_py::<i64>(int, py),
+        }
+    }
+}
+
+impl Repr for PyAnyVariants {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            AnyVariants::Strings(str) => f.list(str),
+            AnyVariants::Integers(int) => f.list(int),
         }
     }
 }

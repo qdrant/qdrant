@@ -1,9 +1,13 @@
+use std::fmt;
+
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::*;
+
+use crate::repr::*;
 
 #[pyclass(name = "GeoPoint")]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
@@ -28,6 +32,16 @@ impl PyGeoPoint {
     #[getter]
     pub fn lat(&self) -> f64 {
         self.0.lat.into_inner()
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyGeoPoint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("lon", &self.lon()), ("lat", &self.lat())])
     }
 }
 
@@ -64,6 +78,19 @@ impl PyGeoBoundingBox {
     pub fn bottom_right(&self) -> PyGeoPoint {
         PyGeoPoint(self.0.bottom_right)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyGeoBoundingBox {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("top_left", &self.top_left()),
+            ("bottom_right", &self.bottom_right()),
+        ])
+    }
 }
 
 #[pyclass(name = "GeoRadius")]
@@ -88,6 +115,16 @@ impl PyGeoRadius {
     #[getter]
     pub fn radius(&self) -> f64 {
         self.0.radius.into_inner()
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyGeoRadius {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("center", &self.center()), ("radius", &self.radius())])
     }
 }
 
@@ -126,6 +163,19 @@ impl PyGeoPolygon {
             .as_ref()
             .map(|interiors| PyGeoLineString::wrap_slice(interiors))
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyGeoPolygon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("exterior", &self.exterior()),
+            ("interiors", &self.interiors()),
+        ])
+    }
 }
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -161,5 +211,11 @@ impl<'py> IntoPyObject<'py> for &PyGeoLineString {
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         PyGeoPoint::wrap_slice(&self.0.points).into_pyobject(py)
+    }
+}
+
+impl Repr for PyGeoLineString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.list(PyGeoPoint::wrap_slice(&self.0.points))
     }
 }

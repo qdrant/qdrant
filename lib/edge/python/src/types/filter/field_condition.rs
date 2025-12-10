@@ -1,13 +1,17 @@
-use bytemuck::TransparentWrapper as _;
+use std::fmt;
+
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::*;
 
+use crate::repr::*;
 use crate::types::*;
 
 #[pyclass(name = "FieldCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyFieldCondition(pub FieldCondition);
 
 #[pymethods]
@@ -92,5 +96,21 @@ impl PyFieldCondition {
     #[getter]
     pub fn is_null(&self) -> Option<bool> {
         self.0.is_null
+    }
+}
+
+impl Repr for PyFieldCondition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("key", &self.key()),
+            ("match", &self.r#match()),
+            ("range", &self.range()),
+            ("geo_bounding_box", &self.geo_bounding_box()),
+            ("geo_radius", &self.geo_radius()),
+            ("geo_polygon", &self.geo_polygon()),
+            ("values_count", &self.values_count()),
+            ("is_empty", &self.is_empty()),
+            ("is_null", &self.is_null()),
+        ])
     }
 }

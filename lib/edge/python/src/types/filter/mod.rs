@@ -7,6 +7,8 @@ pub mod nested;
 pub mod range;
 pub mod value_count;
 
+use std::fmt;
+
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -20,6 +22,7 @@ pub use self::min_should::*;
 pub use self::nested::*;
 pub use self::range::*;
 pub use self::value_count::*;
+use crate::repr::*;
 
 #[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -71,5 +74,30 @@ impl PyFilter {
     #[getter]
     pub fn min_should(&self) -> Option<PyMinShould> {
         self.0.min_should.clone().map(PyMinShould)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyFilter {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("must", &self.must()),
+            ("should", &self.should()),
+            ("must_not", &self.must_not()),
+            ("min_should", &self.min_should()),
+        ])
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyFilter {
+    type Target = PyFilter;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }

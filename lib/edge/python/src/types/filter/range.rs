@@ -1,13 +1,26 @@
+use std::fmt;
+
 use derive_more::Into;
 use ordered_float::OrderedFloat;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::*;
 
+use crate::repr::*;
+
 #[derive(Copy, Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyRange {
     Float(PyRangeFloat),
     DateTime(PyRangeDateTime),
+}
+
+impl Repr for PyRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PyRange::Float(float) => float.fmt(f),
+            PyRange::DateTime(date_time) => date_time.fmt(f),
+        }
+    }
 }
 
 impl From<RangeInterface> for PyRange {
@@ -71,6 +84,17 @@ impl PyRangeFloat {
     }
 }
 
+impl Repr for PyRangeFloat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("gte", &self.gte()),
+            ("gt", &self.gt()),
+            ("lte", &self.lte()),
+            ("lt", &self.lt()),
+        ])
+    }
+}
+
 #[pyclass(name = "RangeDateTime")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
@@ -111,6 +135,17 @@ impl PyRangeDateTime {
     #[getter]
     pub fn lt(&self) -> Option<String> {
         self.0.lt.map(|dt| dt.to_string())
+    }
+}
+
+impl Repr for PyRangeDateTime {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("gte", &self.gte()),
+            ("gt", &self.gt()),
+            ("lte", &self.lte()),
+            ("lt", &self.lt()),
+        ])
     }
 }
 

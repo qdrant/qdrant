@@ -1,13 +1,17 @@
-use bytemuck::TransparentWrapper as _;
+use std::fmt;
+
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, Nested, NestedCondition};
 
+use crate::repr::*;
 use crate::types::*;
 
 #[pyclass(name = "NestedCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyNestedCondition(pub NestedCondition);
 
 #[pymethods]
@@ -28,7 +32,17 @@ impl PyNestedCondition {
     }
 
     #[getter]
-    pub fn filter(&self) -> PyFilter {
-        PyFilter(self.0.nested.filter.clone())
+    pub fn filter(&self) -> &PyFilter {
+        PyFilter::wrap_ref(&self.0.nested.filter)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyNestedCondition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[("key", &self.key()), ("filter", &self.filter())])
     }
 }
