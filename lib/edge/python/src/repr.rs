@@ -27,6 +27,12 @@ impl Repr for bool {
     }
 }
 
+impl Repr for u32 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl Repr for u64 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{self}")
@@ -54,6 +60,18 @@ impl Repr for str {
 impl Repr for String {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.as_str().fmt(f)
+    }
+}
+
+impl<T: Repr> Repr for [T] {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.list(self)
+    }
+}
+
+impl<T: Repr> Repr for Vec<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.list(self)
     }
 }
 
