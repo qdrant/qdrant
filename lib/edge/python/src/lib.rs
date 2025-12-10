@@ -1,5 +1,6 @@
 pub mod config;
 pub mod query;
+pub mod repr;
 pub mod search;
 pub mod types;
 pub mod update;
