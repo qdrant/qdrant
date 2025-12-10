@@ -1,20 +1,18 @@
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::VectorIndex;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
+use segment::segment::Segment;
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use segment::vector_storage::VectorStorage;
 
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
-};
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 
@@ -67,16 +65,10 @@ impl VacuumOptimizer {
     /// Calculate littered ratio for segment on point level
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
-    fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<f64> {
-        let segment_entry = match segment {
-            LockedSegment::Original(segment) => segment,
-            LockedSegment::Proxy(_) => return None,
-        };
-        let read_segment = segment_entry.read();
-
+    fn littered_ratio_segment(&self, segment: &Segment) -> Option<f64> {
         let littered_ratio =
-            read_segment.deleted_point_count() as f64 / read_segment.total_point_count() as f64;
-        let is_big = read_segment.total_point_count() >= self.min_vectors_number;
+            segment.deleted_point_count() as f64 / segment.total_point_count() as f64;
+        let is_big = segment.total_point_count() >= self.min_vectors_number;
         let is_littered = littered_ratio > self.deleted_threshold;
 
         (is_big && is_littered).then_some(littered_ratio)
@@ -91,32 +83,16 @@ impl VacuumOptimizer {
     /// of deleted vectors versus the number of indexed vector.s
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
-    fn littered_vectors_index_ratio(&self, segment: &LockedSegment) -> Option<f64> {
-        {
-            let segment_entry = segment.get();
-            let read_segment = segment_entry.read();
-
-            // Never optimize special segments
-            if read_segment.segment_type() == SegmentType::Special {
-                return None;
-            }
-
-            // Segment must have any index
-            let segment_config = read_segment.config();
-            if !segment_config.is_any_vector_indexed() {
-                return None;
-            }
+    fn littered_vectors_index_ratio(&self, segment: &Segment) -> Option<f64> {
+        // Segment must have any index
+        let segment_config = segment.config();
+        if !segment_config.is_any_vector_indexed() {
+            return None;
         }
-
-        // We can only work with original segments
-        let real_segment = match segment {
-            LockedSegment::Original(segment) => segment.read(),
-            LockedSegment::Proxy(_) => return None,
-        };
 
         // In this segment, check the index of each named vector for a high deletion ratio.
         // Return the worst ratio.
-        real_segment
+        segment
             .vector_data
             .values()
             .filter(|vector_data| vector_data.vector_index.borrow().is_index())
@@ -175,29 +151,23 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        let segments_read_guard = segments.read();
-        segments_read_guard
+    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+        let to_optimize = planner
+            .remaining()
             .iter()
-            // Excluded externally, might already be scheduled for optimization
-            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
-            .flat_map(|(segment_id, segment)| {
-                // Calculate littered ratio for segment and named vectors
-                let littered_ratio_segment = self.littered_ratio_segment(segment);
-                let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
-                [littered_ratio_segment, littered_ratio_vectors]
-                    .into_iter()
-                    .flatten()
-                    .map(move |ratio| (segment_id, ratio))
+            .filter_map(|(&segment_id, segment)| {
+                let segment = segment.read();
+                let littered_ratio_segment = self.littered_ratio_segment(&segment);
+                let littered_ratio_vectors = self.littered_vectors_index_ratio(&segment);
+                let worst_ratio = std::iter::chain(littered_ratio_segment, littered_ratio_vectors)
+                    .max_by_key(|ratio| OrderedFloat(*ratio));
+                worst_ratio.map(|ratio| (segment_id, ratio))
             })
-            .max_by_key(|(_segment_id, ratio)| OrderedFloat(*ratio))
-            .map(|(segment_id, _ratio)| segment_id)
-            .into_iter()
-            .collect()
+            .sorted_by_key(|(_, ratio)| OrderedFloat(-ratio))
+            .collect_vec();
+        for (segment_id, _) in to_optimize {
+            planner.plan(vec![segment_id]);
+        }
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
@@ -221,6 +191,7 @@ mod tests {
     use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;
+    use shard::locked_segment::LockedSegment;
     use tempfile::Builder;
 
     use super::*;
@@ -330,8 +301,8 @@ mod tests {
             Default::default(),
         );
 
-        let suggested_to_optimize =
-            vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
 
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -520,8 +491,7 @@ mod tests {
             .0;
 
         // Vacuum optimizer should not optimize yet, no points/vectors have been deleted
-        let suggested_to_optimize =
-            vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Delete some points and vectors
@@ -599,8 +569,8 @@ mod tests {
 
         // Run vacuum index optimizer, make sure it optimizes properly
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-        let suggested_to_optimize =
-            vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = vacuum_optimizer
             .optimize(

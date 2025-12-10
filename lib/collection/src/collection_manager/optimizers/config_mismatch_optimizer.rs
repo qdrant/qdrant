@@ -1,18 +1,16 @@
-use std::collections::HashSet;
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{
-    HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentType, VectorName,
-};
+use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, VectorName};
 
-use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
@@ -75,10 +73,6 @@ impl ConfigMismatchOptimizer {
 
     fn config_mismatch(&self, read_segment: &dyn SegmentEntry) -> bool {
         let segment_config = read_segment.config();
-
-        if read_segment.segment_type() == SegmentType::Special {
-            return false; // Never optimize already optimized segment
-        }
 
         if self.collection_params.on_disk_payload
             != segment_config.payload_storage_type.is_on_disk()
@@ -209,31 +203,25 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        segments
-            .read()
+    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+        let to_optimize = planner
+            .remaining()
             .iter()
-            // Excluded externally, might already be scheduled for optimization
-            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
-            .filter_map(|(segment_id, segment)| {
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
-                self.config_mismatch(&*read_segment).then(|| {
-                    let vector_size = read_segment
+            .filter_map(|(&segment_id, segment)| {
+                let segment = segment.read();
+                self.config_mismatch(&*segment).then(|| {
+                    let vector_size = segment
                         .max_available_vectors_size_in_bytes()
                         .unwrap_or_default();
                     Some((segment_id, vector_size))
                 })?
             })
-            // Select segment with largest vector size
-            .max_by_key(|(_segment_id, vector_size)| *vector_size)
-            .map(|(segment_id, _vector_size)| segment_id)
-            .into_iter()
-            .collect()
+            // Segments with largest vector size come first
+            .sorted_by_key(|(_segment_id, vector_size)| Reverse(*vector_size))
+            .collect_vec();
+        for (segment_id, _) in to_optimize {
+            planner.plan(vec![segment_id]);
+        }
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
@@ -365,7 +353,7 @@ mod tests {
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed HNSW config with other m/ef_construct value, update it in the optimizer
@@ -377,7 +365,8 @@ mod tests {
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
             .optimize(
@@ -527,7 +516,7 @@ mod tests {
 
         // Mismatch optimizer should not optimize yet, HNSW config is not changed yet
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed HNSW config for vector2, update it in the optimizer
@@ -547,7 +536,8 @@ mod tests {
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
             .optimize(
@@ -703,7 +693,7 @@ mod tests {
 
         // Mismatch optimizer should not optimize yet, quantization config is not changed yet
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.len(), 0);
 
         // Create changed quantization config for vector2, update it in the optimizer
@@ -726,7 +716,8 @@ mod tests {
         // Run mismatch optimizer again, make sure it optimizes now
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
-            config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
             .optimize(

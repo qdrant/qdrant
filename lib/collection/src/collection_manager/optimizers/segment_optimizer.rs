@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
@@ -12,7 +13,7 @@ use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
-use parking_lot::{Mutex, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -34,6 +35,7 @@ use crate::collection_manager::holders::segment_holder::{
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::update_handler::Optimizer;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -77,12 +79,33 @@ pub trait SegmentOptimizer {
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
 
-    /// Checks if segment optimization is required
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId>;
+    /// Find segments that require optimization and write them into `planner`.
+    fn plan_optimizations(&self, planner: &mut OptimizationPlanner);
+
+    /// Wrapper around [`SegmentOptimizer::plan_optimizations`].
+    /// Simplified interface and extra checks.
+    #[cfg(test)]
+    fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
+        let segments = segments.read();
+
+        let mut planner = OptimizationPlanner::new(0, segments.iter_original());
+        self.plan_optimizations(&mut planner);
+        let result = planner.into_scheduled_for_test();
+
+        // Verify consistency: re-planning with remaining segments should match tail
+        let mut remaining: BTreeMap<_, _> = segments.iter_original().collect();
+        for (i, batch) in result.iter().enumerate() {
+            for &id in batch {
+                remaining.remove(&id);
+            }
+            let mut planner =
+                OptimizationPlanner::new(i + 1, remaining.iter().map(|(&id, &seg)| (id, seg)));
+            self.plan_optimizations(&mut planner);
+            assert_eq!(planner.into_scheduled_for_test(), &result[i + 1..]);
+        }
+
+        result
+    }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 
@@ -922,5 +945,84 @@ pub trait SegmentOptimizer {
         }
 
         Ok((optimized_segment, write_segments_guard))
+    }
+}
+
+pub struct OptimizationPlanner<'a> {
+    /// Segments that could be scheduled for optimization.
+    remaining: BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>>,
+
+    /// The resulting optimization plan.
+    ///
+    /// Each entry contains
+    /// - a batch of segments to be optimized/merged into a new segment,
+    /// - an optional optimizer so you can call [`SegmentOptimizer::optimize`]
+    ///   on it later.
+    scheduled: Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)>,
+
+    /// Amount of currently running optimizations. We'll assume that each of
+    /// them eventually produces one new segment.
+    current: usize,
+
+    /// This goes into [`Self::scheduled`].
+    optimizer: Option<Arc<Optimizer>>,
+}
+
+impl<'a> OptimizationPlanner<'a> {
+    pub fn new<I>(current: usize, segments: I) -> Self
+    where
+        I: IntoIterator<Item = (SegmentId, &'a Arc<RwLock<Segment>>)>,
+    {
+        Self {
+            remaining: segments.into_iter().collect(),
+            scheduled: Vec::new(),
+            current,
+            optimizer: None,
+        }
+    }
+
+    pub fn remaining(&self) -> &BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>> {
+        &self.remaining
+    }
+
+    /// Should set called before calling [`Self::plan`] if you want the
+    /// optimizer to be attached to [`Self::scheduled`].
+    pub fn set_optimizer(&mut self, optimizer: Arc<Optimizer>) {
+        self.optimizer = Some(optimizer);
+    }
+
+    pub fn scheduled(&self) -> &Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)> {
+        &self.scheduled
+    }
+
+    pub fn into_scheduled(self) -> Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)> {
+        self.scheduled
+    }
+
+    /// Like [`Self::into_scheduled`], but drops the optimizers.
+    #[cfg(test)]
+    pub fn into_scheduled_for_test(self) -> Vec<Vec<SegmentId>> {
+        self.scheduled
+            .into_iter()
+            .map(|(_, segments)| segments)
+            .collect_vec()
+    }
+
+    /// The expected resulting number of segments after the optimization plan is
+    /// executed, and all currently running optimizations are finished.
+    pub fn expected_segments_number(&self) -> usize {
+        self.remaining.len() + self.scheduled.len() + self.current
+    }
+
+    /// Schedule this batch of segments to be optimized/merged into new segment.
+    pub fn plan(&mut self, segments: Vec<SegmentId>) {
+        if segments.is_empty() {
+            debug_assert!(false);
+        }
+        for segment_id in &segments {
+            let removed = self.remaining.remove(segment_id).is_some();
+            debug_assert!(removed);
+        }
+        self.scheduled.push((self.optimizer.clone(), segments));
     }
 }
