@@ -709,8 +709,11 @@ mod tests {
         }
     }
 
+    /// Test pointer drain edge case that was previously broken.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7741>
     #[test]
-    fn test_value_pointer_drain_set_unset_set() {
+    fn test_value_pointer_drain_bug_7741() {
         // current:
         // - latest: true
         // - history: [block_offset:1, block_offset:2]
@@ -745,6 +748,9 @@ mod tests {
             expected.set(ValuePointer::new(1, 2, 1));
             expected
         };
-        assert_eq!(updates, expected, "must have correct remaining updates");
+        assert_eq!(
+            updates, expected,
+            "must have one pending update to set block offset 2",
+        );
     }
 }
