@@ -124,20 +124,69 @@ impl PointerUpdates {
             return true;
         }
 
-        // Pointers we consider persisted
-        // If latest_is_set is different, the last pointer has new changes so we cannot consider it
-        // persisted
-        let mut persisted_pointers = persisted.history.as_slice();
-        if self.latest_is_set != persisted.latest_is_set {
-            persisted_pointers = &persisted_pointers[..persisted_pointers.len().saturating_sub(1)];
+        // Remove persisted entries to not persist them again, drop if history is exhausted
+        self.update_from_persisted(persisted);
+        self.history.is_empty()
+    }
+
+    /// Remove persisted entries from current so that we don't persist them again
+    fn update_from_persisted(&mut self, persisted: &Self) {
+        debug_assert_eq!(
+            self.history.iter().copied().collect::<AHashSet<_>>().len(),
+            self.history.len(),
+            "self must not have duplicate pointers in history",
+        );
+
+        let (persist_set, persist_unset) = persisted.to_set_unset();
+
+        // Update current set if necessary
+        match (self.latest(), persist_set) {
+            // Current and persisted set are equal, pop set from current
+            (Some(last), Some(set)) if last == set => {
+                self.history.pop();
+                self.latest_is_set = false;
+            }
+            // Current and persisted set exist but are not equal, keep current set
+            // Can be reached if current has a newer set
+            (Some(_), Some(_)) => {}
+            // If current does not have any set, don't touch it
+            // Can be reached if current has newer unset
+            (None, _) => {}
+            // If not persisted any set, don't touch current set
+            (_, None) => {}
         }
 
-        // Remove all persisted pointers from history
-        self.history
-            .retain(|pointer| !persisted_pointers.contains(pointer));
+        // In current history, range of unset entries
+        let unset_range = if self.latest_is_set {
+            0..self.history.len().saturating_sub(1)
+        } else {
+            0..self.history.len()
+        };
 
-        // Drop entry if history is exhausted
-        self.history.is_empty()
+        // From current unsets, remove all unsets that are persisted
+        // TODO(timvisee): switch to SmallVec::extract_if once available: <https://github.com/servo/rust-smallvec/issues/360>
+        let mut to_remove = SmallVec::<[_; 1]>::new();
+        for (i, pointer) in self.history[unset_range].iter().enumerate() {
+            if persist_unset.contains(pointer) {
+                to_remove.push(i);
+            }
+        }
+        for index in to_remove.into_iter().rev() {
+            self.history.remove(index);
+        }
+    }
+
+    /// Split these pointer updates into set and unset pointers
+    fn to_set_unset(&self) -> (Option<ValuePointer>, &[ValuePointer]) {
+        if self.history.is_empty() {
+            (None, &[])
+        } else if self.latest_is_set {
+            let (unset, set) = self.history.split_at(self.history.len().saturating_sub(1));
+            debug_assert!(set.len() == 1, "expect exactly one set item");
+            (Some(set[0]), unset)
+        } else {
+            (None, &self.history)
+        }
     }
 }
 
