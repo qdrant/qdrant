@@ -1,35 +1,9 @@
-use std::collections::HashMap;
-
-use bytemuck::{TransparentWrapper, TransparentWrapperAlloc};
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedFormula,
-};
-use shard::query::formula::{ExpressionInternal, FormulaInternal};
+use shard::query::formula::ExpressionInternal;
 
-use super::*;
-
-#[pyclass(name = "Formula")]
-#[derive(Clone, Debug, Into)]
-pub struct PyFormula(pub ParsedFormula);
-
-#[pymethods]
-impl PyFormula {
-    #[new]
-    pub fn new(formula: PyExpression, defaults: HashMap<String, PyValue>) -> PyResult<Self> {
-        let formula = FormulaInternal {
-            formula: ExpressionInternal::from(formula),
-            defaults: PyValue::peel_map(defaults),
-        };
-
-        let formula = ParsedFormula::try_from(formula)
-            .map_err(|err| PyValueError::new_err(format!("failed to parse formula: {err}")))?;
-
-        Ok(Self(formula))
-    }
-}
+use crate::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -158,76 +132,5 @@ impl<'py> IntoPyObject<'py> for PyExpression {
         };
 
         Bound::new(py, helper)
-    }
-}
-
-// TODO: `FromPyObject`/`IntoPyObject` is not implemented for `Box<T>`, I'll fix this later 🙄
-#[expect(clippy::large_enum_variant)]
-#[pyclass(name = "Expression")]
-#[derive(Clone, Debug)]
-pub enum PyExpressionInterface {
-    Constant(f32),
-    Variable(String),
-    Condition(PyCondition),
-    GeoDistance {
-        origin: PyGeoPoint,
-        to: PyJsonPath,
-    },
-    Datetime(String),
-    DatetimeKey(PyJsonPath),
-    Mult(Vec<PyExpression>),
-    Sum(Vec<PyExpression>),
-    Neg(PyExpression),
-    Div {
-        left: PyExpression,
-        right: PyExpression,
-        by_zero_default: Option<f32>,
-    },
-    Sqrt(PyExpression),
-    Pow {
-        base: PyExpression,
-        exponent: PyExpression,
-    },
-    Exp(PyExpression),
-    Log10(PyExpression),
-    Ln(PyExpression),
-    Abs(PyExpression),
-    Decay {
-        kind: PyDecayKind,
-        x: PyExpression,
-        target: Option<PyExpression>,
-        midpoint: Option<f32>,
-        scale: Option<f32>,
-    },
-}
-
-#[pyclass(name = "DecayKind")]
-#[derive(Copy, Clone, Debug)]
-pub enum PyDecayKind {
-    /// Linear decay function
-    Lin,
-    /// Gaussian decay function
-    Gauss,
-    /// Exponential decay function
-    Exp,
-}
-
-impl From<DecayKind> for PyDecayKind {
-    fn from(decay_kind: DecayKind) -> Self {
-        match decay_kind {
-            DecayKind::Lin => PyDecayKind::Lin,
-            DecayKind::Gauss => PyDecayKind::Gauss,
-            DecayKind::Exp => PyDecayKind::Exp,
-        }
-    }
-}
-
-impl From<PyDecayKind> for DecayKind {
-    fn from(decay_kind: PyDecayKind) -> Self {
-        match decay_kind {
-            PyDecayKind::Lin => DecayKind::Lin,
-            PyDecayKind::Gauss => DecayKind::Gauss,
-            PyDecayKind::Exp => DecayKind::Exp,
-        }
     }
 }
