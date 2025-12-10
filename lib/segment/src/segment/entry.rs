@@ -701,16 +701,17 @@ impl SegmentEntry for Segment {
         //
         //  400
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        // Weak reference to detect when segment gets dropped
+        let flush_lock = Arc::downgrade(&self.flush_lock);
 
         let flush_op = move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
+            let Some(flush_lock) = flush_lock.upgrade() else {
                 // Segment is removed, skip flush
                 return Ok(());
-            }
+            };
+
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let _flush_guard = flush_lock.lock();
 
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {

@@ -613,7 +613,7 @@ fn create_segment(
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
-        is_alive_flush_lock: Arc::new(Mutex::new(true)),
+        flush_lock: Arc::new(Mutex::new(())),
         current_path: segment_path.to_owned(),
         version_tracker: Default::default(),
         id_tracker,
