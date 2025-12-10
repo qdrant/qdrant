@@ -661,7 +661,13 @@ mod tests {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted_and_drop(&persisted));
             assert!(updates.latest_is_set);
-            assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 3, 1)]);
+            assert_eq!(
+                updates.history.as_slice(),
+                &[
+                    ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
+                    ValuePointer::new(1, 3, 1), // set block offset 3
+                ]
+            );
         }
 
         updates.set(ValuePointer::new(1, 4, 1));
@@ -673,7 +679,11 @@ mod tests {
             assert!(updates.latest_is_set);
             assert_eq!(
                 updates.history.as_slice(),
-                &[ValuePointer::new(1, 3, 1), ValuePointer::new(1, 4, 1)]
+                &[
+                    ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
+                    ValuePointer::new(1, 3, 1), // unset block offset 3
+                    ValuePointer::new(1, 4, 1), // set block offset 4
+                ]
             );
         }
 
