@@ -1,13 +1,17 @@
-use bytemuck::TransparentWrapper as _;
+use std::fmt;
+
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::{Payload, PointIdType};
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
+use crate::repr::*;
 use crate::{PyPayload, PyPointId, PyVector};
 
 #[pyclass(name = "Point")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyPoint(PointStructPersisted);
 
 #[pymethods]
@@ -36,5 +40,19 @@ impl PyPoint {
     #[getter]
     pub fn payload(&self) -> Option<&PyPayload> {
         self.0.payload.as_ref().map(PyPayload::wrap_ref)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyPoint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("id", &self.id()),
+            ("vector", &self.vector()),
+            ("payload", &self.payload()),
+        ])
     }
 }
