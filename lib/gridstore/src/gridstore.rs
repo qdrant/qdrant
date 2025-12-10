@@ -47,9 +47,8 @@ pub struct Gridstore<V> {
     _value_type: std::marker::PhantomData<V>,
 
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
-    /// Default value is true - means segment is alive and flushes can be performed.
-    /// If value is false - means segment was dropped and no further flush is required.
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    /// Flusher takes a weak reference to this to prevent flushing a dropped instance.
+    flush_lock: Arc<Mutex<()>>,
 }
 
 #[inline]
@@ -148,7 +147,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            flush_lock: Arc::new(Mutex::new(())),
         };
 
         // create first page to be covered by the bitmask
@@ -192,7 +191,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            flush_lock: Arc::new(Mutex::new(())),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -472,9 +471,9 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wait for all background flush operations to finish, abort pending flushes
-        // Below we create a new Gridstore instance with a new boolean, so flushers created on the
+        // Below we create a new Gridstore instance with a new mutex, so flushers created on the
         // new instance work as expected
-        *self.is_alive_flush_lock.lock() = false;
+        drop(self.flush_lock.lock());
 
         // Wipe
         self.pages.write().clear();
@@ -497,7 +496,7 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wait for all background flush operations to finish, abort pending flushes
-        *self.is_alive_flush_lock.lock() = false;
+        drop(self.flush_lock.lock());
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
@@ -585,27 +584,20 @@ impl<V> Gridstore<V> {
     pub fn flusher(&self) -> Flusher {
         let pending_updates = self.tracker.read().pending_updates.clone();
 
-        let pages = Arc::downgrade(&self.pages);
-        let tracker = Arc::downgrade(&self.tracker);
-        let bitmask = Arc::downgrade(&self.bitmask);
+        let pages = Arc::clone(&self.pages);
+        let tracker = Arc::clone(&self.tracker);
+        let bitmask = Arc::clone(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let flush_lock = Arc::downgrade(&self.flush_lock);
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
-                // Segment is cleared, skip flush
-                return Ok(());
-            }
-
-            let (Some(pages), Some(tracker), Some(bitmask)) =
-                (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
-            else {
+            let Some(flush_lock) = flush_lock.upgrade() else {
+                // Instance was dropped, skip flush
                 return Ok(());
             };
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let _lock_guard = flush_lock.lock();
 
             let mut bitmask_guard = bitmask.upgradable_read();
             bitmask_guard.flush()?;
