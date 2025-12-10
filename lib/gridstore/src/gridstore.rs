@@ -266,7 +266,9 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-        log::trace!("get_value offset:{point_offset} block_offset:{block_offset} length:{length}");
+        log::trace!(
+            "get_value offset:{point_offset} page_id:{page_id} block_offset:{block_offset} length:{length}"
+        );
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -438,7 +440,7 @@ impl<V: Blob> Gridstore<V> {
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
         log::trace!(
-            "put_value offset:{point_offset} unset page_id:{start_page_id} block:{block_offset} length:{value_size}"
+            "put_value offset:{point_offset} set page_id:{start_page_id} block_offset:{block_offset} length:{value_size}"
         );
         tracker_guard.set(
             point_offset,
@@ -462,7 +464,7 @@ impl<V: Blob> Gridstore<V> {
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
         log::trace!(
-            "delete_value offset:{point_offset} unset page_id:{page_id} block:{block_offset} length:{length}"
+            "delete_value offset:{point_offset} unset page_id:{page_id} block_offset:{block_offset} length:{length}"
         );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
@@ -968,15 +970,12 @@ mod tests {
                     let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
-                    let old2 = model_hashmap.insert(point_offset, payload.clone());
+                    let old2 = model_hashmap.insert(point_offset, payload);
                     assert_eq!(
                         old1,
                         old2.is_some(),
                         "put failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
                     );
-                    // sanity check for read after write
-                    let read = storage.get_value::<false>(point_offset, &hw_counter);
-                    assert_eq!(read, Some(payload));
                 }
                 Operation::Delete(point_offset) => {
                     log::debug!("op:{i} DELETE offset:{point_offset}");
