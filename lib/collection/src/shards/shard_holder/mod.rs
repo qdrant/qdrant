@@ -846,6 +846,7 @@ impl ShardHolder {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -898,6 +899,7 @@ impl ShardHolder {
                 update_runtime.clone(),
                 search_runtime.clone(),
                 optimizer_resource_budget.clone(),
+                read_only,
             )
             .await;
 
@@ -908,7 +910,7 @@ impl ShardHolder {
                 replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
             let is_initializing =
                 replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
-            if not_distributed && is_local && is_initializing {
+            if not_distributed && is_local && is_initializing && !read_only {
                 log::warn!(
                     "Local shard {collection_id}:{} stuck in Initializing state, changing to Active",
                     replica_set.shard_id,

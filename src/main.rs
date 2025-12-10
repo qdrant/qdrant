@@ -136,6 +136,17 @@ struct Args {
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Enable read-only mode for serving data from immutable storage.
+    ///
+    /// In read-only mode:
+    /// - All write operations return 403 Forbidden
+    /// - No filesystem modifications occur during startup or runtime
+    /// - WAL is not initialized or read
+    /// - Cannot be combined with distributed deployment
+    /// - Storage must be pre-initialized with all data flushed
+    #[arg(long, action, default_value_t = false)]
+    read_only: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -155,6 +166,22 @@ fn main() -> anyhow::Result<()> {
     // Set global feature flags, sourced from configuration
     init_feature_flags(settings.feature_flags);
 
+    if args.read_only {
+        if settings.cluster.enabled {
+            return Err(anyhow::anyhow!(
+                "Read-only mode cannot be enabled in distributed deployment. \
+                 Disable cluster mode (cluster.enabled) to use --read-only flag."
+            ));
+        }
+
+        if args.bootstrap.is_some() {
+            return Err(anyhow::anyhow!(
+                "Read-only mode cannot be used with --bootstrap flag. \
+                 Read-only instances cannot participate in cluster consensus."
+            ));
+        }
+    }
+
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
@@ -165,6 +192,10 @@ fn main() -> anyhow::Result<()> {
             .logger
             .with_top_level_directive(settings.log_level.clone()),
     )?;
+
+    if args.read_only {
+        log::info!("Starting in READ-ONLY mode - no write operations will be allowed");
+    }
 
     remove_started_file_indicator();
 
@@ -218,48 +249,61 @@ fn main() -> anyhow::Result<()> {
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
 
-    fs::create_dir_all(&settings.storage.storage_path)?;
+    if !args.read_only {
+        fs::create_dir_all(&settings.storage.storage_path)?;
+    } else if !Path::new(&settings.storage.storage_path).exists() {
+        return Err(anyhow::anyhow!(
+            "Storage directory does not exist at {}. Cannot start in read-only mode.",
+            settings.storage.storage_path
+        ));
+    }
 
     // Check if the filesystem is compatible with Qdrant
     let mmaps_working;
-    match check_fs_info(&settings.storage.storage_path) {
-        memory::checkfs::FsCheckResult::Good => {
-            mmaps_working = true;
-        }
-        memory::checkfs::FsCheckResult::Unknown(details) => {
-            match check_mmap_functionality(&settings.storage.storage_path) {
-                Ok(true) => {
-                    log::warn!(
-                        "There is a potential issue with the filesystem for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
-                    );
-                    mmaps_working = true;
-                }
-                Ok(false) => {
-                    log::error!(
-                        "Filesystem check failed for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
-                    );
-                    mmaps_working = false;
-                }
-                Err(e) => {
-                    log::error!(
-                        "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
-                        settings.storage.storage_path,
-                    );
-                    mmaps_working = false;
+    if !args.read_only {
+        match check_fs_info(&settings.storage.storage_path) {
+            memory::checkfs::FsCheckResult::Good => {
+                mmaps_working = true;
+            }
+            memory::checkfs::FsCheckResult::Unknown(details) => {
+                match check_mmap_functionality(&settings.storage.storage_path) {
+                    Ok(true) => {
+                        log::warn!(
+                            "There is a potential issue with the filesystem for storage path {}. Details: {details}",
+                            settings.storage.storage_path,
+                        );
+                        mmaps_working = true;
+                    }
+                    Ok(false) => {
+                        log::error!(
+                            "Filesystem check failed for storage path {}. Details: {details}",
+                            settings.storage.storage_path,
+                        );
+                        mmaps_working = false;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
+                            settings.storage.storage_path,
+                        );
+                        mmaps_working = false;
+                    }
                 }
             }
+            memory::checkfs::FsCheckResult::Bad(details) => {
+                log::error!(
+                    "Filesystem check failed for storage path {}. Details: {details}",
+                    settings.storage.storage_path,
+                );
+                mmaps_working = false;
+            }
         }
-        memory::checkfs::FsCheckResult::Bad(details) => {
-            log::error!(
-                "Filesystem check failed for storage path {}. Details: {details}",
-                settings.storage.storage_path,
-            );
-            mmaps_working = false;
-        }
+        let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
+    } else {
+        // Skip filesystem checks in read-only mode
+        mmaps_working = true;
+        let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
     }
-    let _ = MULTI_MMAP_SUPPORT_CHECK_RESULT.set(mmaps_working);
 
     // Report feature flags that are enabled for easier debugging
     let flags = feature_flags();
@@ -279,12 +323,17 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Saved state of the consensus.
-    let persistent_consensus_state = Persistent::load_or_init(
-        &settings.storage.storage_path,
-        bootstrap.is_none(),
-        args.reinit,
-        settings.cluster.peer_id,
-    )?;
+    let persistent_consensus_state = if !args.read_only {
+        Persistent::load_or_init(
+            &settings.storage.storage_path,
+            bootstrap.is_none(),
+            args.reinit,
+            settings.cluster.peer_id,
+        )?
+    } else {
+        // Load existing state in read-only mode without any filesystem writes
+        Persistent::load_read_only(&settings.storage.storage_path)?
+    };
 
     let is_distributed_deployment = settings.cluster.enabled;
 
@@ -380,9 +429,12 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
+        args.read_only,
     );
 
-    toc.clear_all_tmp_directories()?;
+    if !args.read_only {
+        toc.clear_all_tmp_directories()?;
+    }
 
     // Here we load all stored collections.
     runtime_handle.block_on(async {
@@ -640,7 +692,9 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
     }
 
-    touch_started_file_indicator();
+    if !args.read_only {
+        touch_started_file_indicator();
+    }
 
     for handle in handles {
         log::debug!(

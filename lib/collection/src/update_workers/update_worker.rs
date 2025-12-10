@@ -23,7 +23,7 @@ impl UpdateWorkers {
         collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
@@ -109,14 +109,14 @@ impl UpdateWorkers {
         operation: CollectionUpdateOperations,
         op_num: SeqNumberType,
         wait: bool,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
-        // If wait flag is set, explicitly flush WAL first
-        if wait {
+        // If wait flag is set, explicitly flush WAL first (only if WAL is available)
+        if wait && let Some(ref wal) = wal {
             wal.blocking_lock().flush().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't flush WAL before operation {op_num} - {err}"

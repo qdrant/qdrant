@@ -144,6 +144,33 @@ pub async fn load_local_collection(
         None,
         ResourceBudget::default(),
         None,
+        false, // read_only = false for normal tests
+    )
+    .await
+}
+
+/// Load a collection in read-only mode for testing
+#[cfg(test)]
+pub async fn load_local_collection_read_only(
+    id: CollectionId,
+    path: &Path,
+    snapshots_path: &Path,
+) -> Collection {
+    Collection::load(
+        id,
+        0,
+        path,
+        snapshots_path,
+        Default::default(),
+        ChannelService::new(REST_PORT, None),
+        dummy_on_replica_failure(),
+        dummy_request_shard_transfer(),
+        dummy_abort_shard_transfer(),
+        None,
+        None,
+        ResourceBudget::default(),
+        None,
+        true, // read_only = true
     )
     .await
 }

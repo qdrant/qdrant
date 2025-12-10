@@ -44,7 +44,7 @@ impl UpdateWorkers {
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
@@ -491,7 +491,7 @@ impl UpdateWorkers {
     /// If so - attempts to re-apply all failed operations.
     async fn try_recover(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
@@ -500,16 +500,20 @@ impl UpdateWorkers {
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock().await;
-                for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(
-                        &segments,
-                        op_num,
-                        operation.operation,
-                        update_operation_lock.clone(),
-                        update_tracker.clone(),
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                    )?;
+                if let Some(wal) = wal {
+                    let wal_lock = wal.lock().await;
+                    for (op_num, operation) in wal_lock.read(first_failed_op) {
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation.operation,
+                            update_operation_lock.clone(),
+                            update_tracker.clone(),
+                            &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
+                        )?;
+                    }
+                } else {
+                    log::warn!("Cannot recover from failed operation in read-only mode");
                 }
             }
         };

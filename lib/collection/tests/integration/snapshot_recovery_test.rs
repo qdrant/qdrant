@@ -145,6 +145,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        false, // read_only = false
     )
     .await;
 

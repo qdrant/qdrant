@@ -100,7 +100,15 @@ impl QueueProxyShard {
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
-        let wal = wrapped_shard.wal.wal.clone();
+        let Some(wal) = wrapped_shard.wal.as_writable_wal() else {
+            return Err((
+                wrapped_shard,
+                CollectionError::service_error(
+                    "Cannot create queue proxy shard in read-only mode: WAL is not available",
+                ),
+            ));
+        };
+        let wal = wal.clone();
         let wal_lock = wal.lock().await;
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
@@ -452,7 +460,11 @@ impl Inner {
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
+        let wal = wrapped_shard
+            .wal
+            .as_writable_wal()
+            .expect("Cannot create queue proxy inner without writable WAL");
+        let start_from = wal.lock().await.last_index() + 1;
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
@@ -526,10 +538,18 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, total, batch) = {
-            let wal = self.wrapped_shard.wal.wal.lock().await;
-            let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
+            let wal = self
+                .wrapped_shard
+                .wal
+                .as_writable_wal()
+                .expect("Queue proxy requires writable WAL");
+            let wal_guard = wal.lock().await;
+            let items_left = (wal_guard.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
-            let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
+            let batch = wal_guard
+                .read(transfer_from)
+                .take(BATCH_SIZE)
+                .collect::<Vec<_>>();
             debug_assert!(
                 batch.len() <= items_left as usize,
                 "batch cannot be larger than items_left",

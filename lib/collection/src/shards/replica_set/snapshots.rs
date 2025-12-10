@@ -404,6 +404,7 @@ impl ShardReplicaSet {
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
+                false, // Snapshot recovery should not be read-only
             )
             .await
         };

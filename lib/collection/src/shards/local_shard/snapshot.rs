@@ -73,7 +73,7 @@ impl LocalShard {
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
-        let wal = self.wal.wal.clone();
+        let wal = self.wal.as_writable_wal().cloned();
 
         if !save_wal {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
@@ -91,8 +91,10 @@ impl LocalShard {
             .read()
             .await
             .to_base_segment_config()?;
+        let wal_config = self.collection_config.read().await.wal_config.clone();
         let payload_index_schema = self.payload_index_schema.clone();
         let temp_path = temp_path.to_owned();
+        let shard_path = self.path.clone();
 
         let tar_c = tar.clone();
         let update_lock = self.update_operation_lock.clone();
@@ -111,11 +113,19 @@ impl LocalShard {
                 update_lock,
             )?;
 
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+            match (wal, save_wal) {
+                (Some(wal), true) => {
+                    // snapshot all shard's WAL
+                    Self::snapshot_wal(wal, &tar_c)
+                }
+                (Some(wal), false) => {
+                    // Create empty WAL compatible with stored data
+                    Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+                }
+                (None, _) => {
+                    // In read-only mode, copy WAL files from disk if they exist
+                    Self::copy_wal_from_disk(&shard_path, &temp_path, &tar_c, &wal_config, save_wal)
+                }
             }
         });
         AbortOnDropHandle::new(handle).await??;
@@ -196,6 +206,69 @@ impl LocalShard {
             tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
                 .map_err(|err| {
                     CollectionError::service_error(format!("Error while archiving WAL: {err}"))
+                })?;
+        }
+        Ok(())
+    }
+
+    /// Copy WAL files from disk in read-only mode
+    ///
+    /// In read-only mode we don't have a WAL handle, so we copy files directly from disk.
+    /// If save_wal is true, we copy the actual WAL files.
+    /// If save_wal is false, we create an empty WAL compatible with the stored data.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    fn copy_wal_from_disk(
+        shard_path: &Path,
+        _temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        _wal_config: &crate::config::WalConfig,
+        save_wal: bool,
+    ) -> CollectionResult<()> {
+        let wal_path = Self::wal_path(shard_path);
+
+        // Check if WAL directory exists on disk
+        if !wal_path.exists() || !wal_path.is_dir() {
+            log::warn!(
+                "WAL directory not found at {} in read-only mode, skipping WAL snapshot",
+                wal_path.display()
+            );
+            return Ok(());
+        }
+
+        if !save_wal {
+            // In read-only mode without save_wal, skip WAL entirely
+            // The snapshot will use empty WAL on restore
+            log::debug!("Skipping WAL snapshot in read-only mode with save_wal=false");
+            return Ok(());
+        }
+
+        // Copy WAL files from disk directly
+        let tar_wal = tar.descend(Path::new(WAL_PATH))?;
+        for entry in fs::read_dir(&wal_path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't read WAL directory in read-only mode: {err}",
+            ))
+        })? {
+            let entry = entry.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't read WAL directory entry in read-only mode: {err}",
+                ))
+            })?;
+
+            if entry.file_name() == ".wal" {
+                // Skip the sentinel file used for WAL locking
+                continue;
+            }
+
+            tar_wal
+                .blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Error while archiving WAL from disk in read-only mode: {err}"
+                    ))
                 })?;
         }
         Ok(())

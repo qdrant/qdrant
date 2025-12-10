@@ -126,6 +126,14 @@ impl Shard {
         }
     }
 
+    /// Flush all segments to disk. Only applicable for Local shards.
+    /// This is a testing helper to ensure data is persisted to segments.
+    pub fn full_flush(&self) {
+        if let Shard::Local(local_shard) = self {
+            local_shard.full_flush();
+        }
+    }
+
     pub async fn create_snapshot(
         &self,
         temp_path: &Path,
@@ -294,9 +302,11 @@ impl Shard {
         // Resolve WAL delta and report
         match wal.resolve_wal_delta(recovery_point).await {
             Ok(Some(version)) => {
+                // Get last index through wal_version method
+                let last_index = wal.wal_version().await.unwrap_or(Some(0)).unwrap_or(0);
                 log::debug!(
                     "Resolved WAL delta from {version}, which counts {} records",
-                    wal.wal.lock().await.last_index().saturating_sub(version),
+                    last_index.saturating_sub(version),
                 );
                 Ok(Some(version))
             }

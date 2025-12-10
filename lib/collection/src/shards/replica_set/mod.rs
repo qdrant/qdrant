@@ -255,11 +255,12 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
 
-        if replica_state.read().this_peer_id != this_peer_id {
+        if replica_state.read().this_peer_id != this_peer_id && !read_only {
             replica_state
                 .write(|rs| {
                     let this_peer_id = rs.this_peer_id;
@@ -307,6 +308,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
+                    read_only,
                 )
                 .await;
 
@@ -404,6 +406,14 @@ impl ShardReplicaSet {
 
     pub async fn has_local_shard(&self) -> bool {
         self.local.read().await.is_some()
+    }
+
+    /// Flush all segments to disk for the local shard. Testing helper.
+    pub async fn full_flush(&self) {
+        let local = self.local.read().await;
+        if let Some(shard) = local.as_ref() {
+            shard.full_flush();
+        }
     }
 
     /// Checks if the shard exists locally and not a proxy.

@@ -59,6 +59,22 @@ impl AliasPersistence {
         })
     }
 
+    /// Open alias persistence in read-only mode.
+    /// Does not create directories or files if they don't exist.
+    pub fn open_read_only(dir_path: &Path) -> Result<Self, StorageError> {
+        let data_path = Self::get_config_path(dir_path);
+        let alias_mapping = if data_path.exists() {
+            AliasMapping::load(&data_path)?
+        } else {
+            // No aliases exist yet, return empty mapping
+            AliasMapping::default()
+        };
+        Ok(AliasPersistence {
+            data_path,
+            alias_mapping,
+        })
+    }
+
     pub fn get(&self, alias: &str) -> Option<String> {
         self.alias_mapping.0.get(alias).cloned()
     }

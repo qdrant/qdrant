@@ -216,6 +216,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
+        read_only: bool,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -230,9 +231,15 @@ impl Collection {
 
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
-                log::info!("Migrating collection {stored_version} -> {app_version}");
-                CollectionVersion::save(path)
-                    .unwrap_or_else(|err| panic!("Can't save collection version {err}"));
+                if read_only {
+                    log::warn!(
+                        "Collection version {stored_version} differs from app version {app_version}, but cannot migrate in read-only mode"
+                    );
+                } else {
+                    log::info!("Migrating collection {stored_version} -> {app_version}");
+                    CollectionVersion::save(path)
+                        .unwrap_or_else(|err| panic!("Can't save collection version {err}"));
+                }
             } else {
                 log::error!("Cannot upgrade version {stored_version} to {app_version}.");
                 panic!(
@@ -282,6 +289,7 @@ impl Collection {
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
                 optimizer_resource_budget.clone(),
+                read_only,
             )
             .await;
 
@@ -366,6 +374,15 @@ impl Collection {
     /// Return a list of local shards, present on this peer
     pub async fn get_local_shards(&self) -> Vec<ShardId> {
         self.shards_holder.read().await.get_local_shards().await
+    }
+
+    /// Flush all segments to disk for all local shards. Testing helper.
+    /// This ensures data in WAL is persisted to segments before reloading.
+    pub async fn full_flush_all_local_shards(&self) {
+        let shards_holder = self.shards_holder.read().await;
+        for (_shard_id, replica_set) in shards_holder.get_shards() {
+            replica_set.full_flush().await;
+        }
     }
 
     pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
