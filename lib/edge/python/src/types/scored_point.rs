@@ -37,4 +37,20 @@ impl PyScoredPoint {
     pub fn payload(&self) -> Option<&PyPayload> {
         self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyScoredPoint {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.class::<Self>(&[
+            ("id", &self.id()),
+            ("version", &self.version()),
+            ("score", &self.score()),
+            ("vector", &self.vector()),
+            ("payload", &self.payload()),
+        ])
+    }
 }
