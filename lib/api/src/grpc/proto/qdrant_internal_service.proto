@@ -14,9 +14,8 @@ service QdrantInternal {
   rpc WaitOnConsensusCommit(WaitOnConsensusCommitRequest)
       returns (WaitOnConsensusCommitResponse) {}
 
-  // Get telemetry from a peer
-  rpc GetPeerTelemetry(GetPeerTelemetryRequest)
-      returns (GetPeerTelemetryResponse) {}
+  // Get telemetry
+  rpc GetTelemetry(GetTelemetryRequest) returns (GetTelemetryResponse) {}
 }
 
 message GetConsensusCommitRequest {}
