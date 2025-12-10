@@ -17,6 +17,17 @@ from docker.errors import NotFound
 from .models import QdrantContainer, QdrantContainerConfig, QdrantDockerCluster
 
 
+def remove_dir(path: Path) -> None:
+    """Remove a directory and all its contents.
+
+    Args:
+        path: Path to the directory to remove
+    """
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+        print(f"Removed directory: {path}")
+
+
 def wait_for_qdrant_ready(port: int = 6333, timeout: int = 30) -> bool:
     """Wait for Qdrant service to be ready."""
     start_time = time.time()
@@ -83,6 +94,10 @@ def extract_container_ports(container: docker.models.containers.Container) -> Tu
 
     Returns:
         tuple: (http_port, grpc_port) - extracted port numbers
+
+    Raises:
+        NotFound: If container has already been removed (e.g., crashed with auto-remove)
+        RuntimeError: If port mappings cannot be extracted
     """
     container.reload()
 
@@ -91,9 +106,17 @@ def extract_container_ports(container: docker.models.containers.Container) -> Tu
         return 6333, 6334
 
     # For bridge/custom networks, extract mapped ports
-    http_port = container.attrs['NetworkSettings']['Ports']['6333/tcp'][0]['HostPort']
-    grpc_port = container.attrs['NetworkSettings']['Ports']['6334/tcp'][0]['HostPort']
-    return int(http_port), int(grpc_port)
+    ports = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+    http_mapping = ports.get('6333/tcp')
+    grpc_mapping = ports.get('6334/tcp')
+
+    if not http_mapping:
+        raise RuntimeError(f"Container {container.name} has no HTTP port mapping. Container may have exited.")
+
+    http_port = int(http_mapping[0]['HostPort'])
+    grpc_port = int(grpc_mapping[0]['HostPort']) if grpc_mapping else 6334
+
+    return http_port, grpc_port
 
 
 def create_container_info(container: docker.models.containers.Container, http_port: int, grpc_port: int) -> QdrantContainer:
@@ -247,7 +270,6 @@ def extract_archive(archive_file: Path, extract_to: Path, cleanup_archive: bool 
 
         else:
             raise ValueError(f"Unsupported archive format: {archive_file}")
-
 
     except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as e:
         print(f"Failed to extract archive {archive_file}: {e}")
