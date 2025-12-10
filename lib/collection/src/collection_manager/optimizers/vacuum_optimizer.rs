@@ -180,22 +180,22 @@ impl SegmentOptimizer for VacuumOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        segments
-            .read()
+        let segments_read_guard = segments.read();
+        segments_read_guard
             .iter()
             // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _segment)| !excluded_ids.contains(idx))
-            .flat_map(|(idx, segment)| {
+            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
+            .flat_map(|(segment_id, segment)| {
                 // Calculate littered ratio for segment and named vectors
                 let littered_ratio_segment = self.littered_ratio_segment(segment);
                 let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
                 [littered_ratio_segment, littered_ratio_vectors]
                     .into_iter()
                     .flatten()
-                    .map(move |ratio| (idx, ratio))
+                    .map(move |ratio| (segment_id, ratio))
             })
-            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .map(|(idx, _)| idx)
+            .max_by_key(|(_segment_id, ratio)| OrderedFloat(*ratio))
+            .map(|(segment_id, _ratio)| segment_id)
             .into_iter()
             .collect()
     }

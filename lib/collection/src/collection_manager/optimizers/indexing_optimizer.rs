@@ -65,8 +65,8 @@ impl IndexingOptimizer {
         segments
             .iter()
             // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _)| !excluded_ids.contains(idx))
-            .filter_map(|(idx, segment)| {
+            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
+            .filter_map(|(segment_id, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_size = read_segment
@@ -85,7 +85,7 @@ impl IndexingOptimizer {
                     return None;
                 }
 
-                Some((idx, vector_size))
+                Some((segment_id, vector_size))
             })
             .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes)
     }
@@ -133,8 +133,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         let candidates: Vec<_> = segments_read_guard
             .iter()
             // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _)| !excluded_ids.contains(idx))
-            .filter_map(|(idx, segment)| {
+            .filter(|(segment_id, _segment)| !excluded_ids.contains(segment_id))
+            .filter_map(|(segment_id, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let max_vector_size_bytes = read_segment
@@ -211,14 +211,14 @@ impl SegmentOptimizer for IndexingOptimizer {
                     }
                 }
 
-                require_optimization.then_some((idx, max_vector_size_bytes))
+                require_optimization.then_some((segment_id, max_vector_size_bytes))
             })
             .collect();
 
         // Select the largest unindexed segment, return if none
         let selected_segment = candidates
             .iter()
-            .max_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
+            .max_by_key(|(_segment_id, vector_size_bytes)| *vector_size_bytes);
         if selected_segment.is_none() {
             return vec![];
         }
@@ -240,29 +240,29 @@ impl SegmentOptimizer for IndexingOptimizer {
         // Find the smallest unindexed to check if we can index together
         let smallest_unindexed = candidates
             .iter()
-            .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
-        if let Some((idx, size)) = smallest_unindexed
-            && *idx != selected_segment_id
+            .min_by_key(|(_segment_id, vector_size_bytes)| *vector_size_bytes);
+        if let Some((segment_id, size)) = smallest_unindexed
+            && *segment_id != selected_segment_id
             && selected_segment_size + size
                 < self
                     .thresholds_config
                     .max_segment_size_kb
                     .saturating_mul(BYTES_IN_KB)
         {
-            return vec![selected_segment_id, *idx];
+            return vec![selected_segment_id, *segment_id];
         }
 
         // Find smallest indexed to check if we can reindex together
         let smallest_indexed = Self::smallest_indexed_segment(&segments_read_guard, excluded_ids);
-        if let Some((idx, size)) = smallest_indexed
-            && idx != selected_segment_id
+        if let Some((segment_id, size)) = smallest_indexed
+            && segment_id != selected_segment_id
             && selected_segment_size + size
                 < self
                     .thresholds_config
                     .max_segment_size_kb
                     .saturating_mul(BYTES_IN_KB)
         {
-            return vec![selected_segment_id, idx];
+            return vec![selected_segment_id, segment_id];
         }
 
         vec![selected_segment_id]

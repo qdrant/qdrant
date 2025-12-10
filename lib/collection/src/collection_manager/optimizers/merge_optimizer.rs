@@ -102,8 +102,8 @@ impl SegmentOptimizer for MergeOptimizer {
 
         let raw_segments = read_segments
             .iter()
-            .filter(|(sid, segment)| {
-                matches!(segment, LockedSegment::Original(_)) && !excluded_ids.contains(sid)
+            .filter(|(segment_id, segment)| {
+                matches!(segment, LockedSegment::Original(_)) && !excluded_ids.contains(segment_id)
             })
             .collect_vec();
 
@@ -118,22 +118,22 @@ impl SegmentOptimizer for MergeOptimizer {
         let candidates: Vec<_> = raw_segments
             .iter()
             .cloned()
-            .filter_map(|(idx, segment)| {
+            .filter_map(|(segment_id, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 (read_segment.segment_type() != SegmentType::Special).then_some((
-                    idx,
+                    segment_id,
                     read_segment
                         .max_available_vectors_size_in_bytes()
                         .unwrap_or_default(),
                 ))
             })
-            .sorted_by_key(|(_, size)| *size)
-            .scan(0, |size_sum, (sid, size)| {
+            .sorted_by_key(|(_segment_id, size)| *size)
+            .scan(0, |size_sum, (segment_id, size)| {
                 *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
-                Some((sid, *size_sum))
+                Some((segment_id, *size_sum))
             })
-            .take_while(|(_, size)| {
+            .take_while(|(_segment_id, size)| {
                 *size
                     < self
                         .thresholds_config
@@ -141,7 +141,7 @@ impl SegmentOptimizer for MergeOptimizer {
                         .saturating_mul(BYTES_IN_KB)
             })
             .take(max_candidates)
-            .map(|x| x.0)
+            .map(|(sement_id, _size)| sement_id)
             .collect();
 
         if candidates.len() < 3 {
