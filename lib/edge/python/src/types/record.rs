@@ -1,9 +1,12 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::data_types::order_by::OrderValue;
 use shard::retrieve::record_internal::RecordInternal;
 
+use crate::repr::*;
 use crate::*;
 
 #[pyclass(name = "Record")]
@@ -32,12 +35,36 @@ impl PyRecord {
     pub fn order_value(&self) -> Option<PyOrderValue> {
         self.0.order_value.map(PyOrderValue::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyRecord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("id", &self.id()),
+            ("vector", &self.vector()),
+            ("payload", &self.payload()),
+            ("order_value", &self.order_value()),
+        ])
+    }
 }
 
 #[derive(IntoPyObject)]
 pub enum PyOrderValue {
     Int(i64),
     Float(f64),
+}
+
+impl Repr for PyOrderValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int(int) => int.fmt(f),
+            Self::Float(float) => float.fmt(f),
+        }
+    }
 }
 
 impl From<OrderValue> for PyOrderValue {
