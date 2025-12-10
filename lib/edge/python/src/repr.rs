@@ -96,6 +96,31 @@ impl Repr for uuid::Uuid {
     }
 }
 
+impl Repr for serde_json::Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            serde_json::Value::Null => write!(f, "None"),
+            serde_json::Value::Bool(bool) => bool.fmt(f),
+            serde_json::Value::Number(num) => num.fmt(f),
+            serde_json::Value::String(str) => str.fmt(f),
+            serde_json::Value::Array(array) => array.fmt(f),
+            serde_json::Value::Object(object) => object.fmt(f),
+        }
+    }
+}
+
+impl Repr for serde_json::Number {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Repr for serde_json::Map<String, serde_json::Value> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.map(self)
+    }
+}
+
 pub trait WriteExt: fmt::Write {
     fn class<T: PyTypeInfo>(&mut self, fields: &[(&str, &dyn Repr)]) -> fmt::Result {
         write!(self, "{}(", T::NAME)?;
