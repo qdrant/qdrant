@@ -47,7 +47,8 @@ mod qdrant_edge {
     };
     #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyPayloadSelectorInterface, PyQuantizationSearchParams,
+        PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
