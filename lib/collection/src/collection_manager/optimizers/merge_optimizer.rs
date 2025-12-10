@@ -1,17 +1,14 @@
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
+use segment::entry::SegmentEntry;
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentId,
-};
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 
@@ -93,61 +90,46 @@ impl SegmentOptimizer for MergeOptimizer {
         &self.thresholds_config
     }
 
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        let read_segments = segments.read();
-
-        let raw_segments = read_segments
+    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
+        let mut candidates = planner
+            .remaining()
             .iter()
-            .filter(|(segment_id, segment)| {
-                matches!(segment, LockedSegment::Original(_)) && !excluded_ids.contains(segment_id)
+            .map(|(&segment_id, segment)| {
+                let size = segment
+                    .read()
+                    .max_available_vectors_size_in_bytes()
+                    .unwrap_or_default();
+                (segment_id, size)
             })
             .collect_vec();
 
-        if raw_segments.len() <= self.default_segments_number {
-            return vec![];
+        candidates.sort_by_key(|(_segment_id, size)| *size);
+        let threshold = self
+            .thresholds_config
+            .max_segment_size_kb
+            .saturating_mul(BYTES_IN_KB);
+
+        let mut taken_candidates = 0;
+        let mut last_candidate =
+            (planner.expected_segments_number() + 2).saturating_sub(self.default_segments_number);
+        while taken_candidates < last_candidate.min(candidates.len()) {
+            let batch = candidates[taken_candidates..last_candidate.min(candidates.len())]
+                .iter()
+                .scan(0, |size_sum, &(segment_id, size)| {
+                    *size_sum += size;
+                    (*size_sum < threshold).then_some(segment_id)
+                })
+                .collect_vec();
+
+            // We need at least 3 segments because in this case we can guarantee
+            // that total segments number will be less.
+            if batch.len() < 3 {
+                return;
+            }
+            taken_candidates += batch.len();
+            last_candidate += 1;
+            planner.plan(batch);
         }
-        let max_candidates = raw_segments.len() - self.default_segments_number + 2;
-
-        // Find at least top-3 smallest segments to join.
-        // We need 3 segments because in this case we can guarantee that total segments number will be less
-
-        let candidates: Vec<_> = raw_segments
-            .iter()
-            .cloned()
-            .filter_map(|(segment_id, segment)| {
-                let segment_entry = segment.get();
-                let read_segment = segment_entry.read();
-                (read_segment.segment_type() != SegmentType::Special).then_some((
-                    segment_id,
-                    read_segment
-                        .max_available_vectors_size_in_bytes()
-                        .unwrap_or_default(),
-                ))
-            })
-            .sorted_by_key(|(_segment_id, size)| *size)
-            .scan(0, |size_sum, (segment_id, size)| {
-                *size_sum += size; // produce a cumulative sum of segment sizes starting from smallest
-                Some((segment_id, *size_sum))
-            })
-            .take_while(|(_segment_id, size)| {
-                *size
-                    < self
-                        .thresholds_config
-                        .max_segment_size_kb
-                        .saturating_mul(BYTES_IN_KB)
-            })
-            .take(max_candidates)
-            .map(|(sement_id, _size)| sement_id)
-            .collect();
-
-        if candidates.len() < 3 {
-            return vec![];
-        }
-        candidates
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
@@ -157,12 +139,16 @@ impl SegmentOptimizer for MergeOptimizer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
     use common::budget::ResourceBudget;
     use common::progress_tracker::ProgressTracker;
     use parking_lot::RwLock;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rand::seq::SliceRandom;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
 
@@ -192,14 +178,14 @@ mod tests {
 
         merge_optimizer.thresholds_config.max_segment_size_kb = 100;
 
-        let check_result_empty =
-            merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
+        let check_result_empty = merge_optimizer.plan_optimizations_for_test(&locked_holder);
 
         assert!(check_result_empty.is_empty());
 
         merge_optimizer.thresholds_config.max_segment_size_kb = 200;
 
-        let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
+        let check_result = merge_optimizer.plan_optimizations_for_test(&locked_holder);
+        let check_result = check_result.into_iter().exactly_one().unwrap();
 
         assert_eq!(check_result.len(), 3);
     }
@@ -229,9 +215,8 @@ mod tests {
 
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
-        let suggested_for_merge =
-            merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
-
+        let suggested_to_merge = merge_optimizer.plan_optimizations_for_test(&locked_holder);
+        let suggested_for_merge = suggested_to_merge.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_for_merge.len(), 4);
 
         for segment_in in &suggested_for_merge {
@@ -284,5 +269,80 @@ mod tests {
 
         // Check if optimized segments removed from disk
         old_path.into_iter().for_each(|x| assert!(!x.exists()));
+    }
+
+    #[rustfmt::skip]
+    const TEST_TABLE: &[(usize, usize, &str)] = &[
+        ( 1,  5, ""),
+        ( 1, 33, ""),
+
+        (17, 50, "10+11+12+13 =46 | 14+15+16 =45"),
+        (18, 50, "10+11+12+13 =46"),
+        (20, 50, "10+11+12 =33"),
+
+        ( 1, 54, "10+11+12+13 =46 | 14+15+16 =45"),
+        ( 1, 55, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54"),
+        ( 1, 60, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54"),
+        ( 1, 61, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57"),
+        ( 1, 66, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57"),
+        ( 1, 67, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60"),
+        ( 1, 70, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60 | 22+23+24 =69"),
+
+        ( 5, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27+28+29 =135"),
+        ( 6, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27+28 =106"),
+        ( 7, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27 =78"),
+        ( 8, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129"),
+        ( 9, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129"),
+        (10, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23 =105"),
+        (11, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22 =82"),
+        (12, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21 =60"),
+
+        ( 2, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27+28+29+30 =189"),
+        ( 3, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27+28+29+30 =189"),
+        ( 4, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27+28+29 =159"),
+        ( 5, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27+28 =130"),
+        ( 6, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27 =102"),
+        ( 7, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26 =75"),
+        ( 8, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231"),
+        ( 9, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231"),
+        (10, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22 =208"),
+        (11, 233, "10+11+12+13+14+15+16+17+18+19+20+21 =186"),
+        (12, 233, "10+11+12+13+14+15+16+17+18+19+20 =165"),
+    ];
+
+    #[test]
+    fn test_merge_optimizer_test_table() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dim = 256; // 1 KiB per vector
+
+        let mut segment_sizes = (10..=30).collect_vec();
+        segment_sizes.shuffle(&mut rng);
+        let mut holder = SegmentHolder::default();
+        let mut segment_id_to_size = HashMap::new();
+        for &segment_size in &segment_sizes {
+            let segment_id = holder.add_new(random_segment(dir.path(), 100, segment_size, dim));
+            segment_id_to_size.insert(segment_id, segment_size);
+        }
+        let locked_holder = Arc::new(RwLock::new(holder));
+
+        for &(default_segment_number, max_segment_size, expected) in TEST_TABLE {
+            let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
+            merge_optimizer.thresholds_config.max_segment_size_kb = max_segment_size; // 1 KiB == 1 vector
+            merge_optimizer.default_segments_number = default_segment_number;
+            let result = merge_optimizer
+                .plan_optimizations_for_test(&locked_holder)
+                .into_iter()
+                .map(|batch| {
+                    let it = batch.iter().map(|id| segment_id_to_size[id]);
+                    format!("{} ={}", it.clone().join("+"), it.clone().sum::<u64>())
+                })
+                .join(" | ");
+            assert_eq!(
+                result, expected,
+                "Failed on ({default_segment_number}, {max_segment_size})"
+            );
+        }
     }
 }
