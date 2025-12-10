@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
@@ -12,6 +14,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::query::*;
 
 use super::*;
+use crate::repr::*;
 
 #[pyclass(name = "QueryRequest")]
 #[derive(Clone, Debug, Into)]
@@ -43,6 +46,73 @@ impl PyQueryRequest {
             with_vector: WithVector::from(with_vector),
             with_payload: WithPayloadInterface::from(with_payload),
         })
+    }
+
+    #[getter]
+    pub fn prefetches(&self) -> &[PyPrefetch] {
+        PyPrefetch::wrap_slice(&self.0.prefetches)
+    }
+
+    #[getter]
+    pub fn query(&self) -> Option<&PyScoringQuery> {
+        self.0.query.as_ref().map(PyScoringQuery::wrap_ref)
+    }
+
+    #[getter]
+    pub fn filter(&self) -> Option<&PyFilter> {
+        self.0.filter.as_ref().map(PyFilter::wrap_ref)
+    }
+
+    #[getter]
+    pub fn score_threshold(&self) -> Option<f32> {
+        self.0
+            .score_threshold
+            .map(|threshold| threshold.into_inner())
+    }
+
+    #[getter]
+    pub fn limit(&self) -> usize {
+        self.0.limit
+    }
+
+    #[getter]
+    pub fn offset(&self) -> usize {
+        self.0.offset
+    }
+
+    #[getter]
+    pub fn params(&self) -> Option<PySearchParams> {
+        self.0.params.map(PySearchParams)
+    }
+
+    #[getter]
+    pub fn with_vector(&self) -> &PyWithVector {
+        PyWithVector::wrap_ref(&self.0.with_vector)
+    }
+
+    #[getter]
+    pub fn with_payload(&self) -> &PyWithPayload {
+        PyWithPayload::wrap_ref(&self.0.with_payload)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyQueryRequest {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("prefetches", &self.prefetches()),
+            ("query", &self.query()),
+            ("filter", &self.filter()),
+            ("score_threshold", &self.score_threshold()),
+            ("limit", &self.limit()),
+            ("offset", &self.offset()),
+            ("params", &self.params()),
+            ("with_vector", &self.with_vector()),
+            ("with_payload", &self.with_payload()),
+        ])
     }
 }
 
@@ -103,6 +173,23 @@ impl PyPrefetch {
             .score_threshold
             .map(|threshold| threshold.into_inner())
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyPrefetch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("prefetches", &self.prefetches()),
+            ("query", &self.query()),
+            ("limit", &self.limit()),
+            ("params", &self.params()),
+            ("filter", &self.filter()),
+            ("score_threshold", &self.score_threshold()),
+        ])
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &PyPrefetch {
@@ -115,7 +202,8 @@ impl<'py> IntoPyObject<'py> for &PyPrefetch {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyScoringQuery(ScoringQuery);
 
 impl FromPyObject<'_, '_> for PyScoringQuery {
@@ -164,7 +252,7 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             ScoringQuery::Vector(vector) => PyQuery(vector).into_bound_py_any(py),
-            ScoringQuery::Fusion(fusion) => PyFusion(fusion).into_bound_py_any(py),
+            ScoringQuery::Fusion(fusion) => PyFusion::from(fusion).into_bound_py_any(py),
             ScoringQuery::OrderBy(order_by) => PyOrderBy(order_by).into_bound_py_any(py),
             ScoringQuery::Formula(formula) => PyFormula(formula).into_bound_py_any(py),
             ScoringQuery::Sample(sample) => PySample::from(sample).into_bound_py_any(py),
@@ -173,24 +261,75 @@ impl<'py> IntoPyObject<'py> for PyScoringQuery {
     }
 }
 
+impl<'py> IntoPyObject<'py> for &PyScoringQuery {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
+    }
+}
+
+impl Repr for PyScoringQuery {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            ScoringQuery::Vector(vector) => PyQuery::wrap_ref(vector).fmt(f),
+            ScoringQuery::Fusion(fusion) => PyFusion::from(*fusion).fmt(f),
+            ScoringQuery::OrderBy(order_by) => PyOrderBy::wrap_ref(order_by).fmt(f),
+            ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
+            ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
+            ScoringQuery::Mmr(mmr) => PyMmr::wrap_ref(mmr).fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "Fusion")]
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyFusion(FusionInternal);
+#[derive(Copy, Clone, Debug)]
+pub enum PyFusion {
+    Rrfk { rrfk: usize },
+    Dbsf {},
+}
 
 #[pymethods]
 impl PyFusion {
-    #[staticmethod]
-    pub fn rrfk(rrfk: usize) -> Self {
-        Self(FusionInternal::RrfK(rrfk))
+    pub fn __repr__(&self) -> String {
+        self.repr()
     }
+}
 
-    #[classattr]
-    pub const DBSF: Self = Self(FusionInternal::Dbsf);
+impl Repr for PyFusion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (repr, fields): (_, &[(_, &dyn Repr)]) = match self {
+            PyFusion::Rrfk { rrfk } => ("Rrfk", &[("rrfk", rrfk)]),
+            PyFusion::Dbsf {} => ("Dbsf", &[]),
+        };
+
+        f.complex_enum::<Self>(repr, fields)
+    }
+}
+
+impl From<FusionInternal> for PyFusion {
+    fn from(fusion: FusionInternal) -> Self {
+        match fusion {
+            FusionInternal::RrfK(rrfk) => PyFusion::Rrfk { rrfk },
+            FusionInternal::Dbsf => PyFusion::Dbsf {},
+        }
+    }
+}
+
+impl From<PyFusion> for FusionInternal {
+    fn from(fusion: PyFusion) -> Self {
+        match fusion {
+            PyFusion::Rrfk { rrfk } => FusionInternal::RrfK(rrfk),
+            PyFusion::Dbsf {} => FusionInternal::Dbsf,
+        }
+    }
 }
 
 #[pyclass(name = "OrderBy")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyOrderBy(OrderBy);
 
 #[pymethods]
@@ -224,6 +363,20 @@ impl PyOrderBy {
     pub fn start_from(&self) -> Option<PyStartFrom> {
         self.0.start_from.map(PyStartFrom)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyOrderBy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("key", &self.key()),
+            ("direction", &self.direction()),
+            ("start_from", &self.start_from()),
+        ])
+    }
 }
 
 #[pyclass(name = "Direction")]
@@ -231,6 +384,24 @@ impl PyOrderBy {
 pub enum PyDirection {
     Asc,
     Desc,
+}
+
+#[pymethods]
+impl PyDirection {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyDirection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            PyDirection::Asc => "Asc",
+            PyDirection::Desc => "Desc",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<Direction> for PyDirection {
@@ -313,10 +484,37 @@ impl<'py> IntoPyObject<'py> for &PyStartFrom {
     }
 }
 
+impl Repr for PyStartFrom {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            StartFrom::Integer(int) => int.fmt(f),
+            StartFrom::Float(float) => float.fmt(f),
+            StartFrom::Datetime(date_time) => date_time.to_string().fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "Sample")]
 #[derive(Copy, Clone, Debug)]
 pub enum PySample {
     Random,
+}
+
+#[pymethods]
+impl PySample {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PySample {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            PySample::Random => "Random",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<SampleInternal> for PySample {
@@ -336,7 +534,8 @@ impl From<PySample> for SampleInternal {
 }
 
 #[pyclass(name = "Mmr")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMmr(MmrInternal);
 
 #[pymethods]
@@ -376,5 +575,20 @@ impl PyMmr {
     #[getter]
     pub fn candidates_limit(&self) -> usize {
         self.0.candidates_limit
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMmr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.class::<Self>(&[
+            ("vector", &self.vector()),
+            ("using", &self.using()),
+            ("lambda", &self.lambda()),
+            ("candidates_limit", &self.candidates_limit()),
+        ])
     }
 }

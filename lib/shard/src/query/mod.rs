@@ -167,7 +167,7 @@ impl ScoringQuery {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub enum FusionInternal {
     /// Reciprocal Rank Fusion
     RrfK(usize),
@@ -175,7 +175,7 @@ pub enum FusionInternal {
     Dbsf,
 }
 
-#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
 pub enum SampleInternal {
     Random,
 }

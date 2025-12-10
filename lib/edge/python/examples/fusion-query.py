@@ -33,7 +33,7 @@ result = shard.query(QueryRequest(
             score_threshold=None,
         )
     ],
-    query = Fusion.rrfk(2),
+    query = Fusion.Rrfk(2),
     filter = None,
     score_threshold = None,
     limit = 10,
