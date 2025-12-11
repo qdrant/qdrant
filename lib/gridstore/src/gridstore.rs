@@ -940,12 +940,13 @@ mod tests {
     #[rstest]
     fn test_behave_like_hashmap(
         #[values(1_048_576, 2_097_152, DEFAULT_PAGE_SIZE_BYTES)] page_size: usize,
+        #[values(Compression::None, Compression::LZ4)] compression: Compression,
     ) {
         use ahash::AHashMap;
 
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+        let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
         let max_point_offset = 10_000u32;
