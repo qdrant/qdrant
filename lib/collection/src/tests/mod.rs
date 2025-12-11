@@ -103,7 +103,7 @@ async fn test_optimization_process() {
 
     // Assert optimizer statuses are tracked properly
     {
-        let (log, _) = optimizers_log.lock().to_telemetry();
+        let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
         log.iter().for_each(|entry| {
             assert!(["indexing", "merge"].contains(&entry.name.as_str()));
@@ -209,7 +209,7 @@ async fn test_cancel_optimization() {
                 .clamp(1, 3)
         };
 
-        let (log, _) = optimizers_log.lock().to_telemetry();
+        let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
         for status in log {
             assert_eq!(status.name, "indexing");

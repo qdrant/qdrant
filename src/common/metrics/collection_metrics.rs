@@ -89,7 +89,7 @@ impl CollectionsTelemetry {
             total_dead_replicas += collection.dead_replicas();
 
             total_optimizers_time_spent.push(counter(
-                collection.optimization_time_spent() as f64,
+                collection.optimization_time_spent_seconds() as f64,
                 &[("id", &collection.id)],
             ));
 
@@ -174,7 +174,7 @@ impl CollectionsTelemetry {
 
         metrics.push_metric(metric_family(
             "collection_optimizations_time_seconds",
-            "total (cpu) time spent on optimizations in seconds",
+            "total time spent on optimizations in seconds",
             MetricType::COUNTER,
             total_optimizers_time_spent,
             prefix,

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,9 @@ use validator::Validate;
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, OptimizerType,
+};
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
@@ -21,6 +24,9 @@ const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
 pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
 const SEGMENTS_PATH: &str = "segments";
 const TEMP_SEGMENTS_PATH: &str = "temp_segments";
+
+/// A reference-counted collection of multiple optimizers.
+pub type OptimizerHolder = Arc<Vec<Arc<Optimizer>>>;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
 #[anonymize(false)]
@@ -162,11 +168,38 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
-) -> Arc<Vec<Arc<Optimizer>>> {
+    old_optimizer: Option<OptimizerHolder>,
+) -> OptimizerHolder {
     let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
+
+    // Collect the old optimizers' telemetry collectors back keep their values.
+    let mut merge_optimizer_duration_agg = OperationDurationsAggregator::new();
+    let mut indexing_optimizer_duration_agg = OperationDurationsAggregator::new();
+    let mut vacuum_optimizer_duration_agg = OperationDurationsAggregator::new();
+    let mut config_mm_optimizer_duration_agg = OperationDurationsAggregator::new();
+
+    if let Some(old_optimizer) = old_optimizer {
+        for old_optimizer in old_optimizer.iter() {
+            match old_optimizer.optimizer_type() {
+                OptimizerType::ConfigMismatch => {
+                    config_mm_optimizer_duration_agg =
+                        old_optimizer.get_telemetry_counter().clone();
+                }
+                OptimizerType::Vacuum => {
+                    vacuum_optimizer_duration_agg = old_optimizer.get_telemetry_counter().clone();
+                }
+                OptimizerType::Indexing => {
+                    indexing_optimizer_duration_agg = old_optimizer.get_telemetry_counter().clone();
+                }
+                OptimizerType::Merge => {
+                    merge_optimizer_duration_agg = old_optimizer.get_telemetry_counter().clone();
+                }
+            }
+        }
+    }
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
@@ -178,6 +211,7 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            merge_optimizer_duration_agg,
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
@@ -188,6 +222,7 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            indexing_optimizer_duration_agg,
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -199,6 +234,7 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            vacuum_optimizer_duration_agg,
         )),
         Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
@@ -208,6 +244,7 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            config_mm_optimizer_duration_agg,
         )),
     ])
 }

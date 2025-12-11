@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 
+use super::segment_optimizer::OptimizerType;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
 };
@@ -44,6 +45,7 @@ impl IndexingOptimizer {
         hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
+        telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
     ) -> Self {
         IndexingOptimizer {
             default_segments_number,
@@ -54,7 +56,7 @@ impl IndexingOptimizer {
             hnsw_config,
             hnsw_global_config,
             quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_durations_aggregator,
         }
     }
 
@@ -241,6 +243,10 @@ impl SegmentOptimizer for IndexingOptimizer {
         "indexing"
     }
 
+    fn optimizer_type(&self) -> OptimizerType {
+        OptimizerType::Indexing
+    }
+
     fn segments_path(&self) -> &Path {
         self.segments_path.as_path()
     }
@@ -277,7 +283,7 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
+    fn get_telemetry_counter(&self) -> &Arc<Mutex<OperationDurationsAggregator>> {
         &self.telemetry_durations_aggregator
     }
 }
@@ -356,6 +362,8 @@ mod tests {
             })
             .collect();
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         let mut index_optimizer = IndexingOptimizer::new(
             2,
             OptimizerThresholds {
@@ -372,6 +380,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
@@ -462,6 +471,8 @@ mod tests {
         let middle_segment_id = holder.add_new(middle_segment);
         let large_segment_id = holder.add_new(large_segment);
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         let mut index_optimizer = IndexingOptimizer::new(
             2,
             OptimizerThresholds {
@@ -484,6 +495,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
@@ -776,6 +788,8 @@ mod tests {
 
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         let index_optimizer = IndexingOptimizer::new(
             number_of_segments, // Keep the same number of segments
             OptimizerThresholds {
@@ -798,6 +812,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         let permit_cpu_count = num_rayon_threads(0);
@@ -892,6 +907,8 @@ mod tests {
             inline_storage: None,
         };
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         {
             // Optimizers used in test
             let index_optimizer = IndexingOptimizer::new(
@@ -903,6 +920,7 @@ mod tests {
                 hnsw_config,
                 HnswGlobalConfig::default(),
                 Default::default(),
+                dummy_telemetry_collector.clone(),
             );
             let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
                 thresholds_config,
@@ -912,6 +930,7 @@ mod tests {
                 hnsw_config,
                 HnswGlobalConfig::default(),
                 Default::default(),
+                dummy_telemetry_collector.clone(),
             );
 
             // Index optimizer should not optimize and put storage back in memory, nothing changed
@@ -951,6 +970,8 @@ mod tests {
                 });
         }
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         // Remove explicit on_disk flag and go back to default
         collection_params
             .vectors
@@ -969,6 +990,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -978,6 +1000,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         let permit_cpu_count = num_rayon_threads(0);

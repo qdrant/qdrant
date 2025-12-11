@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use common::progress_tracker::{ProgressTracker, ProgressView, new_progress_tracker};
@@ -26,10 +25,6 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
-
-    /// Amount of time spent on optimizations which have already been finished.
-    /// Currently running optimizations are not included.
-    time_spent_seconds: Arc<AtomicUsize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -41,7 +36,6 @@ pub struct IndexingProgressViews {
 impl TrackerLog {
     /// Register a new optimizer tracker
     pub fn register(&mut self, description: Tracker) {
-        description.set_time_spent_tracker(self.time_spent_seconds.clone());
         self.descriptions.push_back(description);
         self.truncate();
     }
@@ -72,26 +66,13 @@ impl TrackerLog {
     }
 
     /// Convert log into list of objects usable in telemetry
-    pub fn to_telemetry(&self) -> (Vec<TrackerTelemetry>, usize) {
-        let logs: Vec<TrackerTelemetry> = self
-            .descriptions
+    pub fn to_telemetry(&self) -> Vec<TrackerTelemetry> {
+        self.descriptions
             .iter()
             // Show latest items first
             .rev()
             .map(Tracker::to_telemetry)
-            .collect();
-        let finished_time_spent = self.time_spent_seconds.load(Ordering::Relaxed);
-
-        // Calculate time spent for currently running optimizations.
-        let now = Utc::now();
-        let running_time_spent: usize = logs
-            .iter()
-            .filter(|i| i.status == TrackerStatus::Optimizing)
-            .map(|i| (now - i.start_at).num_seconds().max(0) as usize)
-            .sum();
-        let total_time_spent = finished_time_spent + running_time_spent;
-
-        (logs, total_time_spent)
+            .collect()
     }
 
     pub fn progress_views(&self) -> IndexingProgressViews {
@@ -136,14 +117,10 @@ impl Tracker {
         let tracker = Self {
             name: name.into(),
             segment_ids,
-            state: Arc::new(Mutex::new(TrackerState::new())),
+            state: Default::default(),
             progress_view,
         };
         (tracker, progress_tracker)
-    }
-
-    fn set_time_spent_tracker(&self, tracker: Arc<AtomicUsize>) {
-        self.state.lock().time_spent_tracker = Some(tracker);
     }
 
     /// Get handle to this tracker, allows updating state
@@ -199,49 +176,24 @@ impl From<Arc<Mutex<TrackerState>>> for TrackerHandle {
 }
 
 /// Mutable state of an optimizer tracker
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TrackerState {
     pub status: TrackerStatus,
     pub end_at: Option<DateTime<Utc>>,
-    pub start_at: DateTime<Utc>,
-    pub time_spent_tracker: Option<Arc<AtomicUsize>>,
 }
 
 impl TrackerState {
-    pub fn new() -> Self {
-        Self {
-            status: TrackerStatus::default(),
-            end_at: None,
-            start_at: Utc::now(),
-            time_spent_tracker: None,
-        }
-    }
-
     /// Update the tracker state to the given `status`
     pub fn update(&mut self, status: TrackerStatus) {
         match status {
             TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
-                let end = Utc::now();
-
-                if let Some(time_spent_tracker) = &self.time_spent_tracker {
-                    // Get time delta. Saturate negative durations to 0.
-                    let duration = (end - self.start_at).num_seconds().max(0) as usize;
-                    time_spent_tracker.fetch_add(duration, Ordering::Relaxed);
-                }
-
-                self.end_at.replace(end);
+                self.end_at.replace(Utc::now());
             }
             TrackerStatus::Optimizing => {
                 self.end_at.take();
             }
         }
         self.status = status;
-    }
-}
-
-impl Default for TrackerState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

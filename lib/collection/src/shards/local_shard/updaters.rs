@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -43,6 +44,7 @@ impl LocalShard {
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
+        let old_optimizer = take(&mut update_handler.optimizers);
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
@@ -50,6 +52,7 @@ impl LocalShard {
             &config.hnsw_config,
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
+            Some(old_optimizer),
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;

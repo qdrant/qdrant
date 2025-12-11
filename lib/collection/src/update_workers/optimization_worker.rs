@@ -28,8 +28,9 @@ use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::optimizers_builder::OptimizerHolder;
 use crate::shards::update_tracker::UpdateTracker;
-use crate::update_handler::{Optimizer, OptimizerSignal};
+use crate::update_handler::OptimizerSignal;
 use crate::update_workers::UpdateWorkers;
 use crate::wal_delta::LockedWal;
 
@@ -41,7 +42,7 @@ const OPTIMIZER_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     pub async fn optimization_worker_fn(
-        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers: OptimizerHolder,
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
@@ -219,7 +220,7 @@ impl UpdateWorkers {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn process_optimization(
-        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers: OptimizerHolder,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
@@ -251,7 +252,7 @@ impl UpdateWorkers {
     /// Starts a task for each optimization
     /// Returns handles for started tasks
     pub(crate) fn launch_optimization<F>(
-        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers: OptimizerHolder,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: &ResourceBudget,

@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use rand::Rng;
 use rand::rngs::ThreadRng;
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
@@ -246,6 +247,7 @@ pub(crate) fn get_merge_optimizer(
         Default::default(),
         HnswGlobalConfig::default(),
         Default::default(),
+        OperationDurationsAggregator::new(),
     )
 }
 
@@ -272,5 +274,6 @@ pub(crate) fn get_indexing_optimizer(
         Default::default(),
         HnswGlobalConfig::default(),
         Default::default(),
+        OperationDurationsAggregator::new(),
     )
 }

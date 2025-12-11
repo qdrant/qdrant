@@ -11,7 +11,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
+    OptimizerThresholds, OptimizerType, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 
@@ -45,6 +45,7 @@ impl MergeOptimizer {
         hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
+        telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
     ) -> Self {
         MergeOptimizer {
             default_segments_number,
@@ -55,7 +56,7 @@ impl MergeOptimizer {
             hnsw_config,
             hnsw_global_config,
             quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_durations_aggregator,
         }
     }
 }
@@ -63,6 +64,10 @@ impl MergeOptimizer {
 impl SegmentOptimizer for MergeOptimizer {
     fn name(&self) -> &str {
         "merge"
+    }
+
+    fn optimizer_type(&self) -> OptimizerType {
+        OptimizerType::Merge
     }
 
     fn segments_path(&self) -> &Path {
@@ -150,7 +155,7 @@ impl SegmentOptimizer for MergeOptimizer {
         candidates
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
+    fn get_telemetry_counter(&self) -> &Arc<Mutex<OperationDurationsAggregator>> {
         &self.telemetry_durations_aggregator
     }
 }

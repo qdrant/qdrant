@@ -90,13 +90,10 @@ impl LocalShard {
             status,
             optimizations,
             log: None,
-            time_spent: None,
         };
 
         if detail.level >= DetailsLevel::Level4 {
-            let (optimizer_log, total_time_spent) = self.optimizers_log.lock().to_telemetry();
-            optimizations.log = Some(optimizer_log);
-            optimizations.time_spent = Some(total_time_spent);
+            optimizations.log = Some(self.optimizers_log.lock().to_telemetry());
         }
 
         Ok(LocalShardTelemetry {
