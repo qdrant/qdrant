@@ -7,8 +7,6 @@ use crate::spaces::simple_sse::hsum128_ps_sse;
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
-    debug_assert!(is_x86_feature_detected!("sse"));
-    debug_assert!(is_x86_feature_detected!("sse2"));
 
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();

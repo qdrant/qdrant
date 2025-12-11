@@ -124,7 +124,7 @@ impl Issue for UnindexedField {
     }
 
     fn solution(&self) -> Solution {
-        let mut solutions = self.field_schemas.iter().cloned().map(|field_schema| {
+        let mut solutions = self.field_schemas.iter().map(|field_schema| {
             let request_body = serde_json::json!({
                 "field_name": self.field_name,
                 "field_schema": field_schema,
