@@ -1014,7 +1014,7 @@ pub async fn update(
     let UpdateParams {
         wait,
         ordering,
-        timeout: _,
+        timeout,
     } = params;
 
     let shard_selector = match operation {
@@ -1052,6 +1052,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
+        timeout,
         ordering,
         shard_selector,
         access,

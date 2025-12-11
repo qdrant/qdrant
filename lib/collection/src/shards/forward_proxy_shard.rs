@@ -120,6 +120,7 @@ impl ForwardProxyShard {
                         }),
                     )),
                     false,
+                    None,
                     HwMeasurementAcc::disposable(), // Internal operation
                 )
                 .await?;
@@ -180,6 +181,7 @@ impl ForwardProxyShard {
             .update(
                 OperationWithClockTag::from(insert_points_operation),
                 wait,
+                None,
                 HwMeasurementAcc::disposable(), // Internal operation
             ) // TODO: Assign clock tag!? 🤔
             .await?;
@@ -408,6 +410,7 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         operation: OperationWithClockTag,
         _wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -423,7 +426,7 @@ impl ShardOperation for ForwardProxyShard {
         // the transfer needs to have access to the latest version of points.
         let mut result = self
             .wrapped_shard
-            .update(operation.clone(), true, hw_measurement_acc.clone())
+            .update(operation.clone(), true, timeout, hw_measurement_acc.clone())
             .await?;
 
         let points_matching_filter_before = {
@@ -505,7 +508,7 @@ impl ShardOperation for ForwardProxyShard {
 
         let remote_result = self
             .remote_shard
-            .update(operation, false, hw_measurement_acc)
+            .update(operation, false, timeout, hw_measurement_acc)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 

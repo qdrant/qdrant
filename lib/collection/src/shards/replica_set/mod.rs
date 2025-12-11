@@ -1063,7 +1063,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), true, hw_measurement_acc, force)
+            .update_local(op.into(), true, None, hw_measurement_acc, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(

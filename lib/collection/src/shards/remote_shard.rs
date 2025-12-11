@@ -233,6 +233,7 @@ impl RemoteShard {
         &self,
         operations: Vec<OperationWithClockTag>,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -241,6 +242,7 @@ impl RemoteShard {
         let shard_id = Some(self.id);
         let collection_name = &self.collection_id;
         let ordering = Some(ordering);
+        let timeout = timeout.map(|t| t.as_secs());
 
         for operation in operations {
             let update_op = match operation.operation {
@@ -252,6 +254,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             point_insert_operations,
                             wait,
+                            timeout,
                             ordering,
                         )?;
 
@@ -264,6 +267,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             conditional_upsert,
                             wait,
+                            timeout,
                             ordering,
                         )?;
                         Update::Upsert(request)
@@ -275,6 +279,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             ids,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::Delete(request)
@@ -286,6 +291,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             filter,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::Delete(request)
@@ -297,6 +303,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             operation,
                             wait,
+                            timeout,
                             ordering,
                         )?;
                         Update::Sync(request)
@@ -315,6 +322,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             update_operation,
                             wait,
+                            timeout,
                             ordering,
                         )?;
                         Update::UpdateVectors(request)
@@ -327,6 +335,7 @@ impl RemoteShard {
                             ids.points,
                             vector_names.clone(),
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::DeleteVectors(request)
@@ -339,6 +348,7 @@ impl RemoteShard {
                             filter,
                             vector_names.clone(),
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::DeleteVectors(request)
@@ -352,6 +362,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             set_payload,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::SetPayload(request)
@@ -363,6 +374,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             delete_payload,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::DeletePayload(request)
@@ -374,6 +386,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             points,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::ClearPayload(request)
@@ -385,6 +398,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             filter,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::ClearPayload(request)
@@ -396,6 +410,7 @@ impl RemoteShard {
                             collection_name.clone(),
                             set_payload,
                             wait,
+                            timeout,
                             ordering,
                         );
                         Update::OverwritePayload(request)
@@ -410,6 +425,7 @@ impl RemoteShard {
                                 collection_name.clone(),
                                 create_index,
                                 wait,
+                                timeout,
                                 ordering,
                             );
                             Update::CreateFieldIndex(request)
@@ -421,6 +437,7 @@ impl RemoteShard {
                                 collection_name.clone(),
                                 delete_index,
                                 wait,
+                                timeout,
                                 ordering,
                             );
                             Update::DeleteFieldIndex(request)
@@ -465,6 +482,7 @@ impl RemoteShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -475,6 +493,7 @@ impl RemoteShard {
             self.collection_id.clone(),
             operation,
             wait,
+            timeout,
             Some(ordering),
             hw_measurement_acc,
         )
@@ -490,6 +509,7 @@ impl RemoteShard {
         collection_name: String,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: Option<WriteOrdering>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -498,6 +518,7 @@ impl RemoteShard {
 
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
+        let timeout = timeout.map(|t| t.as_secs());
 
         let point_operation_response = match operation.operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
@@ -508,6 +529,7 @@ impl RemoteShard {
                         collection_name,
                         point_insert_operations,
                         wait,
+                        timeout,
                         ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
@@ -523,6 +545,7 @@ impl RemoteShard {
                         collection_name,
                         conditional_upsert,
                         wait,
+                        timeout,
                         ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
@@ -538,6 +561,7 @@ impl RemoteShard {
                         collection_name,
                         ids,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -553,6 +577,7 @@ impl RemoteShard {
                         collection_name,
                         filter,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -568,6 +593,7 @@ impl RemoteShard {
                         collection_name,
                         operation,
                         wait,
+                        timeout,
                         ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
@@ -601,6 +627,7 @@ impl RemoteShard {
                         collection_name,
                         update_operation,
                         wait,
+                        timeout,
                         ordering,
                     )?;
                     self.with_points_client(|mut client| async move {
@@ -619,6 +646,7 @@ impl RemoteShard {
                         ids.points,
                         vector_names.clone(),
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -637,6 +665,7 @@ impl RemoteShard {
                         filter,
                         vector_names.clone(),
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -656,6 +685,7 @@ impl RemoteShard {
                         collection_name,
                         set_payload,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -673,6 +703,7 @@ impl RemoteShard {
                         collection_name,
                         delete_payload,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -690,6 +721,7 @@ impl RemoteShard {
                         collection_name,
                         points,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -707,6 +739,7 @@ impl RemoteShard {
                         collection_name,
                         filter,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -724,6 +757,7 @@ impl RemoteShard {
                         collection_name,
                         set_payload,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -744,6 +778,7 @@ impl RemoteShard {
                         collection_name,
                         create_index,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -761,6 +796,7 @@ impl RemoteShard {
                         collection_name,
                         delete_index,
                         wait,
+                        timeout,
                         ordering,
                     );
                     self.with_points_client(|mut client| async move {
@@ -947,6 +983,7 @@ impl ShardOperation for RemoteShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
@@ -958,6 +995,7 @@ impl ShardOperation for RemoteShard {
             self.collection_id.clone(),
             operation,
             wait,
+            timeout,
             None,
             hw_measurement_acc,
         )
