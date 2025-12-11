@@ -266,7 +266,9 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-
+        log::trace!(
+            "get_value offset:{point_offset} page_id:{page_id} block_offset:{block_offset} length:{length}"
+        );
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -437,6 +439,9 @@ impl<V: Blob> Gridstore<V> {
         // update the pointer
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
+        log::trace!(
+            "put_value offset:{point_offset} set page_id:{start_page_id} block_offset:{block_offset} length:{value_size}"
+        );
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -458,6 +463,9 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
+        log::trace!(
+            "delete_value offset:{point_offset} unset page_id:{page_id} block_offset:{block_offset} length:{length}"
+        );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
@@ -660,6 +668,9 @@ impl<V> Gridstore<V> {
 
 #[cfg(test)]
 mod tests {
+    use std::thread;
+    use std::time::Duration;
+
     use fs_err::File;
     use itertools::Itertools;
     use rand::distr::Uniform;
@@ -876,7 +887,7 @@ mod tests {
     #[test]
     fn test_write_across_pages() {
         let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-        let (_dir, mut storage) = empty_storage_sized(page_size);
+        let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
 
         storage.create_new_page().unwrap();
 
@@ -899,30 +910,34 @@ mod tests {
     enum Operation {
         Put(PointOffset, Payload),
         Delete(PointOffset),
-        Update(PointOffset, Payload),
         Get(PointOffset),
-        Flush,
+        FlushDelay(Duration),
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let point_offset = rng.random_range(0..=max_point_offset);
-            let operation = rng.random_range(0..4);
+            let operation = rng.random_range(0..=3);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
+                    let point_offset = rng.random_range(0..=max_point_offset);
                     Operation::Put(point_offset, payload)
                 }
-                1 => Operation::Delete(point_offset),
-                2 => {
-                    let size_factor = rng.random_range(1..10);
-                    let payload = random_payload(rng, size_factor);
-                    Operation::Update(point_offset, payload)
+                1 => {
+                    let point_offset = rng.random_range(0..=max_point_offset);
+                    Operation::Delete(point_offset)
                 }
-                3 => Operation::Get(point_offset),
-                4 => Operation::Flush,
-                _ => unreachable!(),
+                2 => {
+                    let point_offset = rng.random_range(0..=max_point_offset);
+                    Operation::Get(point_offset)
+                }
+                3 => {
+                    let delay_ms = rng.random_range(0..=500);
+                    let delay = Duration::from_millis(delay_ms);
+                    Operation::FlushDelay(delay)
+                }
+                op => panic!("{op} out of range"),
             }
         }
     }
@@ -930,27 +945,34 @@ mod tests {
     #[rstest]
     fn test_behave_like_hashmap(
         #[values(1_048_576, 2_097_152, DEFAULT_PAGE_SIZE_BYTES)] page_size: usize,
+        #[values(Compression::None, Compression::LZ4)] compression: Compression,
     ) {
         use ahash::AHashMap;
 
-        let (dir, mut storage) = empty_storage_sized(page_size);
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 10000u32;
+        let max_point_offset = 10_000u32;
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100000u32)
-            .map(|_| Operation::random(rng, max_point_offset))
-            .collect::<Vec<_>>();
+        let operations = (0..100_000u32).map(|_| Operation::random(rng, max_point_offset));
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
+        // ensure no concurrent flushing & flusher instances
+        let has_flusher_lock = Arc::new(parking_lot::Mutex::new(false));
+
+        let mut flush_thread_handles = Vec::new();
+
         // apply operations to storage and model_hashmap
-        for operation in operations {
+        for (i, operation) in operations.enumerate() {
             match operation {
                 Operation::Put(point_offset, payload) => {
+                    log::debug!("op:{i} PUT offset:{point_offset}");
                     let old1 = storage
                         .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
@@ -962,6 +984,7 @@ mod tests {
                     );
                 }
                 Operation::Delete(point_offset) => {
+                    log::debug!("op:{i} DELETE offset:{point_offset}");
                     let old1 = storage.delete_value(point_offset);
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
@@ -969,13 +992,8 @@ mod tests {
                         "same deletion failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
                     );
                 }
-                Operation::Update(point_offset, payload) => {
-                    storage
-                        .put_value(point_offset, &payload, hw_counter_ref)
-                        .unwrap();
-                    model_hashmap.insert(point_offset, payload);
-                }
                 Operation::Get(point_offset) => {
+                    log::debug!("op:{i} GET offset:{point_offset}");
                     let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
                     let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
                     let v2 = model_hashmap.get(&point_offset).cloned();
@@ -988,8 +1006,47 @@ mod tests {
                         "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
                     );
                 }
-                Operation::Flush => storage.flusher()().unwrap(),
+                Operation::FlushDelay(delay) => {
+                    let mut flush_lock_guard = has_flusher_lock.lock();
+                    if *flush_lock_guard {
+                        log::debug!(
+                            "op:{i} Skip flushing because a Flusher has already been created"
+                        );
+                    } else {
+                        log::debug!("op:{i} Scheduling flush in {delay:?}");
+                        let flusher = storage.flusher();
+                        *flush_lock_guard = true;
+                        drop(flush_lock_guard);
+                        let flush_lock = has_flusher_lock.clone();
+                        let handle = std::thread::Builder::new()
+                            .name("background_flush".to_string())
+                            .spawn(move || {
+                                thread::sleep(delay); // keep flusher alive while other operation are applied
+                                let mut flush_lock_guard = flush_lock.lock();
+                                assert!(
+                                    *flush_lock_guard,
+                                    "there must be a flusher marked as alive"
+                                );
+                                log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
+                                match flusher() {
+                                    Ok(_) => log::debug!("op:{i} FLUSH DONE"),
+                                    Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
+                                }
+                                *flush_lock_guard = false; // no flusher alive
+                                drop(flush_lock_guard);
+                            })
+                            .unwrap();
+                        flush_thread_handles.push(handle);
+                    }
+                }
             }
+        }
+
+        log::debug!("All operations successfully applied - now checking consistency...");
+
+        // wait for all background flushes to complete
+        for handle in flush_thread_handles {
+            handle.join().expect("flush thread should not panic");
         }
 
         // asset same length

@@ -2564,6 +2564,7 @@ dependencies = [
  "csv",
  "dataset",
  "ecow",
+ "env_logger",
  "fs-err",
  "io",
  "itertools 0.14.0",

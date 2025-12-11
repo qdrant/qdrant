@@ -305,7 +305,8 @@ impl Tracker {
             if let Some(pending_updates) = self.pending_updates.get_mut(&point_offset)
                 && pending_updates.drain_persisted_and_drop(&updates)
             {
-                self.pending_updates.remove(&point_offset);
+                let prev = self.pending_updates.remove(&point_offset);
+                log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
             }
         }
         // increment header count if necessary
