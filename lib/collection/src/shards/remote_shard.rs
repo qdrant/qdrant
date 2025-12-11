@@ -503,6 +503,7 @@ impl RemoteShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_update_operation(
         &self,
         shard_id: Option<ShardId>,
