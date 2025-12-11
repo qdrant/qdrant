@@ -23,6 +23,7 @@ pub struct Counts {
     pub right: usize,
 }
 
+#[allow(clippy::derive_ord_xor_partial_ord)]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Point<T> {
@@ -38,7 +39,6 @@ impl<T> Point<T> {
 
 impl<T: PartialEq> Eq for Point<T> {}
 
-#[allow(clippy::derive_ord_xor_partial_ord)]
 impl<T: PartialOrd + Copy> Ord for Point<T> {
     fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
         (self.val, self.idx)
