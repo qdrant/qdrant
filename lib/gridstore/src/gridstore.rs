@@ -912,6 +912,8 @@ mod tests {
         Delete(PointOffset),
         Get(PointOffset),
         FlushDelay(Duration),
+        #[allow(unused)]
+        FlushDelayTrigger,
     }
 
     impl Operation {
@@ -939,6 +941,113 @@ mod tests {
                 }
                 op => panic!("{op} out of range"),
             }
+        }
+
+        fn parse_log_line(line: &str, rng: &mut impl Rng) -> Option<Self> {
+            // LOG: remove timestamp
+            let line = line.split_once(' ').unwrap().1;
+
+            // Skip some events
+            if line.starts_with("TRACE gridstore::tracker] tracker unset offset:") {
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::bitmask] mark_blocks_batch used") {
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::gridstore] put_value offset:") {
+                // TODO: ignore this one?
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::gridstore] delete_value offset:") {
+                // TODO: ignore this one?
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::tracker] unset ignoring duplicate pointe") {
+                // TODO: ignore this one?
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::tracker] write_pending_and_flush offset:") {
+                // TODO: ignore this one?
+                return None;
+            }
+            if line.starts_with("TRACE gridstore::tracker] removed pending update offset:") {
+                // TODO: ignore this one?
+                return None;
+            }
+            if regex::Regex::new("^TRACE gridstore::tracker] point_offset:(\\d+) not found$")
+                .unwrap()
+                .is_match(&line)
+            {
+                return None;
+            }
+
+            // Do operation
+            if line.starts_with("DEBUG gridstore::gridstore::tests] op:") {
+                let line = line.replace("DEBUG gridstore::gridstore::tests] ", "");
+
+                if let Some(captures) = regex::Regex::new("^op:(\\d+) ([A-Z]+) offset:(\\d+)$")
+                    .unwrap()
+                    .captures(&line)
+                {
+                    let op_num = captures.get(1).unwrap().as_str().parse::<usize>().unwrap();
+                    let op_type = captures.get(2).unwrap().as_str();
+                    let offset = captures.get(3).unwrap().as_str().parse::<usize>().unwrap();
+
+                    match op_type {
+                        "PUT" => {
+                            let payload = random_payload(rng, 2);
+                            return Some(Operation::Put(offset as u32, payload));
+                        }
+                        "DELETE" => return Some(Operation::Delete(offset as u32)),
+                        "GET" => return Some(Operation::Get(offset as u32)),
+                        _ => panic!("Unhandled operation type: {op_type} in op:{op_num}"),
+                    }
+                }
+
+                if let Some(captures) =
+                    regex::Regex::new("^op:(\\d+) Scheduling flush in (\\d+)(ms|ns)$")
+                        .unwrap()
+                        .captures(&line)
+                {
+                    let _op_num = captures.get(1).unwrap().as_str().parse::<usize>().unwrap();
+                    let delay = captures.get(2).unwrap().as_str().parse::<u64>().unwrap();
+                    let duration = match captures.get(3).unwrap().as_str() {
+                        "ms" => Duration::from_millis(delay),
+                        "ns" => Duration::from_nanos(delay),
+                        _ => unreachable!(),
+                    };
+                    return Some(Operation::FlushDelay(duration));
+                    // return Some(Operation::FlushDelay(Duration::MAX));
+                }
+
+                if regex::Regex::new("^op:(\\d+) STARTING FLUSH after waiting (\\d+)(ms|ns)$")
+                    .unwrap()
+                    .is_match(&line)
+                {
+                    return None;
+                    // return Some(Operation::FlushDelayTrigger);
+                }
+
+                if regex::Regex::new("^op:(\\d+) FLUSH DONE$")
+                    .unwrap()
+                    .is_match(&line)
+                {
+                    return None;
+                }
+
+                if regex::Regex::new(
+                    "^op:(\\d+) Skip flushing because a Flusher has already been created$",
+                )
+                .unwrap()
+                .is_match(&line)
+                {
+                    return None;
+                }
+
+                panic!("Unhandled operation event: {line}");
+            }
+
+            panic!("Unhandled event: {line}");
         }
     }
 
@@ -1030,7 +1139,10 @@ mod tests {
                                 log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                                 match flusher() {
                                     Ok(_) => log::debug!("op:{i} FLUSH DONE"),
-                                    Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
+                                    Err(err) => {
+                                        log::error!("op:{i} FLUSH failed {err:?}");
+                                        panic!("FLUSH FAILED: {err:?}");
+                                    }
                                 }
                                 *flush_lock_guard = false; // no flusher alive
                                 drop(flush_lock_guard);
@@ -1039,6 +1151,10 @@ mod tests {
                         flush_thread_handles.push(handle);
                     }
                 }
+                Operation::FlushDelayTrigger => unreachable!(), // Operation::FlushDelay(_duration) => {
+                                                                //     log::debug!("op:{i} Flush now");
+                                                                //     storage.flusher()().unwrap();
+                                                                // }
             }
         }
 
@@ -1677,5 +1793,197 @@ mod tests {
         assert_eq!(storage.pages.read().len(), 1);
         assert!(storage.get_pointer(0).is_none(), "point must not exist");
         assert_eq!(storage.max_point_id(), 0, "must have zero points");
+    }
+
+    #[test]
+    fn test_behave_like_hashmap_events_from_log() {
+        use ahash::AHashMap;
+
+        let event_log = include_str!("../output.txt")
+            .lines()
+            .filter(|line| !line.is_empty())
+            // Skip comment and backtrace lines
+            .filter(|line| {
+                ["#", "thread '", "called `", "stack backtrace:"]
+                    .iter()
+                    .all(|skip| !line.starts_with(skip))
+            })
+            // Scroll to start of event log
+            .skip_while(|&line| line != "running 1 test")
+            .skip(2)
+            // End at backtrace
+            .take_while(|line| !line.contains("__rustc::rust_begin_unwind"));
+
+        let page_size = DEFAULT_PAGE_SIZE_BYTES;
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let (dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+
+        let rng = &mut rand::rngs::SmallRng::seed_from_u64(0);
+        let max_point_offset = 10_000u32;
+
+        let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
+
+        // let operations = (0..100_000u32)
+        //     .map(|_| Operation::random(rng, max_point_offset))
+        //     .collect::<Vec<_>>();
+
+        let operations = event_log
+            .flat_map(|line| Operation::parse_log_line(&line, rng))
+            .collect::<Vec<_>>();
+
+        let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+        // ensure no concurrent flushing & flusher instances
+        let has_flusher_lock = Arc::new(parking_lot::Mutex::new(false));
+
+        // apply operations to storage and model_hashmap
+        let flusher_job = Arc::new(Mutex::new(None));
+        for (i, operation) in operations.into_iter().enumerate() {
+            match operation {
+                Operation::Put(point_offset, payload) => {
+                    log::debug!("op:{i} PUT offset:{point_offset}");
+                    let old1 = storage
+                        .put_value(point_offset, &payload, hw_counter_ref)
+                        .unwrap();
+                    let old2 = model_hashmap.insert(point_offset, payload.clone());
+                    assert_eq!(
+                        old1,
+                        old2.is_some(),
+                        "put failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
+                    );
+                    // sanity check for read after write
+                    let read = storage.get_value::<false>(point_offset, &hw_counter);
+                    assert_eq!(read, Some(payload));
+                }
+                Operation::Delete(point_offset) => {
+                    log::debug!("op:{i} DELETE offset:{point_offset}");
+                    let old1 = storage.delete_value(point_offset);
+                    let old2 = model_hashmap.remove(&point_offset);
+                    assert_eq!(
+                        old1, old2,
+                        "same deletion failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
+                    );
+                }
+                Operation::Get(point_offset) => {
+                    log::debug!("op:{i} GET offset:{point_offset}");
+                    let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
+                    let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
+                    let v2 = model_hashmap.get(&point_offset).cloned();
+                    assert_eq!(
+                        v1_seq, v2,
+                        "get sequential failed for point_offset: {point_offset} with {v1_seq:?} vs {v2:?}",
+                    );
+                    assert_eq!(
+                        v1_rand, v2,
+                        "get_rand sequential failed for point_offset: {point_offset} with {v1_rand:?} vs {v2:?}",
+                    );
+                }
+                Operation::FlushDelay(delay) => {
+                    let mut flush_lock_guard = has_flusher_lock.lock();
+                    if *flush_lock_guard {
+                        log::debug!(
+                            "op:{i} Skip flushing because a Flusher has already been created"
+                        );
+                    } else {
+                        log::debug!("op:{i} Scheduling flush in {delay:?}");
+                        let flusher = storage.flusher();
+                        *flush_lock_guard = true;
+                        assert!(
+                            flusher_job.lock().replace(flusher).is_none(),
+                            "must not replace existing flusher",
+                        );
+                        drop(flush_lock_guard);
+                        let flush_lock = has_flusher_lock.clone();
+                        let flusher_job = flusher_job.clone();
+                        std::thread::Builder::new()
+                            .name("background_flush".to_string())
+                            .spawn(move || {
+                                thread::sleep(delay); // keep flusher alive while other operation are applied
+                                let mut flush_lock_guard = flush_lock.lock();
+                                assert!(
+                                    *flush_lock_guard,
+                                    "there must be a flusher marked as alive"
+                                );
+                                log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
+                                let flusher = match flusher_job.lock().take() {
+                                    Some(flusher) => flusher,
+                                    None => return,
+                                };
+                                match flusher() {
+                                    Ok(_) => log::debug!("op:{i} FLUSH DONE"),
+                                    Err(err) => {
+                                        log::error!("op:{i} FLUSH failed {err:?}");
+                                        panic!("FLUSH FAILED: {err:?}");
+                                    }
+                                }
+                                *flush_lock_guard = false; // no flusher alive
+                                drop(flush_lock_guard);
+                            })
+                            .unwrap();
+                    }
+                }
+                Operation::FlushDelayTrigger => {
+                    let mut flush_lock_guard = has_flusher_lock.lock();
+
+                    assert!(*flush_lock_guard, "there must be a flusher marked as alive");
+
+                    if !*flush_lock_guard {
+                        log::debug!("op:{i} No pending flush to trigger");
+                        continue;
+                    }
+
+                    log::debug!("op:{i} Triggering pending flush immediately");
+                    let flusher = flusher_job.lock().take().expect("expected a pending flush");
+                    match flusher() {
+                        Ok(_) => log::debug!("op:{i} FLUSH DONE"),
+                        Err(err) => {
+                            log::error!("op:{i} FLUSH failed {err:?}");
+                            panic!("FLUSH FAILED: {err:?}");
+                        }
+                    }
+                    *flush_lock_guard = false; // no flusher alive
+                    drop(flush_lock_guard);
+                }
+            }
+        }
+
+        log::debug!("All operations successfully applied - now checking consistency...");
+
+        // asset same length
+        assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+
+        // validate storage and model_hashmap are the same
+        for point_offset in 0..=max_point_offset {
+            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+            let model_payload = model_hashmap.get(&point_offset);
+            assert_eq!(stored_payload.as_ref(), model_payload);
+        }
+
+        // flush data
+        storage.flusher()().unwrap();
+
+        let before_size = storage.get_storage_size_bytes();
+        // drop storage
+        drop(storage);
+
+        // reopen storage
+        let storage = Gridstore::<Payload>::open(dir.path().to_path_buf()).unwrap();
+        // assert same size
+        assert_eq!(storage.get_storage_size_bytes(), before_size);
+        // assert same length
+        assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+
+        // validate storage and model_hashmap are the same
+        for point_offset in 0..=max_point_offset {
+            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+            let model_payload = model_hashmap.get(&point_offset);
+            assert_eq!(
+                stored_payload.as_ref(),
+                model_payload,
+                "failed for point_offset: {point_offset}",
+            );
+        }
     }
 }

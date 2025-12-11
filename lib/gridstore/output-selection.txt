@@ -1,0 +1,31 @@
+348: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:162 PUT offset:89
+349: [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:26 block_end:43
+350: [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:89 set page_id:0 block_offset:26 length:2155
+351: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 Scheduling flush in 1ms
+
+429: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 STARTING FLUSH after waiting 1ms
+481: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 FLUSH DONE
+
+544: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:232 DELETE offset:89
+545: [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:89
+546: [2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:89 unset page_id:0 block_offset:26 length:2155
+
+558: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 Scheduling flush in 1ms
+
+607: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:282 PUT offset:89
+608: [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:326 block_end:342
+609: [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:89 set page_id:0 block_offset:326 length:1958
+
+631: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 STARTING FLUSH after waiting 1ms
+632: [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:89 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }] }
+643: [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:26 block_end:43
+646: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 FLUSH DONE
+647: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 Scheduling flush in 1ms
+648: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:297 PUT offset:62
+649: [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:26 block_end:30
+650: [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:62 set page_id:0 block_offset:26 length:452
+684: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 STARTING FLUSH after waiting 1ms
+685: [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:89 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }, ValuePointer { page_id: 0, block_offset: 326, length: 1958 }] }
+686: [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:89 not found
+711: [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:26 block_end:43
+718: [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 FLUSH DONE

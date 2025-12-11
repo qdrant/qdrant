@@ -1,0 +1,900 @@
+warning: unused variable: `point_offset`
+   --> lib/gridstore/src/gridstore.rs:990:32
+    |
+990 |                 Operation::Get(point_offset) => {
+    |                                ^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+help: if this is intentional, prefix it with an underscore
+    |
+990 |                 Operation::Get(_point_offset) => {
+    |                                +
+help: you might have meant to pattern match on the similarly named constant `BITS_IN_CHUNK`
+    |
+990 -                 Operation::Get(point_offset) => {
+990 +                 Operation::Get(bitmask::Bitmask::calculate_gaps::BITS_IN_CHUNK) => {
+    |
+
+warning: `gridstore` (lib test) generated 1 warning (run `cargo fix --lib -p gridstore --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+warning: the following packages contain code that will be rejected by a future version of Rust: num-bigint-dig v0.8.4
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+────────────
+ Nextest run ID 16c375d9-df63-4617-8949-a69f88d6d5e6 with nextest profile: default
+    Starting 1 test across 24 binaries (1312 tests skipped)
+       START (1/1) gridstore gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES
+
+running 1 test
+[2025-12-10T10:50:45Z WARN  memory::mmap_ops] MULTI_MMAP_SUPPORT_CHECK_RESULT should be initialized before accessing MULTI_MMAP_IS_SUPPORTED
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:1 DELETE offset:52
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:52
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:3 Scheduling flush in 2ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:4 PUT offset:9
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:0 block_end:35
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:9 set page_id:0 block_offset:0 length:4381
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:6 PUT offset:76
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:35 block_end:57
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:76 set page_id:0 block_offset:35 length:2716
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:8 PUT offset:43
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:57 block_end:61
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:43 set page_id:0 block_offset:57 length:391
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:9 PUT offset:24
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:61 block_end:102
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:24 set page_id:0 block_offset:61 length:5179
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:10 PUT offset:35
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:102 block_end:109
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:35 set page_id:0 block_offset:102 length:877
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:11 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:15 PUT offset:41
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:109 block_end:125
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:41 set page_id:0 block_offset:109 length:1992
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:19 DELETE offset:14
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:14
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:20 PUT offset:27
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:125 block_end:143
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:27 set page_id:0 block_offset:125 length:2301
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:21 DELETE offset:0
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:0
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:22 DELETE offset:96
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:96
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:23 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:24 DELETE offset:54
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:54
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:25 PUT offset:5
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:143 block_end:173
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:5 set page_id:0 block_offset:143 length:3713
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:26 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:27 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:28 PUT offset:53
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:173 block_end:190
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:53 set page_id:0 block_offset:173 length:2096
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:29 DELETE offset:22
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:22
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:30 DELETE offset:58
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:58
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:31 DELETE offset:96
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:96
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:34 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:35 PUT offset:41
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:190 block_end:213
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:41 set page_id:0 block_offset:190 length:2843
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:37 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:38 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:39 PUT offset:51
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:213 block_end:228
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:51 set page_id:0 block_offset:213 length:1807
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:40 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:42 DELETE offset:87
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:87
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:43 DELETE offset:69
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:69
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:44 DELETE offset:75
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:75
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:45 PUT offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:228 block_end:241
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:100 set page_id:0 block_offset:228 length:1579
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:46 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:47 PUT offset:0
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:241 block_end:250
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:0 set page_id:0 block_offset:241 length:1064
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:48 DELETE offset:53
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:53
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 173, length: 2096 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:53 unset page_id:0 block_offset:173 length:2096
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:50 DELETE offset:23
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:23
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:51 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:53 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:54 DELETE offset:9
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:9
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 0, length: 4381 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:9 unset page_id:0 block_offset:0 length:4381
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:58 PUT offset:99
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:250 block_end:266
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:99 set page_id:0 block_offset:250 length:2033
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:59 PUT offset:43
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:266 block_end:269
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:43 set page_id:0 block_offset:266 length:368
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:60 DELETE offset:21
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:21
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:65 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:66 PUT offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:269 block_end:273
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:68 set page_id:0 block_offset:269 length:396
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:67 PUT offset:81
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:273 block_end:305
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:81 set page_id:0 block_offset:273 length:4095
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:71 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:72 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:73 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:75 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:76 PUT offset:88
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:305 block_end:311
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:88 set page_id:0 block_offset:305 length:653
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:77 PUT offset:69
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:311 block_end:326
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:69 set page_id:0 block_offset:311 length:1872
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:78 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:80 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:81 PUT offset:99
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:326 block_end:331
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:99 set page_id:0 block_offset:326 length:567
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:84 DELETE offset:58
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:58
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:85 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:86 PUT offset:10
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:331 block_end:333
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:10 set page_id:0 block_offset:331 length:183
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:88 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:89 PUT offset:73
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:333 block_end:353
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:73 set page_id:0 block_offset:333 length:2458
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:90 PUT offset:18
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:353 block_end:359
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:18 set page_id:0 block_offset:353 length:657
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:91 PUT offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:359 block_end:385
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:100 set page_id:0 block_offset:359 length:3242
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:94 DELETE offset:39
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:39
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:96 PUT offset:29
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:385 block_end:387
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:29 set page_id:0 block_offset:385 length:203
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:97 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:98 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:101 DELETE offset:96
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:96
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:102 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:103 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:104 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:106 DELETE offset:55
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:55
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:107 PUT offset:80
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:387 block_end:411
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:80 set page_id:0 block_offset:387 length:3052
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:108 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:110 DELETE offset:58
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:58
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:111 DELETE offset:73
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:73
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 333, length: 2458 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:73 unset page_id:0 block_offset:333 length:2458
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:112 PUT offset:76
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:3 STARTING FLUSH after waiting 2ms
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:411 block_end:417
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:76 set page_id:0 block_offset:411 length:738
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:3 FLUSH DONE
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:113 Scheduling flush in 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:115 DELETE offset:48
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:48
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:116 DELETE offset:59
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:59
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:118 DELETE offset:88
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:88
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 305, length: 653 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:88 unset page_id:0 block_offset:305 length:653
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:119 PUT offset:72
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:417 block_end:443
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:72 set page_id:0 block_offset:417 length:3213
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:120 PUT offset:24
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:443 block_end:454
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:24 set page_id:0 block_offset:443 length:1281
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:121 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:122 DELETE offset:43
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:43
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 266, length: 368 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:43 unset page_id:0 block_offset:266 length:368
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:123 DELETE offset:99
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:99
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 326, length: 567 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:99 unset page_id:0 block_offset:326 length:567
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:124 DELETE offset:53
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:53
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:126 PUT offset:5
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:454 block_end:463
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:5 set page_id:0 block_offset:454 length:1095
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:127 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:128 PUT offset:23
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:463 block_end:502
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:23 set page_id:0 block_offset:463 length:4866
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:130 DELETE offset:81
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:81
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 273, length: 4095 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:81 unset page_id:0 block_offset:273 length:4095
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:131 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:133 DELETE offset:52
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:52
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:134 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:135 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:136 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:137 DELETE offset:30
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:30
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:138 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:140 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:141 PUT offset:14
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:502 block_end:504
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:14 set page_id:0 block_offset:502 length:240
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:142 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:143 PUT offset:10
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:504 block_end:545
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:10 set page_id:0 block_offset:504 length:5195
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:144 DELETE offset:11
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:11
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:145 DELETE offset:77
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:77
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:146 DELETE offset:77
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:77
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:147 DELETE offset:53
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:53
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:148 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:149 DELETE offset:24
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:24
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 443, length: 1281 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:24 unset page_id:0 block_offset:443 length:1281
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:150 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:152 PUT offset:81
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:545 block_end:550
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:81 set page_id:0 block_offset:545 length:590
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:153 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:154 PUT offset:97
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:550 block_end:558
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:97 set page_id:0 block_offset:550 length:908
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:155 DELETE offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 269, length: 396 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:68 unset page_id:0 block_offset:269 length:396
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:156 DELETE offset:41
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:41
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 190, length: 2843 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:41 unset page_id:0 block_offset:190 length:2843
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:113 STARTING FLUSH after waiting 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:157 PUT offset:49
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:68 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 269, length: 396 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:68 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:27 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 125, length: 2301 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:27 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:27 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 125, length: 2301 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:18 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 353, length: 657 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:18 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:18 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 353, length: 657 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:99 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 250, length: 2033 }, ValuePointer { page_id: 0, block_offset: 326, length: 567 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:99 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:100 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 228, length: 1579 }, ValuePointer { page_id: 0, block_offset: 359, length: 3242 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:100 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:100 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 228, length: 1579 }, ValuePointer { page_id: 0, block_offset: 359, length: 3242 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:53 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 173, length: 2096 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:53 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 173, length: 2096 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:43 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 57, length: 391 }, ValuePointer { page_id: 0, block_offset: 266, length: 368 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:43 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:81 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 273, length: 4095 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:81 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:73 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 333, length: 2458 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:73 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 333, length: 2458 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:29 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 385, length: 203 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:29 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:29 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 385, length: 203 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:9 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 0, length: 4381 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:9 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 0, length: 4381 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:0 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 241, length: 1064 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:0 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:0 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 241, length: 1064 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:24 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 61, length: 5179 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:24 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:5 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 143, length: 3713 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:5 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:35 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 102, length: 877 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:35 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:35 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 102, length: 877 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:80 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 387, length: 3052 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:80 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:80 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 387, length: 3052 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:41 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 109, length: 1992 }, ValuePointer { page_id: 0, block_offset: 190, length: 2843 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:41 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:76 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 35, length: 2716 }, ValuePointer { page_id: 0, block_offset: 411, length: 738 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:76 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:76 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 35, length: 2716 }, ValuePointer { page_id: 0, block_offset: 411, length: 738 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:69 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 311, length: 1872 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:69 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:69 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 311, length: 1872 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:88 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 305, length: 653 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:88 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:10 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 331, length: 183 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:10 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:51 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 213, length: 1807 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:51 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:51 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 213, length: 1807 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:0 block_end:35
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:35 block_end:57
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:57 block_end:61
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:109 block_end:125
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:173 block_end:190
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:228 block_end:241
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:250 block_end:266
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:333 block_end:353
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:113 FLUSH DONE
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:558 block_end:591
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:49 set page_id:0 block_offset:558 length:4152
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:158 PUT offset:62
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:0 block_end:8
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:62 set page_id:0 block_offset:0 length:1002
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:159 DELETE offset:55
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:55
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:160 PUT offset:15
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:8 block_end:17
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:15 set page_id:0 block_offset:8 length:1116
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:161 PUT offset:81
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:17 block_end:26
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:81 set page_id:0 block_offset:17 length:1087
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:162 PUT offset:89
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:26 block_end:43
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:89 set page_id:0 block_offset:26 length:2155
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 Scheduling flush in 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:165 DELETE offset:98
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:98
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:168 PUT offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:43 block_end:59
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:68 set page_id:0 block_offset:43 length:2043
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:170 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:172 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:173 DELETE offset:75
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:75
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:175 PUT offset:45
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:591 block_end:619
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:45 set page_id:0 block_offset:591 length:3486
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:176 PUT offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:619 block_end:656
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:100 set page_id:0 block_offset:619 length:4631
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:179 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:181 DELETE offset:97
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:97
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] unset ignoring duplicate pointer:ValuePointer { page_id: 0, block_offset: 550, length: 908 }
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:97 unset page_id:0 block_offset:550 length:908
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:182 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:183 PUT offset:51
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:656 block_end:690
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:51 set page_id:0 block_offset:656 length:4236
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:185 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:186 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:187 DELETE offset:19
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:19
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:188 PUT offset:61
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:109 block_end:125
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:61 set page_id:0 block_offset:109 length:2040
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:189 PUT offset:29
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:690 block_end:725
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:29 set page_id:0 block_offset:690 length:4394
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:190 DELETE offset:90
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:90
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:191 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:192 DELETE offset:56
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:56
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:193 PUT offset:21
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:59 block_end:61
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:21 set page_id:0 block_offset:59 length:255
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:195 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:196 DELETE offset:50
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:50
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:197 DELETE offset:41
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:41
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:200 DELETE offset:2
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:2
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:201 DELETE offset:1
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:1
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:202 PUT offset:91
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:725 block_end:762
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:91 set page_id:0 block_offset:725 length:4637
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:203 PUT offset:50
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:762 block_end:787
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:50 set page_id:0 block_offset:762 length:3097
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:204 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:205 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:206 DELETE offset:3
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:3
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:207 PUT offset:32
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:173 block_end:177
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:32 set page_id:0 block_offset:173 length:415
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:208 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:209 DELETE offset:33
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:33
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:211 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:214 PUT offset:29
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:177 block_end:183
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:29 set page_id:0 block_offset:177 length:646
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:215 DELETE offset:92
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:92
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:216 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:218 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:220 DELETE offset:30
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:30
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 STARTING FLUSH after waiting 1ms
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:68 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 269, length: 396 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:15 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 8, length: 1116 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:15 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:15 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 8, length: 1116 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:97 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 550, length: 908 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:97 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:49 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 558, length: 4152 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:49 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:49 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 558, length: 4152 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:89 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:89 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:89 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:99 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 326, length: 567 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:99 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 326, length: 567 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:62 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 0, length: 1002 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:62 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:62 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 0, length: 1002 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:23 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 463, length: 4866 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:23 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:23 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 463, length: 4866 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:43 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 266, length: 368 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:43 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 266, length: 368 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:81 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 545, length: 590 }, ValuePointer { page_id: 0, block_offset: 17, length: 1087 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:81 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 545, length: 590 }, ValuePointer { page_id: 0, block_offset: 17, length: 1087 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:14 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 502, length: 240 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:14 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:14 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 502, length: 240 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:24 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 61, length: 5179 }, ValuePointer { page_id: 0, block_offset: 443, length: 1281 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:24 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 61, length: 5179 }, ValuePointer { page_id: 0, block_offset: 443, length: 1281 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:5 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 454, length: 1095 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:5 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 454, length: 1095 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:41 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 190, length: 2843 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:41 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 190, length: 2843 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:88 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 305, length: 653 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:88 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 305, length: 653 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:10 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 504, length: 5195 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:10 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 504, length: 5195 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:72 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 417, length: 3213 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:72 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:72 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 417, length: 3213 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:61 block_end:102
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:143 block_end:173
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:190 block_end:213
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:266 block_end:269
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:269 block_end:273
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:273 block_end:305
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:305 block_end:311
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:326 block_end:331
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:331 block_end:333
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:443 block_end:454
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:545 block_end:550
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:164 FLUSH DONE
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:221 Scheduling flush in 0ns
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:222 PUT offset:12
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:221 STARTING FLUSH after waiting 0ns
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:32 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 173, length: 415 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:32 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:32 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 173, length: 415 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:29 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 690, length: 4394 }, ValuePointer { page_id: 0, block_offset: 177, length: 646 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:29 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 690, length: 4394 }, ValuePointer { page_id: 0, block_offset: 177, length: 646 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:50 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 762, length: 3097 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:50 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:50 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 762, length: 3097 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:51 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 656, length: 4236 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:51 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 656, length: 4236 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:68 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 269, length: 396 }, ValuePointer { page_id: 0, block_offset: 43, length: 2043 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:68 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:68 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 269, length: 396 }, ValuePointer { page_id: 0, block_offset: 43, length: 2043 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:97 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 550, length: 908 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:97 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 550, length: 908 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:45 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 591, length: 3486 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:45 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:45 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 591, length: 3486 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:21 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 59, length: 255 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:21 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:21 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 59, length: 255 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:100 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 619, length: 4631 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:100 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 619, length: 4631 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:91 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 725, length: 4637 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:91 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:91 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 725, length: 4637 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:61 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 109, length: 2040 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:61 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:61 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 109, length: 2040 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:213 block_end:228
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:269 block_end:273
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:359 block_end:385
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:385 block_end:387
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:550 block_end:558
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:690 block_end:725
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:221 FLUSH DONE
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:61 block_end:90
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:12 set page_id:0 block_offset:61 length:3712
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:223 Scheduling flush in 0ns
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:224 DELETE offset:79
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:223 STARTING FLUSH after waiting 0ns
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:79
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:12 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 61, length: 3712 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:12 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:12 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 61, length: 3712 }] })
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:223 FLUSH DONE
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:225 Scheduling flush in 0ns
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:226 DELETE offset:77
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:77
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:227 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:228 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:229 PUT offset:86
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:225 STARTING FLUSH after waiting 0ns
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:225 FLUSH DONE
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:183 block_end:217
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:86 set page_id:0 block_offset:183 length:4242
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:231 PUT offset:44
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:90 block_end:95
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:44 set page_id:0 block_offset:90 length:523
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:232 DELETE offset:89
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:89
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:89 unset page_id:0 block_offset:26 length:2155
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:233 PUT offset:69
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:143 block_end:153
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:69 set page_id:0 block_offset:143 length:1165
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:235 PUT offset:56
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:250 block_end:286
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:56 set page_id:0 block_offset:250 length:4580
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:238 PUT offset:44
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:95 block_end:97
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:44 set page_id:0 block_offset:95 length:187
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:239 DELETE offset:83
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:83
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 Scheduling flush in 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:241 DELETE offset:1
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:1
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:242 PUT offset:63
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:153 block_end:169
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:63 set page_id:0 block_offset:153 length:2009
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:243 DELETE offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:100 unset page_id:0 block_offset:619 length:4631
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:245 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:246 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:248 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:249 DELETE offset:54
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:54
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:251 DELETE offset:60
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:60
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:252 DELETE offset:100
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:100
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:253 DELETE offset:51
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:51
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:51 unset page_id:0 block_offset:656 length:4236
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:256 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:257 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:258 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:259 PUT offset:88
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:217 block_end:236
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:88 set page_id:0 block_offset:217 length:2380
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:261 DELETE offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:68
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:68 unset page_id:0 block_offset:43 length:2043
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:262 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:263 DELETE offset:5
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:5
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:5 unset page_id:0 block_offset:454 length:1095
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:265 DELETE offset:2
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:2
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:267 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:268 PUT offset:6
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:286 block_end:298
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:6 set page_id:0 block_offset:286 length:1469
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:269 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:273 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:275 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:276 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:278 DELETE offset:31
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:31
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:279 DELETE offset:2
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:2
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:281 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:282 PUT offset:89
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:326 block_end:342
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:89 set page_id:0 block_offset:326 length:1958
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:283 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:284 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:285 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:286 PUT offset:72
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:690 block_end:722
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:72 set page_id:0 block_offset:690 length:4041
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:287 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:288 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:289 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:290 DELETE offset:75
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:75
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:291 PUT offset:11
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:298 block_end:306
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:11 set page_id:0 block_offset:298 length:938
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:292 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:293 DELETE offset:74
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:74
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:294 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:295 PUT offset:69
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:342 block_end:348
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:69 set page_id:0 block_offset:342 length:703
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 STARTING FLUSH after waiting 1ms
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:89 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:44 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 90, length: 523 }, ValuePointer { page_id: 0, block_offset: 95, length: 187 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:44 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:44 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 90, length: 523 }, ValuePointer { page_id: 0, block_offset: 95, length: 187 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:86 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 183, length: 4242 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:86 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:86 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 183, length: 4242 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:56 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 250, length: 4580 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:56 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:56 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 250, length: 4580 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:69 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 143, length: 1165 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:26 block_end:43
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:90 block_end:95
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:311 block_end:326
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:240 FLUSH DONE
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 Scheduling flush in 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:297 PUT offset:62
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:26 block_end:30
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:62 set page_id:0 block_offset:26 length:452
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:298 DELETE offset:7
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:7
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:299 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:300 DELETE offset:76
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:76
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:76 unset page_id:0 block_offset:411 length:738
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:301 DELETE offset:96
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:96
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:303 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:304 DELETE offset:35
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:35
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:35 unset page_id:0 block_offset:102 length:877
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:305 PUT offset:11
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:359 block_end:380
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:11 set page_id:0 block_offset:359 length:2590
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:309 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:310 PUT offset:4
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:30 block_end:36
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:4 set page_id:0 block_offset:30 length:682
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:311 DELETE offset:94
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:94
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:312 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:313 DELETE offset:43
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:43
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:314 Skip flushing because a Flusher has already been created
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:315 DELETE offset:37
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:37
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:316 DELETE offset:20
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:20
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:317 PUT offset:82
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:36 block_end:41
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:82 set page_id:0 block_offset:36 length:609
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:318 PUT offset:92
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 STARTING FLUSH after waiting 1ms
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:89 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }, ValuePointer { page_id: 0, block_offset: 326, length: 1958 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:89 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:89 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 2155 }, ValuePointer { page_id: 0, block_offset: 326, length: 1958 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:6 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 286, length: 1469 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:6 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:6 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 286, length: 1469 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:5 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 454, length: 1095 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:5 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 454, length: 1095 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:63 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 153, length: 2009 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:63 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:63 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 153, length: 2009 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:72 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 690, length: 4041 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:72 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 690, length: 4041 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:88 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 217, length: 2380 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:88 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:88 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 217, length: 2380 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:51 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 656, length: 4236 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:51 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 656, length: 4236 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:68 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 43, length: 2043 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:68 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 43, length: 2043 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:100 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 619, length: 4631 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:100 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 619, length: 4631 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:11 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 298, length: 938 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:11 not found
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:69 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 342, length: 703 }] }
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:69 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 342, length: 703 }] })
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:26 block_end:43
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:43 block_end:59
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:143 block_end:153
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:417 block_end:443
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:454 block_end:463
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:619 block_end:656
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:656 block_end:690
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:296 FLUSH DONE
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:787 block_end:811
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:92 set page_id:0 block_offset:787 length:3046
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:319 Scheduling flush in 1ms
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:320 PUT offset:52
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:417 block_end:455
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:52 set page_id:0 block_offset:417 length:4745
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:322 DELETE offset:98
+[2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:98
+[2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:323 PUT offset:57
+[2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:26 block_end:35
+[2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:57 set page_id:0 block_offset:26 length:1119
+
+# NOTE: NEED THIS PUT ABOVE!
+
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:324 DELETE offset:48
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:48
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:325 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:326 DELETE offset:16
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:16
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:329 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:330 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:332 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:333 DELETE offset:80
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:80
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:80 unset page_id:0 block_offset:387 length:3052
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:335 DELETE offset:94
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:94
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:336 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:337 DELETE offset:51
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:51
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:339 PUT offset:60
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:35 block_end:42
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:60 set page_id:0 block_offset:35 length:874
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:341 PUT offset:41
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:319 STARTING FLUSH after waiting 1ms
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:62 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 452 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:62 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 452 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:4 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 30, length: 682 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:4 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:4 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 30, length: 682 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:35 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 102, length: 877 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:35 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 102, length: 877 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:92 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 787, length: 3046 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:92 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:92 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 787, length: 3046 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:11 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 359, length: 2590 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:11 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 359, length: 2590 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:76 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 411, length: 738 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:76 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 411, length: 738 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:82 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 36, length: 609 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:82 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:82 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 36, length: 609 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:0 block_end:8
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:102 block_end:109
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:298 block_end:306
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:411 block_end:417
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:319 FLUSH DONE
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:619 block_end:659
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:41 set page_id:0 block_offset:619 length:5108
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:342 PUT offset:79
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:811 block_end:844
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:79 set page_id:0 block_offset:811 length:4156
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:343 PUT offset:23
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:298 block_end:326
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:23 set page_id:0 block_offset:298 length:3508
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:344 Scheduling flush in 2ms
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:345 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:346 PUT offset:99
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:0 block_end:8
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:99 set page_id:0 block_offset:0 length:904
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:348 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:350 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:351 PUT offset:100
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:42 block_end:45
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:100 set page_id:0 block_offset:42 length:338
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:352 PUT offset:65
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:659 block_end:677
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:65 set page_id:0 block_offset:659 length:2254
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:353 PUT offset:12
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:844 block_end:866
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:12 set page_id:0 block_offset:844 length:2764
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:354 PUT offset:70
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:866 block_end:886
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:70 set page_id:0 block_offset:866 length:2435
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:355 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:356 DELETE offset:68
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:68
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:357 PUT offset:94
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:886 block_end:906
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:94 set page_id:0 block_offset:886 length:2477
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:359 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:360 PUT offset:12
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:45 block_end:51
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:12 set page_id:0 block_offset:45 length:675
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:362 PUT offset:34
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:97 block_end:108
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:34 set page_id:0 block_offset:97 length:1358
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:363 DELETE offset:6
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:6
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:6 unset page_id:0 block_offset:286 length:1469
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:364 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:365 PUT offset:66
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:51 block_end:57
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:66 set page_id:0 block_offset:51 length:745
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:366 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:367 PUT offset:11
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:143 block_end:151
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:11 set page_id:0 block_offset:143 length:987
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:368 Skip flushing because a Flusher has already been created
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:369 DELETE offset:95
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:95
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:371 PUT offset:29
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:true page_id:0 block_offset:545 block_end:555
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] put_value offset:29 set page_id:0 block_offset:545 length:1154
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:372 DELETE offset:62
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] tracker unset offset:62
+# [2025-12-10T10:50:46Z TRACE gridstore::gridstore] delete_value offset:62 unset page_id:0 block_offset:26 length:452
+# 
+# thread 'gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES' (215203) panicked at lib/gridstore/src/fixtures.rs:25:38:
+# called `Result::unwrap()` on an `Err` value: Error("EOF while parsing a list", line: 1, column: 452)
+# stack backtrace:
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:344 STARTING FLUSH after waiting 2ms
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:79 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 811, length: 4156 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:79 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:79 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 811, length: 4156 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:60 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 35, length: 874 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:60 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:60 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 35, length: 874 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:23 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 298, length: 3508 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:23 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 298, length: 3508 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:80 updates:PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 387, length: 3052 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:80 prev:Some(PointerUpdates { latest_is_set: false, history: [ValuePointer { page_id: 0, block_offset: 387, length: 3052 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:52 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 417, length: 4745 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:52 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:52 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 417, length: 4745 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:41 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 619, length: 5108 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:41 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:41 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 619, length: 5108 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] write_pending_and_flush offset:57 updates:PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 1119 }] }
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] point_offset:57 not found
+# [2025-12-10T10:50:46Z TRACE gridstore::tracker] removed pending update offset:57 prev:Some(PointerUpdates { latest_is_set: true, history: [ValuePointer { page_id: 0, block_offset: 26, length: 1119 }] })
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:387 block_end:411
+# [2025-12-10T10:50:46Z TRACE gridstore::bitmask] mark_blocks_batch used:false page_id:0 block_offset:463 block_end:502
+# [2025-12-10T10:50:46Z DEBUG gridstore::gridstore::tests] op:344 FLUSH DONE
+   0: __rustc::rust_begin_unwind
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/std/src/panicking.rs:698:5
+   1: core::panicking::panic_fmt
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/panicking.rs:75:14
+   2: core::result::unwrap_failed
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/result.rs:1855:5
+   3: unwrap<gridstore::fixtures::Payload, serde_json::error::Error>
+             at /home/agourlay/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1226:23
+   4: from_bytes
+             at ./src/fixtures.rs:25:38
+   5: delete_value<gridstore::fixtures::Payload>
+             at ./src/gridstore.rs:470:21
+   6: test_behave_like_hashmap
+             at ./src/gridstore.rs:983:40
+   7: gridstore::gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES
+             at ./src/gridstore.rs:941:5
+   8: gridstore::gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES::{{closure}}
+             at ./src/gridstore.rs:941:14
+   9: core::ops::function::FnOnce::call_once
+             at /home/agourlay/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+  10: core::ops::function::FnOnce::call_once
+             at /rustc/ed61e7d7e242494fb7057f2657300d9e77bb4fcb/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES ... FAILED
+
+failures:
+
+failures:
+    gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 50 filtered out; finished in 1.49s
+
+        FAIL [   1.509s] (1/1) gridstore gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES
+  Cancelling due to test failure: 
+────────────
+     Summary [   1.511s] 1 test run: 0 passed, 1 failed, 1312 skipped
+        FAIL [   1.509s] (1/1) gridstore gridstore::tests::test_behave_like_hashmap::page_size_3_DEFAULT_PAGE_SIZE_BYTES
+error: test run failed

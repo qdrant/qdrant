@@ -46,6 +46,7 @@ proptest = { workspace = true }
 bustle = "0.5.1"
 common = { path = "../common/common", features = ["testing"] }
 env_logger = "0.11"
+regex = "1.12"
 
 [[bench]]
 name = "random_data_bench"
