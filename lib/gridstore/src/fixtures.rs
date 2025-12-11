@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
-use crate::config::StorageOptions;
+use crate::config::{Compression, StorageOptions};
 use crate::{Blob, Gridstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -34,10 +34,14 @@ pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
 }
 
 /// Create an empty storage with a specific page size
-pub fn empty_storage_sized(page_size: usize) -> (TempDir, Gridstore<Payload>) {
+pub fn empty_storage_sized(
+    page_size: usize,
+    compression: Compression,
+) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
         page_size_bytes: Some(page_size),
+        compression: Some(compression),
         ..Default::default()
     };
     let storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
