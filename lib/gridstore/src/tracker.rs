@@ -154,23 +154,23 @@ impl PointerUpdates {
         self.is_empty()
     }
 
-    /// Remove persisted entries from current so that we don't persist them again
+    /// Remove persisted entries from self so that we don't persist them again
     fn update_from_persisted(&mut self, persisted: &Self) {
         let Self { set, unset } = persisted;
 
-        // Update current set if necessary
+        // Update self set if necessary
         match (self.set, *set) {
-            // Current and persisted set are equal, pop set from current
+            // Self and persisted set are equal, remove set
             (Some(last), Some(set)) if last == set => {
                 self.unset(set);
             }
-            // Current and persisted set exist but are not equal, keep current set
-            // Can be reached if current has a newer set
+            // Self and persisted set exist but are not equal, keep set
+            // Can be reached if self has a newer set
             (Some(_), Some(_)) => {}
-            // If current does not have any set, don't touch it
-            // Can be reached if current has newer unset
+            // If self does not have any set, don't touch it
+            // Can be reached if self has newer unset
             (None, _) => {}
-            // If not persisted any set, don't touch current set
+            // If not persisted any set, don't touch self set
             (_, None) => {}
         }
 
