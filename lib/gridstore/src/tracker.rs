@@ -374,6 +374,12 @@ impl Tracker {
     pub fn get(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         self.pending_updates
             .get(&point_offset)
+            // Safe guard to ignore empty pointer updates, should not happen in production
+            .filter(|pointer| {
+                let not_empty = !pointer.is_empty();
+                debug_assert!(not_empty, "pending updates must not have empty pointers");
+                not_empty
+            })
             .map(|pointer| pointer.set)
             // if the value is not in the pending updates, check the mmap
             .or_else(|| self.get_raw(point_offset).copied())
