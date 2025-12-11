@@ -241,32 +241,6 @@ impl SegmentHolder {
         Ok(removed.pop().unwrap())
     }
 
-    /// Replace old segments with a new one
-    ///
-    /// # Arguments
-    ///
-    /// * `segment_id` - segment ID to use
-    /// * `segment` - segment to insert
-    /// * `remove_ids` - ids of segments to replace
-    ///
-    /// # Result
-    ///
-    /// The inserted segment uses the provided segment ID. The segment ID must must not be in the
-    /// segment holder yet, or it must be one we also remove.
-    pub fn swap_existing<T>(
-        &mut self,
-        segment_id: SegmentId,
-        segment: T,
-        remove_ids: &[SegmentId],
-    ) -> Vec<LockedSegment>
-    where
-        T: Into<LockedSegment>,
-    {
-        let removed = self.remove(remove_ids);
-        self.add_existing(segment_id, segment);
-        removed
-    }
-
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
         self.appendable_segments
             .get(&id)
