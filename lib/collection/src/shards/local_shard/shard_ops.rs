@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use futures::future::Either;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -14,6 +15,7 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
+use validator::ValidateRequired;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
@@ -43,6 +45,7 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
@@ -93,6 +96,7 @@ impl ShardOperation for LocalShard {
                 operation: operation.operation,
                 sender: callback_sender,
                 wait,
+                timeout,
                 hw_measurements: hw_measurement_acc.clone(),
             }));
 
@@ -100,12 +104,28 @@ impl ShardOperation for LocalShard {
         };
 
         if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
+            let success = Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
                 clock_tag: operation.clock_tag,
-            })
+            });
+
+            if let Some(timeout) = timeout {
+                let mut fut_wait = Box::pin(receiver);
+                let mut fut_timeout = Box::pin(tokio::time::sleep(timeout));
+
+                return match futures::future::select(&mut fut_wait, &mut fut_timeout).await {
+                    Either::Left(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                    Either::Right(_) => success,
+                };
+            }
+
+            let _res = receiver.await??;
+            success
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),

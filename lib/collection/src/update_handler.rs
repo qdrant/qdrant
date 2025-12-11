@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -38,6 +39,8 @@ pub struct OperationData {
     pub operation: CollectionUpdateOperations,
     /// If operation was requested to wait for result
     pub wait: bool,
+    /// Timeout for operation
+    pub timeout: Option<Duration>,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
     pub hw_measurements: HwMeasurementAcc,
