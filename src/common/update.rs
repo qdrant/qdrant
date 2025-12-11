@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,26 +39,31 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde(default)]
-    pub timeout: Option<Duration>,
+    pub timeout: Option<NonZeroU64>,
 }
 
 impl UpdateParams {
     pub fn from_grpc(
         wait: Option<bool>,
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
-        timeout: Option<Duration>,
+        timeout: Option<u64>,
     ) -> tonic::Result<Self> {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
-            timeout,
+            timeout: timeout.map(NonZeroU64::new).flatten(),
         };
 
         Ok(params)
     }
 
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+            .map(|timeout| Duration::from_secs(timeout.get()))
+    }
+
     pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
-        self.timeout.map(|timeout| timeout.as_secs() as usize)
+        self.timeout.map(|timeout| timeout.get() as usize)
     }
 }
 
@@ -853,13 +859,11 @@ pub async fn do_create_index(
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
-    // Use per-request timeout from params if provided
-    let wait_timeout = params.timeout;
-
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
         &operation,
-        wait_timeout.map(|d| d.as_secs() as usize),
+        // Use per-request timeout from params if provided
+        params.timeout_as_secs(),
         &collection_name,
         &dispatcher,
         &access,
@@ -882,7 +886,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(consensus_op, access, params.timeout())
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -946,9 +950,6 @@ pub async fn do_delete_index(
         field_name: index_name.clone(),
     });
 
-    // Use per-request timeout from params if provided
-    let wait_timeout = params.timeout;
-
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
 
@@ -956,7 +957,12 @@ pub async fn do_delete_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(
+            consensus_op,
+            access,
+            // Use per-request timeout from params if provided
+            params.timeout(),
+        )
         .await?;
 
     do_delete_index_internal(
@@ -1014,7 +1020,7 @@ pub async fn update(
     let UpdateParams {
         wait,
         ordering,
-        timeout,
+        timeout: _,
     } = params;
 
     let shard_selector = match operation {
@@ -1052,7 +1058,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
-        timeout,
+        params.timeout(),
         ordering,
         shard_selector,
         access,
