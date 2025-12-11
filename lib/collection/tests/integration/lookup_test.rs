@@ -72,7 +72,13 @@ async fn setup() -> Resources {
     let hw_counter = HwMeasurementAcc::new();
 
     collection
-        .update_from_client_simple(upsert_points, true, None, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            upsert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
         .await
         .unwrap();
 
