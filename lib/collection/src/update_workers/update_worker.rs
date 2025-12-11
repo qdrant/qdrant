@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::SeqNumberType;
@@ -35,7 +35,7 @@ impl UpdateWorkers {
                     operation,
                     sender,
                     wait,
-                    timeout,
+                    timeout: _,
                     hw_measurements,
                 }) => {
                     let collection_name_clone = collection_name.clone();
@@ -44,15 +44,12 @@ impl UpdateWorkers {
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
-                    println!("timeout: {:?}", timeout);
-
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
                             operation,
                             op_num,
                             wait,
-                            timeout,
                             wal_clone,
                             segments_clone,
                             update_operation_lock_clone,
@@ -113,7 +110,6 @@ impl UpdateWorkers {
         operation: CollectionUpdateOperations,
         op_num: SeqNumberType,
         wait: bool,
-        timeout: Option<Duration>,
         wal: LockedWal,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
@@ -122,17 +118,6 @@ impl UpdateWorkers {
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {
-            // let mut guard = wal.blocking_lock();
-
-            // if let Some(t) = timeout
-            //     && std::time::Instant::now() + t < Instant::now()
-            // {
-            //     drop(guard);
-            //     return Err(CollectionError::service_error(format!(
-            //         "Timeout reached while waiting for WAL flush"
-            //     )));
-            // }
-
             wal.blocking_lock().flush().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't flush WAL before operation {op_num} - {err}"
