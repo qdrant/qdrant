@@ -701,16 +701,14 @@ impl SegmentEntry for Segment {
         //
         //  400
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         let flush_op = move || {
             // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
+            let Some(_is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is removed, skip flush
                 return Ok(());
-            }
+            };
 
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
