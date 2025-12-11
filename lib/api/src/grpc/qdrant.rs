@@ -4907,6 +4907,9 @@ pub struct UpsertPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "8")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -4935,6 +4938,9 @@ pub struct DeletePoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "7")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -4999,6 +5005,9 @@ pub struct UpdatePointVectors {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "8")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5044,6 +5053,9 @@ pub struct DeletePointVectors {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "8")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5079,6 +5091,9 @@ pub struct SetPayloadPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "9")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "10")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5111,6 +5126,9 @@ pub struct DeletePayloadPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "8")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "9")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5140,6 +5158,9 @@ pub struct ClearPayloadPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "7")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5173,6 +5194,9 @@ pub struct CreateFieldIndexCollection {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "8")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -5199,6 +5223,9 @@ pub struct DeleteFieldIndexCollection {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "5")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "6")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6813,6 +6840,9 @@ pub struct UpdateBatchPoints {
     /// Timeout for the operation in seconds
     #[prost(uint64, optional, tag = "5")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "6")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -9982,6 +10012,9 @@ pub struct SyncPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Time limit for waiting for the changes to be applied
+    #[prost(uint64, optional, tag = "8")]
+    pub wait_timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]

@@ -166,6 +166,8 @@ message UpsertPoints {
   optional Filter update_filter = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 8;
 }
 
 message DeletePoints {
@@ -181,6 +183,8 @@ message DeletePoints {
   optional ShardKeySelector shard_key_selector = 5;
   // Timeout for the request in seconds
   optional uint64 timeout = 6;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 7;
 }
 
 message GetPoints {
@@ -217,6 +221,8 @@ message UpdatePointVectors {
   optional Filter update_filter = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 8;
 }
 
 message PointVectors {
@@ -241,6 +247,8 @@ message DeletePointVectors {
   optional ShardKeySelector shard_key_selector = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 8;
 }
 
 message SetPayloadPoints {
@@ -262,6 +270,8 @@ message SetPayloadPoints {
   optional string key = 8;
   // Timeout for the request in seconds
   optional uint64 timeout = 9;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 10;
 }
 
 message DeletePayloadPoints {
@@ -281,6 +291,8 @@ message DeletePayloadPoints {
   optional ShardKeySelector shard_key_selector = 7;
   // Timeout for the request in seconds
   optional uint64 timeout = 8;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 9;
 }
 
 message ClearPayloadPoints {
@@ -296,6 +308,8 @@ message ClearPayloadPoints {
   optional ShardKeySelector shard_key_selector = 5;
   // Timeout for the request in seconds
   optional uint64 timeout = 6;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 7;
 }
 
 enum FieldType {
@@ -324,6 +338,8 @@ message CreateFieldIndexCollection {
   optional WriteOrdering ordering = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 8;
 }
 
 message DeleteFieldIndexCollection {
@@ -337,6 +353,8 @@ message DeleteFieldIndexCollection {
   optional WriteOrdering ordering = 4;
   // Timeout for the request in seconds
   optional uint64 timeout = 5;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 6;
 }
 
 message PayloadIncludeSelector {
@@ -1245,6 +1263,8 @@ message UpdateBatchPoints {
   optional WriteOrdering ordering = 4;
   // Timeout for the operation in seconds
   optional uint64 timeout = 5;
+  // Time limit for waiting for the changes to be applied
+  optional uint64 wait_timeout = 6;
 }
 
 // ---------------------------------------------
