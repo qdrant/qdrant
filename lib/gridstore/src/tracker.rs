@@ -128,54 +128,40 @@ impl PointerUpdates {
         self.set.is_none() && self.unset.is_empty()
     }
 
-    /// Bump this pointer updates structure to drain all details that have been persisted
+    /// Remove all set/unset from self that have been persisted
     ///
-    /// The pointer updates structure that we have persisted must be given. All persisted details
-    /// that are inside the current pointer updates structure are removed in-place. The pointer
-    /// updates structure we're left with only contains details that have not yet been persisted.
+    /// After calling this self may end up being empty. The caller is responsible for dropping
+    /// empty structures if desired.
     ///
-    /// Returns true if the structure is fully persisted. In that case, the caller must drop it
-    /// from the list of pending updates.
-    #[must_use = "if true is returned, entry must be dropped from pending changes"]
-    fn drain_persisted_and_drop(&mut self, persisted: &Self) -> bool {
+    /// Unknown pointers in `persisted` are ignored.
+    ///
+    /// Returns if the structure is empty after this operation
+    fn drain_persisted(&mut self, persisted: &Self) -> bool {
         debug_assert!(!self.is_empty(), "must have at least one pointer");
         debug_assert!(
             !persisted.is_empty(),
             "persisted must have at least one pointer",
         );
 
-        // If both are the same, we have persisted the entry and can drop the pending change
+        // Shortcut: we persisted everything if both are equal, we can empty this structure
         if self == persisted {
+            *self = Self::default();
             return true;
         }
 
-        // Remove persisted entries to not persist them again, drop if history is exhausted
-        self.update_from_persisted(persisted);
-        self.is_empty()
-    }
-
-    /// Remove persisted entries from self so that we don't persist them again
-    fn update_from_persisted(&mut self, persisted: &Self) {
         let Self { set, unset } = persisted;
 
-        // Update self set if necessary
-        match (self.set, *set) {
-            // Self and persisted set are equal, remove set
-            (Some(last), Some(set)) if last == set => {
-                self.set.take();
-            }
-            // Self and persisted set exist but are not equal, keep set
-            // Can be reached if self has a newer set
-            (Some(_), Some(_)) => {}
-            // If self does not have any set, don't touch it
-            // Can be reached if self has newer unset
-            (None, _) => {}
-            // If not persisted any set, don't touch self set
-            (_, None) => {}
+        // Remove self set if persisted
+        if let (Some(last), Some(set)) = (self.set, *set)
+            && last == set
+        {
+            self.set.take();
         }
 
         // Only keep unsets that are not persisted
         self.unset.retain(|pointer| !unset.contains(pointer));
+
+        self.is_empty()
     }
 }
 
@@ -269,36 +255,37 @@ impl Tracker {
         &mut self,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> std::io::Result<Vec<ValuePointer>> {
-        // Write pending updates from memory
         let mut old_pointers = Vec::new();
+
         for (point_offset, updates) in pending_updates {
             match updates.set {
+                // Write to store a new pointer
                 Some(new_pointer) => {
-                    if let Some(old_pointer) =
-                        self.get_raw(point_offset).and_then(|pointer| *pointer)
-                    {
+                    // Mark any existing pointer for removal to free its blocks
+                    if let Some(&Some(old_pointer)) = self.get_raw(point_offset) {
                         old_pointers.push(old_pointer);
                     }
 
-                    // write the new pointer
                     self.persist_pointer(point_offset, Some(new_pointer));
                 }
-                None => {
-                    // write the new None pointer
-                    self.persist_pointer(point_offset, None);
-                }
+                // Write to empty the pointer
+                None => self.persist_pointer(point_offset, None),
             }
+
+            // Mark all unsets for removal to free its blocks
             old_pointers.extend(&updates.unset);
 
-            // Bump the pending updates for this point offset, drop entry if fully persisted
-            if let Some(pending_updates) = self.pending_updates.get_mut(&point_offset)
-                && pending_updates.drain_persisted_and_drop(&updates)
-            {
-                let prev = self.pending_updates.remove(&point_offset);
-                log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+            // Remove all persisted updates from the latest updates, drop if no changes are left
+            if let Some(latest_updates) = self.pending_updates.get_mut(&point_offset) {
+                let is_empty = latest_updates.drain_persisted(&updates);
+                if is_empty {
+                    let prev = self.pending_updates.remove(&point_offset);
+                    log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                }
             }
         }
-        // increment header count if necessary
+
+        // Increment header count if necessary
         self.persist_pointer_count();
 
         // Flush the mmap
@@ -630,18 +617,12 @@ mod tests {
         updates.set(ValuePointer::new(1, 1, 1));
 
         // When all updates are persisted, drop the entry
-        assert!(
-            updates.clone().drain_persisted_and_drop(&updates),
-            "must drop entry"
-        );
+        assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
         updates.set(ValuePointer::new(1, 2, 1));
 
         // When all updates are persisted, drop the entry
-        assert!(
-            updates.clone().drain_persisted_and_drop(&updates),
-            "must drop entry"
-        );
+        assert!(updates.clone().drain_persisted(&updates), "must drop entry");
 
         let persisted = updates.clone();
         updates.set(ValuePointer::new(1, 3, 1));
@@ -649,7 +630,7 @@ mod tests {
         // Last pointer was not persisted, only keep it for the next flush
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert_eq!(updates.set, Some(ValuePointer::new(1, 3, 1))); // set block offset 3
             assert_eq!(
                 updates.unset.as_slice(),
@@ -664,7 +645,7 @@ mod tests {
         // Last two pointers were not persisted, only keep them for the next flush
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert_eq!(updates.set, Some(ValuePointer::new(1, 4, 1))); // set block offset 4
             assert_eq!(
                 updates.unset.as_slice(),
@@ -682,7 +663,7 @@ mod tests {
         // Then we keep the last pointer with set=false to flush the delete next time
         {
             let mut updates = updates.clone();
-            assert!(!updates.drain_persisted_and_drop(&persisted));
+            assert!(!updates.drain_persisted(&persisted));
             assert_eq!(updates.set, None);
             assert_eq!(updates.unset.as_slice(), &[ValuePointer::new(1, 4, 1)]);
         }
@@ -693,7 +674,7 @@ mod tests {
             let mut persisted = updates.clone();
             persisted.unset.swap(0, 1);
             persisted.unset.swap(1, 3);
-            assert!(updates.drain_persisted_and_drop(&persisted));
+            assert!(updates.drain_persisted(&persisted));
         }
     }
 
@@ -727,7 +708,7 @@ mod tests {
         updates.set(ValuePointer::new(1, 2, 1));
 
         // Drain persisted updates and don't drop, still need to persist block offset 2 later
-        let do_drop = updates.drain_persisted_and_drop(&persisted);
+        let do_drop = updates.drain_persisted(&persisted);
         assert!(!do_drop, "must not drop entry");
 
         // Pending updates must only have set for block offset 2
