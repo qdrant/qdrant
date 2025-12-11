@@ -39,33 +39,26 @@ impl ValuePointer {
 
 /// Pointer updates for a given point offset
 ///
-/// Keeps track of pointers that are set and unset for a given point offset, until we persist them.
+/// Keeps track of the places where the value for a point offset have been written, until we persist them.
 ///
 /// In context of Gridstore, for each point offset this means:
 ///
-/// 1. if `set.is_some()`?
-///   - tracker (file/memory) may or may not currently have a pointer set
-///   - on flush, we update the tracker to point to the new value
-///   - for all unsets we will free their respective blocks
-/// 2. else if `unset.len() > 0`
-///   - tracker (file/memory) may or may not currently have pointer for some point offset
-///   - on flush, we update the tracker to remove any pointer making it empty
-///   - for all unsets we will free their respective blocks
-/// 3. else if `is_empty()`
-///   - tracker (file/memory) may or may not currently have pointer for some point offset
-///   - tracker is up-to-date and will remain unchanged
-///   - no blocks will be freed
+/// - `current` is the value the tracker should report and become persisted when flushing.
+///     If exists, `Some`; otherwise, `None`.
 ///
-/// When flushing, we persist all changes we have currently collected to disk. It is possible that
-/// new changes come in concurrently. After we've written to disk we remove (drain) the now
-/// persisted changes from the latest point updates. With this mechanism we write each update to
+/// - `to_free` is the list of pointers that should be freed in the bitmask during flush, so that
+///     the space in the pages can be reused.
+///
+/// When flushing, we persist all changes we have currently collected. It is possible that new changes
+/// come in between preparing the flusher and executing it. After we've written to disk, we remove (drain),
+/// the now persisted changes from these pointer updates. With this mechanism we write each update to
 /// disk exactly once.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(super) struct PointerUpdates {
-    /// Pointer to set when persisting
-    set: Option<ValuePointer>,
-    /// List of pointers to unset when persisting
-    unset: SmallVec<[ValuePointer; 1]>,
+    /// Pointer to write in tracker when persisting
+    current: Option<ValuePointer>,
+    /// List of pointers to free in bitmask when persisting
+    to_free: SmallVec<[ValuePointer; 1]>,
 }
 
 impl PointerUpdates {
@@ -74,25 +67,24 @@ impl PointerUpdates {
     /// It will mark the pointer as used on disk on flush, and will free all previous pending
     /// pointers
     fn set(&mut self, pointer: ValuePointer) {
-        if self.set == Some(pointer) {
+        if self.current == Some(pointer) {
             debug_assert!(false, "we should not set the same point twice");
             return;
         }
 
-        let old_set = self.set.replace(pointer);
-
-        if let Some(old_set) = old_set {
-            self.unset.push(old_set);
+        // Move the current pointer to the pointers to free, if it exists
+        if let Some(old_pointer) = self.current.replace(pointer) {
+            self.to_free.push(old_pointer);
             debug_assert_eq!(
-                self.unset.iter().copied().collect::<AHashSet<_>>().len(),
-                self.unset.len(),
-                "should not have duplicate unsets",
+                self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
+                self.to_free.len(),
+                "should not have duplicate pointers to free",
             );
         }
 
         debug_assert!(
-            !self.unset.contains(&pointer),
-            "unset list cannot contain pointer we set",
+            !self.to_free.contains(&pointer),
+            "old list cannot contain pointer we just set",
         );
     }
 
@@ -101,34 +93,34 @@ impl PointerUpdates {
     /// It will completely free the pointer on disk on flush including all it's previous pending
     /// pointers
     fn unset(&mut self, pointer: ValuePointer) {
-        let old_set = self.set.take();
+        let old_pointer = self.current.take();
 
-        // Fallback: if set and new unset don't match, unset both pointers
-        if let Some(old_set) = old_set
-            && old_set != pointer
+        // Fallback: if the pointer to unset is not the current one, free both pointers, though this shouldn't happen
+        debug_assert!(
+            old_pointer.is_none_or(|p| p == pointer),
+            "new unset pointer should match with current one, if any",
+        );
+        if let Some(old_pointer) = old_pointer
+            && old_pointer != pointer
         {
-            self.unset.push(old_set);
+            self.to_free.push(old_pointer);
         }
 
-        self.unset.push(pointer);
+        self.to_free.push(pointer);
 
-        debug_assert!(
-            old_set.is_none_or(|p| p == pointer),
-            "new unset pointer should match with latest set if any",
-        );
         debug_assert_eq!(
-            self.unset.iter().copied().collect::<AHashSet<_>>().len(),
-            self.unset.len(),
-            "should not have duplicate unsets",
+            self.to_free.iter().copied().collect::<AHashSet<_>>().len(),
+            self.to_free.len(),
+            "should not have duplicate pointers to free",
         );
     }
 
     /// Pointer is empty if there is no set nor unsets
     fn is_empty(&self) -> bool {
-        self.set.is_none() && self.unset.is_empty()
+        self.current.is_none() && self.to_free.is_empty()
     }
 
-    /// Remove all set/unset from self that have been persisted
+    /// Remove all pointers from self that have been persisted
     ///
     /// After calling this self may end up being empty. The caller is responsible for dropping
     /// empty structures if desired.
@@ -149,17 +141,20 @@ impl PointerUpdates {
             return true;
         }
 
-        let Self { set, unset } = persisted;
+        let Self {
+            current: previous_current,
+            to_free: freed,
+        } = persisted;
 
         // Remove self set if persisted
-        if let (Some(last), Some(set)) = (self.set, *set)
-            && last == set
+        if let (Some(current), Some(previous_current)) = (self.current, *previous_current)
+            && current == previous_current
         {
-            self.set.take();
+            self.current.take();
         }
 
         // Only keep unsets that are not persisted
-        self.unset.retain(|pointer| !unset.contains(pointer));
+        self.to_free.retain(|pointer| !freed.contains(pointer));
 
         self.is_empty()
     }
@@ -258,7 +253,7 @@ impl Tracker {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
-            match updates.set {
+            match updates.current {
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
@@ -272,8 +267,8 @@ impl Tracker {
                 None => self.persist_pointer(point_offset, None),
             }
 
-            // Mark all unsets for removal to free its blocks
-            old_pointers.extend(&updates.unset);
+            // Mark all old pointers for removal to free its blocks
+            old_pointers.extend(&updates.to_free);
 
             // Remove all persisted updates from the latest updates, drop if no changes are left
             if let Some(latest_updates) = self.pending_updates.get_mut(&point_offset) {
@@ -379,7 +374,7 @@ impl Tracker {
                 self.get_raw(point_offset).copied().flatten()
             }
             // Use set from pending updates
-            Some(pending) => pending.set,
+            Some(pending) => pending.current,
             // No pending update, use real data
             None => self.get_raw(point_offset).copied().flatten(),
         }
@@ -636,9 +631,9 @@ mod tests {
         {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted(&persisted));
-            assert_eq!(updates.set, Some(ValuePointer::new(1, 3, 1))); // set block offset 3
+            assert_eq!(updates.current, Some(ValuePointer::new(1, 3, 1))); // set block offset 3
             assert_eq!(
-                updates.unset.as_slice(),
+                updates.to_free.as_slice(),
                 &[
                     ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
                 ]
@@ -651,9 +646,9 @@ mod tests {
         {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted(&persisted));
-            assert_eq!(updates.set, Some(ValuePointer::new(1, 4, 1))); // set block offset 4
+            assert_eq!(updates.current, Some(ValuePointer::new(1, 4, 1))); // set block offset 4
             assert_eq!(
-                updates.unset.as_slice(),
+                updates.to_free.as_slice(),
                 &[
                     ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
                     ValuePointer::new(1, 3, 1), // unset block offset 3
@@ -669,16 +664,16 @@ mod tests {
         {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted(&persisted));
-            assert_eq!(updates.set, None);
-            assert_eq!(updates.unset.as_slice(), &[ValuePointer::new(1, 4, 1)]);
+            assert_eq!(updates.current, None);
+            assert_eq!(updates.to_free.as_slice(), &[ValuePointer::new(1, 4, 1)]);
         }
 
         // Even if the history would somehow be shuffled we'd still properly drain
         {
             let mut updates = updates.clone();
             let mut persisted = updates.clone();
-            persisted.unset.swap(0, 1);
-            persisted.unset.swap(1, 3);
+            persisted.to_free.swap(0, 1);
+            persisted.to_free.swap(1, 3);
             assert!(updates.drain_persisted(&persisted));
         }
     }
