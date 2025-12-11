@@ -350,13 +350,14 @@ impl CollectionsTelemetry {
 
             if let Some(this_peer_id) = peer_id {
                 for transfer in collection.transfers.iter().flatten() {
-                    let status = &transfer.status;
+                    let status = transfer.status.as_ref();
 
-                    let running = status.running.unwrap_or(true);
+                    // On the receiving peer, we don't have a status so we assume `true` if not set.
+                    let running = status.map(|i| i.running()).unwrap_or(true);
 
                     // Non running transfers
                     if !running {
-                        if status.failed == Some(true) {
+                        if status.is_some_and(|i| i.failed()) {
                             failed_transfers += 1;
                         }
                         continue;
@@ -369,8 +370,8 @@ impl CollectionsTelemetry {
                         outgoing_transfers += 1;
                     }
 
-                    points_transferred += status.points_transferred.unwrap_or_default();
-                    points_total += status.points_total.unwrap_or_default();
+                    points_transferred += status.map(|i| i.points_transferred).unwrap_or_default();
+                    points_total += status.map(|i| i.points_total).unwrap_or_default();
                 }
             }
 

@@ -55,6 +55,7 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
+use crate::shards::transfer::transfer_tasks_pool::TransferTaskStatus;
 
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
@@ -331,24 +332,8 @@ pub struct ShardTransferInfo {
 
     /// Internal status of the shard transfer, do not expose.
     #[serde(skip)]
-    #[schemars(skip)]
     #[anonymize(false)]
-    pub status: ShardTransferStatus,
-}
-
-#[derive(Debug, Clone, Anonymize)]
-pub struct ShardTransferStatus {
-    #[anonymize(false)]
-    pub running: Option<bool>,
-
-    #[anonymize(false)]
-    pub failed: Option<bool>,
-
-    #[anonymize(false)]
-    pub points_transferred: Option<usize>,
-
-    #[anonymize(false)]
-    pub points_total: Option<usize>,
+    pub status: Option<TransferTaskStatus>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]

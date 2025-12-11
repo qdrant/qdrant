@@ -19,7 +19,7 @@ pub struct TransferTasksPool {
 
 pub struct TransferTaskItem {
     pub task: CancellableAsyncTaskHandle<bool>,
-    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub started_at: chrono::DateTime<Utc>,
     pub progress: Arc<Mutex<TransferTaskProgress>>,
 }
 
@@ -36,24 +36,21 @@ pub enum TaskResult {
     Failed,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TransferTaskStatus {
     pub result: TaskResult,
     pub points_transferred: usize,
     pub points_total: usize,
     pub eta: Option<Duration>,
     pub started_at: DateTime<Utc>,
+    pub elapsed: usize,
 }
 
 impl TransferTaskStatus {
     pub fn comment(&self) -> String {
         let mut comment = format!(
             "Transferring records ({}/{}), started {}s ago, ETA: ",
-            self.points_transferred,
-            self.points_total,
-            chrono::Utc::now()
-                .signed_duration_since(self.started_at)
-                .num_seconds(),
+            self.points_transferred, self.points_total, self.elapsed,
         );
         if let Some(eta) = self.eta {
             write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
@@ -62,6 +59,14 @@ impl TransferTaskStatus {
         }
 
         comment
+    }
+
+    pub fn failed(&self) -> bool {
+        matches!(self.result, TaskResult::Failed)
+    }
+
+    pub fn running(&self) -> bool {
+        matches!(self.result, TaskResult::Running)
     }
 }
 
@@ -83,12 +88,8 @@ impl TransferTaskProgress {
 
     pub fn set(&mut self, transferred: usize, total: usize) {
         self.points_transferred = transferred;
-        self.points_total = total;
+        self.points_total = max(total, transferred);
         self.eta.set_progress(transferred);
-    }
-
-    pub fn total(&self) -> usize {
-        max(self.points_total, self.points_transferred)
     }
 }
 
@@ -111,14 +112,16 @@ impl TransferTasksPool {
         };
 
         let progress = task.progress.lock();
-        let total = progress.total();
+
+        let elapsed = (Utc::now() - task.started_at).num_seconds().max(0) as usize;
 
         Some(TransferTaskStatus {
             result,
             points_transferred: progress.points_transferred,
-            points_total: total,
-            eta: progress.eta.estimate(total),
+            points_total: progress.points_total,
+            eta: progress.eta.estimate(progress.points_total),
             started_at: task.started_at,
+            elapsed,
         })
     }
 
