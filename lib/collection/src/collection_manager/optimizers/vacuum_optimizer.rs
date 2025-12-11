@@ -167,10 +167,6 @@ impl VacuumOptimizer {
 }
 
 impl SegmentOptimizer for VacuumOptimizer {
-    fn name(&self) -> &str {
-        "vacuum"
-    }
-
     fn optimizer_type(&self) -> OptimizerType {
         OptimizerType::Vacuum
     }

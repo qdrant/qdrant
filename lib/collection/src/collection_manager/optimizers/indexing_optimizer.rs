@@ -239,10 +239,6 @@ impl IndexingOptimizer {
 }
 
 impl SegmentOptimizer for IndexingOptimizer {
-    fn name(&self) -> &str {
-        "indexing"
-    }
-
     fn optimizer_type(&self) -> OptimizerType {
         OptimizerType::Indexing
     }

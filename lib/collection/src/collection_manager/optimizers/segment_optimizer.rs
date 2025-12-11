@@ -53,6 +53,17 @@ pub enum OptimizerType {
     Vacuum,
 }
 
+impl OptimizerType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            OptimizerType::ConfigMismatch => "config mismatch",
+            OptimizerType::Indexing => "indexing",
+            OptimizerType::Merge => "merge",
+            OptimizerType::Vacuum => "vacuum",
+        }
+    }
+}
+
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
 ///
 /// It provides functions which allow to re-build specified segments into a new, better one.
@@ -63,7 +74,9 @@ pub enum OptimizerType {
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
     /// Get name describing this optimizer
-    fn name(&self) -> &str;
+    fn name(&self) -> &str {
+        self.optimizer_type().name()
+    }
 
     fn optimizer_type(&self) -> OptimizerType;
 

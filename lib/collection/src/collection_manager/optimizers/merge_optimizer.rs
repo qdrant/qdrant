@@ -62,10 +62,6 @@ impl MergeOptimizer {
 }
 
 impl SegmentOptimizer for MergeOptimizer {
-    fn name(&self) -> &str {
-        "merge"
-    }
-
     fn optimizer_type(&self) -> OptimizerType {
         OptimizerType::Merge
     }

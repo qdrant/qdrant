@@ -210,10 +210,6 @@ impl ConfigMismatchOptimizer {
 }
 
 impl SegmentOptimizer for ConfigMismatchOptimizer {
-    fn name(&self) -> &str {
-        "config mismatch"
-    }
-
     fn optimizer_type(&self) -> OptimizerType {
         OptimizerType::ConfigMismatch
     }
