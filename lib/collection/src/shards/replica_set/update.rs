@@ -36,6 +36,7 @@ impl ShardReplicaSet {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         mut hw_measurement: HwMeasurementAcc,
         force: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
@@ -62,24 +63,45 @@ impl ShardReplicaSet {
                 // Rate limit update operations on Active replica
                 self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)
                     .await?;
-                local.get().update(operation, wait, hw_measurement).await
+                local
+                    .get()
+                    .update(operation, wait, timeout, hw_measurement)
+                    .await
             }
 
             // Force apply the operation no matter the state
-            _ if force => local.get().update(operation, wait, hw_measurement).await,
+            _ if force => {
+                local
+                    .get()
+                    .update(operation, wait, timeout, hw_measurement)
+                    .await
+            }
 
             ReplicaState::Partial
             | ReplicaState::Initializing
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
-            | ReplicaState::ActiveRead => local.get().update(operation, wait, hw_measurement).await,
+            | ReplicaState::ActiveRead => {
+                local
+                    .get()
+                    .update(operation, wait, timeout, hw_measurement)
+                    .await
+            }
 
-            ReplicaState::Listener => local.get().update(operation, false, hw_measurement).await,
+            ReplicaState::Listener => {
+                local
+                    .get()
+                    .update(operation, false, None, hw_measurement)
+                    .await
+            }
 
             ReplicaState::PartialSnapshot | ReplicaState::Recovery
                 if operation.clock_tag.is_some_and(|tag| tag.force) =>
             {
-                local.get().update(operation, wait, hw_measurement).await
+                local
+                    .get()
+                    .update(operation, wait, timeout, hw_measurement)
+                    .await
             }
 
             ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
@@ -113,6 +135,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         update_only_existing: bool,
         mut hw_measurement_acc: HwMeasurementAcc,
@@ -142,11 +165,17 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(operation, wait, update_only_existing, hw_measurement_acc)
-                .await
+            self.update(
+                operation,
+                wait,
+                timeout,
+                update_only_existing,
+                hw_measurement_acc,
+            )
+            .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, ordering, hw_measurement_acc)
+            self.forward_update(leader_peer, operation, wait, None, ordering, hw_measurement_acc)
                 .await
                 .map_err(|err| {
                     if err.is_transient() {
@@ -197,6 +226,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         update_only_existing: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -217,6 +247,7 @@ impl ShardReplicaSet {
                 .update_impl(
                     operation.clone(),
                     wait,
+                    timeout,
                     &mut clock,
                     update_only_existing,
                     hw_measurement_acc.clone(),
@@ -258,6 +289,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         clock: &mut clock_set::ClockGuard,
         update_only_existing: bool,
         hw_measurement_acc: HwMeasurementAcc,
@@ -315,7 +347,7 @@ impl ShardReplicaSet {
             let local_update = async move {
                 local
                     .get()
-                    .update(operation, local_wait, hw_acc)
+                    .update(operation, local_wait, timeout, hw_acc)
                     .await
                     .map(|ok| (this_peer_id, ok))
                     .map_err(|err| (this_peer_id, err))
@@ -330,7 +362,7 @@ impl ShardReplicaSet {
             let hw_acc = hw_measurement_acc.clone();
             let remote_update = async move {
                 remote
-                    .update(operation, wait, hw_acc)
+                    .update(operation, wait, timeout, hw_acc)
                     .await
                     .map(|ok| (remote.peer_id, ok))
                     .map_err(|err| (remote.peer_id, err))
@@ -428,6 +460,7 @@ impl ShardReplicaSet {
                 UpdateStatus::Completed => true,
                 UpdateStatus::Acknowledged => false,
                 UpdateStatus::ClockRejected => false,
+                UpdateStatus::WaitTimeout => false,
             });
 
             if successes.len() >= minimal_success_count {
@@ -662,6 +695,7 @@ impl ShardReplicaSet {
         leader_peer: PeerId,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -680,6 +714,7 @@ impl ShardReplicaSet {
             .forward_update(
                 OperationWithClockTag::from(operation),
                 wait,
+                timeout,
                 ordering,
                 hw_measurement_acc,
             ) // `clock_tag` *has to* be `None`!

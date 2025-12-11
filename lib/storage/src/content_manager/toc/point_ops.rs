@@ -447,6 +447,7 @@ impl TableOfContent {
         shard_keys: Vec<ShardKey>,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
@@ -458,6 +459,7 @@ impl TableOfContent {
                 collection.update_from_client(
                     operation.clone(),
                     wait,
+                    timeout,
                     ordering,
                     Some(shard_key),
                     hw_measurement_acc.clone(),
@@ -483,6 +485,7 @@ impl TableOfContent {
         collection_name: &str,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
@@ -543,6 +546,7 @@ impl TableOfContent {
                     .update_from_client(
                         operation.operation,
                         wait,
+                        timeout,
                         ordering,
                         None,
                         hw_measurement_acc.clone(),
@@ -568,6 +572,7 @@ impl TableOfContent {
                                 .update_from_client(
                                     operation.operation,
                                     wait,
+                                    timeout,
                                     ordering,
                                     None,
                                     hw_measurement_acc.clone(),
@@ -581,6 +586,7 @@ impl TableOfContent {
                         shard_keys,
                         operation.operation,
                         wait,
+                        timeout,
                         ordering,
                         hw_measurement_acc.clone(),
                     )
@@ -593,6 +599,7 @@ impl TableOfContent {
                     .update_from_client(
                         operation.operation,
                         wait,
+                        timeout,
                         ordering,
                         Some(shard_key),
                         hw_measurement_acc.clone(),
@@ -606,6 +613,7 @@ impl TableOfContent {
                     shard_keys,
                     operation.operation,
                     wait,
+                    timeout,
                     ordering,
                     hw_measurement_acc.clone(),
                 )
@@ -627,6 +635,7 @@ impl TableOfContent {
                     shard_keys,
                     operation.operation,
                     wait,
+                    timeout,
                     ordering,
                     hw_measurement_acc.clone(),
                 )
@@ -638,6 +647,7 @@ impl TableOfContent {
                         operation,
                         shard_selection,
                         wait,
+                        timeout,
                         ordering,
                         hw_measurement_acc.clone(),
                     )

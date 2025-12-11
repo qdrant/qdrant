@@ -15,7 +15,6 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
-use validator::ValidateRequired;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
