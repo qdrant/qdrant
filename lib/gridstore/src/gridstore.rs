@@ -962,6 +962,8 @@ mod tests {
         // ensure no concurrent flushing & flusher instances
         let has_flusher_lock = Arc::new(parking_lot::Mutex::new(false));
 
+        let mut flush_thread_handles = Vec::new();
+
         // apply operations to storage and model_hashmap
         for (i, operation) in operations.into_iter().enumerate() {
             match operation {
@@ -1012,7 +1014,7 @@ mod tests {
                         *flush_lock_guard = true;
                         drop(flush_lock_guard);
                         let flush_lock = has_flusher_lock.clone();
-                        std::thread::Builder::new()
+                        let handle = std::thread::Builder::new()
                             .name("background_flush".to_string())
                             .spawn(move || {
                                 thread::sleep(delay); // keep flusher alive while other operation are applied
@@ -1030,12 +1032,18 @@ mod tests {
                                 drop(flush_lock_guard);
                             })
                             .unwrap();
+                        flush_thread_handles.push(handle);
                     }
                 }
             }
         }
 
         log::debug!("All operations successfully applied - now checking consistency...");
+
+        // wait for all background flushes to complete
+        for handle in flush_thread_handles {
+            handle.join().expect("flush thread should not panic");
+        }
 
         // asset same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());

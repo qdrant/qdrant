@@ -424,7 +424,6 @@ impl Tracker {
 
     /// Unset the value at the given point offset and return its previous value
     pub fn unset(&mut self, point_offset: PointOffset) -> Option<ValuePointer> {
-        log::trace!("tracker unset offset:{point_offset}");
         let pointer_opt = self.get(point_offset);
 
         if let Some(pointer) = pointer_opt {
