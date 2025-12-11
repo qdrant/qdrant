@@ -396,6 +396,7 @@ pub struct RemoteShardInfo {
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
+    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
     ClockRejected,
