@@ -916,17 +916,22 @@ mod tests {
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let point_offset = rng.random_range(0..=max_point_offset);
             let operation = rng.random_range(0..=3);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
-                    assert!(!payload.to_bytes().is_empty());
+                    let point_offset = rng.random_range(0..=max_point_offset);
                     Operation::Put(point_offset, payload)
                 }
-                1 => Operation::Delete(point_offset),
-                2 => Operation::Get(point_offset),
+                1 => {
+                    let point_offset = rng.random_range(0..=max_point_offset);
+                    Operation::Delete(point_offset)
+                }
+                2 => {
+                    let point_offset = rng.random_range(0..=max_point_offset);
+                    Operation::Get(point_offset)
+                }
                 3 => {
                     let delay_ms = rng.random_range(0..=500);
                     let delay = Duration::from_millis(delay_ms);
@@ -953,9 +958,7 @@ mod tests {
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100_000u32)
-            .map(|_| Operation::random(rng, max_point_offset))
-            .collect::<Vec<_>>();
+        let operations = (0..100_000u32).map(|_| Operation::random(rng, max_point_offset));
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -966,7 +969,7 @@ mod tests {
         let mut flush_thread_handles = Vec::new();
 
         // apply operations to storage and model_hashmap
-        for (i, operation) in operations.into_iter().enumerate() {
+        for (i, operation) in operations.enumerate() {
             match operation {
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
