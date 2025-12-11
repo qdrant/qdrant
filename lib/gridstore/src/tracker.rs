@@ -74,15 +74,26 @@ impl PointerUpdates {
     /// It will mark the pointer as used on disk on flush, and will free all previous pending
     /// pointers
     fn set(&mut self, pointer: ValuePointer) {
-        if let Some(old_set) = self.set.replace(pointer) {
-            self.unset.push(old_set);
+        if self.set == Some(pointer) {
+            debug_assert!(false, "we should not set the same point twice");
+            return;
+        }
 
+        let old_set = self.set.replace(pointer);
+
+        if let Some(old_set) = old_set {
+            self.unset.push(old_set);
             debug_assert_eq!(
                 self.unset.iter().copied().collect::<AHashSet<_>>().len(),
                 self.unset.len(),
                 "should not have duplicate unsets",
             );
         }
+
+        debug_assert!(
+            !self.unset.contains(&pointer),
+            "unset list cannot contain pointer we set",
+        );
     }
 
     /// Mark this pointer as unset
@@ -92,7 +103,7 @@ impl PointerUpdates {
     fn unset(&mut self, pointer: ValuePointer) {
         let old_set = self.set.take();
 
-        // Fallback: if set and new unset don't match insert both pointers into unset
+        // Fallback: if set and new unset don't match, unset both pointers
         if let Some(old_set) = old_set
             && old_set != pointer
         {
