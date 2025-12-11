@@ -35,6 +35,7 @@ impl UpdateWorkers {
                     operation,
                     sender,
                     wait,
+                    timeout,
                     hw_measurements,
                 }) => {
                     let collection_name_clone = collection_name.clone();
