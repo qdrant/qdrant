@@ -124,20 +124,69 @@ impl PointerUpdates {
             return true;
         }
 
-        // Pointers we consider persisted
-        // If latest_is_set is different, the last pointer has new changes so we cannot consider it
-        // persisted
-        let mut persisted_pointers = persisted.history.as_slice();
-        if self.latest_is_set != persisted.latest_is_set {
-            persisted_pointers = &persisted_pointers[..persisted_pointers.len().saturating_sub(1)];
+        // Remove persisted entries to not persist them again, drop if history is exhausted
+        self.update_from_persisted(persisted);
+        self.history.is_empty()
+    }
+
+    /// Remove persisted entries from current so that we don't persist them again
+    fn update_from_persisted(&mut self, persisted: &Self) {
+        debug_assert_eq!(
+            self.history.iter().copied().collect::<AHashSet<_>>().len(),
+            self.history.len(),
+            "self must not have duplicate pointers in history",
+        );
+
+        let (persist_set, persist_unset) = persisted.to_set_unset();
+
+        // Update current set if necessary
+        match (self.latest(), persist_set) {
+            // Current and persisted set are equal, pop set from current
+            (Some(last), Some(set)) if last == set => {
+                self.history.pop();
+                self.latest_is_set = false;
+            }
+            // Current and persisted set exist but are not equal, keep current set
+            // Can be reached if current has a newer set
+            (Some(_), Some(_)) => {}
+            // If current does not have any set, don't touch it
+            // Can be reached if current has newer unset
+            (None, _) => {}
+            // If not persisted any set, don't touch current set
+            (_, None) => {}
         }
 
-        // Remove all persisted pointers from history
-        self.history
-            .retain(|pointer| !persisted_pointers.contains(pointer));
+        // In current history, range of unset entries
+        let unset_range = if self.latest_is_set {
+            0..self.history.len().saturating_sub(1)
+        } else {
+            0..self.history.len()
+        };
 
-        // Drop entry if history is exhausted
-        self.history.is_empty()
+        // From current unsets, remove all unsets that are persisted
+        // TODO(timvisee): switch to SmallVec::extract_if once available: <https://github.com/servo/rust-smallvec/issues/360>
+        let mut to_remove = SmallVec::<[_; 1]>::new();
+        for (i, pointer) in self.history[unset_range].iter().enumerate() {
+            if persist_unset.contains(pointer) {
+                to_remove.push(i);
+            }
+        }
+        for index in to_remove.into_iter().rev() {
+            self.history.remove(index);
+        }
+    }
+
+    /// Split these pointer updates into set and unset pointers
+    fn to_set_unset(&self) -> (Option<ValuePointer>, &[ValuePointer]) {
+        if self.history.is_empty() {
+            (None, &[])
+        } else if self.latest_is_set {
+            let (unset, set) = self.history.split_at(self.history.len().saturating_sub(1));
+            debug_assert!(set.len() == 1, "expect exactly one set item");
+            (Some(set[0]), unset)
+        } else {
+            (None, &self.history)
+        }
     }
 }
 
@@ -612,7 +661,13 @@ mod tests {
             let mut updates = updates.clone();
             assert!(!updates.drain_persisted_and_drop(&persisted));
             assert!(updates.latest_is_set);
-            assert_eq!(updates.history.as_slice(), &[ValuePointer::new(1, 3, 1)]);
+            assert_eq!(
+                updates.history.as_slice(),
+                &[
+                    ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
+                    ValuePointer::new(1, 3, 1), // set block offset 3
+                ]
+            );
         }
 
         updates.set(ValuePointer::new(1, 4, 1));
@@ -624,7 +679,11 @@ mod tests {
             assert!(updates.latest_is_set);
             assert_eq!(
                 updates.history.as_slice(),
-                &[ValuePointer::new(1, 3, 1), ValuePointer::new(1, 4, 1)]
+                &[
+                    ValuePointer::new(1, 2, 1), // unset block offset 2 (last persisted was set)
+                    ValuePointer::new(1, 3, 1), // unset block offset 3
+                    ValuePointer::new(1, 4, 1), // set block offset 4
+                ]
             );
         }
 
@@ -648,5 +707,50 @@ mod tests {
             persisted.history.swap(1, 3);
             assert!(updates.drain_persisted_and_drop(&persisted));
         }
+    }
+
+    /// Test pointer drain edge case that was previously broken.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7741>
+    #[test]
+    fn test_value_pointer_drain_bug_7741() {
+        // current:
+        // - latest: true
+        // - history: [block_offset:1, block_offset:2]
+        //
+        // persisted:
+        // - latest: false
+        // - history: [block_offset:1]
+        //
+        // expected current after drain:
+        // - latest: true
+        // - history: [block_offset:2]
+
+        let mut updates = PointerUpdates::default();
+
+        // Put and delete block offset 1
+        updates.set(ValuePointer::new(1, 1, 1));
+        updates.unset(ValuePointer::new(1, 1, 1));
+
+        // Clone this set of updates to flush later
+        let persisted = updates.clone();
+
+        // Put block offset 2
+        updates.set(ValuePointer::new(1, 2, 1));
+
+        // Drain persisted updates and don't drop, still need to persist block offset 2 later
+        let do_drop = updates.drain_persisted_and_drop(&persisted);
+        assert!(!do_drop, "must not drop entry");
+
+        // Pending updates must only have set for block offset 2
+        let expected = {
+            let mut expected = PointerUpdates::default();
+            expected.set(ValuePointer::new(1, 2, 1));
+            expected
+        };
+        assert_eq!(
+            updates, expected,
+            "must have one pending update to set block offset 2",
+        );
     }
 }
