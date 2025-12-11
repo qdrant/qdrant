@@ -1273,6 +1273,8 @@ enum UpdateStatus {
   Completed = 2;
   // Internal: update is rejected due to an outdated clock
   ClockRejected = 3;
+  // Timeout of awaited operations
+  WaitTimeout = 4;
 }
 
 message OrderValue {
