@@ -45,7 +45,7 @@ pub struct OptimizerThresholds {
     pub indexing_threshold_kb: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum OptimizerType {
     ConfigMismatch,
     Indexing,
