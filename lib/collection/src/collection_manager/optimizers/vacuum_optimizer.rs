@@ -59,8 +59,8 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            quantization_config,
             hnsw_global_config,
+            quantization_config,
             telemetry_durations_aggregator,
         }
     }

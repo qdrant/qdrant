@@ -34,6 +34,7 @@ pub struct ConfigMismatchOptimizer {
 }
 
 impl ConfigMismatchOptimizer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
