@@ -136,7 +136,7 @@ pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     unsafe { &*v.as_ptr().cast::<T>() }
 }
 
-pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
+pub fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v).cast::<u8>(), mem::size_of_val(v)) }
 }
 
