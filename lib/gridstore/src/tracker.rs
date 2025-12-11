@@ -44,10 +44,10 @@ impl ValuePointer {
 /// In context of Gridstore, for each point offset this means:
 ///
 /// - `current` is the value the tracker should report and become persisted when flushing.
-///     If exists, `Some`; otherwise, `None`.
+///  If exists, `Some`; otherwise, `None`.
 ///
 /// - `to_free` is the list of pointers that should be freed in the bitmask during flush, so that
-///     the space in the pages can be reused.
+///  the space in the pages can be reused.
 ///
 /// When flushing, we persist all changes we have currently collected. It is possible that new changes
 /// come in between preparing the flusher and executing it. After we've written to disk, we remove (drain),
