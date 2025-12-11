@@ -162,7 +162,7 @@ impl PointerUpdates {
         match (self.set, *set) {
             // Self and persisted set are equal, remove set
             (Some(last), Some(set)) if last == set => {
-                self.unset(set);
+                self.set.take();
             }
             // Self and persisted set exist but are not equal, keep set
             // Can be reached if self has a newer set
