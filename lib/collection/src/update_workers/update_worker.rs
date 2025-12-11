@@ -44,6 +44,8 @@ impl UpdateWorkers {
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
+                    println!("timeout: {:?}", timeout);
+
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
@@ -120,18 +122,18 @@ impl UpdateWorkers {
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {
-            let mut guard = wal.blocking_lock();
+            // let mut guard = wal.blocking_lock();
 
-            if let Some(t) = timeout
-                && std::time::Instant::now() + t < Instant::now()
-            {
-                drop(guard);
-                return Err(CollectionError::service_error(format!(
-                    "Timeout reached while waiting for WAL flush"
-                )));
-            }
+            // if let Some(t) = timeout
+            //     && std::time::Instant::now() + t < Instant::now()
+            // {
+            //     drop(guard);
+            //     return Err(CollectionError::service_error(format!(
+            //         "Timeout reached while waiting for WAL flush"
+            //     )));
+            // }
 
-            guard.flush().map_err(|err| {
+            wal.blocking_lock().flush().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't flush WAL before operation {op_num} - {err}"
                 ))

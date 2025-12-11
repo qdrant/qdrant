@@ -114,12 +114,12 @@ impl ShardOperation for LocalShard {
                 let mut fut_timeout = Box::pin(tokio::time::sleep(timeout));
 
                 return match futures::future::select(&mut fut_wait, &mut fut_timeout).await {
-                    Either::Left(_) => Ok(UpdateResult {
+                    Either::Left(_) => success,
+                    Either::Right(_) => Ok(UpdateResult {
                         operation_id: Some(operation_id),
                         status: UpdateStatus::WaitTimeout,
                         clock_tag: operation.clock_tag,
                     }),
-                    Either::Right(_) => success,
                 };
             }
 
