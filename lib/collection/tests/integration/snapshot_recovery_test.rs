@@ -111,7 +111,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     ));
     let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(insert_points, true,None, WriteOrdering::default(), hw_counter)
         .await
         .unwrap();
 

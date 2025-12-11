@@ -29,6 +29,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let update_lock = self.updates_lock.clone().read_owned().await;
@@ -56,6 +57,7 @@ impl Collection {
                         shard.update_local(
                             OperationWithClockTag::from(operation.clone()),
                             wait,
+                            timeout,
                             hw_measurement_acc.clone(),
                             false,
                         )
@@ -93,6 +95,7 @@ impl Collection {
         operation: OperationWithClockTag,
         shard_selection: ShardId,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
@@ -107,7 +110,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone(), false).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
@@ -118,7 +121,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering, false, hw_measurement_acc)
+                        .update_with_consistency(operation.operation, wait, timeout, ordering, false, hw_measurement_acc)
                         .await
                         .map(Some)
                 }
@@ -144,6 +147,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
@@ -175,6 +179,7 @@ impl Collection {
                                 .update_with_consistency(
                                     operation,
                                     wait,
+                                    timeout,
                                     ordering,
                                     false,
                                     hw_acc.clone(),
@@ -187,6 +192,7 @@ impl Collection {
                                 .update_with_consistency(
                                     operation,
                                     wait,
+                                    timeout,
                                     ordering,
                                     true,
                                     hw_acc.clone(),
@@ -253,10 +259,11 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, ordering, None, hw_measurement_acc)
+        self.update_from_client(operation, wait, timeout, ordering, None, hw_measurement_acc)
             .await
     }
 

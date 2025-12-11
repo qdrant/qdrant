@@ -32,6 +32,7 @@ pub fn internal_sync_points(
     collection_name: String,
     points_sync_operation: PointSyncOperation,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<SyncPointsInternal> {
     let PointSyncOperation {
@@ -52,7 +53,7 @@ pub fn internal_sync_points(
             from_id: from_id.map(|x| x.into()),
             to_id: to_id.map(|x| x.into()),
             ordering: ordering.map(write_ordering_to_proto),
-            timeout: None,
+            timeout,
         }),
     })
 }
@@ -63,6 +64,7 @@ pub fn internal_upsert_points(
     collection_name: String,
     point_insert_operations: PointInsertOperationsInternal,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
     Ok(UpsertPointsInternal {
@@ -81,7 +83,7 @@ pub fn internal_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: None,
-            timeout: None,
+            timeout,
         }),
     })
 }
@@ -92,6 +94,7 @@ pub fn internal_conditional_upsert_points(
     collection_name: String,
     point_condition_upsert_operations: ConditionalInsertOperationInternal,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
     let ConditionalInsertOperationInternal {
@@ -115,7 +118,7 @@ pub fn internal_conditional_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: Some(api::grpc::Filter::from(condition)),
-            timeout: None,
+            timeout,
         }),
     })
 }
@@ -126,6 +129,7 @@ pub fn internal_delete_points(
     collection_name: String,
     ids: Vec<PointIdType>,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
@@ -141,7 +145,7 @@ pub fn internal_delete_points(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -152,6 +156,7 @@ pub fn internal_delete_points_by_filter(
     collection_name: String,
     filter: Filter,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
@@ -165,7 +170,7 @@ pub fn internal_delete_points_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -176,6 +181,7 @@ pub fn internal_update_vectors(
     collection_name: String,
     update_vectors: UpdateVectorsOp,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpdateVectorsInternal> {
     let UpdateVectorsOp {
@@ -202,7 +208,7 @@ pub fn internal_update_vectors(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             update_filter: update_filter.map(api::grpc::Filter::from),
-            timeout: None,
+            timeout,
         }),
     })
 }
@@ -214,6 +220,7 @@ pub fn internal_delete_vectors(
     ids: Vec<PointIdType>,
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
@@ -232,7 +239,7 @@ pub fn internal_delete_vectors(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -244,6 +251,7 @@ pub fn internal_delete_vectors_by_filter(
     filter: Filter,
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
@@ -260,7 +268,7 @@ pub fn internal_delete_vectors_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -271,6 +279,7 @@ pub fn internal_set_payload(
     collection_name: String,
     set_payload: SetPayloadOp,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> SetPayloadPointsInternal {
     let points_selector = if let Some(points) = set_payload.points {
@@ -296,7 +305,7 @@ pub fn internal_set_payload(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
             key: set_payload.key.map(|key| key.to_string()),
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -307,6 +316,7 @@ pub fn internal_delete_payload(
     collection_name: String,
     delete_payload: DeletePayloadOp,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeletePayloadPointsInternal {
     let points_selector = if let Some(points) = delete_payload.points {
@@ -335,7 +345,7 @@ pub fn internal_delete_payload(
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -346,6 +356,7 @@ pub fn internal_clear_payload(
     collection_name: String,
     points: Vec<PointIdType>,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
@@ -361,7 +372,7 @@ pub fn internal_clear_payload(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -372,6 +383,7 @@ pub fn internal_clear_payload_by_filter(
     collection_name: String,
     filter: Filter,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
@@ -385,7 +397,7 @@ pub fn internal_clear_payload_by_filter(
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -396,6 +408,7 @@ pub fn internal_create_index(
     collection_name: String,
     create_index: CreateIndex,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
     let (field_type, field_index_params) = create_index
@@ -422,7 +435,7 @@ pub fn internal_create_index(
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
-            timeout: None,
+            timeout,
         }),
     }
 }
@@ -433,6 +446,7 @@ pub fn internal_delete_index(
     collection_name: String,
     delete_index: JsonPath,
     wait: bool,
+    timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> DeleteFieldIndexCollectionInternal {
     DeleteFieldIndexCollectionInternal {
@@ -443,7 +457,7 @@ pub fn internal_delete_index(
             wait: Some(wait),
             field_name: delete_index.to_string(),
             ordering: ordering.map(write_ordering_to_proto),
-            timeout: None,
+            timeout,
         }),
     }
 }

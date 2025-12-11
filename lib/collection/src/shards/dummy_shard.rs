@@ -103,6 +103,7 @@ impl ShardOperation for DummyShard {
         &self,
         op: OperationWithClockTag,
         _: bool,
+        _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {
