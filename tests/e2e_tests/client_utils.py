@@ -69,7 +69,6 @@ class ClientUtils:
             return {
                 "result": {
                     "status": collection_info.status.value if hasattr(collection_info.status, 'value') else str(collection_info.status),
-                    "vectors_count": collection_info.vectors_count,
                     "points_count": collection_info.points_count,
                     "config": collection_info.config,
                     "indexed_vectors_count": collection_info.indexed_vectors_count,
@@ -202,7 +201,6 @@ class ClientUtils:
             optimizers_config=collection_config.get("optimizers_config"),
             wal_config=collection_config.get("wal_config"),
             quantization_config=collection_config.get("quantization_config"),
-            init_from=collection_config.get("init_from"),
             timeout=self.timeout
         )
 
