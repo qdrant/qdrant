@@ -308,7 +308,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
-    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
     use crate::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
@@ -934,11 +934,8 @@ mod tests {
             // Ensure segment is not on disk
             locked_holder
                 .read()
-                .iter()
-                .map(|(_, segment)| match segment {
-                    LockedSegment::Original(s) => s.read(),
-                    LockedSegment::Proxy(_) => unreachable!(),
-                })
+                .iter_original()
+                .map(|(_, segment)| segment.read())
                 .filter(|segment| segment.total_point_count() > 0)
                 .for_each(|segment| {
                     assert!(
@@ -1013,11 +1010,8 @@ mod tests {
         // Ensure new segment is on disk now
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert!(

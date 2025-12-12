@@ -271,7 +271,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
-    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
     use crate::operations::config_diff::HnswConfigDiff;
     use crate::operations::types::VectorsConfig;
@@ -406,11 +406,8 @@ mod tests {
         // Ensure new segment has changed HNSW config
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(
@@ -579,11 +576,8 @@ mod tests {
         // Ensure new segment has changed HNSW config
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(
@@ -761,11 +755,8 @@ mod tests {
         // Ensure new segment has changed quantization config
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(

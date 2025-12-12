@@ -22,6 +22,7 @@ use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
+use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
@@ -95,6 +96,14 @@ impl SegmentHolder {
             .iter()
             .chain(self.non_appendable_segments.iter())
             .map(|(id, segment)| (*id, segment))
+    }
+
+    /// Iterate over all non-proxy segments with their IDs
+    pub fn iter_original(&self) -> impl Iterator<Item = (SegmentId, &Arc<RwLock<Segment>>)> {
+        self.iter().filter_map(|(id, segment)| match segment {
+            LockedSegment::Original(original) => Some((id, original)),
+            LockedSegment::Proxy(_) => None,
+        })
     }
 
     pub fn len(&self) -> usize {
