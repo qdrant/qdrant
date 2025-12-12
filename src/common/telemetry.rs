@@ -25,6 +25,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 };
 use crate::settings::Settings;
 
+// Keep in sync with openapi/openapi-service.ytt.yaml
 const DEFAULT_TELEMETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct TelemetryCollector {
