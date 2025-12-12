@@ -522,14 +522,8 @@ mod tests {
         // Update working segment ID
         segment_id = locked_holder
             .read()
-            .iter()
-            .find(|(_, segment)| {
-                let segment = match segment {
-                    LockedSegment::Original(s) => s.read(),
-                    LockedSegment::Proxy(_) => unreachable!(),
-                };
-                segment.total_point_count() > 0
-            })
+            .iter_original()
+            .find(|(_, segment)| segment.read().total_point_count() > 0)
             .unwrap()
             .0;
 
@@ -597,11 +591,8 @@ mod tests {
         // Ensure deleted points and vectors are stored properly before optimizing
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 // We should still have all points
@@ -635,11 +626,8 @@ mod tests {
         // Ensure deleted points and vectors are optimized
         locked_holder
             .read()
-            .iter()
-            .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
-            })
+            .iter_original()
+            .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 // We should have deleted some points
