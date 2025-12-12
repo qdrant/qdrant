@@ -46,7 +46,7 @@ paths:
           schema:
             type: integer
             minimum: 1
-            default: 60
+            default: 60 #! Keep in sync with DEFAULT_TELEMETRY_TIMEOUT
       responses: #@ response(reference("TelemetryData"))
 
   /metrics:
@@ -70,7 +70,7 @@ paths:
           schema:
             type: integer
             minimum: 1
-            default: 60
+            default: 60 #! Keep in sync with DEFAULT_TELEMETRY_TIMEOUT
       responses:
         "200":
           description: Metrics data in Prometheus format
