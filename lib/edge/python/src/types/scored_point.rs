@@ -5,6 +5,7 @@ use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::ScoredPoint;
 
+use super::PyOrderValue;
 use crate::repr::*;
 use crate::{PyPayload, PyPointId, PyVectorInternal};
 
@@ -40,6 +41,11 @@ impl PyScoredPoint {
         self.0.payload.as_ref().map(PyPayload::wrap_ref)
     }
 
+    #[getter]
+    pub fn order_value(&self) -> Option<PyOrderValue> {
+        self.0.order_value.map(PyOrderValue::from)
+    }
+
     pub fn __repr__(&self) -> String {
         self.repr()
     }
@@ -53,6 +59,7 @@ impl Repr for PyScoredPoint {
             ("score", &self.score()),
             ("vector", &self.vector()),
             ("payload", &self.payload()),
+            ("order_value", &self.order_value()),
         ])
     }
 }
