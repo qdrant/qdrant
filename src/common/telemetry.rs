@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::grpc;
 use ahash::HashSet;
+use api::grpc;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};

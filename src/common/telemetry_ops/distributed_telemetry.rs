@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use shard::PeerId;
 use storage::content_manager::errors::{StorageError, StorageResult};
+use storage::rbac::Access;
 use storage::types::{ConsensusThreadStatus, StateRole};
 
 use crate::common::telemetry::TelemetryData;
@@ -76,6 +77,7 @@ pub struct DistributedPeerInfo {
 
 impl DistributedTelemetryData {
     pub fn resolve_telemetries(
+        access: &Access,
         mut telemetries: Vec<TelemetryData>,
         missing_peers: Vec<PeerId>,
     ) -> StorageResult<Self> {
@@ -98,9 +100,16 @@ impl DistributedTelemetryData {
             })
             .collect::<HashMap<_, _>>();
 
-        let cluster = aggregate_cluster_telemetry(base_telemetry, telemetry_by_peer, missing_peers);
+        let cluster = match access {
+            Access::Global(_) => {
+                aggregate_cluster_telemetry(base_telemetry, telemetry_by_peer, missing_peers)
+            }
+            Access::Collection(_) => None,
+        };
 
         // Aggregate collections information
+        //
+        // The collections should already be filtered by the ones in `access`
         let collections =
             aggregate_collections(telemetry_by_peer, base_telemetry).unwrap_or_default();
 
