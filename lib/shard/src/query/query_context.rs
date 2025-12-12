@@ -1,4 +1,9 @@
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::iterator_ext::IteratorExt;
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
 use segment::types::VectorName;
 
@@ -33,18 +38,26 @@ pub fn init_query_context(
 pub fn fill_query_context(
     mut query_context: QueryContext,
     segments: LockedSegmentHolder,
-) -> Option<QueryContext> {
-    let segments = segments.read();
+    timeout: Duration,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Option<QueryContext>> {
+    let start = std::time::Instant::now();
+    let Some(segments) = segments.try_read_for(timeout) else {
+        return Err(OperationError::timeout(timeout, "fill query context"));
+    };
 
     if segments.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let segments = segments.non_appendable_then_appendable_segments();
-    for locked_segment in segments {
+    for locked_segment in segments.stop_if(is_stopped) {
         let segment = locked_segment.get();
-        let segment_guard = segment.read();
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let Some(segment_guard) = segment.try_read_for(timeout) else {
+            return Err(OperationError::timeout(timeout, "fill query context"));
+        };
         segment_guard.fill_query_context(&mut query_context);
     }
-    Some(query_context)
+    Ok(Some(query_context))
 }
