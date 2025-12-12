@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
+use segment::entry::SegmentEntry;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
@@ -89,6 +90,71 @@ impl IndexingOptimizer {
             })
             .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes)
     }
+
+    fn require_optimization(&self, segment: &dyn SegmentEntry) -> bool {
+        if segment.segment_type() == SegmentType::Special {
+            return false; // Never optimize already optimized segment
+        }
+
+        let segment_config = segment.config();
+        let indexing_threshold_bytes = self
+            .thresholds_config
+            .indexing_threshold_kb
+            .saturating_mul(BYTES_IN_KB);
+        let mmap_threshold_bytes = self
+            .thresholds_config
+            .memmap_threshold_kb
+            .saturating_mul(BYTES_IN_KB);
+
+        for (vector_name, vector_config) in self.collection_params.vectors.params_iter() {
+            if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
+                let is_indexed = vector_data.index.is_indexed();
+                let is_on_disk = vector_data.storage_type.is_on_disk();
+                let storage_size_bytes = segment
+                    .available_vectors_size_in_bytes(vector_name)
+                    .unwrap_or_default();
+
+                let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
+                let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
+
+                let optimize_for_index = is_big_for_index && !is_indexed;
+                let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk {
+                    on_disk_config && !is_on_disk
+                } else {
+                    is_big_for_mmap && !is_on_disk
+                };
+
+                if optimize_for_index || optimize_for_mmap {
+                    return true;
+                }
+            }
+        }
+
+        if let Some(sparse_vectors_params) = self.collection_params.sparse_vectors.as_ref() {
+            for sparse_vector_name in sparse_vectors_params.keys() {
+                if let Some(sparse_vector_data) =
+                    segment_config.sparse_vector_data.get(sparse_vector_name)
+                {
+                    let is_index_immutable = sparse_vector_data.index.index_type.is_immutable();
+
+                    let storage_size = segment
+                        .available_vectors_size_in_bytes(sparse_vector_name)
+                        .unwrap_or_default();
+
+                    let is_big_for_index = storage_size >= indexing_threshold_bytes;
+                    let is_big_for_mmap = storage_size >= mmap_threshold_bytes;
+
+                    let is_big = is_big_for_index || is_big_for_mmap;
+
+                    if is_big && !is_index_immutable {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
 }
 
 impl SegmentOptimizer for IndexingOptimizer {
@@ -129,6 +195,11 @@ impl SegmentOptimizer for IndexingOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
+        let max_segment_size_bytes = self
+            .thresholds_config
+            .max_segment_size_kb
+            .saturating_mul(BYTES_IN_KB);
+
         let segments_read_guard = segments.read();
         let candidates: Vec<_> = segments_read_guard
             .iter()
@@ -140,78 +211,8 @@ impl SegmentOptimizer for IndexingOptimizer {
                 let max_vector_size_bytes = read_segment
                     .max_available_vectors_size_in_bytes()
                     .unwrap_or_default();
-
-                let segment_config = read_segment.config();
-
-                if read_segment.segment_type() == SegmentType::Special {
-                    return None; // Never optimize already optimized segment
-                }
-
-                let indexing_threshold_bytes = self
-                    .thresholds_config
-                    .indexing_threshold_kb
-                    .saturating_mul(BYTES_IN_KB);
-                let mmap_threshold_bytes = self
-                    .thresholds_config
-                    .memmap_threshold_kb
-                    .saturating_mul(BYTES_IN_KB);
-                let mut require_optimization = false;
-
-                for (vector_name, vector_config) in self.collection_params.vectors.params_iter() {
-                    if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
-                        let is_indexed = vector_data.index.is_indexed();
-                        let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let storage_size_bytes = read_segment
-                            .available_vectors_size_in_bytes(vector_name)
-                            .unwrap_or_default();
-
-                        let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
-                        let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
-
-                        let optimize_for_index = is_big_for_index && !is_indexed;
-                        let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk
-                        {
-                            on_disk_config && !is_on_disk
-                        } else {
-                            is_big_for_mmap && !is_on_disk
-                        };
-
-                        if optimize_for_index || optimize_for_mmap {
-                            require_optimization = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !require_optimization
-                    && let Some(sparse_vectors_params) =
-                        self.collection_params.sparse_vectors.as_ref()
-                {
-                    for sparse_vector_name in sparse_vectors_params.keys() {
-                        if let Some(sparse_vector_data) =
-                            segment_config.sparse_vector_data.get(sparse_vector_name)
-                        {
-                            let is_index_immutable =
-                                sparse_vector_data.index.index_type.is_immutable();
-
-                            let storage_size = read_segment
-                                .available_vectors_size_in_bytes(sparse_vector_name)
-                                .unwrap_or_default();
-
-                            let is_big_for_index = storage_size >= indexing_threshold_bytes;
-                            let is_big_for_mmap = storage_size >= mmap_threshold_bytes;
-
-                            let is_big = is_big_for_index || is_big_for_mmap;
-
-                            if is_big && !is_index_immutable {
-                                require_optimization = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                require_optimization.then_some((segment_id, max_vector_size_bytes))
+                self.require_optimization(&*read_segment)
+                    .then_some((segment_id, max_vector_size_bytes))
             })
             .collect();
 
@@ -243,11 +244,7 @@ impl SegmentOptimizer for IndexingOptimizer {
             .min_by_key(|(_segment_id, vector_size_bytes)| *vector_size_bytes);
         if let Some((segment_id, size)) = smallest_unindexed
             && *segment_id != selected_segment_id
-            && selected_segment_size + size
-                < self
-                    .thresholds_config
-                    .max_segment_size_kb
-                    .saturating_mul(BYTES_IN_KB)
+            && selected_segment_size + size < max_segment_size_bytes
         {
             return vec![selected_segment_id, *segment_id];
         }
@@ -256,11 +253,7 @@ impl SegmentOptimizer for IndexingOptimizer {
         let smallest_indexed = Self::smallest_indexed_segment(&segments_read_guard, excluded_ids);
         if let Some((segment_id, size)) = smallest_indexed
             && segment_id != selected_segment_id
-            && selected_segment_size + size
-                < self
-                    .thresholds_config
-                    .max_segment_size_kb
-                    .saturating_mul(BYTES_IN_KB)
+            && selected_segment_size + size < max_segment_size_bytes
         {
             return vec![selected_segment_id, segment_id];
         }
