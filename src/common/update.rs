@@ -54,8 +54,8 @@ impl UpdateParams {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
-            timeout: timeout.map(NonZeroU64::new).flatten(),
-            wait_timeout: wait_timeout.map(NonZeroU64::new).flatten(),
+            timeout: timeout.and_then(NonZeroU64::new),
+            wait_timeout: wait_timeout.and_then(NonZeroU64::new),
         };
 
         Ok(params)
