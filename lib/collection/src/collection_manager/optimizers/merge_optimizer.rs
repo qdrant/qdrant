@@ -122,7 +122,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 (read_segment.segment_type() != SegmentType::Special).then_some((
-                    *idx,
+                    idx,
                     read_segment
                         .max_available_vectors_size_in_bytes()
                         .unwrap_or_default(),
@@ -262,8 +262,7 @@ mod tests {
             )
             .unwrap();
 
-        let after_optimization_segments =
-            locked_holder.read().iter().map(|(x, _)| *x).collect_vec();
+        let after_optimization_segments = locked_holder.read().iter().map(|(x, _)| x).collect_vec();
 
         // Check proper number of segments after optimization
         assert!(after_optimization_segments.len() <= 5);
