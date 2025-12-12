@@ -64,29 +64,6 @@ impl VacuumOptimizer {
         }
     }
 
-    fn worst_segment(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Option<SegmentId> {
-        let segments_read_guard = segments.read();
-        segments_read_guard
-            .iter()
-            // Excluded externally, might already be scheduled for optimization
-            .filter(|(idx, _segment)| !excluded_ids.contains(idx))
-            .flat_map(|(idx, segment)| {
-                // Calculate littered ratio for segment and named vectors
-                let littered_ratio_segment = self.littered_ratio_segment(segment);
-                let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
-                [littered_ratio_segment, littered_ratio_vectors]
-                    .into_iter()
-                    .flatten()
-                    .map(move |ratio| (idx, ratio))
-            })
-            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
-            .map(|(idx, _)| idx)
-    }
-
     /// Calculate littered ratio for segment on point level
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
@@ -203,7 +180,22 @@ impl SegmentOptimizer for VacuumOptimizer {
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
-        self.worst_segment(segments, excluded_ids)
+        segments
+            .read()
+            .iter()
+            // Excluded externally, might already be scheduled for optimization
+            .filter(|(idx, _segment)| !excluded_ids.contains(idx))
+            .flat_map(|(idx, segment)| {
+                // Calculate littered ratio for segment and named vectors
+                let littered_ratio_segment = self.littered_ratio_segment(segment);
+                let littered_ratio_vectors = self.littered_vectors_index_ratio(segment);
+                [littered_ratio_segment, littered_ratio_vectors]
+                    .into_iter()
+                    .flatten()
+                    .map(move |ratio| (idx, ratio))
+            })
+            .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
+            .map(|(idx, _)| idx)
             .into_iter()
             .collect()
     }

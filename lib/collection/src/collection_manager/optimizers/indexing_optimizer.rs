@@ -89,8 +89,42 @@ impl IndexingOptimizer {
             })
             .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes)
     }
+}
 
-    fn worst_segment(
+impl SegmentOptimizer for IndexingOptimizer {
+    fn name(&self) -> &str {
+        "indexing"
+    }
+
+    fn segments_path(&self) -> &Path {
+        self.segments_path.as_path()
+    }
+
+    fn temp_path(&self) -> &Path {
+        self.collection_temp_dir.as_path()
+    }
+
+    fn collection_params(&self) -> CollectionParams {
+        self.collection_params.clone()
+    }
+
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
+    }
+
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
+    }
+
+    fn quantization_config(&self) -> Option<QuantizationConfig> {
+        self.quantization_config.clone()
+    }
+
+    fn threshold_config(&self) -> &OptimizerThresholds {
+        &self.thresholds_config
+    }
+
+    fn check_condition(
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
@@ -232,48 +266,6 @@ impl IndexingOptimizer {
         }
 
         vec![selected_segment_id]
-    }
-}
-
-impl SegmentOptimizer for IndexingOptimizer {
-    fn name(&self) -> &str {
-        "indexing"
-    }
-
-    fn segments_path(&self) -> &Path {
-        self.segments_path.as_path()
-    }
-
-    fn temp_path(&self) -> &Path {
-        self.collection_temp_dir.as_path()
-    }
-
-    fn collection_params(&self) -> CollectionParams {
-        self.collection_params.clone()
-    }
-
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
-    }
-
-    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
-        &self.hnsw_global_config
-    }
-
-    fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config.clone()
-    }
-
-    fn threshold_config(&self) -> &OptimizerThresholds {
-        &self.thresholds_config
-    }
-
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        self.worst_segment(segments, excluded_ids)
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {

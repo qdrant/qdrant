@@ -71,8 +71,42 @@ impl ConfigMismatchOptimizer {
             .and_then(|params| params.index)
             .and_then(|index| index.on_disk)
     }
+}
 
-    fn worst_segment(
+impl SegmentOptimizer for ConfigMismatchOptimizer {
+    fn name(&self) -> &str {
+        "config mismatch"
+    }
+
+    fn segments_path(&self) -> &Path {
+        self.segments_path.as_path()
+    }
+
+    fn temp_path(&self) -> &Path {
+        self.collection_temp_dir.as_path()
+    }
+
+    fn collection_params(&self) -> CollectionParams {
+        self.collection_params.clone()
+    }
+
+    fn hnsw_config(&self) -> &HnswConfig {
+        &self.hnsw_config
+    }
+
+    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
+        &self.hnsw_global_config
+    }
+
+    fn quantization_config(&self) -> Option<QuantizationConfig> {
+        self.quantization_config.clone()
+    }
+
+    fn threshold_config(&self) -> &OptimizerThresholds {
+        &self.thresholds_config
+    }
+
+    fn check_condition(
         &self,
         segments: LockedSegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
@@ -203,48 +237,6 @@ impl ConfigMismatchOptimizer {
             .map(|(segment_id, _)| segment_id)
             .into_iter()
             .collect()
-    }
-}
-
-impl SegmentOptimizer for ConfigMismatchOptimizer {
-    fn name(&self) -> &str {
-        "config mismatch"
-    }
-
-    fn segments_path(&self) -> &Path {
-        self.segments_path.as_path()
-    }
-
-    fn temp_path(&self) -> &Path {
-        self.collection_temp_dir.as_path()
-    }
-
-    fn collection_params(&self) -> CollectionParams {
-        self.collection_params.clone()
-    }
-
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
-    }
-
-    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
-        &self.hnsw_global_config
-    }
-
-    fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config.clone()
-    }
-
-    fn threshold_config(&self) -> &OptimizerThresholds {
-        &self.thresholds_config
-    }
-
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId> {
-        self.worst_segment(segments, excluded_ids)
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
