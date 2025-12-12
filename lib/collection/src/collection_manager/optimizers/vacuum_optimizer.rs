@@ -81,7 +81,7 @@ impl VacuumOptimizer {
                 [littered_ratio_segment, littered_ratio_vectors]
                     .into_iter()
                     .flatten()
-                    .map(|ratio| (*idx, ratio))
+                    .map(move |ratio| (idx, ratio))
             })
             .max_by_key(|(_, ratio)| OrderedFloat(*ratio))
             .map(|(idx, _)| idx)
@@ -360,8 +360,7 @@ mod tests {
             )
             .unwrap();
 
-        let after_optimization_segments =
-            locked_holder.read().iter().map(|(x, _)| *x).collect_vec();
+        let after_optimization_segments = locked_holder.read().iter().map(|(x, _)| x).collect_vec();
 
         // Check only one new segment
         assert_eq!(after_optimization_segments.len(), 1);
@@ -521,7 +520,7 @@ mod tests {
         assert_eq!(locked_holder.read().len(), 2, "index must be built");
 
         // Update working segment ID
-        segment_id = *locked_holder
+        segment_id = locked_holder
             .read()
             .iter()
             .find(|(_, segment)| {

@@ -88,7 +88,6 @@ impl IndexingOptimizer {
                 Some((idx, vector_size))
             })
             .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes)
-            .map(|(idx, size)| (*idx, size))
     }
 
     fn worst_segment(
@@ -178,7 +177,7 @@ impl IndexingOptimizer {
                     }
                 }
 
-                require_optimization.then_some((*idx, max_vector_size_bytes))
+                require_optimization.then_some((idx, max_vector_size_bytes))
             })
             .collect();
 

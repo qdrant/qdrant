@@ -90,10 +90,11 @@ impl SegmentHolder {
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
-    pub fn iter(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
+    pub fn iter(&self) -> impl Iterator<Item = (SegmentId, &LockedSegment)> {
         self.appendable_segments
             .iter()
             .chain(self.non_appendable_segments.iter())
+            .map(|(id, segment)| (*id, segment))
     }
 
     pub fn len(&self) -> usize {
@@ -383,12 +384,12 @@ impl SegmentHolder {
                 match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((point_version, smallvec![*segment_id]));
+                        entry.insert((point_version, smallvec![segment_id]));
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
                         let (old_version, old_segment_ids) =
-                            entry.insert((point_version, smallvec![*segment_id]));
+                            entry.insert((point_version, smallvec![segment_id]));
 
                         // Mark other point for deletion if the version is older
                         // TODO(timvisee): remove this check once deleting old points uses correct version
@@ -404,14 +405,11 @@ impl SegmentHolder {
                     // Ignore points with the same version, only update one of them
                     // TODO(timvisee): remove this branch once deleting old points uses correct version
                     Entry::Occupied(mut entry) if entry.get().0 == point_version => {
-                        entry.get_mut().1.push(*segment_id);
+                        entry.get_mut().1.push(segment_id);
                     }
                     // Point we have seen before is newer, mark this point for deletion
                     Entry::Occupied(_) => {
-                        to_delete
-                            .entry(*segment_id)
-                            .or_default()
-                            .push(segment_point);
+                        to_delete.entry(segment_id).or_default().push(segment_point);
                     }
                 }
             }
@@ -487,7 +485,7 @@ impl SegmentHolder {
             // It is important to iterate over all segments for each batch
             // to avoid blocking of a single segment with sequential updates
             for (segment_id, segment) in self.iter() {
-                did_apply |= f(&mut segment.get().write(), *segment_id)?;
+                did_apply |= f(&mut segment.get().write(), segment_id)?;
             }
 
             // No segment update => we're done
@@ -918,7 +916,7 @@ impl SegmentHolder {
     fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
         let segments = self
             .iter()
-            .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
+            .map(|(segment_id, locked_segment)| (segment_id, locked_segment.get()))
             .collect::<Vec<_>>();
         let locked_segments = segments
             .iter()
