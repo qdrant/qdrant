@@ -72,29 +72,36 @@ impl QdrantInternal for QdrantInternalService {
         &self,
         request: Request<GetTelemetryRequest>,
     ) -> Result<Response<GetTelemetryResponse>, Status> {
-        let request = request.into_inner();
+        let GetTelemetryRequest {
+            details_level,
+            collections_selector,
+            timeout,
+        } = request.into_inner();
 
-        if request.details_level < 2 {
+        if details_level < 2 {
             return Err(Status::invalid_argument(
                 "details_level for internal service must be >= 2",
             ));
         }
 
-        let details_level = DetailsLevel::from(request.details_level.max(2) as usize);
+        let details_level = DetailsLevel::from(details_level.max(2) as usize);
 
         let detail = TelemetryDetail {
             level: details_level,
             histograms: false,
         };
 
+        let only_collections =
+            collections_selector.map(|selector| selector.only_collections.into_iter().collect());
+
         let timing = Instant::now();
-        let timeout = Duration::from_secs(request.timeout);
+        let timeout = Duration::from_secs(timeout);
 
         let access = Access::full("internal service");
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector
-            .prepare_data(&access, detail, None, Some(timeout))
+            .prepare_data(&access, detail, only_collections, Some(timeout))
             .await?;
 
         let response = GetTelemetryResponse {
