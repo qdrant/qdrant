@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use futures::FutureExt;
 use futures::future::Either;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -103,28 +104,29 @@ impl ShardOperation for LocalShard {
         };
 
         if let Some(receiver) = callback_receiver {
-            let success = Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Completed,
-                clock_tag: operation.clock_tag,
+            let fut_timeout = Box::pin(async {
+                if let Some(t) = timeout {
+                    tokio::time::sleep(t).await;
+                } else {
+                    std::future::pending::<()>().await
+                }
             });
 
-            if let Some(timeout) = timeout {
-                let mut fut_wait = Box::pin(receiver);
-                let mut fut_timeout = Box::pin(tokio::time::sleep(timeout));
-
-                return match futures::future::select(&mut fut_wait, &mut fut_timeout).await {
-                    Either::Left(_) => success,
-                    Either::Right(_) => Ok(UpdateResult {
+            match futures::future::select(receiver, fut_timeout).await {
+                Either::Left((res, _timeout_future)) => {
+                    let _ = res??; // <- itt jön a receiver hibakezelése
+                    Ok(UpdateResult {
                         operation_id: Some(operation_id),
-                        status: UpdateStatus::WaitTimeout,
+                        status: UpdateStatus::Completed,
                         clock_tag: operation.clock_tag,
-                    }),
-                };
+                    })
+                }
+                Either::Right(((), _wait_future)) => Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::WaitTimeout,
+                    clock_tag: operation.clock_tag,
+                }),
             }
-
-            let _res = receiver.await??;
-            success
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
