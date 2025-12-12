@@ -83,7 +83,7 @@ impl PointerUpdates {
         }
     }
 
-    /// Mark this pointer as set
+    /// Mark last state for this pointer as set
     ///
     /// It will mark the pointer as used on disk on flush, and will free all previous pending
     /// pointers
@@ -92,6 +92,9 @@ impl PointerUpdates {
             debug_assert!(false, "we should not set the same point twice");
             return;
         }
+
+        // We now consider this the last change
+        self.has_last_change = true;
 
         // Move the current pointer to the pointers to free, if it exists
         if let Some(old_pointer) = self.current.replace(pointer) {
@@ -109,12 +112,15 @@ impl PointerUpdates {
         );
     }
 
-    /// Mark this pointer as unset
+    /// Mark last state for this pointer as unset
     ///
     /// It will completely free the pointer on disk on flush including all it's previous pending
     /// pointers
     fn unset(&mut self, pointer: ValuePointer) {
         let old_pointer = self.current.take();
+
+        // We now consider this the last change
+        self.has_last_change = true;
 
         // Fallback: if the pointer to unset is not the current one, free both pointers, though this shouldn't happen
         debug_assert!(
@@ -171,8 +177,8 @@ impl PointerUpdates {
     /// Returns if the structure is empty after this operation
     fn drain_persisted(&mut self, persisted: &Self) -> bool {
         debug_assert!(
-            self.has_last_change,
-            "should drain from updates that have last change"
+            self.current.is_none() || self.has_last_change,
+            "drain from self that has current must also be last change",
         );
         debug_assert!(!self.is_empty(), "must have at least one pointer");
         debug_assert!(
@@ -197,6 +203,11 @@ impl PointerUpdates {
             && current == previous_current
         {
             self.current.take();
+
+            // Current is always last change, so if we take it out, we don't have last change anymore
+            if !freed.is_empty() {
+                self.has_last_change = false;
+            }
         }
 
         // Only keep unsets that are not persisted
@@ -424,9 +435,9 @@ impl Tracker {
                 self.get_raw(point_offset).copied().flatten()
             }
             // Use set from pending updates
-            Some(pending) => pending.current,
+            Some(pending) if pending.has_last_change && !pending.is_empty() => pending.current,
             // No pending update, use real data
-            None => self.get_raw(point_offset).copied().flatten(),
+            Some(_) | None => self.get_raw(point_offset).copied().flatten(),
         }
     }
 
