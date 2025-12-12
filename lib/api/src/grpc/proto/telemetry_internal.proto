@@ -7,7 +7,12 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 
 message GetTelemetryRequest {
     uint32 details_level = 1; // The level of detail needed
-    uint64 timeout = 2; // Timeout in secs for the request
+    CollectionsSelector collections_selector = 2; // If present, select these collections
+    uint64 timeout = 3; // Timeout in secs for the request
+
+}
+message CollectionsSelector {
+    repeated string only_collections = 1;
 }
 
 message GetTelemetryResponse {

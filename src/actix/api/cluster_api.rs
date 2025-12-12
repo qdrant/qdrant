@@ -2,7 +2,7 @@ use std::future::Future;
 
 use actix_web::{HttpResponse, delete, get, post, put, web};
 use actix_web_validator::Query;
-use api::grpc::GetTelemetryRequest;
+use api::grpc;
 use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
 use collection::operations::verification::new_unchecked_verification_pass;
 use futures::stream::FuturesUnordered;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::AccessRequirements;
+use storage::rbac::{Access, AccessRequirements};
 use validator::Validate;
 
 use crate::actix::auth::ActixAccess;
@@ -203,8 +203,6 @@ async fn get_cluster_telemetry(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
-
         let toc = dispatcher.toc(&access, &pass);
         let channel_service = toc.get_channel_service();
 
@@ -212,6 +210,21 @@ async fn get_cluster_telemetry(
             .details_level
             .unwrap_or_default()
             .max(MIN_CLUSTER_TELEMETRY_DETAILS_LEVEL);
+
+        let collections_selector = match &access {
+            Access::Global(_) => None,
+            Access::Collection(access_list) => {
+                let list = access_list
+                    .meeting_requirements(AccessRequirements::default())
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                Some(grpc::CollectionsSelector {
+                    only_collections: list,
+                })
+            }
+        };
+
         let timeout = params.timeout.unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs());
 
         let all_peers: Vec<_> = channel_service
@@ -225,13 +238,14 @@ async fn get_cluster_telemetry(
             .into_iter()
             .map(|peer_id| {
                 channel_service
-                    .with_qdrant_client(peer_id, |mut client| async move {
-                        let request = GetTelemetryRequest {
+                    .with_qdrant_client(peer_id, |mut client| {
+                        let request = grpc::GetTelemetryRequest {
+                            collections_selector: collections_selector.clone(),
                             details_level,
                             timeout,
                         };
 
-                        client.get_telemetry(request).await
+                        async move { client.get_telemetry(request).await }
                     })
                     .map_err(move |err| (peer_id, err))
             })
@@ -260,7 +274,7 @@ async fn get_cluster_telemetry(
         }
 
         let distributed_telemetry =
-            DistributedTelemetryData::resolve_telemetries(telemetries, missing_peers)?;
+            DistributedTelemetryData::resolve_telemetries(&access, telemetries, missing_peers)?;
 
         Ok(distributed_telemetry)
     })
