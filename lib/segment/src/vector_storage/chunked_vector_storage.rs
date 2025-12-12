@@ -7,6 +7,8 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::AccessPattern;
 
+use super::DenseVectorStorageHeader;
+
 /// In case of simple vector storage, vector offset is the same as PointOffsetType.
 /// But in case of multivectors, it requires an additional lookup.
 pub type VectorOffsetType = usize;
@@ -72,4 +74,6 @@ pub trait ChunkedVectorStorage<T> {
 
     /// Drop disk cache.
     fn clear_cache(&self) -> OperationResult<()>;
+
+    fn get_header(&self) -> Arc<DenseVectorStorageHeader>;
 }

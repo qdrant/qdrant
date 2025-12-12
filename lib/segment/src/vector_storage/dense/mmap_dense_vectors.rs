@@ -2,6 +2,7 @@ use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
@@ -23,7 +24,7 @@ use crate::vector_storage::async_io::UringReader;
 use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_points;
-use crate::vector_storage::{AccessPattern, Random, Sequential};
+use crate::vector_storage::{AccessPattern, DenseVectorStorageHeader, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -32,8 +33,7 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 /// Mem-mapped file for dense vectors
 #[derive(Debug)]
 pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
-    pub dim: usize,
-    pub num_vectors: usize,
+    pub header: Arc<DenseVectorStorageHeader>,
     /// Main vector data mmap for read/write
     ///
     /// Has an exact size to fit a header and `num_vectors` of vectors.
@@ -107,9 +107,9 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             None
         };
 
+        let header = DenseVectorStorageHeader::new(dim, size_of::<T>(), num_vectors);
         Ok(MmapDenseVectors {
-            dim,
-            num_vectors,
+            header: header.into(),
             mmap: mmap.into(),
             _mmap_seq: mmap_seq,
             uring_reader: Mutex::new(uring_reader),
@@ -126,17 +126,29 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         self.deleted.flusher()
     }
 
+    pub fn num_vectors(&self) -> usize {
+        self.header.vector_count.load(Ordering::SeqCst)
+    }
+
+    pub fn set_num_vectors(&mut self, val: usize) {
+        self.header.vector_count.store(val, Ordering::SeqCst)
+    }
+
+    pub fn dim(&self) -> usize {
+        self.header.dim
+    }
+
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
-        let vector_data_length = self.dim * size_of::<T>();
+        let vector_data_length = self.dim() * size_of::<T>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
-        if key >= (self.num_vectors as PointOffsetType) {
+        if key >= (self.num_vectors() as PointOffsetType) {
             return None;
         }
         Some(offset)
     }
 
     pub fn raw_size(&self) -> usize {
-        self.dim * size_of::<T>()
+        self.dim() * size_of::<T>()
     }
 
     /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
@@ -154,7 +166,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         };
         let byte_slice = &mmap[offset..(offset + self.raw_size())];
         let arr: &[T] = unsafe { transmute(byte_slice) };
-        &arr[0..self.dim]
+        &arr[0..self.dim()]
     }
 
     /// Returns reference to vector data by key

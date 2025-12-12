@@ -2,7 +2,8 @@ use std::alloc::Layout;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -149,6 +150,29 @@ pub trait VectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
+#[derive(Debug)]
+pub struct DenseVectorStorageHeader {
+    pub dim: usize,          // doesn't change
+    pub element_size: usize, // doesn't change
+    pub vector_count: AtomicUsize,
+}
+
+impl DenseVectorStorageHeader {
+    pub fn new(dim: usize, element_size: usize, init_vector_count: usize) -> Self {
+        Self {
+            dim: dim,
+            element_size: element_size,
+            vector_count: AtomicUsize::new(init_vector_count),
+        }
+    }
+
+    pub fn get_storage_size(&self) -> usize {
+        self.dim
+            .saturating_mul(self.element_size)
+            .saturating_mul(self.vector_count.load(Ordering::Acquire))
+    }
+}
+
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
 
@@ -180,6 +204,8 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
     }
+
+    fn get_header(&self) -> Arc<DenseVectorStorageHeader>;
 }
 
 pub trait SparseVectorStorage: VectorStorage {

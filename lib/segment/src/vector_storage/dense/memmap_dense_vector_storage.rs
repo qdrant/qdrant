@@ -4,6 +4,7 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -141,7 +142,7 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().dim
+        self.mmap_store.as_ref().unwrap().dim()
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
@@ -160,6 +161,12 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         let mmap_store = self.mmap_store.as_ref().unwrap();
         mmap_store.get_vectors(keys, vectors)
     }
+
+    fn get_header(&self) -> Arc<crate::vector_storage::DenseVectorStorageHeader> {
+        self.mmap_store.as_ref().unwrap().header.clone()
+    }
+
+
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
@@ -176,7 +183,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn total_vector_count(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().num_vectors
+        self.mmap_store.as_ref().unwrap().num_vectors()
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
@@ -211,7 +218,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-        let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
+        let start_index = self.mmap_store.as_ref().unwrap().num_vectors() as PointOffsetType;
         let mut end_index = start_index;
 
         let with_async_io = self

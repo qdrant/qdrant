@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -83,6 +84,12 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
         self.vectors.get(key as VectorOffsetType)
     }
+
+    fn get_header(&self) -> Arc<crate::vector_storage::DenseVectorStorageHeader> {
+        todo!()
+    }
+
+
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> {
