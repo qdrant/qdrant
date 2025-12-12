@@ -151,7 +151,7 @@ impl ShardOperation for LocalShard {
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let order_by = order_by.clone().map(OrderBy::from);
-
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let result = match order_by {
             None => {
                 self.internal_scroll_by_id(
@@ -197,6 +197,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         self.internal_scroll_by_id(
             offset,
             limit,
@@ -227,6 +228,7 @@ impl ShardOperation for LocalShard {
         self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
@@ -249,7 +251,7 @@ impl ShardOperation for LocalShard {
         })?;
         let start_time = Instant::now();
         let total_count = if request.exact {
-            let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+            let timeout = self.timeout_or_default_search_timeout(timeout);
             let all_points = tokio::time::timeout(
                 timeout,
                 self.read_filtered(
@@ -283,7 +285,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+        let timeout = self.timeout_or_default_search_timeout(timeout);
 
         let start_time = Instant::now();
         let records_map = tokio::time::timeout(
@@ -333,7 +335,7 @@ impl ShardOperation for LocalShard {
                 .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
                 .sum()
         })?;
-
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let result = self
             .do_planned_query(
                 planned_query,
@@ -367,6 +369,7 @@ impl ShardOperation for LocalShard {
         })?;
 
         let start_time = Instant::now();
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let hits = if request.exact {
             self.exact_facet(
                 request.clone(),

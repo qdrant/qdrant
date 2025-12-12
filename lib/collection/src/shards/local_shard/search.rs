@@ -31,7 +31,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
@@ -100,7 +100,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -132,8 +132,6 @@ impl LocalShard {
             true,
             query_context,
         );
-
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
         let res = tokio::time::timeout(timeout, search_request)
             .await
