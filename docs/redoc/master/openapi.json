@@ -9561,7 +9561,8 @@
         "type": "string",
         "enum": [
           "acknowledged",
-          "completed"
+          "completed",
+          "wait_timeout"
         ]
       },
       "RecommendRequest": {
