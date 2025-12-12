@@ -13,7 +13,7 @@ pub enum QueryEnum {
     RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
     Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
     Context(NamedQuery<ContextQuery<VectorInternal>>),
-    FeedbackSimple(NamedQuery<FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>>),
+    FeedbackNaive(NamedQuery<NaiveFeedbackQuery<VectorInternal>>),
 }
 
 impl QueryEnum {
@@ -24,7 +24,7 @@ impl QueryEnum {
             QueryEnum::RecommendSumScores(reco_query) => reco_query.get_name(),
             QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
             QueryEnum::Context(context_query) => context_query.get_name(),
-            QueryEnum::FeedbackSimple(feedback_query) => feedback_query.get_name(),
+            QueryEnum::FeedbackNaive(feedback_query) => feedback_query.get_name(),
         }
     }
 
@@ -36,7 +36,7 @@ impl QueryEnum {
             | QueryEnum::RecommendSumScores(_)
             | QueryEnum::Discover(_)
             | QueryEnum::Context(_)
-            | QueryEnum::FeedbackSimple(_) => false,
+            | QueryEnum::FeedbackNaive(_) => false,
         }
     }
 
@@ -74,7 +74,7 @@ impl QueryEnum {
                     }
                 }
             }
-            QueryEnum::FeedbackSimple(feedback_query) => {
+            QueryEnum::FeedbackNaive(feedback_query) => {
                 let name = feedback_query.get_name();
                 for vector in feedback_query.query.flat_iter() {
                     match vector {
@@ -99,7 +99,7 @@ impl QueryEnum {
             }
             QueryEnum::Discover(named_query) => search_cost(named_query.query.flat_iter()),
             QueryEnum::Context(named_query) => search_cost(named_query.query.flat_iter()),
-            QueryEnum::FeedbackSimple(named_query) => search_cost(named_query.query.flat_iter()),
+            QueryEnum::FeedbackNaive(named_query) => search_cost(named_query.query.flat_iter()),
         }
     }
 }
@@ -140,7 +140,7 @@ impl From<QueryEnum> for QueryVector {
             QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
             QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
             QueryEnum::Context(named) => QueryVector::Context(named.query),
-            QueryEnum::FeedbackSimple(named) => QueryVector::FeedbackSimple(named.query),
+            QueryEnum::FeedbackNaive(named) => QueryVector::FeedbackNaive(named.query),
         }
     }
 }
@@ -190,7 +190,7 @@ impl From<QueryEnum> for grpc::QueryEnum {
                         .collect(),
                 })),
             },
-            QueryEnum::FeedbackSimple(_named) => {
+            QueryEnum::FeedbackNaive(_named) => {
                 // This conversion only happens for search/recommend/discover dedicated endpoints. Feedback does not have one.
                 unimplemented!("there is no specialized feedback endpoint")
             }
@@ -270,17 +270,17 @@ impl QueryEnum {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 match strategy {
-                    grpc::feedback_strategy::Variant::Simple(strategy) => {
-                        let feedback_query = FeedbackQueryInternal {
+                    grpc::feedback_strategy::Variant::Naive(strategy) => {
+                        let feedback_query = NaiveFeedbackQuery {
                             target,
                             feedback,
-                            strategy: SimpleFeedbackStrategy::from(strategy),
+                            coefficients: NaiveFeedbackCoefficients::from(strategy),
                         };
                         let named = NamedQuery {
                             query: feedback_query,
                             using,
                         };
-                        QueryEnum::FeedbackSimple(named)
+                        QueryEnum::FeedbackNaive(named)
                     }
                 }
             }
@@ -308,7 +308,7 @@ impl From<QueryEnum> for grpc::RawQuery {
             QueryEnum::Context(named) => {
                 Variant::Context(grpc::raw_query::Context::from(named.query))
             }
-            QueryEnum::FeedbackSimple(named) => {
+            QueryEnum::FeedbackNaive(named) => {
                 Variant::Feedback(grpc::raw_query::Feedback::from(named.query))
             }
         };

@@ -17,7 +17,7 @@ use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::Quant
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
 use crate::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, FeedbackQueryInternal, RecoBestScoreQuery, RecoQuery,
+    ContextQuery, DiscoveryQuery, NaiveFeedbackQuery, RecoBestScoreQuery, RecoQuery,
     RecoSumScoresQuery, TransformInto,
 };
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
@@ -217,8 +217,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::FeedbackSimple(feedback_query) => {
-                let feedback_query: FeedbackQueryInternal<DenseVector, _> =
+            QueryVector::FeedbackNaive(feedback_query) => {
+                let feedback_query: NaiveFeedbackQuery<DenseVector> =
                     feedback_query.transform_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
                     feedback_query.into_query(),
@@ -306,8 +306,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::FeedbackSimple(feedback_query) => {
-                let feedback_query: FeedbackQueryInternal<MultiDenseVectorInternal, _> =
+            QueryVector::FeedbackNaive(feedback_query) => {
+                let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
                     feedback_query.transform_into()?;
                 let query_scorer =
                     QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(

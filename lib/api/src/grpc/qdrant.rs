@@ -10194,13 +10194,13 @@ pub mod feedback_strategy {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         #[prost(message, tag = "1")]
-        Simple(super::SimpleFeedbackStrategy),
+        Naive(super::NaiveFeedbackStrategy),
     }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SimpleFeedbackStrategy {
+pub struct NaiveFeedbackStrategy {
     #[prost(float, tag = "1")]
     pub a: f32,
     #[prost(float, tag = "2")]

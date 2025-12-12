@@ -32,7 +32,7 @@ impl<T> FeedbackItem<T> {
 ///
 /// Call `into_query` to get the type implementing `Query` trait.
 #[derive(Clone, Debug, Serialize, Hash, PartialEq)]
-pub struct FeedbackQueryInternal<T, TStrategy> {
+pub struct NaiveFeedbackQuery<T> {
     /// The original query vector.
     pub target: T,
 
@@ -40,16 +40,16 @@ pub struct FeedbackQueryInternal<T, TStrategy> {
     pub feedback: Vec<FeedbackItem<T>>,
 
     /// How to handle the feedback
-    pub strategy: TStrategy,
+    pub coefficients: NaiveFeedbackCoefficients,
 }
 
-impl<T: Clone> FeedbackQueryInternal<T, SimpleFeedbackStrategy> {
-    pub fn into_query(self) -> FeedbackQuery<T, SimpleFeedbackStrategy> {
-        FeedbackQuery::new(self.target, self.feedback, self.strategy)
+impl<T: Clone> NaiveFeedbackQuery<T> {
+    pub fn into_query(self) -> FeedbackQuery<T> {
+        FeedbackQuery::new(self.target, self.feedback, self.coefficients)
     }
 }
 
-impl<T, TStrategy> FeedbackQueryInternal<T, TStrategy> {
+impl<T> NaiveFeedbackQuery<T> {
     pub fn flat_iter(&self) -> impl Iterator<Item = &T> {
         self.feedback
             .iter()
@@ -58,25 +58,23 @@ impl<T, TStrategy> FeedbackQueryInternal<T, TStrategy> {
     }
 }
 
-impl<T, U, TStrategy> TransformInto<FeedbackQueryInternal<U, TStrategy>, T, U>
-    for FeedbackQueryInternal<T, TStrategy>
-{
-    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQueryInternal<U, TStrategy>>
+impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> {
+    fn transform<F>(self, mut f: F) -> OperationResult<NaiveFeedbackQuery<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
         let Self {
             target,
             feedback,
-            strategy,
+            coefficients: strategy,
         } = self;
-        Ok(FeedbackQueryInternal {
+        Ok(NaiveFeedbackQuery {
             target: f(target)?,
             feedback: feedback
                 .into_iter()
                 .map(|item| item.transform(&mut f))
                 .try_collect()?,
-            strategy,
+            coefficients: strategy,
         })
     }
 }
@@ -106,7 +104,7 @@ impl<T> PrecomputedFeedbackPair<T> {
 
 /// Trained coefficients for the formula. Specific to a triplet of dataset-smallmodel-bigmodel.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
-pub struct SimpleFeedbackStrategy {
+pub struct NaiveFeedbackCoefficients {
     /// Trained coefficient `a`
     pub a: OrderedFloat<f32>,
     /// Trained coefficient `b`
@@ -115,7 +113,7 @@ pub struct SimpleFeedbackStrategy {
     pub c: OrderedFloat<f32>,
 }
 
-impl SimpleFeedbackStrategy {
+impl NaiveFeedbackCoefficients {
     /// Extracts pairs of points, ranked by score difference in descending order.
     ///
     /// Assumes scoring order is BiggerIsBetter
@@ -160,7 +158,7 @@ impl SimpleFeedbackStrategy {
 
 /// Query for relevance feedback scoring
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct FeedbackQuery<TVector, TStrategy> {
+pub struct FeedbackQuery<TVector> {
     /// The original query vector.
     target: TVector,
 
@@ -168,36 +166,34 @@ pub struct FeedbackQuery<TVector, TStrategy> {
     feedback_pairs: Vec<PrecomputedFeedbackPair<TVector>>,
 
     /// How to handle the feedback
-    strategy: TStrategy,
+    coefficients: NaiveFeedbackCoefficients,
 }
 
-impl<TVector: Clone> FeedbackQuery<TVector, SimpleFeedbackStrategy> {
+impl<TVector: Clone> FeedbackQuery<TVector> {
     pub fn new(
         target: TVector,
         feedback: Vec<FeedbackItem<TVector>>,
-        strategy: SimpleFeedbackStrategy,
+        coefficients: NaiveFeedbackCoefficients,
     ) -> Self {
-        let feedback_pairs = strategy.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
+        let feedback_pairs = coefficients.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
 
         Self {
             target,
             feedback_pairs,
-            strategy,
+            coefficients,
         }
     }
 }
 
-impl<T, U, TStrategy> TransformInto<FeedbackQuery<U, TStrategy>, T, U>
-    for FeedbackQuery<T, TStrategy>
-{
-    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U, TStrategy>>
+impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
+    fn transform<F>(self, mut f: F) -> OperationResult<FeedbackQuery<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
         let Self {
             target,
             feedback_pairs,
-            strategy,
+            coefficients,
         } = self;
         Ok(FeedbackQuery {
             target: f(target)?,
@@ -205,12 +201,12 @@ impl<T, U, TStrategy> TransformInto<FeedbackQuery<U, TStrategy>, T, U>
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
                 .try_collect()?,
-            strategy,
+            coefficients,
         })
     }
 }
 
-impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
+impl<T> Query<T> for FeedbackQuery<T> {
     /// This follows the following formula:
     ///
     /// $ a * score + \sum{confidence_pair ^b * c * delta_pair} $
@@ -223,10 +219,10 @@ impl<T> Query<T> for FeedbackQuery<T, SimpleFeedbackStrategy> {
         let Self {
             target,
             feedback_pairs,
-            strategy,
+            coefficients,
         } = self;
 
-        let mut score = strategy.a.0 * similarity(target);
+        let mut score = coefficients.a.0 * similarity(target);
 
         for pair in feedback_pairs {
             let PrecomputedFeedbackPair {

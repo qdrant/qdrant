@@ -177,11 +177,11 @@ message ContextQuery {
 
 message FeedbackStrategy {
     oneof variant {
-        SimpleFeedbackStrategy simple = 1;
+        NaiveFeedbackStrategy naive = 1;
     }
 }
 
-message SimpleFeedbackStrategy {
+message NaiveFeedbackStrategy {
     float a = 1;
     float b = 2;
     float c = 3;
