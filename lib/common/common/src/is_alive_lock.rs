@@ -6,7 +6,7 @@ use parking_lot::{Mutex, MutexGuard};
 /// and will prevent dropping while guarded.
 ///
 /// This structure explicitly doesn't implement Clone, so that `handle` is used instead.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct IsAliveLock {
     inner: Arc<Mutex<bool>>,
 }
@@ -29,6 +29,12 @@ impl IsAliveLock {
     /// Lock will no longer be usable after this.
     pub fn poison(&self) {
         *self.inner.lock() = false
+    }
+}
+
+impl Default for IsAliveLock {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -57,3 +63,79 @@ impl IsAliveHandle {
 /// Guards a `true` boolean
 #[expect(dead_code)]
 pub struct IsAliveGuard<'a>(MutexGuard<'a, bool>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_poisoning() {
+        let lock = IsAliveLock::new();
+        let handle = lock.handle();
+
+        assert!(handle.lock_if_alive().is_some());
+
+        lock.poison();
+
+        assert!(handle.lock_if_alive().is_none());
+    }
+
+    #[test]
+    fn test_dropping() {
+        let lock = IsAliveLock::default();
+        let handle = lock.handle();
+
+        assert!(handle.lock_if_alive().is_some());
+
+        // dropping the handle does not poison the lock
+        drop(handle);
+        let handle = lock.handle();
+        assert!(handle.lock_if_alive().is_some());
+
+        // dropping the parent poisons the lock
+        drop(lock);
+        assert!(handle.lock_if_alive().is_none());
+    }
+
+    #[test]
+    fn test_parent_waits_for_guard() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let lock = IsAliveLock::new();
+        let handle = lock.handle();
+
+        // Test following sequence
+        // | tick | lock           | handle        |
+        // | ---- | -------------  | ------        |
+        // |   0  |                | guarded       |
+        // |   1  | drop (waiting) | guarded       |
+        // |   2  |      (waiting) | guarded       |
+        // |   3  | actual drop    | release guard |
+        let tick = AtomicUsize::new(0);
+
+        // Hold the guard
+        let guard = handle.lock_if_alive().unwrap();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                // Start dropping until tick 1
+                while tick.load(Ordering::SeqCst) < 1 {
+                    std::thread::yield_now();
+                }
+                // This should block until guard is dropped (at tick 3)
+                drop(lock);
+                // Verify we dropped after guard was released (tick == 3)
+                assert!(tick.load(Ordering::SeqCst) >= 3);
+            });
+
+            tick.store(1, Ordering::SeqCst);
+
+            // Advance tick to show we're about to drop the guard
+            tick.store(2, Ordering::SeqCst);
+            tick.store(3, Ordering::SeqCst);
+            drop(guard);
+        });
+
+        // After parent is dropped, handle should return None
+        assert!(handle.lock_if_alive().is_none());
+    }
+}
