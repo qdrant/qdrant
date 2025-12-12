@@ -25,9 +25,9 @@ impl IsAliveLock {
         }
     }
 
-    /// Waits for lock and poisons without dropping.
+    /// Waits for lock and marks as dead without dropping.
     /// Lock will no longer be usable after this.
-    pub fn poison(&self) {
+    pub fn mark_dead(&self) {
         *self.inner.lock() = false
     }
 }
@@ -41,7 +41,7 @@ impl Default for IsAliveLock {
 impl Drop for IsAliveLock {
     fn drop(&mut self) {
         // prevent dangling handles from accessing the lock
-        *self.inner.lock() = false;
+        self.mark_dead();
     }
 }
 
@@ -69,13 +69,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_poisoning() {
+    fn test_marking_dead() {
         let lock = IsAliveLock::new();
         let handle = lock.handle();
 
         assert!(handle.lock_if_alive().is_some());
 
-        lock.poison();
+        lock.mark_dead();
 
         assert!(handle.lock_if_alive().is_none());
     }

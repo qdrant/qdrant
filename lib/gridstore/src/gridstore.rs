@@ -483,7 +483,7 @@ impl<V: Blob> Gridstore<V> {
         // Wait for all background flush operations to finish, abort pending flushes
         // Below we create a new Gridstore instance with a new flush lock, so flushers created on the
         // new instance work as expected
-        self.is_alive_flush_lock.poison();
+        self.is_alive_flush_lock.mark_dead();
 
         // Wipe
         self.pages.write().clear();
@@ -506,7 +506,7 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wait for all background flush operations to finish, abort pending flushes
-        self.is_alive_flush_lock.poison();
+        self.is_alive_flush_lock.mark_dead();
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
