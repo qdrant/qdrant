@@ -1,6 +1,7 @@
 pub mod filter;
 pub mod formula;
 pub mod json_path;
+pub mod order_value;
 pub mod payload;
 pub mod point;
 pub mod point_id;
@@ -15,6 +16,7 @@ pub mod vector_internal;
 pub use self::filter::*;
 pub use self::formula::*;
 pub use self::json_path::*;
+pub use self::order_value::*;
 pub use self::payload::*;
 pub use self::point::*;
 pub use self::point_id::*;
