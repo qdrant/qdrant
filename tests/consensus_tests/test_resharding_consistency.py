@@ -57,7 +57,7 @@ N_POINTS = 1000
 PORT_OFFSET = 2
 
 # Test duration
-DEFAULT_TEST_DURATION_MINUTES = 5
+DEFAULT_TEST_DURATION_MINUTES = 15
 
 # Timeouts (seconds)
 DEFAULT_REQUEST_TIMEOUT = 30.0
@@ -65,7 +65,7 @@ DEFAULT_UPDATE_TIMEOUT = 5.0
 CONSISTENCY_CHECK_TIMEOUT = 60.0
 
 # Consistency check configuration
-CONSISTENCY_MAX_RETRIES = 5
+CONSISTENCY_MAX_RETRIES = 4
 CONSISTENCY_RETRY_DELAY = 1.0
 CONSISTENCY_CHECK_INTERVAL = 2.0
 
@@ -259,9 +259,16 @@ def get_points_from_all_nodes(
     point_ids: Set[PointId],
     collection_name: str = COLLECTION_NAME,
     timeout: float = DEFAULT_REQUEST_TIMEOUT,
-) -> dict[str, list[dict]]:
-    """Retrieve points from each node individually."""
+) -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """Retrieve points from each node individually.
+
+    Returns:
+        Tuple of (points_per_node, errors_per_node)
+        - points_per_node: dict mapping peer_url to list of points
+        - errors_per_node: dict mapping peer_url to error message for failed requests
+    """
     points_per_node = {}
+    errors_per_node = {}
 
     for peer_url in peer_urls:
         try:
@@ -276,19 +283,34 @@ def get_points_from_all_nodes(
             )
             if resp.ok:
                 points_per_node[peer_url] = resp.json()["result"]
+            else:
+                errors_per_node[peer_url] = f"HTTP {resp.status_code}: {resp.text[:100]}"
+                log("warn", "Failed to retrieve points from node", node_url=peer_url, status=resp.status_code)
         except Exception as e:
+            errors_per_node[peer_url] = str(e)[:100]
             log("warn", "Failed to retrieve points from node", node_url=peer_url, error=str(e)[:100])
 
-    return points_per_node
+    return points_per_node, errors_per_node
 
 
-def find_point_differences(points_per_node: dict[str, list[dict]]) -> dict:
+def find_point_differences(
+    points_per_node: dict[str, list[dict]],
+    errors_per_node: dict[str, str] | None = None,
+    all_peer_urls: list[str] | None = None,
+) -> dict:
     """Identify points that have different values across nodes.
+
+    Args:
+        points_per_node: dict mapping peer_url to list of points
+        errors_per_node: dict mapping peer_url to error message for failed requests
+        all_peer_urls: list of all peer URLs (to identify missing nodes)
 
     Returns dict with:
     - 'differences': points with actual differences found
     - 'all_values': all point values by node (for debugging when differences is empty)
+    - 'node_errors': errors for nodes that failed to respond
     """
+    errors_per_node = errors_per_node or {}
     point_values_by_node: dict[int, dict[str, dict]] = {}
 
     for node_url, points in points_per_node.items():
@@ -313,17 +335,29 @@ def find_point_differences(points_per_node: dict[str, list[dict]]) -> dict:
                 "vector_sum": sum(vector_value) if vector_value else None,
             }
 
+    # Add error entries for nodes that failed to respond
+    for point_id in point_values_by_node:
+        for node_url, error in errors_per_node.items():
+            point_values_by_node[point_id][node_url] = {"error": error}
+
+    # Determine expected node count
+    expected_node_count = len(points_per_node) + len(errors_per_node)
+    if all_peer_urls:
+        expected_node_count = len(all_peer_urls)
+
     # Find differences
     differences = {}
     for point_id, node_values in point_values_by_node.items():
-        if len(node_values) < len(points_per_node):
+        if len(node_values) < expected_node_count:
             differences[point_id] = {
                 "issue": "missing_from_nodes",
                 "present_in": list(node_values.keys()),
             }
             continue
 
-        timestamps = {url: v["timestamp"] for url, v in node_values.items()}
+        # Filter out error entries for timestamp comparison
+        valid_values = {url: v for url, v in node_values.items() if "error" not in v}
+        timestamps = {url: v["timestamp"] for url, v in valid_values.items()}
         if len(set(timestamps.values())) > 1:
             differences[point_id] = {"timestamps": timestamps}
 
@@ -332,6 +366,7 @@ def find_point_differences(points_per_node: dict[str, list[dict]]) -> dict:
     return {
         "differences": differences,
         "all_values": point_values_by_node,
+        "node_errors": errors_per_node,
         "note": "If differences is empty, points may have converged after consistency check"
     }
 
@@ -733,8 +768,8 @@ class ConsistencyCheckWorker(BaseWorker):
 
             # Failed after all retries - collect details and fail
             sample_ids = set(sorted(inconsistent_ids)[:10])
-            points_per_node = get_points_from_all_nodes(peer_urls, sample_ids, self.collection_name)
-            details = find_point_differences(points_per_node)
+            points_per_node, errors_per_node = get_points_from_all_nodes(peer_urls, sample_ids, self.collection_name)
+            details = find_point_differences(points_per_node, errors_per_node, peer_urls)
 
             with self._lock:
                 self.inconsistencies.append({
@@ -1220,6 +1255,7 @@ def test_resharding_continuous(tmp_path: pathlib.Path, every_test):
         duration_seconds=duration_seconds,
         enable_restarts=True,
         enable_resharding=True,
+        enable_snapshots=True
     )
 
     result.print_summary()
