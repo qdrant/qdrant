@@ -48,8 +48,6 @@ pub struct Gridstore<V> {
     _value_type: std::marker::PhantomData<V>,
 
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
-    /// Default value is true - means segment is alive and flushes can be performed.
-    /// If value is false - means segment was dropped and no further flush is required.
     is_alive_flush_lock: IsAliveLock,
 }
 
