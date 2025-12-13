@@ -409,6 +409,7 @@ impl ShardReplicaSet {
     }
 
     /// Flush all segments to disk for the local shard. Testing helper.
+    #[cfg(feature = "testing")]
     pub async fn full_flush(&self) {
         let local = self.local.read().await;
         if let Some(shard) = local.as_ref() {

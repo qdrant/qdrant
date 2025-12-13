@@ -232,7 +232,7 @@ impl Collection {
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 if read_only {
-                    log::warn!(
+                    panic!(
                         "Collection version {stored_version} differs from app version {app_version}, but cannot migrate in read-only mode"
                     );
                 } else {
@@ -378,6 +378,7 @@ impl Collection {
 
     /// Flush all segments to disk for all local shards. Testing helper.
     /// This ensures data in WAL is persisted to segments before reloading.
+    #[cfg(feature = "testing")]
     pub async fn full_flush_all_local_shards(&self) {
         let shards_holder = self.shards_holder.read().await;
         for (_shard_id, replica_set) in shards_holder.get_shards() {

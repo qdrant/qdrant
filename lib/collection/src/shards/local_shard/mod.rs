@@ -289,14 +289,6 @@ impl LocalShard {
         self.segments.deref()
     }
 
-    /// Flush all segments to disk.
-    /// This function is used to ensure data is persisted to segments before operations
-    /// that require data to be on disk (e.g., loading in read-only mode).
-    pub fn full_flush(&self) {
-        let segments = self.segments.read();
-        segments.flush_all(true, true).unwrap();
-    }
-
     /// Recovers shard from disk.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(

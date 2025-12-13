@@ -80,10 +80,10 @@ impl ProxyShard {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
-        save_wal: bool,
+        lock_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
-            .create_snapshot(temp_path, tar, format, manifest, save_wal)
+            .create_snapshot(temp_path, tar, format, manifest, lock_wal)
             .await
     }
 

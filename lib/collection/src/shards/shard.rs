@@ -128,6 +128,7 @@ impl Shard {
 
     /// Flush all segments to disk. Only applicable for Local shards.
     /// This is a testing helper to ensure data is persisted to segments.
+    #[cfg(feature = "testing")]
     pub fn full_flush(&self) {
         if let Shard::Local(local_shard) = self {
             local_shard.full_flush();
@@ -140,32 +141,32 @@ impl Shard {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
-        save_wal: bool,
+        lock_wal: bool,
     ) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => {
                 local_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, lock_wal)
                     .await
             }
             Shard::Proxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, lock_wal)
                     .await
             }
             Shard::ForwardProxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, lock_wal)
                     .await
             }
             Shard::QueueProxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, lock_wal)
                     .await
             }
             Shard::Dummy(dummy_shard) => {
                 dummy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, lock_wal)
                     .await
             }
         }
