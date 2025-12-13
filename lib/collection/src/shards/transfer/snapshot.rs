@@ -227,9 +227,10 @@ pub(super) async fn transfer_snapshot(
         snapshot_temp_paths.push(snapshot_temp_path);
         snapshot_temp_paths.push(snapshot_checksum_temp_path);
 
+        let encoded_snapshot_name = urlencoding::encode(&snapshot_description.name);
+
         shard_download_url.set_path(&format!(
-            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshots/{}",
-            &snapshot_description.name,
+            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshots/{encoded_snapshot_name}"
         ));
     };
 
