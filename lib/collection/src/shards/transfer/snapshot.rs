@@ -198,10 +198,12 @@ pub(super) async fn transfer_snapshot(
 
     let mut snapshot_temp_paths = Vec::new();
     let mut shard_download_url = local_rest_address;
+
+    let encoded_collection_name = urlencoding::encode(collection_id);
     if use_streaming_endpoint {
         log::trace!("Using streaming endpoint for shard snapshot transfer");
         shard_download_url.set_path(&format!(
-            "/collections/{collection_id}/shards/{shard_id}/snapshot",
+            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshot",
         ));
     } else {
         // Create shard snapshot
@@ -225,9 +227,10 @@ pub(super) async fn transfer_snapshot(
         snapshot_temp_paths.push(snapshot_temp_path);
         snapshot_temp_paths.push(snapshot_checksum_temp_path);
 
+        let encoded_snapshot_name = urlencoding::encode(&snapshot_description.name);
+
         shard_download_url.set_path(&format!(
-            "/collections/{collection_id}/shards/{shard_id}/snapshots/{}",
-            &snapshot_description.name,
+            "/collections/{encoded_collection_name}/shards/{shard_id}/snapshots/{encoded_snapshot_name}"
         ));
     };
 
