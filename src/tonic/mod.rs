@@ -188,7 +188,7 @@ pub fn init(
         if let Some(keep_alive) = settings.service.keep_alive_sec {
             log::info!("Applying gRPC keep-alive interval: {keep_alive}s");
             server = server
-                .http2_keepalive_interval(Some(Duration::from_secs(keep_alive)))
+                .http2_keepalive_interval(Some(Duration::from_secs(keep_alive*2)))
                 .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive)));
         }
         if settings.service.enable_tls {
@@ -309,6 +309,13 @@ pub fn init_internal(
                 // versus an internal error that is very hard to handle.
                 // More info: <https://github.com/qdrant/qdrant/issues/1907>
                 .http2_max_pending_accept_reset_streams(Some(1024));
+
+            if let Some(keep_alive) = settings.service.keep_alive_sec {
+                log::info!("Applying internal gRPC keep-alive interval: {keep_alive}s");
+                server = server
+                    .http2_keepalive_interval(Some(Duration::from_secs(keep_alive*2)))
+                    .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive)));
+            }
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");
