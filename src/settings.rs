@@ -42,13 +42,9 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub hide_jwt_dashboard: Option<bool>,
 
-    #[serde(default = "default_keep_alive_sec")]
+    #[serde(default)]
     #[validate(range(min = 1))]
-    pub keep_alive_sec: u64,
-
-    #[serde(default = "default_request_timeout_sec")]
-    #[validate(range(min = 1))]
-    pub request_timeout_sec: u64,
+    pub keep_alive_sec: Option<u64>,
 
     /// Directory where static files are served from.
     /// For example, the Web-UI should be placed here.
@@ -384,14 +380,6 @@ const fn default_connection_timeout_ms() -> u64 {
 
 const fn default_tick_period_ms() -> u64 {
     100
-}
-
-const fn default_keep_alive_sec() -> u64 {
-    5
-}
-
-const fn default_request_timeout_sec() -> u64 {
-    5
 }
 
 // Should not be less than `DEFAULT_META_OP_WAIT` as bootstrapping perform sync. consensus meta operations.

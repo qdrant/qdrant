@@ -232,14 +232,9 @@ storage:
   max_collections: null
 
 service:
-  # By default these will be 5 sec, assign value if needed here
-  # Connection keep-alive timeout in seconds (default: 5)
-  # Controls how long idle connections are kept open
+  # Optional: Connection keep-alive timeout in seconds.
+  # If not set, Actix/gRPC default (5 seconds) will be used.
   # keep_alive_sec: 5
-  # Request timeout in seconds (default: 5)
-  # Maximum time allowed for a complete request to be processed
-  # Increase this value for operations that require longer processing times (e.g., large data uploads, complex queries)
-  # request_timeout_sec: 5
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 

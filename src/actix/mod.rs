@@ -174,9 +174,10 @@ pub fn init(
 
             app
         })
-        .workers(max_web_workers(&settings))
-        .keep_alive(Duration::from_secs(settings.service.keep_alive_sec))
-        .client_request_timeout(Duration::from_secs(settings.service.request_timeout_sec));
+        .workers(max_web_workers(&settings));
+        if let Some(keep_alive) = settings.service.keep_alive_sec {
+            server = server.keep_alive(Duration::from_secs(keep_alive));
+        }
 
         let port = settings.service.http_port;
         let bind_addr = format!("{}:{}", settings.service.host, port);
