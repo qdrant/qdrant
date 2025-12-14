@@ -189,7 +189,7 @@ pub fn init(
             log::info!("Applying gRPC keep-alive interval: {keep_alive}s");
             server = server
                 .http2_keepalive_interval(Some(Duration::from_secs(keep_alive)))
-                .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive * 2)));
+                .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive)));
         }
         if settings.service.enable_tls {
             log::info!("TLS enabled for gRPC API (TTL not supported)");
