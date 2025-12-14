@@ -176,6 +176,7 @@ pub fn init(
         })
         .workers(max_web_workers(&settings));
         if let Some(keep_alive) = settings.service.keep_alive_sec {
+            log::info!("Applying actix keep-alive interval: {keep_alive}s");
             server = server.keep_alive(Duration::from_secs(keep_alive));
         }
 

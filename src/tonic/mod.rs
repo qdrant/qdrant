@@ -186,7 +186,7 @@ pub fn init(
         let mut server = Server::builder();
 
         if let Some(keep_alive) = settings.service.keep_alive_sec {
-            log::info!("Applying internal gRPC keep-alive interval: {keep_alive}s");
+            log::info!("Applying gRPC keep-alive interval: {keep_alive}s");
             server = server
                 .http2_keepalive_interval(Some(Duration::from_secs(keep_alive)))
                 .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive * 2)));
