@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -14,6 +12,7 @@ use crate::{PyPayload, PyPointId, PyVector};
 #[repr(transparent)]
 pub struct PyPoint(PointStructPersisted);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPoint {
     #[new]
@@ -47,12 +46,13 @@ impl PyPoint {
     }
 }
 
-impl Repr for PyPoint {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("id", &self.id()),
-            ("vector", &self.vector()),
-            ("payload", &self.payload()),
-        ])
+impl PyPoint {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let PointStructPersisted {
+            id: _,
+            vector: _,
+            payload: _,
+        } = self.0;
     }
 }
