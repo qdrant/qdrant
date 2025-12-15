@@ -169,6 +169,7 @@ impl Repr for PyNamedVector {
 #[repr(transparent)]
 pub struct PySparseVector(pub SparseVector);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseVector {
     #[new]
@@ -191,8 +192,12 @@ impl PySparseVector {
     }
 }
 
-impl Repr for PySparseVector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("indices", &self.indices()), ("values", &self.values())])
+impl PySparseVector {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseVector {
+            indices: _,
+            values: _,
+        } = self.0;
     }
 }
