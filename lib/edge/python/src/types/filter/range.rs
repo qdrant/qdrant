@@ -45,6 +45,7 @@ impl From<PyRange> for RangeInterface {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRangeFloat {
     #[new]
@@ -84,14 +85,15 @@ impl PyRangeFloat {
     }
 }
 
-impl Repr for PyRangeFloat {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("gte", &self.gte()),
-            ("gt", &self.gt()),
-            ("lte", &self.lte()),
-            ("lt", &self.lt()),
-        ])
+impl PyRangeFloat {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Range {
+            gte: _,
+            gt: _,
+            lte: _,
+            lt: _,
+        } = self.0;
     }
 }
 
@@ -99,6 +101,7 @@ impl Repr for PyRangeFloat {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRangeDateTime {
     #[new]
@@ -138,14 +141,15 @@ impl PyRangeDateTime {
     }
 }
 
-impl Repr for PyRangeDateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("gte", &self.gte()),
-            ("gt", &self.gt()),
-            ("lte", &self.lte()),
-            ("lt", &self.lt()),
-        ])
+impl PyRangeDateTime {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Range {
+            gte: _,
+            gt: _,
+            lte: _,
+            lt: _,
+        } = self.0;
     }
 }
 

@@ -87,6 +87,7 @@ impl Repr for PyMatch {
 #[repr(transparent)]
 pub struct PyMatchValue(pub MatchValue);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchValue {
     #[new]
@@ -102,9 +103,10 @@ impl PyMatchValue {
     }
 }
 
-impl Repr for PyMatchValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("value", &self.value())])
+impl PyMatchValue {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchValue { value: _ } = self.0;
     }
 }
 
@@ -180,6 +182,7 @@ impl Repr for PyValueVariants {
 #[repr(transparent)]
 pub struct PyMatchText(pub MatchText);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchText {
     #[new]
@@ -197,9 +200,10 @@ impl PyMatchText {
     }
 }
 
-impl Repr for PyMatchText {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("text", &self.text())])
+impl PyMatchText {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchText { text: _ } = self.0;
     }
 }
 
@@ -208,6 +212,7 @@ impl Repr for PyMatchText {
 #[repr(transparent)]
 pub struct PyMatchTextAny(pub MatchTextAny);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchTextAny {
     #[new]
@@ -225,9 +230,10 @@ impl PyMatchTextAny {
     }
 }
 
-impl Repr for PyMatchTextAny {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("text_any", &self.text_any())])
+impl PyMatchTextAny {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchTextAny { text_any: _ } = self.0;
     }
 }
 
@@ -236,6 +242,7 @@ impl Repr for PyMatchTextAny {
 #[repr(transparent)]
 pub struct PyMatchPhrase(pub MatchPhrase);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchPhrase {
     #[new]
@@ -253,9 +260,10 @@ impl PyMatchPhrase {
     }
 }
 
-impl Repr for PyMatchPhrase {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("phrase", &self.phrase())])
+impl PyMatchPhrase {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchPhrase { phrase: _ } = self.0;
     }
 }
 
@@ -264,6 +272,7 @@ impl Repr for PyMatchPhrase {
 #[repr(transparent)]
 pub struct PyMatchAny(pub MatchAny);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchAny {
     #[new]
@@ -283,9 +292,10 @@ impl PyMatchAny {
     }
 }
 
-impl Repr for PyMatchAny {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("value", &self.value())])
+impl PyMatchAny {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchAny { any: _value } = self.0;
     }
 }
 
@@ -294,6 +304,7 @@ impl Repr for PyMatchAny {
 #[repr(transparent)]
 pub struct PyMatchExcept(pub MatchExcept);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMatchExcept {
     #[new]
@@ -313,9 +324,10 @@ impl PyMatchExcept {
     }
 }
 
-impl Repr for PyMatchExcept {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("value", &self.value())])
+impl PyMatchExcept {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MatchExcept { except: _value } = self.0;
     }
 }
 

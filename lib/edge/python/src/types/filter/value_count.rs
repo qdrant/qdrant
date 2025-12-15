@@ -1,5 +1,3 @@
-use std::fmt;
-
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::ValuesCount;
@@ -10,6 +8,7 @@ use crate::repr::*;
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyValuesCount(pub ValuesCount);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyValuesCount {
     #[new]
@@ -48,13 +47,14 @@ impl PyValuesCount {
     }
 }
 
-impl Repr for PyValuesCount {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("lt", &self.0.lt),
-            ("gt", &self.0.gt),
-            ("lte", &self.0.lte),
-            ("gte", &self.0.gte),
-        ])
+impl PyValuesCount {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ValuesCount {
+            lt: _,
+            gt: _,
+            lte: _,
+            gte: _,
+        } = self.0;
     }
 }

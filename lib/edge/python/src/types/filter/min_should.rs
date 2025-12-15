@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::{TransparentWrapper as _, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -12,6 +10,7 @@ use crate::types::filter::condition::PyCondition;
 #[derive(Clone, Debug, Into)]
 pub struct PyMinShould(pub MinShould);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMinShould {
     #[new]
@@ -37,11 +36,12 @@ impl PyMinShould {
     }
 }
 
-impl Repr for PyMinShould {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("conditions", &self.conditions()),
-            ("min_count", &self.min_count()),
-        ])
+impl PyMinShould {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MinShould {
+            conditions: _,
+            min_count: _,
+        } = self.0;
     }
 }

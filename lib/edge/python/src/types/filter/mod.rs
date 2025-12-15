@@ -7,8 +7,6 @@ pub mod nested;
 pub mod range;
 pub mod value_count;
 
-use std::fmt;
-
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -29,6 +27,7 @@ use crate::repr::*;
 #[repr(transparent)]
 pub struct PyFilter(pub Filter);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFilter {
     #[new]
@@ -81,14 +80,15 @@ impl PyFilter {
     }
 }
 
-impl Repr for PyFilter {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("must", &self.must()),
-            ("should", &self.should()),
-            ("must_not", &self.must_not()),
-            ("min_should", &self.min_should()),
-        ])
+impl PyFilter {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Filter {
+            must: _,
+            should: _,
+            must_not: _,
+            min_should: _,
+        } = self.0;
     }
 }
 

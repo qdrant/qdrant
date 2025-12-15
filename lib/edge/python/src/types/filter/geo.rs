@@ -14,6 +14,7 @@ use crate::repr::*;
 #[repr(transparent)]
 pub struct PyGeoPoint(pub GeoPoint);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyGeoPoint {
     #[new]
@@ -39,9 +40,10 @@ impl PyGeoPoint {
     }
 }
 
-impl Repr for PyGeoPoint {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("lon", &self.lon()), ("lat", &self.lat())])
+impl PyGeoPoint {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let GeoPoint { lon: _, lat: _ } = self.0;
     }
 }
 
@@ -59,6 +61,7 @@ impl<'py> IntoPyObject<'py> for &PyGeoPoint {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoBoundingBox(pub GeoBoundingBox);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyGeoBoundingBox {
     #[new]
@@ -84,12 +87,13 @@ impl PyGeoBoundingBox {
     }
 }
 
-impl Repr for PyGeoBoundingBox {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("top_left", &self.top_left()),
-            ("bottom_right", &self.bottom_right()),
-        ])
+impl PyGeoBoundingBox {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let GeoBoundingBox {
+            top_left: _,
+            bottom_right: _,
+        } = self.0;
     }
 }
 
@@ -97,6 +101,7 @@ impl Repr for PyGeoBoundingBox {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoRadius(pub GeoRadius);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyGeoRadius {
     #[new]
@@ -122,9 +127,13 @@ impl PyGeoRadius {
     }
 }
 
-impl Repr for PyGeoRadius {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("center", &self.center()), ("radius", &self.radius())])
+impl PyGeoRadius {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let GeoRadius {
+            center: _,
+            radius: _,
+        } = self.0;
     }
 }
 
@@ -132,6 +141,7 @@ impl Repr for PyGeoRadius {
 #[derive(Clone, Debug, Into)]
 pub struct PyGeoPolygon(pub GeoPolygon);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyGeoPolygon {
     #[new]
@@ -169,12 +179,13 @@ impl PyGeoPolygon {
     }
 }
 
-impl Repr for PyGeoPolygon {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("exterior", &self.exterior()),
-            ("interiors", &self.interiors()),
-        ])
+impl PyGeoPolygon {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let GeoPolygon {
+            exterior: _,
+            interiors: _,
+        } = self.0;
     }
 }
 

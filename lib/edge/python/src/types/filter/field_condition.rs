@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -14,6 +12,7 @@ use crate::types::*;
 #[repr(transparent)]
 pub struct PyFieldCondition(pub FieldCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFieldCondition {
     #[new]
@@ -99,18 +98,19 @@ impl PyFieldCondition {
     }
 }
 
-impl Repr for PyFieldCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("key", &self.key()),
-            ("match", &self.r#match()),
-            ("range", &self.range()),
-            ("geo_bounding_box", &self.geo_bounding_box()),
-            ("geo_radius", &self.geo_radius()),
-            ("geo_polygon", &self.geo_polygon()),
-            ("values_count", &self.values_count()),
-            ("is_empty", &self.is_empty()),
-            ("is_null", &self.is_null()),
-        ])
+impl PyFieldCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_bounding_box: _,
+            geo_radius: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = self.0;
     }
 }

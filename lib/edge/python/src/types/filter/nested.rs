@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -14,6 +12,7 @@ use crate::types::*;
 #[repr(transparent)]
 pub struct PyNestedCondition(pub NestedCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyNestedCondition {
     #[new]
@@ -41,8 +40,11 @@ impl PyNestedCondition {
     }
 }
 
-impl Repr for PyNestedCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("key", &self.key()), ("filter", &self.filter())])
+impl PyNestedCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let NestedCondition {
+            nested: Nested { key: _, filter: _ },
+        } = self.0;
     }
 }

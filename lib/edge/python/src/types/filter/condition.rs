@@ -100,6 +100,7 @@ impl Repr for PyCondition {
 #[repr(transparent)]
 pub struct PyIsEmptyCondition(pub IsEmptyCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyIsEmptyCondition {
     #[new]
@@ -121,9 +122,12 @@ impl PyIsEmptyCondition {
     }
 }
 
-impl Repr for PyIsEmptyCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("key", &self.key())])
+impl PyIsEmptyCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let IsEmptyCondition {
+            is_empty: PayloadField { key: _ },
+        } = self.0;
     }
 }
 
@@ -132,6 +136,7 @@ impl Repr for PyIsEmptyCondition {
 #[repr(transparent)]
 pub struct PyIsNullCondition(pub IsNullCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyIsNullCondition {
     #[new]
@@ -153,9 +158,12 @@ impl PyIsNullCondition {
     }
 }
 
-impl Repr for PyIsNullCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("key", &self.key())])
+impl PyIsNullCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let IsNullCondition {
+            is_null: PayloadField { key: _ },
+        } = self.0;
     }
 }
 
@@ -164,6 +172,7 @@ impl Repr for PyIsNullCondition {
 #[repr(transparent)]
 pub struct PyHasIdCondition(pub HasIdCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHasIdCondition {
     #[new]
@@ -183,9 +192,10 @@ impl PyHasIdCondition {
     }
 }
 
-impl Repr for PyHasIdCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("point_ids", &self.point_ids())])
+impl PyHasIdCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HasIdCondition { has_id: _point_ids } = self.0;
     }
 }
 
@@ -194,6 +204,7 @@ impl Repr for PyHasIdCondition {
 #[repr(transparent)]
 pub struct PyHasVectorCondition(pub HasVectorCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHasVectorCondition {
     #[new]
@@ -211,8 +222,11 @@ impl PyHasVectorCondition {
     }
 }
 
-impl Repr for PyHasVectorCondition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("vector", &self.vector())])
+impl PyHasVectorCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HasVectorCondition {
+            has_vector: _vector,
+        } = self.0;
     }
 }
