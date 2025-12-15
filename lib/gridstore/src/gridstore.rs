@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::is_alive_lock::IsAliveLock;
 use fs_err as fs;
 use fs_err::File;
 use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
@@ -47,9 +48,7 @@ pub struct Gridstore<V> {
     _value_type: std::marker::PhantomData<V>,
 
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
-    /// Default value is true - means segment is alive and flushes can be performed.
-    /// If value is false - means segment was dropped and no further flush is required.
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: IsAliveLock,
 }
 
 #[inline]
@@ -148,7 +147,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            is_alive_flush_lock: IsAliveLock::new(),
         };
 
         // create first page to be covered by the bitmask
@@ -192,7 +191,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            is_alive_flush_lock: IsAliveLock::new(),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -479,10 +478,10 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
-        // Wait for all background flush operations to finish, abort pending flushes
-        // Below we create a new Gridstore instance with a new boolean, so flushers created on the
-        // new instance work as expected
-        *self.is_alive_flush_lock.lock() = false;
+        // Wait for all background flush operations to finish, abort pending flushes Below we
+        // create a new Gridstore instance with a new flush lock, so flushers created on the new
+        // instance work as expected
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Wipe
         self.pages.write().clear();
@@ -505,7 +504,7 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wait for all background flush operations to finish, abort pending flushes
-        *self.is_alive_flush_lock.lock() = false;
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
@@ -598,16 +597,13 @@ impl<V> Gridstore<V> {
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is cleared, skip flush
                 return Ok(());
-            }
+            };
 
             let (Some(pages), Some(tracker), Some(bitmask)) =
                 (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
@@ -640,6 +636,9 @@ impl<V> Gridstore<V> {
                 }
             });
             bitmask_guard.flush()?;
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
 
             Ok(())
         })
