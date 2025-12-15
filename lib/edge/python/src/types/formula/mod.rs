@@ -23,6 +23,7 @@ use crate::types::PyValue;
 #[repr(transparent)]
 pub struct PyFormula(pub ParsedFormula);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFormula {
     #[new]
@@ -40,12 +41,6 @@ impl PyFormula {
 
     pub fn __repr__(&self) -> String {
         self.repr()
-    }
-}
-
-impl Repr for PyFormula {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[])
     }
 }
 
