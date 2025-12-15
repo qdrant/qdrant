@@ -74,6 +74,7 @@ sys-info = "0.9.1"
 wal = { workspace = true }
 ordered-float = { workspace = true }
 ahash = { workspace = true }
+urlencoding = { workspace = true }
 
 config = { version = "0.15.13", default-features = false, features = ["yaml"] }
 
