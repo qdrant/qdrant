@@ -48,14 +48,12 @@ impl UpdateParams {
     pub fn from_grpc(
         wait: Option<bool>,
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
-        wait_timeout: Option<u64>,
         timeout: Option<u64>,
     ) -> tonic::Result<Self> {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
             timeout: timeout.and_then(NonZeroU64::new),
-            wait_timeout: wait_timeout.and_then(NonZeroU64::new),
         };
 
         Ok(params)
@@ -63,11 +61,6 @@ impl UpdateParams {
 
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
-            .map(|timeout| Duration::from_secs(timeout.get()))
-    }
-
-    pub fn wait_timeout(&self) -> Option<Duration> {
-        self.wait_timeout
             .map(|timeout| Duration::from_secs(timeout.get()))
     }
 
@@ -1063,7 +1056,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
-        params.wait_timeout(),
+        params.timeout(),
         ordering,
         shard_selector,
         access,
