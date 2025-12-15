@@ -101,23 +101,25 @@ impl ShardOperation for LocalShard {
         };
 
         if let Some(mut receiver) = callback_receiver {
-            if let Some(t) = timeout
-                && let Err(err) = tokio::time::timeout(t, &mut receiver).await
-            {
-                log::error!("Timeout error: {err}");
-                return Ok(UpdateResult {
-                    operation_id: Some(operation_id),
-                    status: UpdateStatus::WaitTimeout,
-                    clock_tag: operation.clock_tag,
-                });
-            }
-
-            let _ = receiver.await??;
-            Ok(UpdateResult {
+            let success = UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
                 clock_tag: operation.clock_tag,
-            })
+            };
+
+            if let Some(t) = timeout {
+                return match tokio::time::timeout(t, &mut receiver).await {
+                    Ok(_) => Ok(success),
+                    Err(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                };
+            }
+
+            let _ = receiver.await??;
+            Ok(success)
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),

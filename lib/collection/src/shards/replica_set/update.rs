@@ -555,15 +555,14 @@ impl ShardReplicaSet {
         let is_any_operation_rejected = successes
             .iter()
             .any(|(_, res)| matches!(res.status, UpdateStatus::ClockRejected));
+
         if is_any_operation_rejected {
             return Ok(None);
         }
 
-        // There are enough successes, return the first one
-        let (_, res) = successes
-            .into_iter()
-            .next()
-            .expect("successes is not empty");
+        let res = Self::merge_successful_update_results(this_peer_id, &successes, |peer_id| {
+            self.peer_can_be_source_of_truth(peer_id)
+        });
 
         Ok(Some(res))
     }
@@ -718,6 +717,70 @@ impl ShardReplicaSet {
             ) // `clock_tag` *has to* be `None`!
             .await
     }
+
+    /// Merges successful update results from a replica set.
+    ///
+    /// If there are WaitTimeout results, the merged result will be WaitTimeout.
+    /// If there are Completed results, the merged result will be Completed.
+    /// Otherwise, the merged result will be Acknowledged.
+    fn merge_successful_update_results<F>(
+        this_peer_id: PeerId,
+        successes: &[(PeerId, UpdateResult)],
+        is_source_of_truth: F,
+    ) -> UpdateResult
+    where
+        F: Fn(PeerId) -> bool,
+    {
+        assert!(!successes.is_empty());
+
+        let mut status = UpdateStatus::Acknowledged;
+        let mut best = None::<(u8, UpdateResult)>;
+        let mut max_clock = None::<ClockTag>;
+
+        for &(peer_id, res) in successes {
+            match res.status {
+                UpdateStatus::WaitTimeout => status = UpdateStatus::WaitTimeout,
+                UpdateStatus::Completed if status != UpdateStatus::WaitTimeout => {
+                    status = UpdateStatus::Completed
+                }
+                _ => {}
+            }
+
+            let prio = if peer_id == this_peer_id && is_source_of_truth(peer_id) {
+                0
+            } else if is_source_of_truth(peer_id) {
+                1
+            } else if peer_id == this_peer_id {
+                2
+            } else {
+                3
+            };
+
+            if best.map_or(true, |(best_prio, _)| prio < best_prio) {
+                best = Some((prio, res));
+            }
+
+            if let Some(tag) = res.clock_tag {
+                max_clock = Some(match max_clock {
+                    Some(cur) if cur.clock_tick >= tag.clock_tick => cur,
+                    _ => tag,
+                });
+            }
+        }
+
+        let mut result = best.map(|(_, r)| r).unwrap_or(UpdateResult {
+            operation_id: None,
+            status: UpdateStatus::Acknowledged,
+            clock_tag: None,
+        });
+
+        result.status = status;
+        if let Some(clock) = max_clock {
+            result.clock_tag = Some(clock);
+        }
+
+        result
+    }
 }
 
 #[cfg(test)]
@@ -739,6 +802,76 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
+
+    #[test]
+    fn test_merge_successful_update_results_wait_timeout_dominates() {
+        let this_peer_id: PeerId = 1;
+
+        let local_tag = ClockTag::new_with_token(this_peer_id, 7, 10, 0);
+        let remote_tag = ClockTag::new_with_token(this_peer_id, 7, 12, 0);
+
+        let successes = vec![
+            (
+                this_peer_id,
+                UpdateResult {
+                    operation_id: Some(10),
+                    status: UpdateStatus::Completed,
+                    clock_tag: Some(local_tag),
+                },
+            ),
+            (
+                2,
+                UpdateResult {
+                    operation_id: Some(20),
+                    status: UpdateStatus::WaitTimeout,
+                    clock_tag: Some(remote_tag),
+                },
+            ),
+        ];
+
+        let merged =
+            ShardReplicaSet::merge_successful_update_results(this_peer_id, &successes, |_| true);
+
+        assert_eq!(merged.status, UpdateStatus::WaitTimeout);
+        assert_eq!(merged.operation_id, Some(10));
+        assert_eq!(merged.clock_tag.unwrap().clock_tick, 12);
+    }
+
+    #[test]
+    fn test_merge_successful_update_results_prefers_source_of_truth() {
+        let this_peer_id: PeerId = 1;
+
+        let local_tag = ClockTag::new_with_token(this_peer_id, 7, 10, 0);
+        let remote_tag = ClockTag::new_with_token(this_peer_id, 7, 11, 0);
+
+        let successes = vec![
+            (
+                this_peer_id,
+                UpdateResult {
+                    operation_id: Some(10),
+                    status: UpdateStatus::Acknowledged,
+                    clock_tag: Some(local_tag),
+                },
+            ),
+            (
+                2,
+                UpdateResult {
+                    operation_id: Some(20),
+                    status: UpdateStatus::Completed,
+                    clock_tag: Some(remote_tag),
+                },
+            ),
+        ];
+
+        let merged =
+            ShardReplicaSet::merge_successful_update_results(this_peer_id, &successes, |peer_id| {
+                peer_id == 2
+            });
+
+        assert_eq!(merged.status, UpdateStatus::Completed);
+        assert_eq!(merged.operation_id, Some(20));
+        assert_eq!(merged.clock_tag.unwrap().clock_tick, 11);
+    }
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
