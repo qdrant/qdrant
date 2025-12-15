@@ -123,7 +123,7 @@ fn range_filtering(c: &mut Criterion) {
     });
 
     // flush data
-    index.flusher()().unwrap();
+    index.flush_all().unwrap();
     drop(index);
 
     // reload as IMMUTABLE index

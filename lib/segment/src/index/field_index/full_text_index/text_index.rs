@@ -566,7 +566,7 @@ impl PayloadFieldIndex for FullTextIndex {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             Self::Mutable(index) => index.flusher(),
             Self::Immutable(index) => index.flusher(),
@@ -723,7 +723,7 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
                 "FullTextIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.flusher()()?;
+        index.flush_all()?;
         Ok(index)
     }
 }

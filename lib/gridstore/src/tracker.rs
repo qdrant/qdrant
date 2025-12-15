@@ -53,16 +53,37 @@ impl ValuePointer {
 /// come in between preparing the flusher and executing it. After we've written to disk, we remove (drain),
 /// the now persisted changes from these pointer updates. With this mechanism we write each update to
 /// disk exactly once.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct PointerUpdates {
     /// Pointer to write in tracker when persisting
     current: Option<ValuePointer>,
+
     /// List of pointers to free in bitmask when persisting
     to_free: SmallVec<[ValuePointer; 1]>,
+
+    /// Whether this updates struct contains the last change for this pointer
+    ///
+    /// Using [`into_update_deletes`] will split this structure in two, one for any update and the
+    /// other for deletes.
+    ///
+    /// When writing a pointer to disk, we only write the very last known state. It either exist
+    /// and we write the pointer, or it doesn't and we clear the pointer. This flag tells us
+    /// whether this structure holds the last known change. Or more specifically, if we only hold
+    /// deletes it tells us whether we can clear the pointer for the current point offset on disk.
+    has_last_change: bool,
 }
 
 impl PointerUpdates {
-    /// Mark this pointer as set
+    /// Construct new empty updates structure, assume this is the latest
+    pub fn new() -> Self {
+        Self {
+            current: None,
+            to_free: SmallVec::new(),
+            has_last_change: true,
+        }
+    }
+
+    /// Mark last state for this pointer as set
     ///
     /// It will mark the pointer as used on disk on flush, and will free all previous pending
     /// pointers
@@ -71,6 +92,9 @@ impl PointerUpdates {
             debug_assert!(false, "we should not set the same point twice");
             return;
         }
+
+        // We now consider this the last change
+        self.has_last_change = true;
 
         // Move the current pointer to the pointers to free, if it exists
         if let Some(old_pointer) = self.current.replace(pointer) {
@@ -88,12 +112,15 @@ impl PointerUpdates {
         );
     }
 
-    /// Mark this pointer as unset
+    /// Mark last state for this pointer as unset
     ///
     /// It will completely free the pointer on disk on flush including all it's previous pending
     /// pointers
     fn unset(&mut self, pointer: ValuePointer) {
         let old_pointer = self.current.take();
+
+        // We now consider this the last change
+        self.has_last_change = true;
 
         // Fallback: if the pointer to unset is not the current one, free both pointers, though this shouldn't happen
         debug_assert!(
@@ -115,6 +142,26 @@ impl PointerUpdates {
         );
     }
 
+    /// Split this pointer update structure into two
+    ///
+    /// A structure that only updates the pointer, and a structure that only deletes pointers.
+    pub fn into_update_deletes(mut self) -> (Option<Self>, Option<Self>) {
+        let to_free = std::mem::take(&mut self.to_free);
+
+        // We only have an update if a current pointer is set
+        let update = Some(self).filter(|u| !u.is_empty());
+
+        // We only have deletes if any pointers are pending free
+        let deletes = (!to_free.is_empty()).then(|| PointerUpdates {
+            current: None,
+            to_free,
+            // We only have the last changes if there is no update
+            has_last_change: update.is_none(),
+        });
+
+        (update, deletes)
+    }
+
     /// Pointer is empty if there is no set nor unsets
     fn is_empty(&self) -> bool {
         self.current.is_none() && self.to_free.is_empty()
@@ -129,6 +176,10 @@ impl PointerUpdates {
     ///
     /// Returns if the structure is empty after this operation
     fn drain_persisted(&mut self, persisted: &Self) -> bool {
+        debug_assert!(
+            self.current.is_none() || self.has_last_change,
+            "drain from self that has current must also be last change",
+        );
         debug_assert!(!self.is_empty(), "must have at least one pointer");
         debug_assert!(
             !persisted.is_empty(),
@@ -137,13 +188,14 @@ impl PointerUpdates {
 
         // Shortcut: we persisted everything if both are equal, we can empty this structure
         if self == persisted {
-            *self = Self::default();
+            *self = Self::new();
             return true;
         }
 
         let Self {
             current: previous_current,
             to_free: freed,
+            has_last_change: _,
         } = persisted;
 
         // Remove self set if persisted
@@ -151,6 +203,11 @@ impl PointerUpdates {
             && current == previous_current
         {
             self.current.take();
+
+            // Current is always last change, so if we take it out, we don't have last change anymore
+            if !freed.is_empty() {
+                self.has_last_change = false;
+            }
         }
 
         // Only keep unsets that are not persisted
@@ -263,8 +320,12 @@ impl Tracker {
 
                     self.persist_pointer(point_offset, Some(new_pointer));
                 }
-                // Write to empty the pointer
-                None => self.persist_pointer(point_offset, None),
+
+                // If last known update for this point offset, clear pointer on disk
+                None if updates.has_last_change => {
+                    self.persist_pointer(point_offset, None);
+                }
+                None => {}
             }
 
             // Mark all old pointers for removal to free its blocks
@@ -374,9 +435,9 @@ impl Tracker {
                 self.get_raw(point_offset).copied().flatten()
             }
             // Use set from pending updates
-            Some(pending) => pending.current,
+            Some(pending) if pending.has_last_change && !pending.is_empty() => pending.current,
             // No pending update, use real data
-            None => self.get_raw(point_offset).copied().flatten(),
+            Some(_) | None => self.get_raw(point_offset).copied().flatten(),
         }
     }
 
@@ -393,7 +454,7 @@ impl Tracker {
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
         self.pending_updates
             .entry(point_offset)
-            .or_default()
+            .or_insert_with(PointerUpdates::new)
             .set(value_pointer);
         self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
     }
@@ -405,7 +466,7 @@ impl Tracker {
         if let Some(pointer) = pointer_opt {
             self.pending_updates
                 .entry(point_offset)
-                .or_default()
+                .or_insert_with(PointerUpdates::new)
                 .unset(pointer);
         }
 
@@ -422,6 +483,7 @@ mod tests {
     use std::path::PathBuf;
 
     use rstest::rstest;
+    use smallvec::SmallVec;
     use tempfile::Builder;
 
     use super::{PointerUpdates, Tracker, ValuePointer};
@@ -613,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_value_pointer_drain() {
-        let mut updates = PointerUpdates::default();
+        let mut updates = PointerUpdates::new();
         updates.set(ValuePointer::new(1, 1, 1));
 
         // When all updates are persisted, drop the entry
@@ -695,7 +757,7 @@ mod tests {
         // - latest: true
         // - history: [block_offset:2]
 
-        let mut updates = PointerUpdates::default();
+        let mut updates = PointerUpdates::new();
 
         // Put and delete block offset 1
         updates.set(ValuePointer::new(1, 1, 1));
@@ -712,10 +774,10 @@ mod tests {
         assert!(!do_drop, "must not drop entry");
 
         // Pending updates must only have set for block offset 2
-        let expected = {
-            let mut expected = PointerUpdates::default();
-            expected.set(ValuePointer::new(1, 2, 1));
-            expected
+        let expected = PointerUpdates {
+            current: Some(ValuePointer::new(1, 2, 1)),
+            to_free: SmallVec::new(),
+            has_last_change: true,
         };
         assert_eq!(
             updates, expected,

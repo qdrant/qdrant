@@ -274,14 +274,14 @@ impl IdTracker for SimpleIdTracker {
     /// Creates a flusher function, that persists the removed points in the mapping database
     /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         self.mapping_db_wrapper.flusher()
     }
 
     /// Creates a flusher function, that persists the removed points in the version database
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         self.versions_db_wrapper.flusher()
     }
 

@@ -119,7 +119,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     eprintln!("storage is correct before drop");
 
     // flush, drop, and reopen
-    storage.flusher()().unwrap();
+    storage.flush_all().unwrap();
     drop(storage);
     let storage = open(dir.path());
 

@@ -242,7 +242,7 @@ where
         }
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             NumericIndexInner::Mutable(index) => index.flusher(),
             NumericIndexInner::Immutable(index) => index.flusher(),
@@ -690,7 +690,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.0.inner.flusher()()?;
+        self.0.inner.flush_all()?;
         Ok(self.0)
     }
 }
@@ -735,7 +735,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        self.index.inner.flusher()()?;
+        self.index.inner.flush_all()?;
         drop(self.index);
         let inner: NumericIndexInner<T> =
             NumericIndexInner::new_rocksdb(self.db, &self.field, false, false)?
@@ -869,7 +869,7 @@ where
                 "NumericIndexGridstoreBuilder: index must be initialized to finalize",
             ));
         };
-        index.inner.flusher()()?;
+        index.inner.flush_all()?;
         Ok(index)
     }
 }
@@ -891,7 +891,7 @@ where
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         NumericIndexInner::flusher(self)
     }
 

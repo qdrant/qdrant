@@ -364,8 +364,8 @@ impl MmapInvertedIndex {
         ]
     }
 
-    pub fn flusher(&self) -> Flusher {
-        self.storage.deleted_points.flusher()
+    pub fn flusher(&self) -> (Flusher, Flusher) {
+        (Box::new(|| Ok(())), self.storage.deleted_points.flusher())
     }
 
     pub fn is_on_disk(&self) -> bool {

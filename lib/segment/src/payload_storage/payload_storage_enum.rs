@@ -200,7 +200,7 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn flusher(&self) -> Flusher {
+    fn flusher(&self) -> (Flusher, Flusher) {
         match self {
             #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
         // needs a flush to impact the storage size
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
         // large value contains initial cost of infra (SSTable, etc.), not stable across different OS
         let storage_size = storage.get_storage_size_bytes().unwrap();
         assert!(
@@ -483,7 +483,7 @@ mod tests {
             storage.overwrite(point_id, &payload, &hw_counter).unwrap();
         }
 
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
         // loose assertion because value not stable across different OS
         let storage_size = storage.get_storage_size_bytes().unwrap();
         assert!(

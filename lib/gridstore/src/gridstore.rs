@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use fs_err as fs;
@@ -589,18 +590,43 @@ impl<V> Gridstore<V> {
         value_size.div_ceil(block_size).try_into().unwrap()
     }
 
+    /// Immediately persist all pending changes
+    #[allow(dead_code)]
+    pub fn flush_all(&self) -> std::result::Result<(), mmap_type::Error> {
+        let (stage_1_flusher, stage_2_flusher) = self.flusher();
+        stage_1_flusher()?;
+        stage_2_flusher()
+    }
+
     /// Create flusher that durably persists all pending changes when invoked
-    pub fn flusher(&self) -> Flusher {
-        let pending_updates = self.tracker.read().pending_updates.clone();
+    pub fn flusher(&self) -> (Flusher, Flusher) {
+        let (pending_updates, pending_deletes) = self
+            .tracker
+            .read()
+            .pending_updates
+            .clone()
+            .into_iter()
+            .map(|(point_offset, updates)| (point_offset, updates.into_update_deletes()))
+            .fold(
+                (AHashMap::new(), AHashMap::new()),
+                |(mut all_updates, mut all_deletes), (offset, (update, deletes))| {
+                    if let Some(update) = update {
+                        all_updates.insert(offset, update);
+                    }
+                    if let Some(deletes) = deletes {
+                        all_deletes.insert(offset, deletes);
+                    }
+                    (all_updates, all_deletes)
+                },
+            );
 
         let pages = Arc::downgrade(&self.pages);
         let tracker = Arc::downgrade(&self.tracker);
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
-
         let is_alive_flush_lock = self.is_alive_flush_lock.clone();
 
-        Box::new(move || {
+        let stage_1_flusher = Box::new(move || {
             // Keep the guard till the end of the flush to prevent concurrent flushes
             let is_alive_flush_guard = is_alive_flush_lock.lock();
 
@@ -616,15 +642,20 @@ impl<V> Gridstore<V> {
             };
 
             let mut bitmask_guard = bitmask.upgradable_read();
+
+            // Flush new used blocks and pages
             bitmask_guard.flush()?;
             for page in pages.read().iter() {
                 page.flush()?;
             }
 
+            // Only write mappings for new blocks
+            // Mappings we overwrite will be returned, we can safely mark them as free in the first flush stage
             let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
             if old_pointers.is_empty() {
                 return Ok(());
             }
+
             // Update all free blocks in the bitmask
             bitmask_guard.with_upgraded(|guard| {
                 for (page_id, pointer_group) in
@@ -632,7 +663,7 @@ impl<V> Gridstore<V> {
                 {
                     let local_ranges = pointer_group.map(|pointer| {
                         let start = pointer.block_offset;
-                        let end = pointer.block_offset
+                        let end = start
                             + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
                         start as usize..end as usize
                     });
@@ -642,6 +673,62 @@ impl<V> Gridstore<V> {
             bitmask_guard.flush()?;
 
             Ok(())
+        });
+
+        let tracker = Arc::downgrade(&self.tracker);
+        let bitmask = Arc::downgrade(&self.bitmask);
+        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+
+        let stage_2_flusher = Box::new(move || {
+            // Keep the guard till the end of the flush to prevent concurrent flushes
+            let is_alive_flush_guard = is_alive_flush_lock.lock();
+
+            if !*is_alive_flush_guard {
+                // Segment is cleared, skip flush
+                return Ok(());
+            }
+
+            let (Some(tracker), Some(bitmask)) = (tracker.upgrade(), bitmask.upgrade()) else {
+                log::debug!("Aborted flushing on a dropped Gridstore instance");
+                return Ok(());
+            };
+
+            let mut bitmask_guard = bitmask.upgradable_read();
+
+            // Only write mappings for deleted blocks
+            let old_pointers = tracker.write().write_pending_and_flush(pending_deletes)?;
+            if old_pointers.is_empty() {
+                return Ok(());
+            }
+
+            // Update all free blocks in the bitmask
+            bitmask_guard.with_upgraded(|guard| {
+                for (page_id, pointer_group) in
+                    &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+                {
+                    let local_ranges = pointer_group.map(|pointer| {
+                        let start = pointer.block_offset;
+                        let end = start
+                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
+                        start as usize..end as usize
+                    });
+                    guard.mark_blocks_batch(page_id, local_ranges, false);
+                }
+            });
+            bitmask_guard.flush()?;
+
+            Ok(())
+        });
+
+        (stage_1_flusher, stage_2_flusher)
+    }
+
+    #[cfg(test)]
+    pub fn flusher_all(&self) -> Flusher {
+        let (stage_1_flusher, stage_2_flusher) = self.flusher();
+        Box::new(move || {
+            stage_1_flusher()?;
+            stage_2_flusher()
         })
     }
 
@@ -840,7 +927,7 @@ mod tests {
         // get payload again
         let stored_payload = storage.get_value::<false>(0, &hw_counter);
         assert!(stored_payload.is_none());
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
 
@@ -878,7 +965,7 @@ mod tests {
 
         put_payload(&mut storage, "updated again", 2);
 
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
 
         // First block offset should be available again, so we can reuse it
         put_payload(&mut storage, "updated after flush", 0);
@@ -1014,7 +1101,7 @@ mod tests {
                         );
                     } else {
                         log::debug!("op:{i} Scheduling flush in {delay:?}");
-                        let flusher = storage.flusher();
+                        let flusher = storage.flusher_all();
                         *flush_lock_guard = true;
                         drop(flush_lock_guard);
                         let flush_lock = has_flusher_lock.clone();
@@ -1025,7 +1112,7 @@ mod tests {
                                 let mut flush_lock_guard = flush_lock.lock();
                                 assert!(
                                     *flush_lock_guard,
-                                    "there must be a flusher marked as alive"
+                                    "there must be a flusher marked as alive",
                                 );
                                 log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                                 match flusher() {
@@ -1060,7 +1147,7 @@ mod tests {
         }
 
         // flush data
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
 
         let before_size = storage.get_storage_size_bytes();
         // drop storage
@@ -1159,7 +1246,7 @@ mod tests {
             assert_eq!(stored_payload.unwrap(), payload);
 
             // flush storage before dropping
-            storage.flusher()().unwrap();
+            storage.flush_all().unwrap();
         }
 
         // reopen storage
@@ -1202,7 +1289,7 @@ mod tests {
                     .unwrap();
                 point_offset += 1;
             }
-            storage.flusher()().unwrap();
+            storage.flush_all().unwrap();
             point_offset
         }
 
@@ -1259,7 +1346,7 @@ mod tests {
         storage_double_pass_is_consistent(&storage, 0);
 
         // drop storage
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
         drop(storage);
 
         // reopen storage
@@ -1337,7 +1424,7 @@ mod tests {
                 .unwrap();
         }
 
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
         println!("{last_point_id}");
 
         assert_eq!(storage.pages.read().len(), 4);
@@ -1397,7 +1484,7 @@ mod tests {
         put_payload(&mut storage, "value 2", 1);
         assert_eq!(get_payload(&storage), "value 2");
 
-        let flusher = storage.flusher();
+        let flusher = storage.flusher_all();
 
         put_payload(&mut storage, "value 3", 2);
         assert_eq!(get_payload(&storage), "value 3");
@@ -1406,7 +1493,7 @@ mod tests {
         drop(flusher);
         assert_eq!(get_payload(&storage), "value 3");
 
-        let flusher = storage.flusher();
+        let flusher = storage.flusher_all();
 
         put_payload(&mut storage, "value 4", 3);
         assert_eq!(get_payload(&storage), "value 4");
@@ -1488,7 +1575,7 @@ mod tests {
         put_payload(&mut storage, "value 2", 1);
         assert_eq!(get_payload(&storage).unwrap(), "value 2");
 
-        let flusher = storage.flusher();
+        let flusher = storage.flusher_all();
 
         put_payload(&mut storage, "value 3", 2);
         assert_eq!(get_payload(&storage).unwrap(), "value 3");
@@ -1505,7 +1592,7 @@ mod tests {
         let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.read().len(), 1);
 
-        let flusher = storage.flusher();
+        let flusher = storage.flusher_all();
 
         // On reopen, later updates and the delete were not flushed, expect to read value 2
         assert_eq!(get_payload(&storage).unwrap(), "value 2");
@@ -1515,8 +1602,8 @@ mod tests {
         storage.delete_value(0);
         assert!(get_payload(&storage).is_none());
 
-        storage.flusher()().unwrap();
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
+        storage.flush_all().unwrap();
         assert!(get_payload(&storage).is_none());
 
         // Reopen gridstore
@@ -1536,7 +1623,7 @@ mod tests {
             "expect 1 pending update",
         );
 
-        storage.flusher()().unwrap();
+        storage.flush_all().unwrap();
 
         assert_eq!(
             storage.tracker.read().pending_updates.len(),
@@ -1555,17 +1642,17 @@ mod tests {
         put_payload(&mut storage, "value 5", 1);
         assert_eq!(get_payload(&storage).unwrap(), "value 5");
 
-        let flusher_1_value_5 = storage.flusher();
+        let flusher_1_value_5 = storage.flusher_all();
 
         storage.delete_value(0);
         assert!(get_payload(&storage).is_none());
 
-        let flusher_2_delete = storage.flusher();
+        let flusher_2_delete = storage.flusher_all();
 
         put_payload(&mut storage, "value 6", 3);
         assert_eq!(get_payload(&storage).unwrap(), "value 6");
 
-        let flusher_3_value_6 = storage.flusher();
+        let flusher_3_value_6 = storage.flusher_all();
 
         put_payload(&mut storage, "value 7", 4);
         assert_eq!(get_payload(&storage).unwrap(), "value 7");
@@ -1646,7 +1733,7 @@ mod tests {
             put_payload(&mut storage, i, "value x");
         }
 
-        let flusher = storage.flusher();
+        let flusher = storage.flusher_all();
 
         // Clone arcs to keep storage alive after clear
         // Necessary for this test to allow the flusher task to still upgrade its weak arcs when we

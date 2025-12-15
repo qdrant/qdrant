@@ -102,10 +102,26 @@ pub trait IdTracker: fmt::Debug {
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
     /// Flush id mapping to disk
-    fn mapping_flusher(&self) -> Flusher;
+    fn mapping_flusher(&self) -> (Flusher, Flusher);
+
+    /// Flush id mapping to disk
+    fn flush_mappings(&self) -> OperationResult<()> {
+        let (stage_1_flush, stage_2_flush) = self.mapping_flusher();
+        stage_1_flush()?;
+        stage_2_flush()?;
+        Ok(())
+    }
 
     /// Flush points versions to disk
-    fn versions_flusher(&self) -> Flusher;
+    fn versions_flusher(&self) -> (Flusher, Flusher);
+
+    /// Flush points versions to disk
+    fn flush_versions(&self) -> OperationResult<()> {
+        let (stage_1_flush, stage_2_flush) = self.versions_flusher();
+        stage_1_flush()?;
+        stage_2_flush()?;
+        Ok(())
+    }
 
     /// Number of total points
     ///
@@ -369,7 +385,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn mapping_flusher(&self) -> Flusher {
+    fn mapping_flusher(&self) -> (Flusher, Flusher) {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
@@ -379,7 +395,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn versions_flusher(&self) -> Flusher {
+    fn versions_flusher(&self) -> (Flusher, Flusher) {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),

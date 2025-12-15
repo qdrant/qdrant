@@ -941,8 +941,8 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         }
 
         // Flush mappings and versions
-        new_id_tracker.mapping_flusher()()?;
-        new_id_tracker.versions_flusher()()?;
+        new_id_tracker.flush_mappings()?;
+        new_id_tracker.flush_versions()?;
 
         Ok(new_id_tracker)
     }
@@ -1442,7 +1442,7 @@ pub fn migrate_rocksdb_payload_storage_to_mmap(
         )?;
 
         // Flush new storage
-        new_storage.flusher()()?;
+        new_storage.flush_all()?;
 
         Ok(new_storage)
     }
