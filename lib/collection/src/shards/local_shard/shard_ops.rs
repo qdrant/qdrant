@@ -113,7 +113,7 @@ impl ShardOperation for LocalShard {
 
             match futures::future::select(receiver, fut_timeout).await {
                 Either::Left((res, _timeout_future)) => {
-                    let _ = res??; // <- itt jön a receiver hibakezelése
+                    let _ = res??;
                     Ok(UpdateResult {
                         operation_id: Some(operation_id),
                         status: UpdateStatus::Completed,
