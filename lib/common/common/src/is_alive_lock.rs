@@ -30,7 +30,7 @@ impl IsAliveLock {
 
     /// Waits for lock and marks as dead without dropping.
     /// Lock will no longer be usable after this.
-    pub fn mark_dead(&self) {
+    pub fn blocking_mark_dead(&self) {
         *self.inner.lock() = false
     }
 }
@@ -44,7 +44,7 @@ impl Default for IsAliveLock {
 impl Drop for IsAliveLock {
     fn drop(&mut self) {
         // prevent dangling handles from accessing the lock
-        self.mark_dead();
+        self.blocking_mark_dead();
     }
 }
 
@@ -79,7 +79,7 @@ mod tests {
 
         assert!(handle.lock_if_alive().is_some());
 
-        lock.mark_dead();
+        lock.blocking_mark_dead();
 
         assert!(handle.lock_if_alive().is_none());
     }

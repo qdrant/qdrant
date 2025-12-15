@@ -107,7 +107,7 @@ impl fmt::Debug for VectorData {
 impl Drop for Segment {
     fn drop(&mut self) {
         // Wait for all background flush operations to finish
-        self.is_alive_flush_lock.mark_dead();
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {
