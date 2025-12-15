@@ -57,6 +57,7 @@ pub struct IsAliveHandle {
 
 impl IsAliveHandle {
     /// Get a guard of this lock if the parent hasn't been dropped
+    #[must_use = "Guard must be held for lifetime of operation, abort if None is returned"]
     pub fn lock_if_alive(&self) -> Option<IsAliveGuard<'_>> {
         let guard = self.inner.lock();
         guard.then_some(IsAliveGuard(guard))
