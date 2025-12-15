@@ -60,18 +60,16 @@ impl LocalShard {
         &self,
         request: PlannedQuery,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
-
         let searches_f = self.do_search(
             Arc::new(CoreSearchRequestBatch {
                 searches: request.searches,
             }),
             search_runtime_handle,
-            Some(timeout),
+            timeout,
             hw_counter_acc.clone(),
         );
 
@@ -356,7 +354,7 @@ impl LocalShard {
                 self.do_search(
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
-                    Some(timeout),
+                    timeout,
                     hw_counter_acc,
                 )
                 .await?

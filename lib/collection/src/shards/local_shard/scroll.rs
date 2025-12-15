@@ -42,7 +42,7 @@ impl LocalShard {
             self.query_scroll(
                 request,
                 search_runtime_handle,
-                Some(timeout),
+                timeout,
                 hw_measurement_acc.clone(),
             )
         });
@@ -62,7 +62,7 @@ impl LocalShard {
         &self,
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
@@ -143,11 +143,10 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
@@ -228,11 +227,10 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
@@ -327,11 +325,10 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
