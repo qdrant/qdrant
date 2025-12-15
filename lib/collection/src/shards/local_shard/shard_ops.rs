@@ -94,7 +94,6 @@ impl ShardOperation for LocalShard {
                 operation: operation.operation,
                 sender: callback_sender,
                 wait,
-                timeout,
                 hw_measurements: hw_measurement_acc.clone(),
             }));
 

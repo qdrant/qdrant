@@ -29,7 +29,6 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let update_lock = self.updates_lock.clone().read_owned().await;
@@ -57,7 +56,7 @@ impl Collection {
                         shard.update_local(
                             OperationWithClockTag::from(operation.clone()),
                             wait,
-                            timeout,
+                            None,
                             hw_measurement_acc.clone(),
                             false,
                         )

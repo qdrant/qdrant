@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
@@ -37,7 +36,7 @@ impl Collection {
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`, because we can't afford
         // to wait for the result as indexation may take a long time
-        self.create_payload_index_with_wait(field_name, field_schema, false, None, hw_acc)
+        self.create_payload_index_with_wait(field_name, field_schema, false, hw_acc)
             .await
     }
 
@@ -46,7 +45,6 @@ impl Collection {
         field_name: JsonPath,
         field_schema: PayloadFieldSchema,
         wait: bool,
-        timeout: Option<Duration>,
         hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         self.payload_index_schema.write(|schema| {
@@ -66,7 +64,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(create_index_operation, wait, timeout, hw_acc)
+        self.update_all_local(create_index_operation, wait, hw_acc)
             .await
     }
 
@@ -86,7 +84,6 @@ impl Collection {
             .update_all_local(
                 delete_index_operation,
                 false,
-                None,
                 HwMeasurementAcc::disposable(), // Unmeasured API
             )
             .await?;
