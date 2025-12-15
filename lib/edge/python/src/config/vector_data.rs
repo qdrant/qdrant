@@ -363,7 +363,7 @@ impl PyHnswIndexConfig {
             m: _,
             ef_construct: _,
             full_scan_threshold: _,
-            max_indexing_threads: _,
+            max_indexing_threads: _, // not relevant for Qdrant Edge
             on_disk: _,
             payload_m: _,
             inline_storage: _,

@@ -196,7 +196,7 @@ impl PyProductQuantizationConfig {
 }
 
 impl PyProductQuantizationConfig {
-    fn _getter(self) {
+    fn _getters(self) {
         // Every field should have a getter method
         let ProductQuantizationConfig {
             compression: _,
