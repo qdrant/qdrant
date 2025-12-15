@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::future::Either;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -102,30 +101,24 @@ impl ShardOperation for LocalShard {
             operation_id
         };
 
-        if let Some(receiver) = callback_receiver {
-            let fut_timeout = Box::pin(async {
-                if let Some(t) = timeout {
-                    tokio::time::sleep(t).await;
-                } else {
-                    std::future::pending::<()>().await
-                }
-            });
-
-            match futures::future::select(receiver, fut_timeout).await {
-                Either::Left((res, _timeout_future)) => {
-                    let _ = res??;
-                    Ok(UpdateResult {
-                        operation_id: Some(operation_id),
-                        status: UpdateStatus::Completed,
-                        clock_tag: operation.clock_tag,
-                    })
-                }
-                Either::Right(((), _wait_future)) => Ok(UpdateResult {
+        if let Some(mut receiver) = callback_receiver {
+            if let Some(t) = timeout
+                && let Err(err) = tokio::time::timeout(t, &mut receiver).await
+            {
+                log::error!("Timeout error: {err}");
+                return Ok(UpdateResult {
                     operation_id: Some(operation_id),
                     status: UpdateStatus::WaitTimeout,
                     clock_tag: operation.clock_tag,
-                }),
+                });
             }
+
+            let _ = receiver.await??;
+            Ok(UpdateResult {
+                operation_id: Some(operation_id),
+                status: UpdateStatus::Completed,
+                clock_tag: operation.clock_tag,
+            })
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
