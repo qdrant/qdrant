@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
+use gridstore::error::GridstoreError;
 use io::file_operations::FileStorageError;
 use memory::mmap_type::Error as MmapError;
 use rayon::ThreadPoolBuildError;
@@ -227,6 +228,23 @@ impl From<TryReserveError> for OperationError {
         OperationError::OutOfMemory {
             description: format!("Failed to reserve memory: {err}"),
             free: free_memory,
+        }
+    }
+}
+
+impl From<GridstoreError> for OperationError {
+    fn from(err: GridstoreError) -> Self {
+        match err {
+            GridstoreError::ServiceError { description } => {
+                Self::service_error(format!("Gridstore error: {description}"))
+            }
+            GridstoreError::FlushCancelled => Self::Cancelled {
+                description: "Gridstore flushing was cancelled".to_string(),
+            },
+            GridstoreError::Io(_) | GridstoreError::Mmap(_) | GridstoreError::SerdeJson(_) => {
+                Self::service_error(err.to_string())
+            }
+            GridstoreError::ValidationError { message } => Self::validation_error(message),
         }
     }
 }

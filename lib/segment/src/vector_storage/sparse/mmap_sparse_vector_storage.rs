@@ -141,13 +141,11 @@ impl MmapSparseVectorStorage {
     ) -> OperationResult<()> {
         if let Some(vector) = vector {
             // upsert vector
-            self.storage
-                .put_value(
-                    key,
-                    &StoredSparseVector::from(vector),
-                    hw_counter.ref_vector_io_write_counter(),
-                )
-                .map_err(OperationError::service_error)?;
+            self.storage.put_value(
+                key,
+                &StoredSparseVector::from(vector),
+                hw_counter.ref_vector_io_write_counter(),
+            )?;
         } else {
             // delete vector
             self.storage.delete_value(key);

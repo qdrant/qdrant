@@ -10,9 +10,11 @@ use itertools::Itertools;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{self, MmapBitSlice};
+use memory::mmap_type::MmapBitSlice;
 
+use crate::Result;
 use crate::config::StorageConfig;
+use crate::error::GridstoreError;
 use crate::tracker::{BlockOffset, PageId};
 
 const BITMASK_NAME: &str = "bitmask.dat";
@@ -70,7 +72,7 @@ impl Bitmask {
     }
 
     /// Create a bitmask for one page
-    pub(crate) fn create(dir: &Path, config: StorageConfig) -> Result<Self, String> {
+    pub(crate) fn create(dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
             config.page_size_bytes % config.block_size_bytes * config.region_size_blocks == 0,
             "Page size must be a multiple of block size * region size"
@@ -81,9 +83,8 @@ impl Bitmask {
         // create bitmask mmap
         let path = Self::bitmask_path(dir);
         create_and_ensure_length(&path, length).unwrap();
-        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)
-            .map_err(|err| err.to_string())?;
-        let mmap_bitslice = MmapBitSlice::try_from(mmap, 0).map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
+        let mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
 
         assert_eq!(mmap_bitslice.len(), length * 8, "Bitmask length mismatch");
 
@@ -101,7 +102,7 @@ impl Bitmask {
         })
     }
 
-    pub(crate) fn open(dir: &Path, config: StorageConfig) -> Result<Self, String> {
+    pub(crate) fn open(dir: &Path, config: StorageConfig) -> Result<Self> {
         debug_assert!(
             config
                 .page_size_bytes
@@ -111,10 +112,12 @@ impl Bitmask {
 
         let path = Self::bitmask_path(dir);
         if !path.exists() {
-            return Err(format!("Bitmask file does not exist: {}", path.display()));
+            return Err(GridstoreError::service_error(format!(
+                "Bitmask file does not exist: {}",
+                path.display()
+            )));
         }
-        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
         let mmap_bitslice = MmapBitSlice::from(mmap, 0);
 
         let bitmask_gaps = BitmaskGaps::open(dir, config)?;
@@ -131,7 +134,7 @@ impl Bitmask {
         dir.join(BITMASK_NAME)
     }
 
-    pub fn flush(&self) -> Result<(), mmap_type::Error> {
+    pub fn flush(&self) -> Result<()> {
         self.bitslice.flusher()()?;
         self.regions_gaps.flush()?;
 
@@ -171,7 +174,7 @@ impl Bitmask {
     }
 
     /// Extend the bitslice to cover another page
-    pub fn cover_new_page(&mut self) -> Result<(), String> {
+    pub fn cover_new_page(&mut self) -> Result<()> {
         let extra_length = Self::length_for_page(&self.config);
 
         // flush outstanding changes
@@ -181,10 +184,9 @@ impl Bitmask {
         let previous_bitslice_len = self.bitslice.len();
         let new_length = (previous_bitslice_len / u8::BITS as usize) + extra_length;
         create_and_ensure_length(&self.path, new_length).unwrap();
-        let mmap = open_write_mmap(&self.path, AdviceSetting::from(DEFAULT_ADVICE), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&self.path, AdviceSetting::from(DEFAULT_ADVICE), false)?;
 
-        self.bitslice = MmapBitSlice::try_from(mmap, 0).map_err(|err| err.to_string())?;
+        self.bitslice = MmapBitSlice::try_from(mmap, 0)?;
 
         // extend the region gaps
         let current_total_regions = self.regions_gaps.len();

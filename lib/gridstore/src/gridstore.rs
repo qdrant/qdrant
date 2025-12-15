@@ -1,5 +1,4 @@
 use std::io::BufReader;
-use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,20 +10,19 @@ use fs_err::File;
 use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
-use memory::mmap_type;
 use parking_lot::RwLock;
 
+use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig, StorageOptions};
+use crate::error::GridstoreError;
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
 
 const CONFIG_FILENAME: &str = "config.json";
 
-pub(crate) type Result<T> = std::result::Result<T, String>;
-
-pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), mmap_type::Error> + Send>;
+pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
 /// Storage for values of type `V`.
 ///
@@ -119,8 +117,11 @@ impl<V: Blob> Gridstore<V> {
             Self::open(base_path)
         } else {
             // create folder if it does not exist
-            fs::create_dir_all(&base_path)
-                .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
+            fs::create_dir_all(&base_path).map_err(|err| {
+                GridstoreError::service_error(format!(
+                    "Failed to create gridstore storage directory: {err}"
+                ))
+            })?;
             Self::new(base_path, create_options)
         }
     }
@@ -131,13 +132,15 @@ impl<V: Blob> Gridstore<V> {
     /// It should exist already.
     pub fn new(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         if !base_path.exists() {
-            return Err("Base path does not exist".to_string());
+            return Err(GridstoreError::service_error("Base path does not exist"));
         }
         if !base_path.is_dir() {
-            return Err("Base path is not a directory".to_string());
+            return Err(GridstoreError::service_error(
+                "Base path is not a directory",
+            ));
         }
 
-        let config = StorageConfig::try_from(options)?;
+        let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let storage = Self {
@@ -157,7 +160,8 @@ impl<V: Blob> Gridstore<V> {
         storage.pages.write().push(page);
 
         // lastly, write config to disk to use as a signal that the storage has been created correctly
-        atomic_save_json(&config_path, &config).map_err(|err| err.to_string())?;
+        atomic_save_json(&config_path, &config)
+            .map_err(|err| GridstoreError::service_error(err.to_string()))?;
 
         Ok(storage)
     }
@@ -166,17 +170,20 @@ impl<V: Blob> Gridstore<V> {
     /// Returns None if the storage does not exist
     pub fn open(base_path: PathBuf) -> Result<Self> {
         if !base_path.exists() {
-            return Err(format!("Path '{base_path:?}' does not exist"));
+            return Err(GridstoreError::service_error(format!(
+                "Path '{base_path:?}' does not exist"
+            )));
         }
         if !base_path.is_dir() {
-            return Err(format!("Path '{base_path:?}' is not a directory"));
+            return Err(GridstoreError::service_error(format!(
+                "Path '{base_path:?}' is not a directory"
+            )));
         }
 
         // read config file first
         let config_path = base_path.join(CONFIG_FILENAME);
-        let config_file = BufReader::new(File::open(&config_path).map_err(|err| err.to_string())?);
-        let config: StorageConfig =
-            serde_json::from_reader(config_file).map_err(|err| err.to_string())?;
+        let config_file = BufReader::new(File::open(&config_path)?);
+        let config: StorageConfig = serde_json::from_reader(config_file)?;
 
         let page_tracker = Tracker::open(&base_path)?;
 
@@ -485,12 +492,18 @@ impl<V: Blob> Gridstore<V> {
 
         // Wipe
         self.pages.write().clear();
-        fs::remove_dir_all(&base_path)
-            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))?;
+        fs::remove_dir_all(&base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to remove gridstore storage directory: {err}"
+            ))
+        })?;
 
         // Recreate
-        fs::create_dir_all(&base_path)
-            .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
+        fs::create_dir_all(&base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to create gridstore storage directory: {err}"
+            ))
+        })?;
         *self = Self::new(base_path, create_options)?;
 
         Ok(())
@@ -510,8 +523,11 @@ impl<V: Blob> Gridstore<V> {
         drop(self);
 
         // deleted base directory
-        fs::remove_dir_all(base_path)
-            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
+        fs::remove_dir_all(base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to remove gridstore storage directory: {err}"
+            ))
+        })
     }
 
     /// Iterate over all the values in the storage
@@ -554,31 +570,6 @@ impl<V: Blob> Gridstore<V> {
     pub fn get_storage_size_bytes(&self) -> usize {
         self.bitmask.read().get_storage_size_bytes()
     }
-
-    /// Iterate over all the values in the storage, including deleted ones
-    pub fn for_each_unfiltered<F>(&self, mut callback: F) -> Result<()>
-    where
-        F: FnMut(PointOffset, Option<&V>) -> ControlFlow<String, ()>,
-    {
-        for (point_offset, opt_pointer) in self.tracker.read().iter_pointers() {
-            let value = opt_pointer.map(
-                |ValuePointer {
-                     page_id,
-                     block_offset,
-                     length,
-                 }| {
-                    let raw = self.read_from_pages::<true>(page_id, block_offset, length);
-                    let decompressed = self.decompress(raw);
-                    V::from_bytes(&decompressed)
-                },
-            );
-            match callback(point_offset, value.as_ref()) {
-                ControlFlow::Continue(()) => (),
-                ControlFlow::Break(message) => return Err(message),
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<V> Gridstore<V> {
@@ -601,7 +592,7 @@ impl<V> Gridstore<V> {
 
         Box::new(move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                // Segment is cleared, skip flush
+                // Gridstore is cleared, cancel flush
                 return Ok(());
             };
 
