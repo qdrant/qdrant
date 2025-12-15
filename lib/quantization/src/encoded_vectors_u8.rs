@@ -16,6 +16,13 @@ use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::scalar_quantization_simd::{impl_score_dot, impl_score_l1};
+#[cfg(target_arch = "x86_64")]
+use crate::scalar_quantization_simd::{
+    impl_score_dot_avx, impl_score_dot_sse, impl_score_l1_avx, impl_score_l1_sse,
+};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+use crate::scalar_quantization_simd::{impl_score_dot_neon, impl_score_l1_neon};
 
 pub const ALIGNMENT: usize = 16;
 
@@ -606,39 +613,4 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
         self.score_point_simple(query, bytes)
     }
-}
-
-fn impl_score_dot(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
-    unsafe {
-        let mut score = 0i32;
-        for i in 0..actual_dim {
-            score += i32::from(*q_ptr.add(i)) * i32::from(*v_ptr.add(i));
-        }
-        score
-    }
-}
-
-fn impl_score_l1(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
-    unsafe {
-        let mut score = 0i32;
-        for i in 0..actual_dim {
-            score += i32::from(*q_ptr.add(i)).abs_diff(i32::from(*v_ptr.add(i))) as i32;
-        }
-        score
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-unsafe extern "C" {
-    fn impl_score_dot_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-    fn impl_score_l1_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-
-    fn impl_score_dot_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-    fn impl_score_l1_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-}
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-unsafe extern "C" {
-    fn impl_score_dot_neon(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
-    fn impl_score_l1_neon(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 }
