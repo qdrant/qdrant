@@ -594,7 +594,7 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
-    fn segment_uuid(&self) -> OperationResult<String> {
+    fn segment_uuid(&self) -> String {
         self.wrapped_segment.get().read().segment_uuid()
     }
 

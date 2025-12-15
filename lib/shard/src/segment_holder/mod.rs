@@ -122,15 +122,8 @@ impl SegmentHolder {
         segment_ids
             .iter()
             .map(|id| {
-                self.appendable_segments
-                    .get(id)
-                    .or_else(|| self.non_appendable_segments.get(id))
-                    .and_then(|segment| {
-                        segment.get().read().segment_uuid().ok().or_else(|| {
-                            log::warn!("Failed to get UUID for segment with internal id {id}"); // Shouldn't happen
-                            None
-                        })
-                    })
+                self.get(*id)
+                    .map(|segment| segment.get().read().segment_uuid())
             })
             .collect::<Vec<_>>()
     }

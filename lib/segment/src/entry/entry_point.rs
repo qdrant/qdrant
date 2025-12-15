@@ -267,7 +267,7 @@ pub trait SegmentEntry: SnapshotEntry {
     }
 
     /// Get segment uuid
-    fn segment_uuid(&self) -> OperationResult<String>;
+    fn segment_uuid(&self) -> String;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;

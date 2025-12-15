@@ -52,7 +52,7 @@ impl SnapshotEntry for Segment {
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
     ) -> OperationResult<()> {
-        let segment_id = self.segment_uuid()?;
+        let segment_id = self.segment_uuid();
 
         log::debug!("Taking snapshot of segment {segment_id}");
 
@@ -118,13 +118,13 @@ impl SnapshotEntry for Segment {
 impl Segment {
     pub fn segment_id(&self) -> OperationResult<&str> {
         let id = self
-            .current_path
+            .segment_path
             .file_stem()
             .and_then(|segment_dir| segment_dir.to_str())
             .ok_or_else(|| {
                 OperationError::service_error(format!(
                     "failed to extract segment ID from segment path {}",
-                    self.current_path.display(),
+                    self.segment_path.display(),
                 ))
             })?;
 
@@ -210,7 +210,7 @@ impl Segment {
         }
 
         Ok(SegmentManifest {
-            segment_id,
+            segment_id: segment_id.to_string(),
             segment_version,
             file_versions,
         })
