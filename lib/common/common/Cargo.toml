@@ -34,14 +34,13 @@ validator = { workspace = true }
 lazy_static = "1.5.0"
 memmap2 = { workspace = true }
 semver = { workspace = true }
-self_cell = "1.2.1"
 schemars = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
 walkdir = { workspace = true }
 atomicwrites = { workspace = true }
-parking_lot = { workspace = true }
+parking_lot = { workspace = true, features = ["arc_lock"] }
 serde_json = { workspace = true }
 strum = { workspace = true }
 memory = { path = "../memory" }
@@ -52,6 +51,7 @@ criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 itertools = { workspace = true }
 rstest = { workspace = true }
+self_cell = "1.2.1"
 serde_json = { workspace = true }
 tango-bench = "0.6.0"
 
