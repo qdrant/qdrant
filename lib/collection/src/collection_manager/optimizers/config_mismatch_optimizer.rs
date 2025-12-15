@@ -364,6 +364,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -397,6 +398,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -527,6 +529,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -568,6 +571,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -704,6 +708,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -748,6 +753,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
