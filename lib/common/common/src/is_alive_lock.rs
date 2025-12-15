@@ -1,7 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use parking_lot::{ArcMutexGuard, Mutex, MutexGuard, RawMutex};
-use self_cell::self_cell;
+use parking_lot::{ArcMutexGuard, Mutex, RawMutex};
 
 /// Structure which ensures that the lock is alive at the time of locking,
 /// and will prevent dropping while guarded.
