@@ -603,7 +603,7 @@ impl SegmentEntry for Segment {
         self.approximate_facet(request, is_stopped, hw_counter)
     }
 
-    fn segment_id(&self) -> OperationResult<String> {
+    fn segment_uuid(&self) -> OperationResult<String> {
         let id = self
             .current_path
             .file_stem()
@@ -628,7 +628,7 @@ impl SegmentEntry for Segment {
     }
 
     fn size_info(&self) -> SegmentInfo {
-        let segment_id = self.segment_id().ok();
+        let segment_id = self.segment_uuid().ok();
         let num_vectors = self
             .vector_data
             .values()
@@ -687,7 +687,7 @@ impl SegmentEntry for Segment {
             .unwrap_or(0);
 
         SegmentInfo {
-            segment_id,
+            segment_uuid: segment_id,
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,

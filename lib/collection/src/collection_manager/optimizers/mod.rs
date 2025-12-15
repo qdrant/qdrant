@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+use shard::segment_holder::SegmentId;
 
 use crate::operations::types::PendingOptimizations;
 
@@ -98,7 +99,9 @@ pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
     /// Segment IDs that were optimized
-    pub segment_ids: Vec<Option<String>>,
+    pub segment_ids: Vec<SegmentId>,
+    /// Segment UUIDs that were optimized
+    pub segment_uuids: Vec<Option<String>>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
@@ -111,12 +114,14 @@ impl Tracker {
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
         name: impl Into<String>,
-        segment_ids: Vec<Option<String>>,
+        segment_ids: Vec<SegmentId>,
+        segment_uuids: Vec<Option<String>>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
             name: name.into(),
             segment_ids,
+            segment_uuids,
             state: Default::default(),
             progress_view,
         };
@@ -134,6 +139,7 @@ impl Tracker {
         TrackerTelemetry {
             name: self.name.clone(),
             segment_ids: self.segment_ids.clone(),
+            segment_uuids: self.segment_uuids.clone(),
             status: state.status.clone(),
             start_at: self.progress_view.started_at(),
             end_at: state.end_at,
@@ -148,7 +154,9 @@ pub struct TrackerTelemetry {
     #[anonymize(false)]
     pub name: String,
     /// Segment IDs being optimized
-    pub segment_ids: Vec<Option<String>>,
+    pub segment_ids: Vec<SegmentId>,
+    /// Segment UUIDs being optimized
+    pub segment_uuids: Vec<Option<String>>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer

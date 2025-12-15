@@ -126,7 +126,7 @@ impl SegmentHolder {
                     .get(id)
                     .or_else(|| self.non_appendable_segments.get(id))
                     .and_then(|segment| {
-                        segment.get().read().segment_id().ok().or_else(|| {
+                        segment.get().read().segment_uuid().ok().or_else(|| {
                             log::warn!("Failed to get UUID for segment with internal id {id}"); // Shouldn't happen
                             None
                         })
