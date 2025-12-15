@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
@@ -67,12 +67,15 @@ impl BufferedDynamicFlags {
 
         Box::new(move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                return Ok(());
+                return Err(OperationError::cancelled(
+                    "Aborted flushing on a dropped BufferedDynamicFlags instance",
+                ));
             };
 
             let Some(flags_arc) = flags_arc.upgrade() else {
-                log::debug!("skipping flushing on deleted storage");
-                return Ok(());
+                return Err(OperationError::cancelled(
+                    "Aborted flushing on a dropped BufferedDynamicFlags instance",
+                ));
             };
 
             // lock for the entire flushing process
