@@ -92,8 +92,8 @@ impl VacuumOptimizer {
     /// Returns `None` if littered ratio did not reach vacuum thresholds.
     fn littered_ratio_segment(&self, segment: &LockedSegment) -> Option<f64> {
         let segment_entry = match segment {
-            LockedSegment::Original(segment) => segment,
-            LockedSegment::Proxy(_) => return None,
+            LockedSegment::Original(segment, _) => segment,
+            LockedSegment::Proxy(_, _) => return None,
         };
         let read_segment = segment_entry.read();
 
@@ -133,8 +133,8 @@ impl VacuumOptimizer {
 
         // We can only work with original segments
         let real_segment = match segment {
-            LockedSegment::Original(segment) => segment.read(),
-            LockedSegment::Proxy(_) => return None,
+            LockedSegment::Original(segment, _) => segment.read(),
+            LockedSegment::Proxy(_, _) => return None,
         };
 
         // In this segment, check the index of each named vector for a high deletion ratio.
@@ -253,8 +253,8 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let original_segment_path = match segment {
-            LockedSegment::Original(s) => s.read().current_path.clone(),
-            LockedSegment::Proxy(_) => panic!("Not expected"),
+            LockedSegment::Original(s, _) => s.read().current_path.clone(),
+            LockedSegment::Proxy(..) => panic!("Not expected"),
         };
 
         let segment_points_to_delete = segment
@@ -524,8 +524,8 @@ mod tests {
             .iter()
             .find(|(_, segment)| {
                 let segment = match segment {
-                    LockedSegment::Original(s) => s.read(),
-                    LockedSegment::Proxy(_) => unreachable!(),
+                    LockedSegment::Original(s, _) => s.read(),
+                    LockedSegment::Proxy(..) => unreachable!(),
                 };
                 segment.total_point_count() > 0
             })
@@ -542,8 +542,8 @@ mod tests {
             let holder = locked_holder.write();
             let segment = holder.get(segment_id).unwrap();
             let mut segment = match segment {
-                LockedSegment::Original(s) => s.write(),
-                LockedSegment::Proxy(_) => unreachable!(),
+                LockedSegment::Original(s, _) => s.write(),
+                LockedSegment::Proxy(..) => unreachable!(),
             };
 
             // Delete 10% of points
@@ -598,8 +598,8 @@ mod tests {
             .read()
             .iter()
             .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
+                LockedSegment::Original(s, _) => s.read(),
+                LockedSegment::Proxy(..) => unreachable!(),
             })
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
@@ -635,8 +635,8 @@ mod tests {
             .read()
             .iter()
             .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
+                LockedSegment::Original(s, _) => s.read(),
+                LockedSegment::Proxy(..) => unreachable!(),
             })
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {

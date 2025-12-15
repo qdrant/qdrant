@@ -219,8 +219,8 @@ async fn test_cancel_optimization() {
 
     for (_idx, segment) in segments.read().iter() {
         match segment {
-            LockedSegment::Original(_) => {}
-            LockedSegment::Proxy(_) => panic!("segment is not restored"),
+            LockedSegment::Original(..) => {}
+            LockedSegment::Proxy(..) => panic!("segment is not restored"),
         }
     }
 

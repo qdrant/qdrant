@@ -108,8 +108,6 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
     fn get_header(&self) -> std::sync::Arc<crate::vector_storage::DenseVectorStorageHeader> {
         self.vectors.get_header()
     }
-
-
 }
 
 impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage

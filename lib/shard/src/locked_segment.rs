@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
+use segment::vector_storage::DenseVectorStorageHeader;
 
 use crate::measurable_rwlock::measurable_parking_lot::RwLock;
 use crate::proxy_segment::ProxySegment;
@@ -16,8 +17,11 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 /// access the original type of the segment if it is required for more efficient operations.
 #[derive(Clone, Debug)]
 pub enum LockedSegment {
-    Original(Arc<RwLock<Segment>>),
-    Proxy(Arc<RwLock<ProxySegment>>),
+    Original(Arc<RwLock<Segment>>, Option<Arc<DenseVectorStorageHeader>>),
+    Proxy(
+        Arc<RwLock<ProxySegment>>,
+        Option<Arc<DenseVectorStorageHeader>>,
+    ),
 }
 
 fn try_unwrap_with_timeout<T>(
@@ -52,15 +56,15 @@ impl LockedSegment {
     /// Get reference to the locked segment
     pub fn get(&self) -> &RwLock<dyn SegmentEntry> {
         match self {
-            LockedSegment::Original(segment) => segment.as_ref(),
-            LockedSegment::Proxy(proxy) => proxy.as_ref(),
+            LockedSegment::Original(segment, _) => segment.as_ref(),
+            LockedSegment::Proxy(proxy, _) => proxy.as_ref(),
         }
     }
 
     pub fn is_original(&self) -> bool {
         match self {
-            LockedSegment::Original(_) => true,
-            LockedSegment::Proxy(_) => false,
+            LockedSegment::Original(_, _) => true,
+            LockedSegment::Proxy(_, _) => false,
         }
     }
 
@@ -68,7 +72,7 @@ impl LockedSegment {
     /// Operation fails if the segment is used by other thread for longer than `timeout`.
     pub fn drop_data(self) -> OperationResult<()> {
         match self {
-            LockedSegment::Original(segment) => {
+            LockedSegment::Original(segment, _) => {
                 match try_unwrap_with_timeout(segment, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
@@ -77,7 +81,7 @@ impl LockedSegment {
                     ))),
                 }
             }
-            LockedSegment::Proxy(proxy) => {
+            LockedSegment::Proxy(proxy, _) => {
                 match try_unwrap_with_timeout(proxy, DROP_SPIN_TIMEOUT, DROP_DATA_TIMEOUT) {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
@@ -92,12 +96,14 @@ impl LockedSegment {
 
 impl From<Segment> for LockedSegment {
     fn from(s: Segment) -> Self {
-        LockedSegment::Original(Arc::new(RwLock::new(s)))
+        let header = s.get_header();
+        LockedSegment::Original(Arc::new(RwLock::new(s)), header)
     }
 }
 
 impl From<ProxySegment> for LockedSegment {
     fn from(s: ProxySegment) -> Self {
-        LockedSegment::Proxy(Arc::new(RwLock::new(s)))
+        let header = s.get_header();
+        LockedSegment::Proxy(Arc::new(RwLock::new(s)), header)
     }
 }

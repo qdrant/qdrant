@@ -4,6 +4,8 @@ pub mod snapshot_entry;
 #[cfg(test)]
 mod tests;
 
+use std::sync::Arc;
+
 use ahash::AHashMap;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -11,6 +13,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools as _;
 use segment::common::operation_error::OperationResult;
 use segment::types::*;
+use segment::vector_storage::DenseVectorStorageHeader;
 
 use crate::locked_segment::LockedSegment;
 
@@ -42,12 +45,12 @@ pub struct ProxySegment {
 impl ProxySegment {
     pub fn new(segment: LockedSegment) -> Self {
         let deleted_mask = match &segment {
-            LockedSegment::Original(raw_segment) => {
+            LockedSegment::Original(raw_segment, _) => {
                 let raw_segment_guard = raw_segment.read();
                 let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
                 Some(already_deleted)
             }
-            LockedSegment::Proxy(_) => {
+            LockedSegment::Proxy(_, _) => {
                 log::debug!("Double proxy segment creation");
                 None
             }
@@ -246,6 +249,13 @@ impl ProxySegment {
 
     pub fn get_index_changes(&self) -> &ProxyIndexChanges {
         &self.changed_indexes
+    }
+
+    pub fn get_header(&self) -> Option<Arc<DenseVectorStorageHeader>> {
+        match &self.wrapped_segment {
+            LockedSegment::Original(_, header) => header.clone(),
+            LockedSegment::Proxy(_, header) => header.clone(),
+        }
     }
 }
 

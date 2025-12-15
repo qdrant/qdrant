@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -23,7 +24,7 @@ use crate::types::{
     SnapshotFormat, VectorName,
 };
 use crate::utils;
-use crate::vector_storage::{Random, VectorStorage};
+use crate::vector_storage::{DenseVectorStorage, DenseVectorStorageHeader, Random, VectorStorage};
 
 impl Segment {
     /// Replace vectors in-place
@@ -640,6 +641,21 @@ impl Segment {
     /// Returns list of IDs, which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
+    }
+
+    pub fn get_header(&self) -> Option<Arc<DenseVectorStorageHeader>> {
+        use crate::vector_storage::VectorStorageEnum;
+        match &*self
+            .vector_data
+            .get("")
+            .expect("implemented for unnamed vectors only")
+            .vector_storage
+            .borrow()
+        {
+            VectorStorageEnum::DenseMemmap(storage) => Some(storage.get_header()),
+            // TODO KLUDGE
+            _ => None,
+        }
     }
 }
 

@@ -150,8 +150,8 @@ fn test_move_points_to_copy_on_write() {
     let segments_write = segments.write();
 
     let locked_proxy = match segments_write.get(proxy_id).unwrap() {
-        LockedSegment::Original(_) => panic!("wrong type"),
-        LockedSegment::Proxy(locked_proxy) => locked_proxy,
+        LockedSegment::Original(_, _) => panic!("wrong type"),
+        LockedSegment::Proxy(locked_proxy, _) => locked_proxy,
     };
 
     let read_proxy = locked_proxy.read();

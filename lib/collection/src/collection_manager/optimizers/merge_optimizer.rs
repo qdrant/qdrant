@@ -103,7 +103,7 @@ impl SegmentOptimizer for MergeOptimizer {
         let raw_segments = read_segments
             .iter()
             .filter(|(sid, segment)| {
-                matches!(segment, LockedSegment::Original(_)) && !excluded_ids.contains(sid)
+                matches!(segment, LockedSegment::Original(_, _)) && !excluded_ids.contains(sid)
             })
             .collect_vec();
 
@@ -241,8 +241,8 @@ mod tests {
         let old_path = segments_to_merge
             .iter()
             .map(|sid| match locked_holder.read().get(*sid).unwrap() {
-                LockedSegment::Original(x) => x.read().current_path.clone(),
-                LockedSegment::Proxy(_) => panic!("Not expected"),
+                LockedSegment::Original(x, _) => x.read().current_path.clone(),
+                LockedSegment::Proxy(..) => panic!("Not expected"),
             })
             .collect_vec();
 

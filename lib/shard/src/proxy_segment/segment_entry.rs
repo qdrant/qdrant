@@ -170,7 +170,7 @@ impl SegmentEntry for ProxySegment {
         self.version = cmp::max(self.version, op_num);
 
         let point_offset = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
+            LockedSegment::Original(raw_segment, _) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
                     let prev = self.deleted_points.insert(
@@ -190,7 +190,7 @@ impl SegmentEntry for ProxySegment {
                 }
                 point_offset
             }
-            LockedSegment::Proxy(proxy) => {
+            LockedSegment::Proxy(proxy, _) => {
                 if proxy.read().has_point(point_id) {
                     let prev = self.deleted_points.insert(
                         point_id,

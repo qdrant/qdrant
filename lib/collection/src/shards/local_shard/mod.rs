@@ -766,7 +766,7 @@ impl LocalShard {
         let segments = self.segments.read();
         for (_idx, segment) in segments.iter() {
             match segment {
-                LockedSegment::Original(raw_segment) => {
+                LockedSegment::Original(raw_segment, _) => {
                     let segment_guard = raw_segment.read();
                     if let Err(err) = segment_guard.check_data_consistency() {
                         log::error!(
@@ -777,7 +777,7 @@ impl LocalShard {
                         return Err(err.into());
                     }
                 }
-                LockedSegment::Proxy(_) => {
+                LockedSegment::Proxy(_, _) => {
                     return Err(CollectionError::service_error(
                         "Proxy segment found in check_data_consistency",
                     ));

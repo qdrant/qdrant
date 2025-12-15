@@ -9,12 +9,12 @@ impl LocalShard {
 
         for (_segment_id, segment) in segments.iter() {
             match segment {
-                LockedSegment::Original(raw_segment_lock) => {
+                LockedSegment::Original(raw_segment_lock, _) => {
                     let raw_segment = raw_segment_lock.read();
 
                     raw_segment.id_tracker.borrow().mapping_flusher()().unwrap();
                 }
-                LockedSegment::Proxy(_) => {} // Skipping
+                LockedSegment::Proxy(_, _) => {} // Skipping
             }
         }
     }

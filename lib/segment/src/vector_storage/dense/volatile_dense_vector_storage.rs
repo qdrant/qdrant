@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -88,8 +88,6 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
     fn get_header(&self) -> Arc<crate::vector_storage::DenseVectorStorageHeader> {
         todo!()
     }
-
-
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> {

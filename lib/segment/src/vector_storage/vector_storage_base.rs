@@ -2,8 +2,8 @@ use std::alloc::Layout;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -160,8 +160,8 @@ pub struct DenseVectorStorageHeader {
 impl DenseVectorStorageHeader {
     pub fn new(dim: usize, element_size: usize, init_vector_count: usize) -> Self {
         Self {
-            dim: dim,
-            element_size: element_size,
+            dim,
+            element_size,
             vector_count: AtomicUsize::new(init_vector_count),
         }
     }

@@ -935,8 +935,8 @@ mod tests {
                 .read()
                 .iter()
                 .map(|(_, segment)| match segment {
-                    LockedSegment::Original(s) => s.read(),
-                    LockedSegment::Proxy(_) => unreachable!(),
+                    LockedSegment::Original(s, _) => s.read(),
+                    LockedSegment::Proxy(..) => unreachable!(),
                 })
                 .filter(|segment| segment.total_point_count() > 0)
                 .for_each(|segment| {
@@ -1013,8 +1013,8 @@ mod tests {
             .read()
             .iter()
             .map(|(_, segment)| match segment {
-                LockedSegment::Original(s) => s.read(),
-                LockedSegment::Proxy(_) => unreachable!(),
+                LockedSegment::Original(s, _) => s.read(),
+                LockedSegment::Proxy(..) => unreachable!(),
             })
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {

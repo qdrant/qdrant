@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 
+use super::DenseVectorStorageHeader;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::AccessPattern;
-
-use super::DenseVectorStorageHeader;
 
 /// In case of simple vector storage, vector offset is the same as PointOffsetType.
 /// But in case of multivectors, it requires an additional lookup.

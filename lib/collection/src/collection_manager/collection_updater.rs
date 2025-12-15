@@ -461,7 +461,7 @@ mod tests {
         let upgradable = segments.upgradable_read();
         let segments = RwLockUpgradableReadGuard::upgrade(upgradable).remove(&segment_ids);
         match segments.get(segment_ids[1]) {
-            Some(Original(segment)) => {
+            Some(Original(segment, _)) => {
                 let mut guard = segment.write();
                 guard.appendable_flag = false;
             }

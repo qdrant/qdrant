@@ -83,11 +83,11 @@ impl SegmentHolder {
         // Save segment version once all payload indices have been converted
         // If this ends up not being saved due to a crash, the segment will not be used
         match &tmp_segment {
-            LockedSegment::Original(segment) => {
+            LockedSegment::Original(segment, _) => {
                 let segment_path = &segment.read().current_path;
                 SegmentVersion::save(segment_path)?;
             }
-            LockedSegment::Proxy(_) => unreachable!(),
+            LockedSegment::Proxy(_, _) => unreachable!(),
         }
 
         // Replace all segments with proxies
@@ -142,8 +142,8 @@ impl SegmentHolder {
         // can hold a write lock. Once done, we can swap out the proxy for the wrapped shard.
 
         let proxy_segment = match proxy_segment {
-            LockedSegment::Proxy(proxy_segment) => proxy_segment,
-            LockedSegment::Original(_) => {
+            LockedSegment::Proxy(proxy_segment, _) => proxy_segment,
+            LockedSegment::Original(_, _) => {
                 log::warn!(
                     "Unproxying segment {segment_id} that is not proxified, that is unexpected, skipping",
                 );
@@ -199,8 +199,8 @@ impl SegmentHolder {
         proxies
             .iter()
             .filter_map(|(segment_id, proxy_segment)| match proxy_segment {
-                LockedSegment::Proxy(proxy_segment) => Some((segment_id, proxy_segment)),
-                LockedSegment::Original(_) => None,
+                LockedSegment::Proxy(proxy_segment, _) => Some((segment_id, proxy_segment)),
+                LockedSegment::Original(_, _) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
             if let Err(err) = proxy_segment.write().propagate_to_wrapped() {
                 log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
@@ -214,7 +214,7 @@ impl SegmentHolder {
             match proxy_segment {
                 // Propagate proxied changes to wrapped segment, take it out and swap with proxy
                 // Important: put the wrapped segment back with its original segment ID
-                LockedSegment::Proxy(proxy_segment) => {
+                LockedSegment::Proxy(proxy_segment, _) => {
                     let wrapped_segment = {
                         let mut proxy_segment = proxy_segment.write();
                         if let Err(err) = proxy_segment.propagate_to_wrapped() {
@@ -227,7 +227,7 @@ impl SegmentHolder {
                     write_segments.replace(segment_id, wrapped_segment)?;
                 }
                 // If already unproxied, do nothing
-                LockedSegment::Original(_) => {}
+                LockedSegment::Original(_, _) => {}
             }
         }
 

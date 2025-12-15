@@ -109,8 +109,8 @@ pub trait SegmentOptimizer {
 
         for segment in optimizing_segments {
             let segment = match segment {
-                LockedSegment::Original(segment) => segment,
-                LockedSegment::Proxy(_) => {
+                LockedSegment::Original(segment, _) => segment,
+                LockedSegment::Proxy(_, _) => {
                     return Err(CollectionError::service_error(
                         "Proxy segment is not expected here".to_string(),
                     ));
@@ -210,8 +210,8 @@ pub trait SegmentOptimizer {
 
         for segment in optimizing_segments {
             let segment = match segment {
-                LockedSegment::Original(segment) => segment,
-                LockedSegment::Proxy(_) => {
+                LockedSegment::Original(segment, _) => segment,
+                LockedSegment::Proxy(_, _) => {
                     return Err(CollectionError::service_error(
                         "Proxy segment is not expected here".to_string(),
                     ));
@@ -359,11 +359,11 @@ pub trait SegmentOptimizer {
             if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
                 let locked_proxy_segment = proxy_segment_ref.clone();
                 match locked_proxy_segment {
-                    LockedSegment::Original(_) => {
+                    LockedSegment::Original(_, _) => {
                         /* Already unwrapped. It should not actually be here */
                         log::warn!("Attempt to unwrap raw segment! Should not happen.")
                     }
-                    LockedSegment::Proxy(proxy_segment) => {
+                    LockedSegment::Proxy(proxy_segment, _) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
                         let (restored_id, _proxies) =
                             segments_lock.swap_new(wrapped_segment, &[proxy_id]);
@@ -432,8 +432,8 @@ pub trait SegmentOptimizer {
         let segments: Vec<_> = optimizing_segments
             .iter()
             .map(|i| match i {
-                LockedSegment::Original(o) => o.clone(),
-                LockedSegment::Proxy(_) => {
+                LockedSegment::Original(o, _) => o.clone(),
+                LockedSegment::Proxy(_, _) => {
                     panic!("Trying to optimize a segment that is already being optimized!")
                 }
             })
@@ -646,7 +646,7 @@ pub trait SegmentOptimizer {
         let all_segments_ok = optimizing_segments.len() == ids.len()
             && optimizing_segments
                 .iter()
-                .all(|s| matches!(s, LockedSegment::Original(_)));
+                .all(|s| matches!(s, LockedSegment::Original(_, _)));
 
         if !all_segments_ok {
             // Cancel the optimization
@@ -676,11 +676,11 @@ pub trait SegmentOptimizer {
         // Save segment version once all payload indices have been converted
         // If this ends up not being saved due to a crash, the segment will not be used
         match &extra_cow_segment_opt {
-            Some(LockedSegment::Original(segment)) => {
+            Some(LockedSegment::Original(segment, _)) => {
                 let segment_path = &segment.read().current_path;
                 SegmentVersion::save(segment_path)?;
             }
-            Some(LockedSegment::Proxy(_)) => unreachable!(),
+            Some(LockedSegment::Proxy(_, _)) => unreachable!(),
             None => {}
         }
 
@@ -699,7 +699,7 @@ pub trait SegmentOptimizer {
                 // `optimize_segment_propagate_changes` remains  sound.
                 // See: <https://github.com/qdrant/qdrant/pull/7208>
                 debug_assert!(
-                    matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                    matches!(proxy.wrapped_segment, LockedSegment::Original(_, _)),
                     "during optimization, wrapped segment in a proxy segment must not be another proxy segment",
                 );
 
@@ -792,11 +792,11 @@ pub trait SegmentOptimizer {
         let mut deleted_points = DeletedPoints::new();
         for proxy_segment in proxies {
             match proxy_segment {
-                LockedSegment::Original(_) => {
+                LockedSegment::Original(_, _) => {
                     log::error!("Reading raw segment, while proxy expected");
                     debug_assert!(false, "Reading raw segment, while proxy expected");
                 }
-                LockedSegment::Proxy(proxy) => {
+                LockedSegment::Proxy(proxy, _) => {
                     let proxy_read = proxy.read();
                     for (point_id, versions) in proxy_read.get_deleted_points() {
                         let entry = deleted_points.entry(*point_id).or_insert(*versions);
@@ -819,11 +819,11 @@ pub trait SegmentOptimizer {
         let mut index_changes = ProxyIndexChanges::default();
         for proxy_segment in proxies {
             match proxy_segment {
-                LockedSegment::Original(_) => {
+                LockedSegment::Original(_, _) => {
                     log::error!("Reading raw segment, while proxy expected");
                     debug_assert!(false, "Reading raw segment, while proxy expected");
                 }
-                LockedSegment::Proxy(proxy) => {
+                LockedSegment::Proxy(proxy, _) => {
                     let proxy_read = proxy.read();
                     index_changes.merge(proxy_read.get_index_changes())
                 }

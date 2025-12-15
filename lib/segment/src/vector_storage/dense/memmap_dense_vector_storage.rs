@@ -3,8 +3,8 @@ use std::io::{self, BufWriter, Write};
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -165,8 +165,6 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
     fn get_header(&self) -> Arc<crate::vector_storage::DenseVectorStorageHeader> {
         self.mmap_store.as_ref().unwrap().header.clone()
     }
-
-
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {

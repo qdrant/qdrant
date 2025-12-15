@@ -300,14 +300,14 @@ where
     for (segment_id, proxy_segment) in &proxies {
         // Get segment to snapshot
         let op_result = match proxy_segment {
-            LockedSegment::Proxy(proxy_segment) => {
+            LockedSegment::Proxy(proxy_segment, _) => {
                 let guard = proxy_segment.read();
                 let segment = guard.wrapped_segment.get();
                 // Call provided function on wrapped segment while holding guard to parent segment
                 operation(segment)
             }
             // All segments to snapshot should be proxy, warn if this is not the case
-            LockedSegment::Original(segment) => {
+            LockedSegment::Original(segment, _) => {
                 debug_assert!(
                     false,
                     "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
