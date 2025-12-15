@@ -223,6 +223,7 @@ impl Repr for PyQueryInterface {
 #[repr(transparent)]
 pub struct PyRecommendQuery(RecoQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRecommendQuery {
     #[new]
@@ -251,12 +252,13 @@ impl PyRecommendQuery {
     }
 }
 
-impl Repr for PyRecommendQuery {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("positives", &self.positives()),
-            ("negatives", &self.negatives()),
-        ])
+impl PyRecommendQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let RecoQuery {
+            positives: _,
+            negatives: _,
+        } = self.0;
     }
 }
 
@@ -265,6 +267,7 @@ impl Repr for PyRecommendQuery {
 #[repr(transparent)]
 pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyDiscoverQuery {
     #[new]
@@ -290,9 +293,13 @@ impl PyDiscoverQuery {
     }
 }
 
-impl Repr for PyDiscoverQuery {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("target", &self.target()), ("pairs", &self.pairs())])
+impl PyDiscoverQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let DiscoveryQuery {
+            target: _,
+            pairs: _,
+        } = self.0;
     }
 }
 
@@ -301,6 +308,7 @@ impl Repr for PyDiscoverQuery {
 #[repr(transparent)]
 pub struct PyContextQuery(ContextQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyContextQuery {
     #[new]
@@ -320,9 +328,10 @@ impl PyContextQuery {
     }
 }
 
-impl Repr for PyContextQuery {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("pairs", &self.pairs())])
+impl PyContextQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ContextQuery { pairs: _ } = self.0;
     }
 }
 
@@ -331,6 +340,7 @@ impl Repr for PyContextQuery {
 #[repr(transparent)]
 pub struct PyContextPair(ContextPair<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyContextPair {
     #[new]
@@ -356,12 +366,13 @@ impl PyContextPair {
     }
 }
 
-impl Repr for PyContextPair {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("positive", &self.positive()),
-            ("negative", &self.negative()),
-        ])
+impl PyContextPair {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ContextPair {
+            positive: _,
+            negative: _,
+        } = self.0;
     }
 }
 
@@ -380,6 +391,7 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
 #[repr(transparent)]
 pub struct PyFeedbackSimpleQuery(FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFeedbackSimpleQuery {
     #[new]
@@ -415,13 +427,14 @@ impl PyFeedbackSimpleQuery {
     }
 }
 
-impl Repr for PyFeedbackSimpleQuery {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("target", &self.target()),
-            ("feedback", &self.feedback()),
-            ("strategy", &self.strategy()),
-        ])
+impl PyFeedbackSimpleQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let FeedbackQueryInternal {
+            target: _,
+            feedback: _,
+            strategy: _,
+        } = self.0;
     }
 }
 
@@ -430,6 +443,7 @@ impl Repr for PyFeedbackSimpleQuery {
 #[repr(transparent)]
 pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFeedbackItem {
     #[new]
@@ -455,9 +469,13 @@ impl PyFeedbackItem {
     }
 }
 
-impl Repr for PyFeedbackItem {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("vector", &self.vector()), ("score", &self.score())])
+impl PyFeedbackItem {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let FeedbackItem {
+            vector: _,
+            score: _,
+        } = self.0;
     }
 }
 
@@ -475,6 +493,7 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySimpleFeedbackStrategy(SimpleFeedbackStrategy);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySimpleFeedbackStrategy {
     #[new]
@@ -506,8 +525,9 @@ impl PySimpleFeedbackStrategy {
     }
 }
 
-impl Repr for PySimpleFeedbackStrategy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("a", &self.a()), ("b", &self.b()), ("c", &self.c())])
+impl PySimpleFeedbackStrategy {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SimpleFeedbackStrategy { a: _, b: _, c: _ } = self.0;
     }
 }
