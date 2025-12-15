@@ -60,14 +60,15 @@ impl IsAliveHandle {
     /// Get a guard of this lock if the parent hasn't been dropped
     #[must_use = "Guard must be held for lifetime of operation, abort if None is returned"]
     pub fn lock_if_alive(&self) -> Option<IsAliveGuard> {
-        self.inner.upgrade().and_then(|mutex| {
-            let is_alive = Mutex::lock_arc(&mutex);
-            if *is_alive {
-                Some(IsAliveGuard(is_alive))
-            } else {
-                None
-            }
-        })
+        let mutex = self.inner.upgrade()?;
+
+        let is_alive = Mutex::lock_arc(&mutex);
+
+        if *is_alive {
+            Some(IsAliveGuard(is_alive))
+        } else {
+            None
+        }
     }
 }
 
