@@ -5,6 +5,9 @@ use parking_lot::{Mutex, MutexGuard};
 /// Structure which ensures that the lock is alive at the time of locking,
 /// and will prevent dropping while guarded.
 ///
+/// Dropping this structure will also mark as dead, preventing future access through any dangling
+/// handles.
+///
 /// This structure explicitly doesn't implement Clone, so that `handle` is used instead.
 #[derive(Debug)]
 pub struct IsAliveLock {

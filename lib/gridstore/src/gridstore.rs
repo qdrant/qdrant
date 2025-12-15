@@ -478,9 +478,9 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
-        // Wait for all background flush operations to finish, abort pending flushes
-        // Below we create a new Gridstore instance with a new flush lock, so flushers created on the
-        // new instance work as expected
+        // Wait for all background flush operations to finish, abort pending flushes Below we
+        // create a new Gridstore instance with a new flush lock, so flushers created on the new
+        // instance work as expected
         self.is_alive_flush_lock.mark_dead();
 
         // Wipe
