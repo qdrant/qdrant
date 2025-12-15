@@ -13,6 +13,7 @@ use crate::*;
 #[derive(Clone, Debug, Into)]
 pub struct PySearchRequest(CoreSearchRequest);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySearchRequest {
     #[new]
@@ -84,18 +85,19 @@ impl PySearchRequest {
     }
 }
 
-impl Repr for PySearchRequest {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.class::<Self>(&[
-            ("query", &self.query()),
-            ("filter", &self.filter()),
-            ("params", &self.params()),
-            ("limit", &self.limit()),
-            ("offset", &self.offset()),
-            ("with_vector", &self.with_vector()),
-            ("with_payload", &self.with_payload()),
-            ("score_threshold", &self.score_threshold()),
-        ])
+impl PySearchRequest {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let CoreSearchRequest {
+            query: _,
+            filter: _,
+            params: _,
+            limit: _,
+            offset: _,
+            with_vector: _,
+            with_payload: _,
+            score_threshold: _,
+        } = self.0;
     }
 }
 
@@ -103,6 +105,7 @@ impl Repr for PySearchRequest {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySearchParams {
     #[new]
@@ -152,15 +155,16 @@ impl PySearchParams {
     }
 }
 
-impl Repr for PySearchParams {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.class::<Self>(&[
-            ("hnsw_ef", &self.hnsw_ef()),
-            ("exact", &self.exact()),
-            ("quantization", &self.quantization()),
-            ("indexed_only", &self.indexed_only()),
-            ("acorn", &self.acorn()),
-        ])
+impl PySearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SearchParams {
+            hnsw_ef: _,
+            exact: _,
+            quantization: _,
+            indexed_only: _,
+            acorn: _,
+        } = self.0;
     }
 }
 
@@ -168,6 +172,7 @@ impl Repr for PySearchParams {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyQuantizationSearchParams {
     #[new]
@@ -199,13 +204,14 @@ impl PyQuantizationSearchParams {
     }
 }
 
-impl Repr for PyQuantizationSearchParams {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.class::<Self>(&[
-            ("ignore", &self.ignore()),
-            ("rescore", &self.rescore()),
-            ("oversampling", &self.oversampling()),
-        ])
+impl PyQuantizationSearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let QuantizationSearchParams {
+            ignore: _,
+            rescore: _,
+            oversampling: _,
+        } = self.0;
     }
 }
 
@@ -213,6 +219,7 @@ impl Repr for PyQuantizationSearchParams {
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyAcornSearchParams(AcornSearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyAcornSearchParams {
     #[new]
@@ -240,12 +247,13 @@ impl PyAcornSearchParams {
     }
 }
 
-impl Repr for PyAcornSearchParams {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.class::<Self>(&[
-            ("enable", &self.enable()),
-            ("max_selectivity", &self.max_selectivity()),
-        ])
+impl PyAcornSearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let AcornSearchParams {
+            enable: _,
+            max_selectivity: _,
+        } = self.0;
     }
 }
 
