@@ -216,12 +216,23 @@ impl SegmentsSearcher {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_arc = Arc::new(query_context);
 
+        let all_indexed_only = batch_request
+            .searches
+            .iter()
+            .all(|s| s.params.map(|p| p.indexed_only).unwrap_or(false));
+        let plain_search_limit_kb = if all_indexed_only {
+            Some(query_context_arc.search_optimized_threshold_kb())
+        } else {
+            None
+        };
+
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
             // Unfortunately, we have to do `segments.read()` twice, once in blocking task
             // and once here, due to `Send` bounds :/
             let segments_lock = segments.read();
-            let segments = segments_lock.non_appendable_then_appendable_segments();
+            let segments = segments_lock
+                .non_appendable_then_appendable_segments_filtered(plain_search_limit_kb);
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.

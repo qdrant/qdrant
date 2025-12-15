@@ -19,6 +19,7 @@ use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::RwLock as PLRwLock;
 use rand::seq::IndexedRandom;
+use segment::common::BYTES_IN_KB;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
@@ -262,6 +263,28 @@ impl SegmentHolder {
         self.non_appendable_segments
             .values()
             .chain(self.appendable_segments.values())
+            .cloned()
+    }
+
+    /// Get all locked segments, non-appendable first, then appendable.
+    pub fn non_appendable_then_appendable_segments_filtered(
+        &self,
+        min_storage_size_kb: Option<usize>,
+    ) -> impl Iterator<Item = LockedSegment> {
+        self.non_appendable_segments
+            .values()
+            .chain(self.appendable_segments.values().filter(move |segment| {
+                let header = match segment {
+                    LockedSegment::Original(_, header) => header,
+                    LockedSegment::Proxy(_, header) => header,
+                };
+                match header.as_ref().zip(min_storage_size_kb) {
+                    Some((header, min_storage_size_kb)) => {
+                        header.get_storage_size() <= min_storage_size_kb * BYTES_IN_KB
+                    }
+                    None => true,
+                }
+            }))
             .cloned()
     }
 
