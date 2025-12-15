@@ -266,15 +266,49 @@ impl UpdateWorkers {
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        let scheduled = {
+        let scheduled;
+        let planned;
+        let mut planned_points = 0;
+        {
             let segments = segments.read();
             let mut planner = OptimizationPlanner::new(segments.iter_original());
             for optimizer in optimizers.iter() {
                 planner.set_current_optimizer(Arc::clone(optimizer));
                 optimizer.plan_optimizations(&mut planner);
             }
-            planner.into_scheduled()
+            scheduled = planner.into_scheduled();
+
+            planned = scheduled
+                .iter()
+                .map(|(optimizer, segment_ids)| {
+                    use std::fmt::Write;
+
+                    use shard::locked_segment::LockedSegment;
+
+                    let mut result = String::new();
+                    if let Some(optimizer) = optimizer {
+                        result.push_str(optimizer.name());
+                        result.push_str(":");
+                    }
+                    for &segment_id in segment_ids {
+                        let points = segments.get(segment_id).map(|segment| match segment {
+                            LockedSegment::Original(segment) => segment.read().total_point_count(),
+                            LockedSegment::Proxy(_) => 0,
+                        });
+                        planned_points += points.unwrap_or(0);
+                        write!(result, " {segment_id}[{points:?} points]").unwrap();
+                    }
+                    result
+                })
+                .collect();
         };
+
+        // FIXME: this is a WIP stub
+        {
+            let mut optimizers_log = optimizers_log.lock();
+            optimizers_log.planned = planned;
+            optimizers_log.planned_points = planned_points;
+        }
 
         for (optimizer, segments_to_merge) in scheduled {
             let Some(optimizer) = optimizer else {

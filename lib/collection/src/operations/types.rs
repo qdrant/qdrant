@@ -293,6 +293,10 @@ pub struct OptimizationsResponse {
     //        empty vec when `?completed=true` but no completed optimizations.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed: Option<Vec<ProgressTree>>,
+
+    // FIXME: this is a WIP stub
+    pub planned: Vec<String>,
+    pub planned_points: usize,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
