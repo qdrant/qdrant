@@ -10003,7 +10003,7 @@ pub struct SyncPoints {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
-    /// Time limit for waiting for the changes to be applied
+    /// Time limit for waiting for the changes to be applied in seconds
     #[prost(uint64, optional, tag = "8")]
     pub wait_timeout: ::core::option::Option<u64>,
 }
