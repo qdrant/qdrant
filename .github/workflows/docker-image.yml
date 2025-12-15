@@ -42,7 +42,7 @@ jobs:
 
         # Authenticate on registries
         echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
@@ -50,13 +50,16 @@ jobs:
         DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}"
         DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}"
         TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
-        GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
+        GHCR_TAG="ghcr.io/qdrant/qdrant:${{ github.ref_name }}"
+        GHCR_TAG_LATEST="ghcr.io/qdrant/qdrant:latest"
 
-        # Pull, retag and push to GitHub packages
+        # Pull, retag and push to GHCR (including :latest)
         docker buildx build --sbom=true --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
-        docker tag $DOCKERHUB_TAG $GITHUB_TAG
-        docker push $GITHUB_TAG
+        docker tag $DOCKERHUB_TAG $GHCR_TAG
+        docker tag $DOCKERHUB_TAG $GHCR_TAG_LATEST
+        docker push $GHCR_TAG
+        docker push $GHCR_TAG_LATEST
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
@@ -67,13 +70,16 @@ jobs:
         DOCKERHUB_TAG_MINOR_UNPRIVILEGED="qdrant/qdrant:${MINOR_VERSION}-unprivileged"
         DOCKERHUB_TAG_MAJOR_UNPRIVILEGED="qdrant/qdrant:${MAJOR_VERSION}-unprivileged"
         TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MINOR_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MAJOR_UNPRIVILEGED}"
-        GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+        GHCR_TAG_UNPRIVILEGED="ghcr.io/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+        GHCR_TAG_LATEST_UNPRIVILEGED="ghcr.io/qdrant/qdrant:latest-unprivileged"
 
-        # Pull, retag and push to GitHub packages
+        # Pull, retag and push unprivileged image to GHCR (including :latest-unprivileged)
         docker buildx build --sbom=true --build-arg='USER_ID=1000' --platform='linux/amd64,linux/arm64' --build-arg=FEATURES=rocksdb $TAGS_UNPRIVILEGED --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
-        docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
-        docker push $GITHUB_TAG_UNPRIVILEGED
+        docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GHCR_TAG_UNPRIVILEGED
+        docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GHCR_TAG_LATEST_UNPRIVILEGED
+        docker push $GHCR_TAG_UNPRIVILEGED
+        docker push $GHCR_TAG_LATEST_UNPRIVILEGED
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG_UNPRIVILEGED} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG_UNPRIVILEGED}@${DIGEST}"
@@ -111,7 +117,7 @@ jobs:
 
         # Authenticate on registries
         echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u qdrant --password-stdin
 
         # Build GPU NVIDIA image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
@@ -119,13 +125,13 @@ jobs:
         DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}-gpu-nvidia"
         DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}-gpu-nvidia"
         TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
-        GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
+        GHCR_TAG="ghcr.io/qdrant/qdrant:${{ github.ref_name }}-gpu-nvidia"
 
-        # Pull, retag and push to GitHub packages
+        # Pull, retag and push GPU NVIDIA image to GHCR
         docker buildx build --sbom=true --build-arg GPU=nvidia --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
-        docker tag $DOCKERHUB_TAG $GITHUB_TAG
-        docker push $GITHUB_TAG
+        docker tag $DOCKERHUB_TAG $GHCR_TAG
+        docker push $GHCR_TAG
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
@@ -136,13 +142,13 @@ jobs:
         DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}-gpu-amd"
         DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}-gpu-amd"
         TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_MAJOR}"
-        GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
+        GHCR_TAG="ghcr.io/qdrant/qdrant:${{ github.ref_name }}-gpu-amd"
 
-        # Pull, retag and push to GitHub packages
+        # Pull, retag and push GPU AMD image to GHCR
         docker buildx build --sbom=true --build-arg GPU=amd --platform='linux/amd64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg=FEATURES=rocksdb $TAGS --push --label "org.opencontainers.image.version"=$RELEASE_VERSION .
         docker pull $DOCKERHUB_TAG
-        docker tag $DOCKERHUB_TAG $GITHUB_TAG
-        docker push $GITHUB_TAG
+        docker tag $DOCKERHUB_TAG $GHCR_TAG
+        docker push $GHCR_TAG
 
         DIGEST=$(docker buildx imagetools inspect ${DOCKERHUB_TAG} --format '{{ json .Manifest.Digest }}' | cut -d '"' -f 2)
         cosign sign --new-bundle-format=false --use-signing-config=false --yes "${DOCKERHUB_TAG}@${DIGEST}"
