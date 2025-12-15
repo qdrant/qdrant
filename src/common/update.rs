@@ -37,8 +37,6 @@ pub struct UpdateParams {
     #[serde(default)]
     pub wait: bool,
     #[serde(default)]
-    pub wait_timeout: Option<NonZeroU64>,
-    #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde(default)]
     pub timeout: Option<NonZeroU64>,
