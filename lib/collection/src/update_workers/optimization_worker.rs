@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
-use shard::measurable_rwlock::MeasureRead;
+use shard::measurable_rwlock::{MeasureRead, MeasureWrite};
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::Mutex as TokioMutex;
@@ -458,7 +458,7 @@ impl UpdateWorkers {
         std::mem::drop(measure);
 
         if no_segment_with_capacity {
-            let measure = MeasureWrite::default();
+            let _measure = MeasureWrite::default();
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
             let segment_config = collection_params
