@@ -98,9 +98,9 @@ impl TrackerLog {
 pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
-    /// Segment IDs that were optimized
+    /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
-    /// Segment UUIDs that were optimized
+    /// Segment UUIDs being optimized
     pub segment_uuids: Vec<Option<String>>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
