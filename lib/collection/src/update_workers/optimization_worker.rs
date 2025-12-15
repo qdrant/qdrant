@@ -12,6 +12,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
+use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::Mutex as TokioMutex;
@@ -28,7 +29,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, PendingOptimizations};
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
@@ -266,7 +267,10 @@ impl UpdateWorkers {
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        let scheduled = {
+        let scheduled;
+        let mut pending_segments = 0;
+        let mut pending_points = 0;
+        {
             let segments = segments.read();
             let mut planner = OptimizationPlanner::new(
                 segments.running_optimizations.count(),
@@ -276,7 +280,22 @@ impl UpdateWorkers {
                 planner.set_optimizer(Arc::clone(optimizer));
                 optimizer.plan_optimizations(&mut planner);
             }
-            planner.into_scheduled()
+            scheduled = planner.into_scheduled();
+
+            for (_, segment_ids) in &scheduled {
+                pending_segments += segment_ids.len();
+                for &segment_id in segment_ids {
+                    if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
+                        pending_points += segment.read().total_point_count()
+                    }
+                }
+            }
+        }
+
+        optimizers_log.lock().pending = PendingOptimizations {
+            optimizations: scheduled.len(),
+            segments: pending_segments,
+            points: pending_points,
         };
 
         for (optimizer, segments_to_merge) in scheduled {
