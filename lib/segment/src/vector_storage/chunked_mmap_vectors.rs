@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::io::BufReader;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
@@ -47,6 +48,7 @@ pub struct ChunkedMmapVectors<T: Sized + 'static> {
     status: MmapType<Status>,
     chunks: Vec<UniversalMmapChunk<T>>,
     directory: PathBuf,
+    header: Arc<super::DenseVectorStorageHeader>,
 }
 
 impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
@@ -137,7 +139,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     ) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
-        let status = unsafe { MmapType::from(status_mmap) };
+        let status = unsafe { MmapType::<Status>::from(status_mmap) };
+
+        let vector_count = status.len;
 
         let config = Self::ensure_config(directory, dim, populate)?;
         let chunks = read_mmaps(directory, populate.unwrap_or_default(), advice)?;
@@ -146,6 +150,11 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             config,
             chunks,
             directory: directory.to_owned(),
+            header: Arc::new(super::DenseVectorStorageHeader {
+                dim,
+                element_size: std::mem::size_of::<T>(),
+                vector_count: vector_count.into(),
+            }),
         };
         Ok(vectors)
     }
@@ -236,6 +245,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
         if new_len > self.status.len {
             self.status.len = new_len;
+            self.header
+                .vector_count
+                .store(new_len, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(())
     }
@@ -438,6 +450,10 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
             clear_disk_cache(&file_path)?;
         }
         Ok(())
+    }
+
+    fn get_header(&self) -> Arc<super::DenseVectorStorageHeader> {
+        self.header.clone()
     }
 }
 

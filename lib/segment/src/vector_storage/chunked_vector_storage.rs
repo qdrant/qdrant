@@ -1,5 +1,6 @@
 use std::mem::MaybeUninit;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 

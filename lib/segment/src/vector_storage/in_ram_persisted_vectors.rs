@@ -125,4 +125,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     fn clear_cache(&self) -> OperationResult<()> {
         self.mmap_storage.clear_cache()
     }
+
+    fn get_header(&self) -> std::sync::Arc<super::DenseVectorStorageHeader> {
+        self.mmap_storage.get_header()
+    }
 }
