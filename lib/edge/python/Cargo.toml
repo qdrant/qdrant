@@ -5,16 +5,17 @@ authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
 
-[lints]
-workspace = true
-
 [lib]
 name = "qdrant_edge"
 crate-type = ["cdylib"]
 
+[lints]
+workspace = true
+
 
 [dependencies]
 edge = { path = ".." }
+edge-py-codegen = { path = "./codegen" }
 segment = { path = "../../segment", default-features = false }
 shard = { path = "../../shard" }
 sparse = { path = "../../sparse" }

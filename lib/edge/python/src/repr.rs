@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
+pub use edge_py_codegen::pyclass_repr;
 use pyo3::PyTypeInfo;
 
 pub trait Repr {
