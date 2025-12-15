@@ -593,7 +593,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_FLOAT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            None,
             hw_counter.clone(),
         )
         .await
@@ -604,7 +603,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_INT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
-            None,
             hw_counter.clone(),
         )
         .await
@@ -615,7 +613,6 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             MULTI_VALUE_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            None,
             hw_counter.clone(),
         )
         .await
