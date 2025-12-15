@@ -25,6 +25,10 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
+
+    // FIXME: this is a WIP stub
+    pub planned_points: usize,
+    pub planned: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
