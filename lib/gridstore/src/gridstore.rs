@@ -600,8 +600,7 @@ impl<V> Gridstore<V> {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let Some(_is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is cleared, skip flush
                 return Ok(());
             };
@@ -637,6 +636,9 @@ impl<V> Gridstore<V> {
                 }
             });
             bitmask_guard.flush()?;
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
 
             Ok(())
         })

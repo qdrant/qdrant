@@ -66,8 +66,7 @@ impl BufferedDynamicFlags {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let Some(_is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 return Ok(());
             };
 
@@ -89,6 +88,9 @@ impl BufferedDynamicFlags {
             }
 
             flags_guard.flusher()()?;
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
 
             Ok(())
         })

@@ -77,8 +77,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let Some(_is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Already dropped, skip flush
                 return Ok(());
             };
@@ -98,6 +97,10 @@ impl MmapBitSliceBufferedUpdateWrapper {
             }
             mmap_slice_write.flusher()()?;
             Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
+
             Ok(())
         })
     }
