@@ -20,6 +20,7 @@ use crate::repr::*;
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryRequest(ShardQueryRequest);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyQueryRequest {
     #[new]
@@ -100,19 +101,20 @@ impl PyQueryRequest {
     }
 }
 
-impl Repr for PyQueryRequest {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("prefetches", &self.prefetches()),
-            ("query", &self.query()),
-            ("filter", &self.filter()),
-            ("score_threshold", &self.score_threshold()),
-            ("limit", &self.limit()),
-            ("offset", &self.offset()),
-            ("params", &self.params()),
-            ("with_vector", &self.with_vector()),
-            ("with_payload", &self.with_payload()),
-        ])
+impl PyQueryRequest {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ShardQueryRequest {
+            prefetches: _,
+            query: _,
+            filter: _,
+            score_threshold: _,
+            limit: _,
+            offset: _,
+            params: _,
+            with_vector: _,
+            with_payload: _,
+        } = self.0;
     }
 }
 
@@ -121,6 +123,7 @@ impl Repr for PyQueryRequest {
 #[repr(transparent)]
 pub struct PyPrefetch(ShardPrefetch);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPrefetch {
     #[new]
@@ -179,16 +182,17 @@ impl PyPrefetch {
     }
 }
 
-impl Repr for PyPrefetch {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("prefetches", &self.prefetches()),
-            ("query", &self.query()),
-            ("limit", &self.limit()),
-            ("params", &self.params()),
-            ("filter", &self.filter()),
-            ("score_threshold", &self.score_threshold()),
-        ])
+impl PyPrefetch {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ShardPrefetch {
+            prefetches: _,
+            query: _,
+            limit: _,
+            params: _,
+            filter: _,
+            score_threshold: _,
+        } = self.0;
     }
 }
 
@@ -332,6 +336,7 @@ impl From<PyFusion> for FusionInternal {
 #[repr(transparent)]
 pub struct PyOrderBy(OrderBy);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyOrderBy {
     #[new]
@@ -369,13 +374,14 @@ impl PyOrderBy {
     }
 }
 
-impl Repr for PyOrderBy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("key", &self.key()),
-            ("direction", &self.direction()),
-            ("start_from", &self.start_from()),
-        ])
+impl PyOrderBy {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let OrderBy {
+            key: _,
+            direction: _,
+            start_from: _,
+        } = self.0;
     }
 }
 
@@ -538,6 +544,7 @@ impl From<PySample> for SampleInternal {
 #[repr(transparent)]
 pub struct PyMmr(MmrInternal);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMmr {
     #[new]
@@ -582,13 +589,14 @@ impl PyMmr {
     }
 }
 
-impl Repr for PyMmr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("vector", &self.vector()),
-            ("using", &self.using()),
-            ("lambda", &self.lambda()),
-            ("candidates_limit", &self.candidates_limit()),
-        ])
+impl PyMmr {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MmrInternal {
+            vector: _,
+            using: _,
+            lambda: _,
+            candidates_limit: _,
+        } = self.0;
     }
 }
