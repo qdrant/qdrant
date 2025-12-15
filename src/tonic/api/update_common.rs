@@ -73,7 +73,7 @@ pub async fn upsert(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         inference_params,
         request_hw_counter.get_counter(),
@@ -116,7 +116,7 @@ pub async fn delete(
         collection_name,
         points_selector,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -175,7 +175,7 @@ pub async fn update_vectors(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         inference_params,
         request_hw_counter.get_counter(),
@@ -229,7 +229,7 @@ pub async fn delete_vectors(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -276,7 +276,7 @@ pub async fn set_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -323,7 +323,7 @@ pub async fn overwrite_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -368,7 +368,7 @@ pub async fn delete_payload(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -406,7 +406,7 @@ pub async fn clear_payload(
         collection_name,
         points_selector,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -717,7 +717,7 @@ pub async fn create_field_index(
         collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         request_hw_counter.get_counter(),
     )
@@ -755,7 +755,7 @@ pub async fn create_field_index_internal(
         field_name,
         field_schema,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -786,7 +786,7 @@ pub async fn delete_field_index(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
@@ -817,7 +817,7 @@ pub async fn delete_field_index_internal(
         collection_name,
         field_name,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -841,7 +841,6 @@ pub async fn sync(
         to_id,
         ordering,
         timeout,
-        wait_timeout,
     } = sync_points;
 
     let timing = Instant::now();
@@ -867,7 +866,7 @@ pub async fn sync(
         &collection_name,
         operation,
         internal_params,
-        UpdateParams::from_grpc(wait, ordering, timeout, wait_timeout)?,
+        UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         access,
         HwMeasurementAcc::disposable(), // API unmeasured
