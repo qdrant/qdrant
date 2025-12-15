@@ -47,6 +47,7 @@ impl Drop for LocalShard {
                         return true;
                     }
                     update_handler.stop_flush_worker();
+                    update_handler.notify_optimization_handles_to_stop();
                 }
 
                 // This can block longer, if the channel is full
