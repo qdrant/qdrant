@@ -13,6 +13,7 @@ pub mod either_variant;
 pub mod ext;
 pub mod fixed_length_priority_queue;
 pub mod flags;
+pub mod is_alive_lock;
 pub mod iterator_ext;
 pub mod math;
 pub mod maybe_uninit;

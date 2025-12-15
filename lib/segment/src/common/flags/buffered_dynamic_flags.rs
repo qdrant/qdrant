@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
@@ -21,13 +22,13 @@ pub(crate) struct BufferedDynamicFlags {
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// Lock to prevent concurrent flush and drop
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: IsAliveLock,
 }
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
-        let is_alive_flush_lock = Arc::new(Mutex::new(true));
+        let is_alive_flush_lock = IsAliveLock::new();
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
@@ -62,16 +63,12 @@ impl BufferedDynamicFlags {
 
         // Weak reference to detect when the storage has been deleted
         let flags_arc = Arc::downgrade(&self.storage);
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
-                // Storage is removed, skip flush
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 return Ok(());
-            }
+            };
 
             let Some(flags_arc) = flags_arc.upgrade() else {
                 log::debug!("skipping flushing on deleted storage");
@@ -92,15 +89,11 @@ impl BufferedDynamicFlags {
 
             flags_guard.flusher()()?;
 
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
+
             Ok(())
         })
-    }
-}
-
-impl Drop for BufferedDynamicFlags {
-    fn drop(&mut self) {
-        // Wait for all background flush operations to finish, and cancel future flushes
-        *self.is_alive_flush_lock.lock() = false;
     }
 }
 

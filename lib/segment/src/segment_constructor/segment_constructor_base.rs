@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use common::is_alive_lock::IsAliveLock;
 use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use fs_err::File;
@@ -613,7 +614,7 @@ fn create_segment(
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
-        is_alive_flush_lock: Arc::new(Mutex::new(true)),
+        is_alive_flush_lock: IsAliveLock::new(),
         current_path: segment_path.to_owned(),
         version_tracker: Default::default(),
         id_tracker,

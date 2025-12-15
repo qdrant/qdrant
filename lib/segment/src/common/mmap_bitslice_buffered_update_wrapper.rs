@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
+use common::is_alive_lock::IsAliveLock;
 use memory::mmap_type::MmapBitSlice;
 use parking_lot::{Mutex, RwLock};
 
@@ -16,18 +17,17 @@ pub struct MmapBitSliceBufferedUpdateWrapper {
     len: usize,
     pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
     /// Lock to prevent concurrent flush and drop
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: IsAliveLock,
 }
 
 impl MmapBitSliceBufferedUpdateWrapper {
     pub fn new(bitslice: MmapBitSlice) -> Self {
         let len = bitslice.len();
-        let is_alive_flush_lock = Arc::new(Mutex::new(true));
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
             len,
             pending_updates: Arc::new(Mutex::new(AHashMap::new())),
-            is_alive_flush_lock,
+            is_alive_flush_lock: IsAliveLock::new(),
         }
     }
 
@@ -74,16 +74,13 @@ impl MmapBitSliceBufferedUpdateWrapper {
         let pending_updates = self.pending_updates.lock().clone();
         let bitslice = Arc::downgrade(&self.bitslice);
         let pending_updates_arc = Arc::downgrade(&self.pending_updates);
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Already dropped, skip flush
                 return Ok(());
-            }
+            };
 
             let (Some(bitslice), Some(pending_updates_arc)) =
                 (bitslice.upgrade(), pending_updates_arc.upgrade())
@@ -100,14 +97,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
             }
             mmap_slice_write.flusher()()?;
             Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
+
             Ok(())
         })
-    }
-}
-
-impl Drop for MmapBitSliceBufferedUpdateWrapper {
-    fn drop(&mut self) {
-        // Wait for all background flush operations to finish, and cancel future flushes
-        *self.is_alive_flush_lock.lock() = false;
     }
 }
