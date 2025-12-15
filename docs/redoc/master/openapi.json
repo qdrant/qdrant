@@ -16404,7 +16404,8 @@
         "description": "Optimizations progress for the collection",
         "type": "object",
         "required": [
-          "ongoing"
+          "ongoing",
+          "pending"
         ],
         "properties": {
           "ongoing": {
@@ -16421,6 +16422,9 @@
               "$ref": "#/components/schemas/ProgressTree"
             },
             "nullable": true
+          },
+          "pending": {
+            "$ref": "#/components/schemas/PendingOptimizations"
           }
         }
       },
@@ -16473,6 +16477,35 @@
             "items": {
               "$ref": "#/components/schemas/ProgressTree"
             }
+          }
+        }
+      },
+      "PendingOptimizations": {
+        "description": "Estimation of pending optimizations",
+        "type": "object",
+        "required": [
+          "optimizations",
+          "points",
+          "segments"
+        ],
+        "properties": {
+          "optimizations": {
+            "description": "Number of pending optimizations. Each optimization will take one or more unoptimized segments and produce one optimized segment.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "segments": {
+            "description": "Number of unoptimized segments pending optimization.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "points": {
+            "description": "Total number of points in unoptimized segments.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
