@@ -20,6 +20,7 @@ use crate::repr::*;
 #[repr(transparent)]
 pub struct PySegmentConfig(SegmentConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySegmentConfig {
     #[new]
@@ -55,13 +56,14 @@ impl PySegmentConfig {
     }
 }
 
-impl Repr for PySegmentConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("vector_data", &self.vector_data()),
-            ("sparse_vector_data", &self.sparse_vector_data()),
-            ("payload_storage_type", &self.payload_storage_type()),
-        ])
+impl PySegmentConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SegmentConfig {
+            vector_data: _,
+            sparse_vector_data: _,
+            payload_storage_type: _,
+        } = self.0;
     }
 }
 

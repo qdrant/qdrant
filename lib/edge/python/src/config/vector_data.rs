@@ -31,6 +31,7 @@ impl PyVectorDataConfig {
     }
 }
 
+#[pyclass_repr]
 #[pymethods]
 impl PyVectorDataConfig {
     #[new]
@@ -95,17 +96,18 @@ impl PyVectorDataConfig {
     }
 }
 
-impl Repr for PyVectorDataConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("size", &self.size()),
-            ("distance", &self.distance()),
-            ("storage_type", &self.storage_type()),
-            ("index", &self.index()),
-            ("quantization_config", &self.quantization_config()),
-            ("multivector_config", &self.multivector_config()),
-            ("datatype", &self.datatype()),
-        ])
+impl PyVectorDataConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let VectorDataConfig {
+            size: _,
+            distance: _,
+            storage_type: _,
+            index: _,
+            quantization_config: _,
+            multivector_config: _,
+            datatype: _,
+        } = self.0;
     }
 }
 
@@ -277,6 +279,7 @@ impl Repr for PyIndexes {
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPlainIndexConfig {
     #[new]
@@ -289,17 +292,12 @@ impl PyPlainIndexConfig {
     }
 }
 
-impl Repr for PyPlainIndexConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[])
-    }
-}
-
 #[pyclass(name = "HnswIndexConfig")]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyHnswIndexConfig(HnswConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHnswIndexConfig {
     #[new]
@@ -358,16 +356,18 @@ impl PyHnswIndexConfig {
     }
 }
 
-impl Repr for PyHnswIndexConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("m", &self.m()),
-            ("ef_construct", &self.ef_construct()),
-            ("full_scan_threshold", &self.full_scan_threshold()),
-            ("on_disk", &self.on_disk()),
-            ("payload_m", &self.payload_m()),
-            ("inline_storage", &self.inline_storage()),
-        ])
+impl PyHnswIndexConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HnswConfig {
+            m: _,
+            ef_construct: _,
+            full_scan_threshold: _,
+            max_indexing_threads: _,
+            on_disk: _,
+            payload_m: _,
+            inline_storage: _,
+        } = self.0;
     }
 }
 
@@ -376,6 +376,7 @@ impl Repr for PyHnswIndexConfig {
 #[repr(transparent)]
 pub struct PyMultiVectorConfig(MultiVectorConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMultiVectorConfig {
     #[new]
@@ -395,9 +396,10 @@ impl PyMultiVectorConfig {
     }
 }
 
-impl Repr for PyMultiVectorConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("comparator", &self.comparator())])
+impl PyMultiVectorConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MultiVectorConfig { comparator: _ } = self.0;
     }
 }
 

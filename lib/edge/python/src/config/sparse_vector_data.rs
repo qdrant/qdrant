@@ -32,6 +32,7 @@ impl PySparseVectorDataConfig {
     }
 }
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseVectorDataConfig {
     #[new]
@@ -67,13 +68,14 @@ impl PySparseVectorDataConfig {
     }
 }
 
-impl Repr for PySparseVectorDataConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("index", &self.index()),
-            ("storage_type", &self.storage_type()),
-            ("modifier", &self.modifier()),
-        ])
+impl PySparseVectorDataConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseVectorDataConfig {
+            index: _,
+            storage_type: _,
+            modifier: _,
+        } = self.0;
     }
 }
 
@@ -92,6 +94,7 @@ impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
 #[repr(transparent)]
 pub struct PySparseIndexConfig(SparseIndexConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseIndexConfig {
     #[new]
@@ -127,13 +130,14 @@ impl PySparseIndexConfig {
     }
 }
 
-impl Repr for PySparseIndexConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("full_scan_threshold", &self.full_scan_threshold()),
-            ("index_type", &self.index_type()),
-            ("datatype", &self.datatype()),
-        ])
+impl PySparseIndexConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseIndexConfig {
+            full_scan_threshold: _,
+            index_type: _,
+            datatype: _,
+        } = self.0;
     }
 }
 

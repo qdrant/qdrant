@@ -80,6 +80,7 @@ impl Repr for PyQuantizationConfig {
 #[repr(transparent)]
 pub struct PyScalarQuantizationConfig(ScalarQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyScalarQuantizationConfig {
     #[new]
@@ -112,13 +113,14 @@ impl PyScalarQuantizationConfig {
     }
 }
 
-impl Repr for PyScalarQuantizationConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("type", &self.r#type()),
-            ("quantile", &self.quantile()),
-            ("always_ram", &self.always_ram()),
-        ])
+impl PyScalarQuantizationConfig {
+    fn _getter(self) {
+        // Every field should have a getter method
+        let ScalarQuantizationConfig {
+            r#type: _,
+            quantile: _,
+            always_ram: _,
+        } = self.0;
     }
 }
 
@@ -166,6 +168,7 @@ impl From<PyScalarType> for ScalarType {
 #[repr(transparent)]
 pub struct PyProductQuantizationConfig(ProductQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyProductQuantizationConfig {
     #[new]
@@ -192,12 +195,13 @@ impl PyProductQuantizationConfig {
     }
 }
 
-impl Repr for PyProductQuantizationConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("compression", &self.compression()),
-            ("always_ram", &self.always_ram()),
-        ])
+impl PyProductQuantizationConfig {
+    fn _getter(self) {
+        // Every field should have a getter method
+        let ProductQuantizationConfig {
+            compression: _,
+            always_ram: _,
+        } = self.0;
     }
 }
 
@@ -261,6 +265,7 @@ impl From<PyCompressionRatio> for CompressionRatio {
 #[repr(transparent)]
 pub struct PyBinaryQuantizationConfig(BinaryQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyBinaryQuantizationConfig {
     #[new]
@@ -299,13 +304,14 @@ impl PyBinaryQuantizationConfig {
     }
 }
 
-impl Repr for PyBinaryQuantizationConfig {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("always_ram", &self.always_ram()),
-            ("encoding", &self.encoding()),
-            ("query_encoding", &self.query_encoding()),
-        ])
+impl PyBinaryQuantizationConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let BinaryQuantizationConfig {
+            always_ram: _,
+            encoding: _,
+            query_encoding: _,
+        } = self.0;
     }
 }
 
