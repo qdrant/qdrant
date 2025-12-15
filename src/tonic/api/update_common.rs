@@ -53,7 +53,6 @@ pub async fn upsert(
         shard_key_selector,
         update_filter,
         timeout,
-        wait_timeout,
     } = upsert_points;
 
     let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
@@ -104,7 +103,6 @@ pub async fn delete(
         ordering,
         shard_key_selector,
         timeout,
-        wait_timeout,
     } = delete_points;
 
     let points_selector = match points {
@@ -145,7 +143,6 @@ pub async fn update_vectors(
         shard_key_selector,
         update_filter,
         timeout,
-        wait_timeout,
     } = update_point_vectors;
 
     // Build list of operation points
@@ -209,7 +206,6 @@ pub async fn delete_vectors(
         ordering,
         shard_key_selector,
         timeout,
-        wait_timeout,
     } = delete_point_vectors;
 
     let (points, filter) = extract_points_selector(points_selector)?;
@@ -260,7 +256,6 @@ pub async fn set_payload(
         shard_key_selector,
         key,
         timeout,
-        wait_timeout,
     } = set_payload_points;
     let key = key.map(|k| json_path_from_proto(&k)).transpose()?;
 
@@ -307,7 +302,6 @@ pub async fn overwrite_payload(
         ordering,
         shard_key_selector,
         timeout,
-        wait_timeout,
         ..
     } = set_payload_points;
 
@@ -355,7 +349,6 @@ pub async fn delete_payload(
         ordering,
         shard_key_selector,
         timeout,
-        wait_timeout,
     } = delete_payload_points;
     let keys = keys.iter().map(|k| json_path_from_proto(k)).try_collect()?;
 
@@ -400,7 +393,6 @@ pub async fn clear_payload(
         ordering,
         shard_key_selector,
         timeout,
-        wait_timeout,
     } = clear_payload_points;
 
     let points_selector = match points {
@@ -439,7 +431,6 @@ pub async fn update_batch(
         operations,
         ordering,
         timeout,
-        wait_timeout,
     } = update_batch_points;
 
     let timing = Instant::now();
@@ -468,7 +459,6 @@ pub async fn update_batch(
                         shard_key_selector,
                         update_filter,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -487,7 +477,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector: None,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -514,7 +503,6 @@ pub async fn update_batch(
                         shard_key_selector,
                         key,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -542,7 +530,6 @@ pub async fn update_batch(
                         // overwrite operation doesn't support it
                         key: None,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -567,7 +554,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -588,7 +574,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -613,7 +598,6 @@ pub async fn update_batch(
                         shard_key_selector,
                         update_filter,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -639,7 +623,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -657,7 +640,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector: None,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -678,7 +660,6 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                         timeout,
-                        wait_timeout,
                     },
                     internal_params,
                     access.clone(),
@@ -720,7 +701,6 @@ pub async fn create_field_index(
         field_index_params,
         ordering,
         timeout,
-        wait_timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -763,7 +743,6 @@ pub async fn create_field_index_internal(
         field_index_params,
         ordering,
         timeout,
-        wait_timeout,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -797,7 +776,6 @@ pub async fn delete_field_index(
         field_name,
         ordering,
         timeout,
-        wait_timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
@@ -829,7 +807,6 @@ pub async fn delete_field_index_internal(
         field_name,
         ordering,
         timeout,
-        wait_timeout,
     } = delete_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
