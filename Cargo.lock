@@ -5241,6 +5241,7 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "tracing-tracy",
+ "urlencoding",
  "uuid",
  "validator",
  "wal",
