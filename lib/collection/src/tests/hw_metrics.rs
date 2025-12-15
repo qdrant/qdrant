@@ -84,7 +84,7 @@ async fn test_hw_metrics_cancellation() {
             .do_search(
                 Arc::new(req),
                 &current_runtime,
-                Some(Duration::from_millis(10)), // Very short duration to hit timeout before the search finishes
+                Duration::from_millis(10), // Very short duration to hit timeout before the search finishes
                 hw_counter,
             )
             .await;
