@@ -734,8 +734,9 @@ async fn recover_partial_snapshot_from(
 
             let http_client = http_client.client(api_key.as_deref())?;
 
+            let encoded_collection_name = urlencoding::encode(&collection_name);
             let create_snapshot_url = format!(
-                "{peer_url}/collections/{collection_name}/shards/{shard_id}/snapshot/partial/create"
+                "{peer_url}/collections/{encoded_collection_name}/shards/{shard_id}/snapshot/partial/create"
             );
 
             let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
