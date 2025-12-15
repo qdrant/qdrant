@@ -756,7 +756,7 @@ impl ShardReplicaSet {
                 3
             };
 
-            if best.map_or(true, |(best_prio, _)| prio < best_prio) {
+            if best.is_none_or(|(best_prio, _)| prio < best_prio) {
                 best = Some((prio, res));
             }
 
