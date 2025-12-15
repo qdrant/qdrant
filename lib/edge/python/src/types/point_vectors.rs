@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::{pyclass, pymethods};
@@ -15,6 +13,7 @@ use crate::types::{PyPointId, PyVector};
 #[repr(transparent)]
 pub struct PyPointVectors(pub PointVectorsPersisted);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPointVectors {
     #[new]
@@ -40,8 +39,9 @@ impl PyPointVectors {
     }
 }
 
-impl Repr for PyPointVectors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[("id", &self.id()), ("vector", &self.vector())])
+impl PyPointVectors {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let PointVectorsPersisted { id: _, vector: _ } = self.0;
     }
 }
