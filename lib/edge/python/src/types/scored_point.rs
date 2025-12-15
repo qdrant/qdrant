@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -14,6 +12,7 @@ use crate::{PyPayload, PyPointId, PyVectorInternal};
 #[repr(transparent)]
 pub struct PyScoredPoint(pub ScoredPoint);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyScoredPoint {
     #[getter]
@@ -51,15 +50,17 @@ impl PyScoredPoint {
     }
 }
 
-impl Repr for PyScoredPoint {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("id", &self.id()),
-            ("version", &self.version()),
-            ("score", &self.score()),
-            ("vector", &self.vector()),
-            ("payload", &self.payload()),
-            ("order_value", &self.order_value()),
-        ])
+impl PyScoredPoint {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ScoredPoint {
+            id: _,
+            version: _,
+            score: _,
+            vector: _,
+            payload: _,
+            shard_key: _, // not relevant for Qdrant Edge
+            order_value: _,
+        } = self.0;
     }
 }
