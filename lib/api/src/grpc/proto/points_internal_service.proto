@@ -52,8 +52,6 @@ message SyncPoints {
   optional WriteOrdering ordering = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
-  // Time limit for waiting for the changes to be applied in seconds
-  optional uint64 wait_timeout = 8;
 }
 
 message SyncPointsInternal {
