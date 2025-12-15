@@ -44,8 +44,15 @@ pub struct ServiceConfig {
 
     #[serde(default)]
     #[validate(range(min = 1))]
-    pub keep_alive_sec: Option<u64>,
+    pub http_keep_alive_sec: Option<u64>,
 
+    #[serde(default)]
+    #[validate(range(min = 1))]
+    pub grpc_keep_alive_interval_sec: Option<u64>,
+
+    #[serde(default)]
+    #[validate(range(min = 1))]
+    pub grpc_keep_alive_timeout_sec: Option<u64>,
     /// Directory where static files are served from.
     /// For example, the Web-UI should be placed here.
     #[serde(default)]

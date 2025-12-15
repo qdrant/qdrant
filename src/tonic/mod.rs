@@ -185,12 +185,25 @@ pub fn init(
 
         let mut server = Server::builder();
 
-        if let Some(keep_alive) = settings.service.keep_alive_sec {
-            log::info!("Applying gRPC keep-alive interval: {keep_alive}s");
+        if let (Some(interval), Some(timeout)) = (
+            settings.service.grpc_keep_alive_interval_sec,
+            settings.service.grpc_keep_alive_timeout_sec,
+        ) {
+            log::info!("Applying gRPC keep-alive: interval = {interval}s, timeout = {timeout}s");
+
             server = server
-                .http2_keepalive_interval(Some(Duration::from_secs(keep_alive * 2)))
-                .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive)));
+                .http2_keepalive_interval(Some(Duration::from_secs(interval)))
+                .http2_keepalive_timeout(Some(Duration::from_secs(timeout)));
+        } else if settings.service.grpc_keep_alive_interval_sec.is_some()
+            || settings.service.grpc_keep_alive_timeout_sec.is_some()
+        {
+            log::warn!(
+                "gRPC keep-alive is partially configured. \
+         Both grpc_keep_alive_interval_sec and grpc_keep_alive_timeout_sec must be set. \
+         Ignoring gRPC keep-alive configuration."
+            );
         }
+
         if settings.service.enable_tls {
             log::info!("TLS enabled for gRPC API (TTL not supported)");
 
@@ -309,13 +322,6 @@ pub fn init_internal(
                 // versus an internal error that is very hard to handle.
                 // More info: <https://github.com/qdrant/qdrant/issues/1907>
                 .http2_max_pending_accept_reset_streams(Some(1024));
-
-            if let Some(keep_alive) = settings.service.keep_alive_sec {
-                log::info!("Applying internal gRPC keep-alive interval: {keep_alive}s");
-                server = server
-                    .http2_keepalive_interval(Some(Duration::from_secs(keep_alive * 2)))
-                    .http2_keepalive_timeout(Some(Duration::from_secs(keep_alive)));
-            }
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");

@@ -233,8 +233,11 @@ storage:
 
 service:
   # Optional: Connection keep-alive timeout in seconds.
-  # If not set, Actix/gRPC default (5 seconds) will be used.
-  # keep_alive_sec: 5
+  # If not set, Actix default (5 seconds) will be used.
+  # http_keep_alive_sec: 5
+  # If not set, gRPC default (20 seconds) will be used.
+  # grpc_keep_alive_interval_sec: 40
+  # grpc_keep_alive_timeout_sec: 20
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
 
