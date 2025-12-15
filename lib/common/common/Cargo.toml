@@ -34,6 +34,7 @@ validator = { workspace = true }
 lazy_static = "1.5.0"
 memmap2 = { workspace = true }
 semver = { workspace = true }
+self_cell = "1.2.1"
 schemars = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
@@ -51,7 +52,6 @@ criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 itertools = { workspace = true }
 rstest = { workspace = true }
-self_cell = "1.2.1"
 serde_json = { workspace = true }
 tango-bench = "0.6.0"
 

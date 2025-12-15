@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use parking_lot::{Mutex, MutexGuard};
+use self_cell::self_cell;
 
 /// Structure which ensures that the lock is alive at the time of locking,
 /// and will prevent dropping while guarded.
@@ -24,7 +25,7 @@ impl IsAliveLock {
     /// Get a handle for this lock.
     pub fn handle(&self) -> IsAliveHandle {
         IsAliveHandle {
-            inner: self.inner.clone(),
+            inner: Arc::downgrade(&self.inner),
         }
     }
 
@@ -52,21 +53,48 @@ impl Drop for IsAliveLock {
 ///
 /// This is a separate structure so it does not change the boolean on drop.
 pub struct IsAliveHandle {
-    inner: Arc<Mutex<bool>>,
+    inner: Weak<Mutex<bool>>,
 }
 
 impl IsAliveHandle {
     /// Get a guard of this lock if the parent hasn't been dropped
     #[must_use = "Guard must be held for lifetime of operation, abort if None is returned"]
-    pub fn lock_if_alive(&self) -> Option<IsAliveGuard<'_>> {
-        let guard = self.inner.lock();
-        guard.then_some(IsAliveGuard(guard))
+    pub fn lock_if_alive(&self) -> Option<IsAliveGuard> {
+        if let Some(mutex) = self.inner.upgrade() {
+            // Since the Weak<Mutex> was upgraded, this is the safe way of keeping the mutex
+            // alive while referencing it with the guard, and returning both.
+            IsAliveGuardCell::try_new(mutex, |mutex| {
+                let guard = mutex.lock();
+                if *guard {
+                    Ok(IsAliveGuardInner(guard))
+                } else {
+                    Err(())
+                }
+            })
+            .ok()
+            // hide implementation details with this newtype
+            .map(IsAliveGuard)
+        } else {
+            None
+        }
     }
 }
 
 /// Guards a `true` boolean
-#[expect(dead_code)]
-pub struct IsAliveGuard<'a>(MutexGuard<'a, bool>);
+///
+/// This is an opaque wrapper that hides the self_cell implementation details.
+pub struct IsAliveGuard(#[expect(dead_code)] IsAliveGuardCell);
+
+// Private self_cell implementation
+self_cell!(
+    struct IsAliveGuardCell {
+        owner: Arc<Mutex<bool>>,
+
+        #[covariant]
+        dependent: IsAliveGuardInner,
+    }
+);
+struct IsAliveGuardInner<'a>(#[expect(dead_code)] MutexGuard<'a, bool>);
 
 #[cfg(test)]
 mod tests {
