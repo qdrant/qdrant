@@ -3974,13 +3974,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c7c9125e8f6f10c9da3aad044cc918cf8784fa34de857b1aa68038eb05a50a9"
+dependencies = [
+ "matrixmultiply",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "portable-atomic",
+ "portable-atomic-util",
+ "rawpointer",
+]
+
+[[package]]
 name = "ndarray-npy"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b313788c468c49141a9d9b6131fc15f403e6ef4e8446a0b2e18f664ddb278a9"
 dependencies = [
  "byteorder",
- "ndarray",
+ "ndarray 0.16.1",
  "num-traits",
  "py_literal",
 ]
@@ -6249,7 +6264,7 @@ dependencies = [
  "macros",
  "memmap2",
  "memory",
- "ndarray",
+ "ndarray 0.17.1",
  "ndarray-npy",
  "nom 8.0.0",
  "num-cmp",
