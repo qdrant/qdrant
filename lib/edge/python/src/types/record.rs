@@ -1,5 +1,3 @@
-use std::fmt;
-
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
@@ -13,6 +11,7 @@ use crate::*;
 #[repr(transparent)]
 pub struct PyRecord(pub RecordInternal);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRecord {
     #[getter]
@@ -40,13 +39,15 @@ impl PyRecord {
     }
 }
 
-impl Repr for PyRecord {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.class::<Self>(&[
-            ("id", &self.id()),
-            ("vector", &self.vector()),
-            ("payload", &self.payload()),
-            ("order_value", &self.order_value()),
-        ])
+impl PyRecord {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let RecordInternal {
+            id: _,
+            payload: _,
+            vector: _,
+            shard_key: _, // not relevant for Qdrant Edge
+            order_value: _,
+        } = self.0;
     }
 }
