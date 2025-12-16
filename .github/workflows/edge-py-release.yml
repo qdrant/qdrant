@@ -200,7 +200,7 @@ jobs:
 
     steps:
       - name: Install Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
 
       - name: Download release wheels
         uses: actions/download-artifact@v4
