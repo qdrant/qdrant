@@ -494,6 +494,16 @@ message RecommendBatchPoints {
   optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
+message AverageVectorPoints {
+  string collection_name = 1; // Name of the collection
+  repeated VectorExample examples = 2; // List of point IDs or vectors to average
+  optional string using = 3; // Define which vector to use, if not specified - use default vector
+  optional LookupLocation lookup_from = 4; // Name of the collection to use for points lookup, if not specified - use current collection
+  optional ReadConsistency read_consistency = 5; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 6; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 7; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
 message RecommendPointGroups {
   string collection_name = 1; // Name of the collection
   repeated PointId positive = 2; // Look for vectors closest to the vectors from these points
@@ -1023,6 +1033,12 @@ message GetResponse {
 
 message RecommendResponse {
   repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+  optional Usage usage = 3;
+}
+
+message AverageVectorResponse {
+  Vector vector = 1; // The computed average vector
   double time = 2; // Time spent to process
   optional Usage usage = 3;
 }

@@ -30,7 +30,7 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, RecommendRequestInternal, UsingVector,
 };
 
-fn avg_vectors<'a>(
+pub fn avg_vectors<'a>(
     vectors: impl IntoIterator<Item = VectorRef<'a>>,
 ) -> CollectionResult<VectorInternal> {
     let mut avg_dense = DenseVector::default();

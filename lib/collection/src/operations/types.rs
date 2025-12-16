@@ -749,6 +749,27 @@ pub struct RecommendGroupsRequestInternal {
     pub group_request: BaseGroupRequest,
 }
 
+/// Request to compute average vector from a list of examples
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct AverageVectorRequest {
+    /// List of point IDs or raw vectors to average
+    #[validate(nested)]
+    pub examples: Vec<RecommendExample>,
+
+    /// Name of the vector field to use (for named vectors)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub using: Option<UsingVector>,
+
+    /// If provided, resolve point IDs from this collection instead of the current one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookup_from: Option<LookupLocation>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct ContextExamplePair {
     #[validate(nested)]

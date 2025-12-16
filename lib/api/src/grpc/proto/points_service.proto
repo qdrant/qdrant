@@ -79,6 +79,10 @@ service Points {
   */
   rpc RecommendGroups (RecommendPointGroups) returns (RecommendGroupsResponse) {}
   /*
+  Compute the average vector from a list of point IDs or vectors
+  */
+  rpc AverageVector (AverageVectorPoints) returns (AverageVectorResponse) {}
+  /*
   Use context and a target to find the most similar points to the target, constrained by the context.
 
   When using only the context (without a target), a special search - called context search - is performed where

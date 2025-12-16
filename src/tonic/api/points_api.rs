@@ -4,17 +4,18 @@ use std::time::{Duration, Instant};
 use api::grpc::Usage;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
-    ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
-    DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, FacetCounts,
-    FacetResponse, GetPoints, GetResponse, PointsOperationResponse, QueryBatchPoints,
-    QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
-    RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
-    SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsets, SearchMatrixOffsetsResponse,
-    SearchMatrixPairs, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
-    UpdatePointVectors, UpsertPoints,
+    AverageVectorPoints, AverageVectorResponse, ClearPayloadPoints, CountPoints, CountResponse,
+    CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
+    DeletePointVectors, DeletePoints, DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints,
+    DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse,
+    PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryGroupsResponse,
+    QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
+    SearchMatrixOffsets, SearchMatrixOffsetsResponse, SearchMatrixPairs,
+    SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups, SearchPoints,
+    SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -741,5 +742,15 @@ impl Points for PointsService {
         };
 
         Ok(Response::new(offsets_response))
+    }
+
+    async fn average_vector(
+        &self,
+        _request: Request<AverageVectorPoints>,
+    ) -> Result<Response<AverageVectorResponse>, Status> {
+        // TODO: Implement gRPC handler for average_vector
+        Err(Status::unimplemented(
+            "AverageVector gRPC endpoint is not yet implemented. Please use the REST API endpoint instead.",
+        ))
     }
 }
