@@ -79,7 +79,7 @@ async fn test_optimization_process() {
         total_optimized_points.clone(),
         &ResourceBudget::default(),
         segments.clone(),
-        |_| {},
+        || {},
         None,
     );
 
@@ -122,7 +122,7 @@ async fn test_optimization_process() {
         total_optimized_points.clone(),
         &ResourceBudget::default(),
         segments.clone(),
-        |_| {},
+        || {},
         None,
     );
 
@@ -179,7 +179,7 @@ async fn test_cancel_optimization() {
         total_optimized_points.clone(),
         &ResourceBudget::default(),
         segments.clone(),
-        |_| {},
+        || {},
         None,
     );
 
