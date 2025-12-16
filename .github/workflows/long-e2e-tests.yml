@@ -7,7 +7,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  UV_VERSION: 0.5.11
+  UV_VERSION: 0.9.17
 
 jobs:
   long-e2e-tests:

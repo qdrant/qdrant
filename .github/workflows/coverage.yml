@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
 env:
-  UV_VERSION: 0.5.11
+  UV_VERSION: 0.9.17
 
 jobs:
   unit-coverage:
