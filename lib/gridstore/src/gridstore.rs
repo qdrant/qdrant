@@ -1655,7 +1655,7 @@ mod tests {
 
         // Flusher is invalidated and does nothing
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
-        flusher().unwrap();
+        assert!(flusher().is_err_and(|err| matches!(err, GridstoreError::FlushCancelled)));
 
         drop(storage_arcs);
 
