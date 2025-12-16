@@ -943,7 +943,7 @@ mod tests {
     ) {
         use ahash::AHashMap;
 
-        // Windows struggles with this test so we decrease the workload
+        // Windows struggles with this test on CI so we decrease the workload
         #[cfg(target_os = "windows")]
         let operation_count = 1_000;
         #[cfg(target_os = "windows")]
@@ -989,7 +989,7 @@ mod tests {
                 }
                 Operation::Iter => {
                     log::debug!("op:{i} ITER");
-                    let mut stored_points = AHashMap::new();
+                    let mut stored_points = AHashMap::with_capacity(model_hashmap.len());
                     storage
                         .iter::<_, String>(
                             |p, v| {
