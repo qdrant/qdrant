@@ -5,9 +5,10 @@ use itertools::Itertools;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{self, MmapSlice};
+use memory::mmap_type::MmapSlice;
 
 use super::{RegionId, StorageConfig};
+use crate::Result;
 
 /// Gaps of contiguous zeros in a bitmask region.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -115,11 +116,10 @@ impl BitmaskGaps {
         }
     }
 
-    pub fn open(dir: &Path, config: StorageConfig) -> Result<Self, String> {
+    pub fn open(dir: &Path, config: StorageConfig) -> Result<Self> {
         let path = Self::file_path(dir);
-        let mmap = open_write_mmap(&path, AdviceSetting::from(Advice::Normal), false)
-            .map_err(|err| err.to_string())?;
-        let mmap_slice = unsafe { MmapSlice::try_from(mmap) }.map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&path, AdviceSetting::from(Advice::Normal), false)?;
+        let mmap_slice = unsafe { MmapSlice::try_from(mmap) }?;
 
         Ok(Self {
             path,
@@ -128,15 +128,12 @@ impl BitmaskGaps {
         })
     }
 
-    pub fn flush(&self) -> Result<(), mmap_type::Error> {
-        self.mmap_slice.flusher()()
+    pub fn flush(&self) -> Result<()> {
+        Ok(self.mmap_slice.flusher()()?)
     }
 
     /// Extends the mmap file to fit the new regions
-    pub fn extend(
-        &mut self,
-        mut iter: impl ExactSizeIterator<Item = RegionGaps>,
-    ) -> Result<(), String> {
+    pub fn extend(&mut self, mut iter: impl ExactSizeIterator<Item = RegionGaps>) -> Result<()> {
         if iter.len() == 0 {
             return Ok(());
         }
@@ -148,10 +145,9 @@ impl BitmaskGaps {
 
         create_and_ensure_length(&self.path, new_length_in_bytes).unwrap();
 
-        let mmap = open_write_mmap(&self.path, AdviceSetting::from(Advice::Normal), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&self.path, AdviceSetting::from(Advice::Normal), false)?;
 
-        self.mmap_slice = unsafe { MmapSlice::try_from(mmap) }.map_err(|err| err.to_string())?;
+        self.mmap_slice = unsafe { MmapSlice::try_from(mmap) }?;
 
         debug_assert_eq!(self.mmap_slice[prev_len..].len(), iter.len());
 
