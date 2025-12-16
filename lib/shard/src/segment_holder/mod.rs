@@ -16,6 +16,7 @@ use std::time::Duration;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
@@ -75,6 +76,9 @@ pub struct SegmentHolder {
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<()>>>>,
+
+    /// The amount of currently running optimizations.
+    pub running_optimizations: ProcessCounter,
 }
 
 impl Drop for SegmentHolder {

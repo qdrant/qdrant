@@ -660,7 +660,7 @@ pub trait SegmentOptimizer {
 
         let mut locked_proxies: Vec<LockedSegment> = Vec::with_capacity(proxies.len());
 
-        let (proxy_ids, cow_segment_id_opt): (Vec<_>, _) = {
+        let (proxy_ids, cow_segment_id_opt, counter_handler): (Vec<_>, _, _) = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
@@ -697,7 +697,11 @@ pub trait SegmentOptimizer {
             let cow_segment_id_opt = extra_cow_segment_opt
                 .map(|extra_cow_segment| write_segments.add_new_locked(extra_cow_segment));
 
-            (proxy_ids, cow_segment_id_opt)
+            // Increase optimization counter right after replacing segments with proxies.
+            // We'll decrease it after inserting the optimized segment.
+            let counter_handler = write_segments.running_optimizations.inc();
+
+            (proxy_ids, cow_segment_id_opt, counter_handler)
         };
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
@@ -724,6 +728,7 @@ pub trait SegmentOptimizer {
         // Replace proxy segments with new optimized segment
         let point_count = optimized_segment.available_point_count();
         let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
+        drop(counter_handler); // Decrease optimization counter
         debug_assert_eq!(
             proxies.len(),
             proxy_ids.len(),
