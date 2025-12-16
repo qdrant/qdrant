@@ -6,12 +6,14 @@ use pyo3::prelude::*;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequest;
 
+use crate::repr::*;
 use crate::*;
 
 #[pyclass(name = "SearchRequest")]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchRequest(CoreSearchRequest);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySearchRequest {
     #[new]
@@ -37,12 +39,73 @@ impl PySearchRequest {
             score_threshold,
         })
     }
+
+    #[getter]
+    pub fn query(&self) -> &PyQuery {
+        PyQuery::wrap_ref(&self.0.query)
+    }
+
+    #[getter]
+    pub fn filter(&self) -> Option<&PyFilter> {
+        self.0.filter.as_ref().map(PyFilter::wrap_ref)
+    }
+
+    #[getter]
+    pub fn params(&self) -> Option<PySearchParams> {
+        self.0.params.map(PySearchParams)
+    }
+
+    #[getter]
+    pub fn limit(&self) -> usize {
+        self.0.limit
+    }
+
+    #[getter]
+    pub fn offset(&self) -> usize {
+        self.0.offset
+    }
+
+    #[getter]
+    pub fn with_vector(&self) -> Option<&PyWithVector> {
+        self.0.with_vector.as_ref().map(PyWithVector::wrap_ref)
+    }
+
+    #[getter]
+    pub fn with_payload(&self) -> Option<&PyWithPayload> {
+        self.0.with_payload.as_ref().map(PyWithPayload::wrap_ref)
+    }
+
+    #[getter]
+    pub fn score_threshold(&self) -> Option<f32> {
+        self.0.score_threshold
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySearchRequest {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let CoreSearchRequest {
+            query: _,
+            filter: _,
+            params: _,
+            limit: _,
+            offset: _,
+            with_vector: _,
+            with_payload: _,
+            score_threshold: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "SearchParams")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySearchParams {
     #[new]
@@ -86,12 +149,30 @@ impl PySearchParams {
     pub fn acorn(&self) -> Option<PyAcornSearchParams> {
         self.0.acorn.map(PyAcornSearchParams)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SearchParams {
+            hnsw_ef: _,
+            exact: _,
+            quantization: _,
+            indexed_only: _,
+            acorn: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "QuantizationSearchParams")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyQuantizationSearchParams {
     #[new]
@@ -117,12 +198,28 @@ impl PyQuantizationSearchParams {
     pub fn oversampling(&self) -> Option<f64> {
         self.0.oversampling
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyQuantizationSearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let QuantizationSearchParams {
+            ignore: _,
+            rescore: _,
+            oversampling: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "AcornSearchParams")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyAcornSearchParams(AcornSearchParams);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyAcornSearchParams {
     #[new]
@@ -144,10 +241,25 @@ impl PyAcornSearchParams {
             .max_selectivity
             .map(|selectivity| selectivity.into_inner())
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
 }
 
-#[derive(Clone, Debug, Into)]
-pub struct PyWithVector(WithVector);
+impl PyAcornSearchParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let AcornSearchParams {
+            enable: _,
+            max_selectivity: _,
+        } = self.0;
+    }
+}
+
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyWithVector(pub WithVector);
 
 impl FromPyObject<'_, '_> for PyWithVector {
     type Error = PyErr;
@@ -198,7 +310,17 @@ impl<'py> IntoPyObject<'py> for &PyWithVector {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+impl Repr for PyWithVector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            WithVector::Bool(bool) => bool.fmt(f),
+            WithVector::Selector(vectors) => vectors.fmt(f),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyWithPayload(WithPayloadInterface);
 
 impl FromPyObject<'_, '_> for PyWithPayload {
@@ -260,6 +382,18 @@ impl<'py> IntoPyObject<'py> for &PyWithPayload {
     }
 }
 
+impl Repr for PyWithPayload {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            WithPayloadInterface::Bool(bool) => bool.fmt(f),
+            WithPayloadInterface::Fields(fields) => PyJsonPath::wrap_slice(fields).fmt(f),
+            WithPayloadInterface::Selector(selector) => {
+                PyPayloadSelector::wrap_ref(selector).fmt(f)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayloadSelector(PayloadSelector);
@@ -269,12 +403,12 @@ impl FromPyObject<'_, '_> for PyPayloadSelector {
 
     fn extract(selector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let selector = match selector.extract()? {
-            PyPayloadSelectorInterface::Include(keys) => {
+            PyPayloadSelectorInterface::Include { keys } => {
                 PayloadSelector::Include(PayloadSelectorInclude {
                     include: PyJsonPath::peel_vec(keys),
                 })
             }
-            PyPayloadSelectorInterface::Exclude(keys) => {
+            PyPayloadSelectorInterface::Exclude { keys } => {
                 PayloadSelector::Exclude(PayloadSelectorExclude {
                     exclude: PyJsonPath::peel_vec(keys),
                 })
@@ -293,10 +427,14 @@ impl<'py> IntoPyObject<'py> for PyPayloadSelector {
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let selector = match self.0 {
             PayloadSelector::Include(PayloadSelectorInclude { include }) => {
-                PyPayloadSelectorInterface::Include(PyJsonPath::wrap_vec(include))
+                PyPayloadSelectorInterface::Include {
+                    keys: PyJsonPath::wrap_vec(include),
+                }
             }
             PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
-                PyPayloadSelectorInterface::Exclude(PyJsonPath::wrap_vec(exclude))
+                PyPayloadSelectorInterface::Exclude {
+                    keys: PyJsonPath::wrap_vec(exclude),
+                }
             }
         };
 
@@ -304,9 +442,35 @@ impl<'py> IntoPyObject<'py> for PyPayloadSelector {
     }
 }
 
+impl Repr for PyPayloadSelector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (repr, keys) = match &self.0 {
+            PayloadSelector::Include(PayloadSelectorInclude { include }) => {
+                ("Include", PyJsonPath::wrap_slice(include))
+            }
+            PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
+                ("Exclude", PyJsonPath::wrap_slice(exclude))
+            }
+        };
+
+        f.complex_enum::<PyPayloadSelectorInterface>(repr, &[("keys", &keys)])
+    }
+}
+
 #[pyclass(name = "PayloadSelector")]
 #[derive(Clone, Debug)]
 pub enum PyPayloadSelectorInterface {
-    Include(Vec<PyJsonPath>),
-    Exclude(Vec<PyJsonPath>),
+    Include { keys: Vec<PyJsonPath> },
+    Exclude { keys: Vec<PyJsonPath> },
+}
+
+impl Repr for PyPayloadSelectorInterface {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (repr, keys) = match self {
+            PyPayloadSelectorInterface::Include { keys } => ("Include", keys),
+            PyPayloadSelectorInterface::Exclude { keys } => ("Exclude", keys),
+        };
+
+        f.complex_enum::<Self>(repr, &[("keys", keys)])
+    }
 }

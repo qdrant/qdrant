@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
@@ -6,6 +8,7 @@ use segment::json_path::JsonPath;
 use segment::types::*;
 use segment::utils::maybe_arc::MaybeArc;
 
+use crate::repr::*;
 use crate::types::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -75,10 +78,29 @@ impl<'py> IntoPyObject<'py> for &PyCondition {
     }
 }
 
+impl Repr for PyCondition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Condition::Field(field) => PyFieldCondition::wrap_ref(field).fmt(f),
+            Condition::IsEmpty(is_empty) => PyIsEmptyCondition::wrap_ref(is_empty).fmt(f),
+            Condition::IsNull(is_null) => PyIsNullCondition::wrap_ref(is_null).fmt(f),
+            Condition::HasId(has_id) => PyHasIdCondition::wrap_ref(has_id).fmt(f),
+            Condition::HasVector(has_vector) => PyHasVectorCondition::wrap_ref(has_vector).fmt(f),
+            Condition::Nested(nested) => PyNestedCondition::wrap_ref(nested).fmt(f),
+            Condition::Filter(filter) => PyFilter::wrap_ref(filter).fmt(f),
+            Condition::CustomIdChecker(_) => {
+                unreachable!("CustomIdChecker condition is not expected in Python bindings")
+            }
+        }
+    }
+}
+
 #[pyclass(name = "IsEmptyCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyIsEmptyCondition(pub IsEmptyCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyIsEmptyCondition {
     #[new]
@@ -94,12 +116,27 @@ impl PyIsEmptyCondition {
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.is_empty.key)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyIsEmptyCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let IsEmptyCondition {
+            is_empty: PayloadField { key: _ },
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "IsNullCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyIsNullCondition(pub IsNullCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyIsNullCondition {
     #[new]
@@ -115,12 +152,27 @@ impl PyIsNullCondition {
     pub fn key(&self) -> &PyJsonPath {
         PyJsonPath::wrap_ref(&self.0.is_null.key)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyIsNullCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let IsNullCondition {
+            is_null: PayloadField { key: _ },
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "HasIdCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyHasIdCondition(pub HasIdCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHasIdCondition {
     #[new]
@@ -134,12 +186,25 @@ impl PyHasIdCondition {
     pub fn point_ids(&self) -> &ahash::HashSet<PyPointId> {
         PyPointId::wrap_set_ref(&self.0.has_id)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyHasIdCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HasIdCondition { has_id: _point_ids } = self.0;
+    }
 }
 
 #[pyclass(name = "HasVectorCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyHasVectorCondition(pub HasVectorCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHasVectorCondition {
     #[new]
@@ -150,5 +215,18 @@ impl PyHasVectorCondition {
     #[getter]
     pub fn vector(&self) -> &str {
         &self.0.has_vector
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyHasVectorCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HasVectorCondition {
+            has_vector: _vector,
+        } = self.0;
     }
 }
