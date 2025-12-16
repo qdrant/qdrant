@@ -131,11 +131,10 @@ impl ClockMap {
     /// Take or clear a snapshot of clocks
     pub fn snapshot(&mut self, action: ClockMapSnapshot) {
         match action {
-            ClockMapSnapshot::Take if self.snapshot.is_some() => {
-                debug_assert!(false, "should not snapshot clock map twice");
-                log::warn!("Tried to snapshot WAL clocks a second time, ignoring");
-            }
-            ClockMapSnapshot::Take => {
+            ClockMapSnapshot::TakeIfMissing if self.snapshot.is_some() => {}
+            ClockMapSnapshot::Clear if self.snapshot.is_none() => {}
+
+            ClockMapSnapshot::TakeIfMissing => {
                 self.snapshot.replace(self.clocks.clone());
                 self.changed = true;
             }
@@ -413,7 +412,7 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ClockMapSnapshot {
-    Take,
+    TakeIfMissing,
     Clear,
 }
 
