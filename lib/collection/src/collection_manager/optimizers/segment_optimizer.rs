@@ -13,7 +13,7 @@ use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
+use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -347,15 +347,8 @@ pub trait SegmentOptimizer {
     /// # Result
     ///
     /// Original segments are pushed into `segments`, proxies removed.
-    /// Returns IDs on restored segments
-    ///
-    fn unwrap_proxy(
-        &self,
-        segments: &LockedSegmentHolder,
-        proxy_ids: &[SegmentId],
-    ) -> Vec<SegmentId> {
+    fn unwrap_proxy(&self, segments: &LockedSegmentHolder, proxy_ids: &[SegmentId]) {
         let mut segments_lock = segments.write();
-        let mut restored_segment_ids = vec![];
         for &proxy_id in proxy_ids {
             if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
                 let locked_proxy_segment = proxy_segment_ref.clone();
@@ -366,35 +359,11 @@ pub trait SegmentOptimizer {
                     }
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        let (restored_id, _proxies) =
-                            segments_lock.swap_new(wrapped_segment, &[proxy_id]);
-                        restored_segment_ids.push(restored_id);
+                        segments_lock.swap_new(wrapped_segment, &[proxy_id]);
                     }
                 }
             }
         }
-        restored_segment_ids
-    }
-
-    /// Unwraps proxy, puts wrapped segment back into local shard
-    ///
-    /// # Arguments
-    ///
-    /// * `segments` - all registered segments of the collection
-    /// * `proxy_ids` - currently used proxies
-    ///
-    /// # Result
-    ///
-    /// Drops any optimized state, and rolls back the segments to before optimizing. All new
-    /// changes since optimizing remain available as they were written to other appendable
-    /// segments.
-    fn handle_cancellation(
-        &self,
-        segments: &LockedSegmentHolder,
-        proxy_ids: &[SegmentId],
-    ) -> OperationResult<()> {
-        self.unwrap_proxy(segments, proxy_ids);
-        Ok(())
     }
 
     /// Function to wrap slow part of optimization. Performs proxy rollback in case of cancellation.
@@ -747,7 +716,7 @@ pub trait SegmentOptimizer {
             Err(err) => {
                 // Properly cancel optimization on all error kinds
                 // Unwrap proxies and add temp segment to holder
-                self.handle_cancellation(&segments, &proxy_ids)?;
+                self.unwrap_proxy(&segments, &proxy_ids);
                 return Err(err);
             }
         };
