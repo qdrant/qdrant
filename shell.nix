@@ -8,18 +8,12 @@
 #
 # Usage: Run `nix-shell` in the root directory of this repository. You will then
 # be dropped into a new shell with all programs and dependencies available.
+# Then run `uv sync` to install Python dependencies.
 
 let
   sources = import ./tools/nix/npins;
   fenix = import sources.fenix { inherit pkgs; };
   pkgs = import sources.nixpkgs { };
-  poetry2nix = import sources.poetry2nix { inherit pkgs; };
-
-  # Python dependencies used in tests
-  python-env = poetry2nix.mkPoetryEnv {
-    projectDir = ./tests; # reads pyproject.toml and poetry.lock
-    preferWheels = true; # wheels speed up building of the environment
-  };
 
   # Use mold linker to speed up builds
   mkShell =
@@ -51,13 +45,13 @@ mkShell {
     pkgs.maturin # mentioned in lib/edge/python/README.md
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
-    pkgs.poetry # used to update poetry.lock
+    pkgs.python313 # Python for tests (dependencies installed via uv)
     pkgs.sccache # mentioned in shellHook
+    pkgs.uv # used to manage Python dependencies
     pkgs.vulkan-tools # mentioned in .github/workflows/rust-gpu.yml
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
-    python-env # used in tests
   ];
 
   # Fix for tikv-jemalloc-sys
@@ -102,5 +96,10 @@ mkShell {
 
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000
+
+    # Install Python dependencies if not already installed
+    if [ ! -d ".venv" ]; then
+      echo "Run 'uv sync' to install Python dependencies for tests"
+    fi
   '';
 }
