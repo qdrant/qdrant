@@ -61,8 +61,8 @@ mod qdrant_edge {
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
     #[pymodule_export]
     use super::types::query::{
-        PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackSimpleQuery,
-        PyQueryInterface, PyRecommendQuery, PySimpleFeedbackStrategy,
+        PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
+        PyNaiveFeedbackCoefficients, PyQueryInterface, PyRecommendQuery,
     };
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
