@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -9,6 +9,8 @@ use segment::types::VectorNameBuf;
 use shard::operations::point_ops::{VectorPersisted, VectorStructPersisted};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
+
+use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -65,6 +67,16 @@ impl<'py> IntoPyObject<'py> for &PyVector {
             VectorStructPersisted::Named(named) => {
                 PyNamedVector::wrap_map_ref(named).into_bound_py_any(py)
             }
+        }
+    }
+}
+
+impl Repr for PyVector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            VectorStructPersisted::Single(single) => single.fmt(f),
+            VectorStructPersisted::MultiDense(multi) => multi.fmt(f),
+            VectorStructPersisted::Named(named) => PyNamedVector::wrap_map_ref(named).fmt(f),
         }
     }
 }
@@ -142,10 +154,22 @@ impl<'py> IntoPyObject<'py> for &PyNamedVector {
     }
 }
 
+impl Repr for PyNamedVector {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            VectorPersisted::Dense(dense) => dense.fmt(f),
+            VectorPersisted::Sparse(sparse) => PySparseVector::wrap_ref(sparse).fmt(f),
+            VectorPersisted::MultiDense(multi) => multi.fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "SparseVector")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PySparseVector(pub SparseVector);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseVector {
     #[new]
@@ -164,10 +188,16 @@ impl PySparseVector {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "SparseVector(indices={:?}, values={:?})",
-            self.indices(),
-            self.values()
-        )
+        self.repr()
+    }
+}
+
+impl PySparseVector {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseVector {
+            indices: _,
+            values: _,
+        } = self.0;
     }
 }

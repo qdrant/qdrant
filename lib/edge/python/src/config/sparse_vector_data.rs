@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -9,6 +9,7 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::*;
 
 use super::vector_data::*;
+use crate::repr::*;
 
 #[pyclass(name = "SparseVectorDataConfig")]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
@@ -31,6 +32,7 @@ impl PySparseVectorDataConfig {
     }
 }
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseVectorDataConfig {
     #[new]
@@ -60,6 +62,21 @@ impl PySparseVectorDataConfig {
     pub fn modifier(&self) -> Option<PyModifier> {
         self.0.modifier.map(PyModifier::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySparseVectorDataConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseVectorDataConfig {
+            index: _,
+            storage_type: _,
+            modifier: _,
+        } = self.0;
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
@@ -73,9 +90,11 @@ impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
 }
 
 #[pyclass(name = "SparseIndexConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PySparseIndexConfig(SparseIndexConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySparseIndexConfig {
     #[new]
@@ -105,6 +124,21 @@ impl PySparseIndexConfig {
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySparseIndexConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SparseIndexConfig {
+            full_scan_threshold: _,
+            index_type: _,
+            datatype: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "SparseIndexType")]
@@ -113,6 +147,25 @@ pub enum PySparseIndexType {
     MutableRam,
     ImmutableRam,
     Mmap,
+}
+
+#[pymethods]
+impl PySparseIndexType {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PySparseIndexType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::MutableRam => "MutableRam",
+            Self::ImmutableRam => "ImmutableRam",
+            Self::Mmap => "Mmap",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<SparseIndexType> for PySparseIndexType {
@@ -141,6 +194,23 @@ pub enum PySparseVectorStorageType {
     Mmap,
 }
 
+#[pymethods]
+impl PySparseVectorStorageType {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PySparseVectorStorageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Mmap => "Mmap",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
 impl From<SparseVectorStorageType> for PySparseVectorStorageType {
     fn from(storage_type: SparseVectorStorageType) -> Self {
         #[allow(unreachable_patterns)]
@@ -165,6 +235,24 @@ impl From<PySparseVectorStorageType> for SparseVectorStorageType {
 pub enum PyModifier {
     None,
     Idf,
+}
+
+#[pymethods]
+impl PyModifier {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyModifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::None => "None",
+            Self::Idf => "Idf",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<Modifier> for PyModifier {

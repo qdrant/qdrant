@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use segment::types::*;
 
 use super::quantization::*;
+use crate::repr::*;
 
 #[pyclass(name = "VectorDataConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -30,9 +31,11 @@ impl PyVectorDataConfig {
     }
 }
 
+#[pyclass_repr]
 #[pymethods]
 impl PyVectorDataConfig {
     #[new]
+    #[pyo3(signature = (size, distance, storage_type, index, quantization_config=None, multivector_config=None, datatype=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
@@ -87,6 +90,25 @@ impl PyVectorDataConfig {
     pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
         self.0.datatype.map(PyVectorStorageDatatype::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyVectorDataConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let VectorDataConfig {
+            size: _,
+            distance: _,
+            storage_type: _,
+            index: _,
+            quantization_config: _,
+            multivector_config: _,
+            datatype: _,
+        } = self.0;
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
@@ -106,6 +128,26 @@ pub enum PyDistance {
     Euclid,
     Dot,
     Manhattan,
+}
+
+#[pymethods]
+impl PyDistance {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyDistance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Cosine => "Cosine",
+            Self::Euclid => "Euclid",
+            Self::Dot => "Dot",
+            Self::Manhattan => "Manhattan",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<Distance> for PyDistance {
@@ -139,6 +181,26 @@ pub enum PyVectorStorageType {
     InRamChunkedMmap,
 }
 
+#[pymethods]
+impl PyVectorStorageType {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyVectorStorageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Memory => "Memory",
+            Self::Mmap => "Mmap",
+            Self::ChunkedMmap => "ChunkedMmap",
+            Self::InRamChunkedMmap => "InRamChunkedMmap",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
 impl From<VectorStorageType> for PyVectorStorageType {
     fn from(storage_type: VectorStorageType) -> Self {
         match storage_type {
@@ -161,7 +223,8 @@ impl From<PyVectorStorageType> for VectorStorageType {
     }
 }
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyIndexes(Indexes);
 
 impl FromPyObject<'_, '_> for PyIndexes {
@@ -203,22 +266,38 @@ impl<'py> IntoPyObject<'py> for PyIndexes {
     }
 }
 
+impl Repr for PyIndexes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Indexes::Plain {} => PyPlainIndexConfig.fmt(f),
+            Indexes::Hnsw(hnsw) => PyHnswIndexConfig::wrap_ref(hnsw).fmt(f),
+        }
+    }
+}
+
 #[pyclass(name = "PlainIndexConfig")]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPlainIndexConfig {
     #[new]
     pub fn new() -> Self {
         Self
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
 }
 
 #[pyclass(name = "HnswIndexConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyHnswIndexConfig(HnswConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyHnswIndexConfig {
     #[new]
@@ -271,12 +350,33 @@ impl PyHnswIndexConfig {
     pub fn inline_storage(&self) -> Option<bool> {
         self.0.inline_storage
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyHnswIndexConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let HnswConfig {
+            m: _,
+            ef_construct: _,
+            full_scan_threshold: _,
+            max_indexing_threads: _, // not relevant for Qdrant Edge
+            on_disk: _,
+            payload_m: _,
+            inline_storage: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "MultiVectorConfig")]
-#[derive(Copy, Clone, Debug, Into)]
+#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyMultiVectorConfig(MultiVectorConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyMultiVectorConfig {
     #[new]
@@ -290,12 +390,40 @@ impl PyMultiVectorConfig {
     pub fn comparator(&self) -> PyMultiVectorComparator {
         PyMultiVectorComparator::from(self.0.comparator)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyMultiVectorConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let MultiVectorConfig { comparator: _ } = self.0;
+    }
 }
 
 #[pyclass(name = "MultiVectorComparator")]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
     MaxSim,
+}
+
+#[pymethods]
+impl PyMultiVectorComparator {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyMultiVectorComparator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::MaxSim => "MaxSim",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<MultiVectorComparator> for PyMultiVectorComparator {
@@ -320,6 +448,25 @@ pub enum PyVectorStorageDatatype {
     Float32,
     Float16,
     Uint8,
+}
+
+#[pymethods]
+impl PyVectorStorageDatatype {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyVectorStorageDatatype {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Float32 => "Float32",
+            Self::Float16 => "Float16",
+            Self::Uint8 => "Uint8",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<VectorStorageDatatype> for PyVectorStorageDatatype {

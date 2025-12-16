@@ -1,4 +1,4 @@
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -7,6 +7,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::types::PointIdType;
 use uuid::Uuid;
+
+use crate::repr::*;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -81,6 +83,15 @@ impl<'py> IntoPyObject<'py> for &PyPointId {
         match &self.0 {
             PointIdType::NumId(id) => id.into_bound_py_any(py),
             PointIdType::Uuid(uuid) => uuid.into_bound_py_any(py),
+        }
+    }
+}
+
+impl Repr for PyPointId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            PointIdType::NumId(id) => id.fmt(f),
+            PointIdType::Uuid(uuid) => uuid.fmt(f),
         }
     }
 }

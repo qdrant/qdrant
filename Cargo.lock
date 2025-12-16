@@ -1943,6 +1943,7 @@ dependencies = [
  "bytemuck",
  "derive_more 2.0.1",
  "edge",
+ "edge-py-codegen",
  "fnv",
  "indexmap 2.12.1",
  "ordered-float 5.1.0",
@@ -1952,6 +1953,15 @@ dependencies = [
  "shard",
  "sparse",
  "uuid",
+]
+
+[[package]]
+name = "edge-py-codegen"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]

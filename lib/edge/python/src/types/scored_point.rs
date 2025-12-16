@@ -1,22 +1,33 @@
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
-use shard::retrieve::record_internal::RecordInternal;
+use segment::types::ScoredPoint;
 
+use super::PyOrderValue;
 use crate::repr::*;
-use crate::*;
+use crate::{PyPayload, PyPointId, PyVectorInternal};
 
-#[pyclass(name = "Record")]
+#[pyclass(name = "ScoredPoint")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyRecord(pub RecordInternal);
+pub struct PyScoredPoint(pub ScoredPoint);
 
 #[pyclass_repr]
 #[pymethods]
-impl PyRecord {
+impl PyScoredPoint {
     #[getter]
     pub fn id(&self) -> PyPointId {
         PyPointId(self.0.id)
+    }
+
+    #[getter]
+    pub fn version(&self) -> u64 {
+        self.0.version
+    }
+
+    #[getter]
+    pub fn score(&self) -> f32 {
+        self.0.score
     }
 
     #[getter]
@@ -39,13 +50,15 @@ impl PyRecord {
     }
 }
 
-impl PyRecord {
+impl PyScoredPoint {
     fn _getters(self) {
         // Every field should have a getter method
-        let RecordInternal {
+        let ScoredPoint {
             id: _,
-            payload: _,
+            version: _,
+            score: _,
             vector: _,
+            payload: _,
             shard_key: _, // not relevant for Qdrant Edge
             order_value: _,
         } = self.0;

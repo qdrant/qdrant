@@ -3,6 +3,7 @@ pub mod sparse_vector_data;
 pub mod vector_data;
 
 use std::collections::HashMap;
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -12,12 +13,14 @@ use segment::types::*;
 pub use self::quantization::*;
 pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
+use crate::repr::*;
 
 #[pyclass(name = "SegmentConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySegmentConfig(SegmentConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PySegmentConfig {
     #[new]
@@ -47,6 +50,21 @@ impl PySegmentConfig {
     pub fn payload_storage_type(&self) -> PyPayloadStorageType {
         PyPayloadStorageType::from(self.0.payload_storage_type)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PySegmentConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let SegmentConfig {
+            vector_data: _,
+            sparse_vector_data: _,
+            payload_storage_type: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "PayloadStorageType")]
@@ -54,6 +72,24 @@ impl PySegmentConfig {
 pub enum PyPayloadStorageType {
     Mmap,
     InRamMmap,
+}
+
+#[pymethods]
+impl PyPayloadStorageType {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyPayloadStorageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            PyPayloadStorageType::Mmap => "Mmap",
+            PyPayloadStorageType::InRamMmap => "InRamMmap",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<PayloadStorageType> for PyPayloadStorageType {
