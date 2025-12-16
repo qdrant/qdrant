@@ -8,7 +8,6 @@
 #
 # Usage: Run `nix-shell` in the root directory of this repository. You will then
 # be dropped into a new shell with all programs and dependencies available.
-# Then run `uv sync` to install Python dependencies.
 
 let
   sources = import ./tools/nix/npins;
@@ -45,9 +44,9 @@ mkShell {
     pkgs.maturin # mentioned in lib/edge/python/README.md
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
-    pkgs.python313 # Python for tests (dependencies installed via uv)
+    pkgs.python3 # used in ./tests, ./tools, lib/edge
     pkgs.sccache # mentioned in shellHook
-    pkgs.uv # used to manage Python dependencies
+    pkgs.uv # used in tests
     pkgs.vulkan-tools # mentioned in .github/workflows/rust-gpu.yml
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
@@ -96,10 +95,5 @@ mkShell {
 
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000
-
-    # Install Python dependencies if not already installed
-    if [ ! -d ".venv" ]; then
-      echo "Run 'uv sync' to install Python dependencies for tests"
-    fi
   '';
 }
