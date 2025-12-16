@@ -952,7 +952,14 @@ mod tests {
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100_000u32).map(|_| Operation::random(rng, max_point_offset));
+        // Windows stuggles with this test
+        #[cfg(target_os = "windows")]
+        let operation_count = 10_000;
+
+        #[cfg(not(target_os = "windows"))]
+        let operation_count = 100_000;
+
+        let operations = (0..operation_count).map(|_| Operation::random(rng, max_point_offset));
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -967,44 +974,38 @@ mod tests {
             match operation {
                 Operation::Clear => {
                     log::debug!("op:{i} CLEAR");
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        // assert same length before clearing
-                        assert_eq!(
-                            storage.tracker.read().mapping_len(),
-                            model_hashmap.len(),
-                            "different number of points"
-                        );
-                        // Windows is very slow at running `clear` on CI
-                        storage.clear().unwrap();
-                        assert_eq!(storage.max_point_id(), 0, "storage should be empty");
-                        model_hashmap.clear();
-                    }
+                    // assert same length before clearing
+                    assert_eq!(
+                        storage.tracker.read().mapping_len(),
+                        model_hashmap.len(),
+                        "different number of points"
+                    );
+                    // Windows is very slow at running `clear` on CI
+                    storage.clear().unwrap();
+                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                    model_hashmap.clear();
                 }
                 Operation::Iter => {
                     log::debug!("op:{i} ITER");
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        // Windows is very slow at running `iter` on CI
-                        let mut stored_points = AHashMap::new();
-                        storage
-                            .iter::<_, String>(
-                                |p, v| {
-                                    let prev = stored_points.insert(p, v);
-                                    assert!(
-                                        prev.is_none(),
-                                        "duplicate point offset {p} found with value {prev:?}"
-                                    );
-                                    Ok(true) // no shortcutting
-                                },
-                                hw_counter_ref,
-                            )
-                            .unwrap();
-                        assert_eq!(
-                            stored_points, model_hashmap,
-                            "storage and model are different when using `iter`"
-                        );
-                    }
+                    // Windows is very slow at running `iter` on CI
+                    let mut stored_points = AHashMap::new();
+                    storage
+                        .iter::<_, String>(
+                            |p, v| {
+                                let prev = stored_points.insert(p, v);
+                                assert!(
+                                    prev.is_none(),
+                                    "duplicate point offset {p} found with value {prev:?}"
+                                );
+                                Ok(true) // no shortcutting
+                            },
+                            hw_counter_ref,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        stored_points, model_hashmap,
+                        "storage and model are different when using `iter`"
+                    );
                 }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
