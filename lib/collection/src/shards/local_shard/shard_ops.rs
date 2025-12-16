@@ -48,6 +48,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+        let start = Instant::now();
 
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
@@ -100,7 +101,7 @@ impl ShardOperation for LocalShard {
             operation_id
         };
 
-        if let Some(mut receiver) = callback_receiver {
+        if let Some(receiver) = callback_receiver {
             let success = UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
@@ -108,7 +109,8 @@ impl ShardOperation for LocalShard {
             };
 
             if let Some(t) = timeout {
-                return match tokio::time::timeout(t, &mut receiver).await {
+                return match tokio::time::timeout(t.saturating_sub(start.elapsed()), receiver).await
+                {
                     Ok(_) => Ok(success),
                     Err(_) => Ok(UpdateResult {
                         operation_id: Some(operation_id),
