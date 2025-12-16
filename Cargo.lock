@@ -2653,9 +2653,9 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "half"
-version = "2.7.0"
+version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e54c115d4f30f52c67202f079c5f9d8b49db4691f460fdb0b4c2e838261b2ba5"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
 dependencies = [
  "cfg-if",
  "crunchy",
@@ -6245,7 +6245,7 @@ dependencies = [
  "geohash",
  "gpu",
  "gridstore",
- "half 2.7.0",
+ "half 2.7.1",
  "humantime",
  "indexmap 2.12.1",
  "indicatif",
@@ -6736,7 +6736,7 @@ dependencies = [
  "fs-err",
  "generic-tests",
  "gridstore",
- "half 2.7.0",
+ "half 2.7.1",
  "indicatif",
  "io",
  "itertools 0.14.0",
