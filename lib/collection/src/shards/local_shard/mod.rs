@@ -975,6 +975,11 @@ impl LocalShard {
         self.wal.recovery_point().await
     }
 
+    /// Update the clocks snasphot on the current shard
+    pub async fn take_clocks_snapshot_or_clear(&self, take_snapshot: bool) {
+        self.wal.take_clocks_snapshot_or_clear(take_snapshot).await
+    }
+
     /// Update the cutoff point on the current shard
     ///
     /// This also updates the highest seen clocks.

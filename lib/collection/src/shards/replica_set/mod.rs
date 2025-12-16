@@ -783,8 +783,20 @@ impl ShardReplicaSet {
     /// Not called if:
     /// - there is no local shard
     /// - the local shard is removed
-    async fn on_local_state_changed(&self, old_state: ReplicaState, new_state: ReplicaState) -> CollectionResult<()> {
-        // Placeholder
+    async fn on_local_state_changed(
+        &self,
+        old_state: ReplicaState,
+        new_state: ReplicaState,
+    ) -> CollectionResult<()> {
+        // If active state changed, update clocks snapshot
+        if old_state.is_active() != new_state.is_active()
+            && let Some(local_shard) = self.local.read().await.as_ref()
+        {
+            local_shard
+                .take_clocks_snapshot_or_clear(!new_state.is_active())
+                .await?;
+        }
+
         Ok(())
     }
 

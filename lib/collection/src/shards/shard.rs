@@ -262,6 +262,24 @@ impl Shard {
         }
     }
 
+    pub async fn take_clocks_snapshot_or_clear(&self, take_snapshot: bool) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => {
+                local_shard
+                    .take_clocks_snapshot_or_clear(take_snapshot)
+                    .await
+            }
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                return Err(CollectionError::service_error(format!(
+                    "Updating clocks snapshot not supported on {}",
+                    self.variant_name(),
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) -> CollectionResult<()> {
         match self {
             Self::Local(local_shard) => local_shard.update_cutoff(cutoff).await,
