@@ -264,7 +264,7 @@ impl Collection {
             };
 
             if transfer.to == self.this_peer_id {
-                replica_set.set_replica_state(transfer.to, state)?;
+                replica_set.set_replica_state(transfer.to, state).await?;
             } else {
                 replica_set.add_remote(transfer.to, state).await?;
             }
@@ -341,7 +341,9 @@ impl Collection {
                     //   and so failed transfer does not introduce any inconsistencies to points
                     //   that are not affected by resharding in all other shards
                 } else if transfer.sync {
-                    replica_set.set_replica_state(transfer.to, ReplicaState::Dead)?;
+                    replica_set
+                        .set_replica_state(transfer.to, ReplicaState::Dead)
+                        .await?;
                 } else {
                     self.invalidate_clean_local_shards([transfer
                         .to_shard_id
