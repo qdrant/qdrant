@@ -673,6 +673,10 @@ def test_abort_stream_records_breaks_wal_delta(tmp_path: pathlib.Path):
     from_peer_id = transfer_collection_cluster_info['peer_id']
     to_peer_id = receiver_collection_cluster_info['peer_id']
 
+    # Initialize clock
+    upsert_random_points(peer_api_uris[0], 1, COLLECTION_NAME)
+    sleep(1)
+
     # Kill last peer
     processes.pop().kill()
 
@@ -742,11 +746,10 @@ def test_abort_stream_records_breaks_wal_delta(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for WAL delta transfer to start, it must finish very quickly
-    # If it doesn't finish quickly, it did likely fall back to stream records
+    # Wait for WAL delta transfer to start, then wait for any transfer to finish
+    # After fixing this bug, this will switch to a longer running stream records transfer
     wait_for_collection_shard_transfer_method(peer_api_uris[0], COLLECTION_NAME, "wal_delta")
-    sleep(2)
-    assert check_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Ensure data consistency
     data = []
