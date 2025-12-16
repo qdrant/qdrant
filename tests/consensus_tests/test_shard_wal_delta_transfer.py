@@ -625,12 +625,28 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
     check_data_consistency(data)
 
 
-# Test node recovery with a WAL delta transfer.
+# Tests that aborting a stream records transfer does not break a subsequent WAL
+# delta transfer
 #
-# The second node is killed while operations are ongoing. We later restart the
-# node, and manually trigger rereplication to sync it up again.
+# Qdrant 1.16.2 and earlier had a bug where aborting a stream records (or other)
+# transfer could break the subsequent WAL delta transfer. Specifically, any new
+# updates coming in during a stream records (or other) transfer may bump the
+# last seen clocks. If we abort the stream records transfer, the last seen
+# clocks may have jumped over a huge gap on the receiving node. A follow up WAL
+# delta transfer will only transfer changes since the last seen clocks, missing
+# a huge set of changes in that jump.
+#
+# In practice, this sequence is problematic:
+# - start stream records transfer to recover replica
+# - send new update through all peers
+# - abort stream records transfer
+# - start WAL delta transfer
+# - WAL delta resolves very short or empty diff
+# - Problem: if stream records only transferred 10%, we now miss 90%
 #
 # Test that data on the both sides is consistent
+#
+# Bug: <https://github.com/qdrant/qdrant/pull/7787>
 def test_abort_stream_records_breaks_wal_delta(tmp_path: pathlib.Path):
     assert_project_root()
 
