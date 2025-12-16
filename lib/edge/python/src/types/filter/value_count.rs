@@ -2,10 +2,13 @@ use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::ValuesCount;
 
+use crate::repr::*;
+
 #[pyclass(name = "ValuesCount")]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyValuesCount(pub ValuesCount);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyValuesCount {
     #[new]
@@ -37,5 +40,21 @@ impl PyValuesCount {
     #[getter]
     pub fn gte(&self) -> Option<usize> {
         self.0.gte
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyValuesCount {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ValuesCount {
+            lt: _,
+            gt: _,
+            lte: _,
+            gte: _,
+        } = self.0;
     }
 }

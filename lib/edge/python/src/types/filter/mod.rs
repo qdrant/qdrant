@@ -20,12 +20,14 @@ pub use self::min_should::*;
 pub use self::nested::*;
 pub use self::range::*;
 pub use self::value_count::*;
+use crate::repr::*;
 
 #[pyclass(name = "Filter")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFilter(pub Filter);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFilter {
     #[new]
@@ -71,5 +73,31 @@ impl PyFilter {
     #[getter]
     pub fn min_should(&self) -> Option<PyMinShould> {
         self.0.min_should.clone().map(PyMinShould)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyFilter {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Filter {
+            must: _,
+            should: _,
+            must_not: _,
+            min_should: _,
+        } = self.0;
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyFilter {
+    type Target = PyFilter;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }

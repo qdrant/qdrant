@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::fmt;
 use std::str::FromStr as _;
 
 use bytemuck::TransparentWrapper;
@@ -7,6 +8,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 use segment::json_path::JsonPath;
+
+use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -41,5 +44,11 @@ impl<'py> IntoPyObject<'py> for &PyJsonPath {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         Ok(PyString::new(py, &self.0.to_string()))
+    }
+}
+
+impl Repr for PyJsonPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.to_string().fmt(f)
     }
 }
