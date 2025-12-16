@@ -967,14 +967,14 @@ mod tests {
             match operation {
                 Operation::Clear => {
                     log::debug!("op:{i} CLEAR");
-                    // assert same length before clearing
-                    assert_eq!(
-                        storage.tracker.read().mapping_len(),
-                        model_hashmap.len(),
-                        "different number of points"
-                    );
                     #[cfg(not(target_os = "windows"))]
                     {
+                        // assert same length before clearing
+                        assert_eq!(
+                            storage.tracker.read().mapping_len(),
+                            model_hashmap.len(),
+                            "different number of points"
+                        );
                         // Windows is very slow at running `clear` on CI
                         storage.clear().unwrap();
                         assert_eq!(storage.max_point_id(), 0, "storage should be empty");
