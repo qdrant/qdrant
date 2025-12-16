@@ -6,7 +6,7 @@ use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::operations::{ClockTag, OperationWithClockTag};
-use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
+use crate::shards::local_shard::clock_map::{ClockMap, ClockMapSnapshot, RecoveryPoint};
 
 pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
 
@@ -79,27 +79,27 @@ impl RecoverableWal {
 
     /// Update the clocks snapshot because we either activated or deactivated our replica
     ///
-    /// If `set` is true - we snapshot and keep our current latest seen clocks.
-    /// If `set` is false - we clear the snapshot.
-    ///
     /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
     /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
     /// clock tags were bumped during a different transfer that was not finished.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
-    pub async fn take_clocks_snapshot_or_clear(&self, take_snapshot: bool) {
+    pub async fn update_newest_clocks_snapshot(&self, action: ClockMapSnapshot) {
         let mut newest_clocks_snapshot = self.newest_clocks_snapshot.lock().await;
 
-        if !take_snapshot {
-            newest_clocks_snapshot.take();
-        } else {
-            if newest_clocks_snapshot.is_none() {
-                let newest_clocks = self.newest_clocks.lock().await;
-                let snapshot = ClockMap::init_from(&newest_clocks);
-                newest_clocks_snapshot.replace(snapshot);
-            } else {
-                debug_assert!(false, "should not snapshot newest clocks twice");
-                log::warn!("Tried to snapshot newest WAL delta clocks a second time, ignoring");
+        match action {
+            ClockMapSnapshot::Take => {
+                if newest_clocks_snapshot.is_none() {
+                    let newest_clocks = self.newest_clocks.lock().await;
+                    let snapshot = ClockMap::init_from(&newest_clocks);
+                    newest_clocks_snapshot.replace(snapshot);
+                } else {
+                    debug_assert!(false, "should not snapshot newest clocks twice");
+                    log::warn!("Tried to snapshot newest WAL delta clocks a second time, ignoring");
+                }
+            }
+            ClockMapSnapshot::Clear => {
+                newest_clocks_snapshot.take();
             }
         }
     }

@@ -393,6 +393,12 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ClockMapSnapshot {
+    Take,
+    Clear,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct ClockMapHelper {
     clocks: Vec<KeyClockHelper>,

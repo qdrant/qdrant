@@ -20,6 +20,7 @@ use crate::operations::types::{CollectionError, CollectionResult, OptimizersStat
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
+use crate::shards::local_shard::clock_map::ClockMapSnapshot;
 use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -262,13 +263,12 @@ impl Shard {
         }
     }
 
-    pub async fn take_clocks_snapshot_or_clear(&self, take_snapshot: bool) -> CollectionResult<()> {
+    pub async fn update_newest_clocks_snapshot(
+        &self,
+        action: ClockMapSnapshot,
+    ) -> CollectionResult<()> {
         match self {
-            Self::Local(local_shard) => {
-                local_shard
-                    .take_clocks_snapshot_or_clear(take_snapshot)
-                    .await
-            }
+            Self::Local(local_shard) => local_shard.update_newest_clocks_snapshot(action).await,
 
             Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(

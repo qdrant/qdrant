@@ -75,6 +75,7 @@ use crate::operations::types::{
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
+use crate::shards::local_shard::clock_map::ClockMapSnapshot;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
@@ -975,9 +976,9 @@ impl LocalShard {
         self.wal.recovery_point().await
     }
 
-    /// Update the clocks snasphot on the current shard
-    pub async fn take_clocks_snapshot_or_clear(&self, take_snapshot: bool) {
-        self.wal.take_clocks_snapshot_or_clear(take_snapshot).await
+    /// Update the newest clocks snapshot on the current shard
+    pub async fn update_newest_clocks_snapshot(&self, action: ClockMapSnapshot) {
+        self.wal.update_newest_clocks_snapshot(action).await
     }
 
     /// Update the cutoff point on the current shard
