@@ -648,12 +648,20 @@ impl ShardReplicaSet {
         let old_shard = self.local.write().await.replace(Shard::Local(local));
 
         if !self.replica_state.read().is_local || state.is_some() {
-            self.replica_state.write(|rs| {
+            let old_state = self.replica_state.write(|rs| {
                 rs.is_local = true;
                 if let Some(state) = state {
-                    rs.set_peer_state(self.this_peer_id(), state);
+                    rs.set_peer_state(self.this_peer_id(), state)
+                } else {
+                    None
                 }
             })?;
+
+            self.on_local_state_changed(
+                old_state.unwrap_or(ReplicaState::Dead),
+                state.unwrap_or(ReplicaState::Dead),
+            )
+            .await?;
         }
         self.update_locally_disabled(self.this_peer_id());
         Ok(old_shard)
@@ -684,11 +692,16 @@ impl ShardReplicaSet {
     }
 
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
-        debug_assert!(peer_id != self.this_peer_id());
+        debug_assert_ne!(peer_id, self.this_peer_id());
 
-        self.replica_state.write(|rs| {
-            rs.set_peer_state(peer_id, state);
-        })?;
+        let old_state = self
+            .replica_state
+            .write(|rs| rs.set_peer_state(peer_id, state))?;
+
+        if self.this_peer_id() == peer_id {
+            self.on_local_state_changed(old_state.unwrap_or(ReplicaState::Dead), state)
+                .await?;
+        }
 
         self.update_locally_disabled(peer_id);
 
@@ -749,13 +762,29 @@ impl ShardReplicaSet {
             self.replica_state.read().get_peer_state(peer_id),
         );
 
-        self.replica_state.write(|rs| {
+        let old_state = self.replica_state.write(|rs| {
             if rs.this_peer_id == peer_id {
                 rs.is_local = true;
             }
-            rs.set_peer_state(peer_id, state);
+            rs.set_peer_state(peer_id, state)
         })?;
+
+        if self.this_peer_id() == peer_id {
+            self.on_local_state_changed(old_state.unwrap_or(ReplicaState::Dead), state)
+                .await?;
+        }
+
         self.update_locally_disabled(peer_id);
+        Ok(())
+    }
+
+    /// Called when the local replica state changes
+    ///
+    /// Not called if:
+    /// - there is no local shard
+    /// - the local shard is removed
+    async fn on_local_state_changed(&self, old_state: ReplicaState, new_state: ReplicaState) -> CollectionResult<()> {
+        // Placeholder
         Ok(())
     }
 
@@ -773,11 +802,25 @@ impl ShardReplicaSet {
         replicas: HashMap<PeerId, ReplicaState>,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        let old_peers = self.replica_state.read().peers().clone();
+        let (old_peers, old_local_state) = {
+            let replica_state = self.replica_state.read();
+            (
+                replica_state.peers().clone(),
+                replica_state.get_peer_state(self.this_peer_id()),
+            )
+        };
 
         self.replica_state.write(|state| {
             state.set_peers(replicas.clone());
         })?;
+
+        if replicas.contains_key(&self.this_peer_id()) {
+            self.on_local_state_changed(
+                old_local_state.unwrap_or(ReplicaState::Dead),
+                replicas.get(&self.this_peer_id()).copied().unwrap(),
+            )
+            .await?;
+        }
 
         self.locally_disabled_peers.write().clear();
 

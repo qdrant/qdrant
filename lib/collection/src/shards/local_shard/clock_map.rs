@@ -20,6 +20,16 @@ pub struct ClockMap {
 }
 
 impl ClockMap {
+    /// Initialize from other clock map
+    ///
+    /// Always assume changed.
+    pub fn init_from(other: &Self) -> Self {
+        Self {
+            clocks: other.clocks.clone(),
+            changed: true,
+        }
+    }
+
     pub fn load_or_default(path: &Path) -> Result<Self> {
         let result = Self::load(path);
 
