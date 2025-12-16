@@ -42,6 +42,7 @@ pub async fn convert_query_point_groups_from_grpc(
         limit,
         group_size,
         group_by,
+        offset,
         with_lookup,
         read_consistency: _,
         timeout: _,
@@ -97,6 +98,9 @@ pub async fn convert_query_point_groups_from_grpc(
         limit: limit
             .map(|l| l as usize)
             .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+        offset: offset
+            .map(|o| o as usize)
+            .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
         params: params.map(From::from),
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
     };

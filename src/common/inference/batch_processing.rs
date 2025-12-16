@@ -350,6 +350,7 @@ mod tests {
                 group_by: "test".parse().unwrap(),
                 group_size: None,
                 limit: None,
+                offset: None,
                 with_lookup: None,
             },
         };

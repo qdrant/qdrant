@@ -83,6 +83,7 @@ pub struct CollectionQueryGroupsRequest {
     pub group_by: JsonPath,
     pub group_size: usize,
     pub limit: usize,
+    pub offset: usize,
     pub with_lookup: Option<WithLookup>,
 }
 

@@ -55,6 +55,9 @@ pub struct GroupRequest {
     /// Limit of groups to return
     pub limit: usize,
 
+    /// Offset of groups to skip
+    pub offset: usize,
+
     /// Options for specifying how to use the group id to lookup points in another collection
     pub with_lookup: Option<WithLookup>,
 }
@@ -75,6 +78,7 @@ impl GroupRequest {
             group_by,
             group_size,
             limit,
+            offset: 0,
             with_lookup: None,
         }
     }
@@ -131,6 +135,7 @@ impl GroupRequest {
             group_by: self.group_by,
             group_size: self.group_size,
             groups: self.limit,
+            offset: self.offset,
         })
     }
 }
@@ -152,7 +157,8 @@ impl QueryGroupRequest {
         let mut request = self.source.clone();
 
         // Adjust limit to fetch enough points to fill groups
-        request.limit = self.groups * self.group_size;
+        let total_groups = self.groups + self.offset;
+        request.limit = total_groups * self.group_size;
         request.prefetches.iter_mut().for_each(|prefetch| {
             increase_limit_for_group(prefetch, self.group_size);
         });
@@ -192,6 +198,7 @@ impl From<SearchGroupsRequestInternal> for GroupRequest {
                     group_by,
                     group_size,
                     limit,
+                    offset,
                     with_lookup: with_lookup_interface,
                 },
         } = request;
@@ -212,6 +219,7 @@ impl From<SearchGroupsRequestInternal> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
+            offset: offset.unwrap_or_default() as usize,
             with_lookup: with_lookup_interface.map(Into::into),
         }
     }
@@ -235,6 +243,7 @@ impl From<RecommendGroupsRequestInternal> for GroupRequest {
                     group_by,
                     group_size,
                     limit,
+                    offset,
                     with_lookup: with_lookup_interface,
                 },
         } = request;
@@ -259,6 +268,7 @@ impl From<RecommendGroupsRequestInternal> for GroupRequest {
             group_by,
             group_size: group_size as usize,
             limit: limit as usize,
+            offset: offset.unwrap_or_default() as usize,
             with_lookup: with_lookup_interface.map(Into::into),
         }
     }
@@ -279,6 +289,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             group_by,
             group_size,
             limit,
+            offset,
             with_lookup: with_lookup_interface,
         } = request;
 
@@ -301,6 +312,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             group_by,
             group_size,
             limit,
+            offset,
             with_lookup: with_lookup_interface,
         }
     }
@@ -319,9 +331,10 @@ pub async fn group_by(
     let collection_params = collection.collection_config.read().await.params.clone();
     let score_ordering =
         shard_query::query_result_order(request.source.query.as_ref(), &collection_params)?;
+    let target_groups = request.groups + request.offset;
 
     let mut aggregator = GroupsAggregator::new(
-        request.groups,
+        target_groups,
         request.group_size,
         request.group_by.clone(),
         score_ordering,
@@ -386,7 +399,7 @@ pub async fn group_by(
         aggregator.add_points(&points);
 
         // TODO: should we break early if we have some amount of "enough" groups?
-        if aggregator.len_of_filled_best_groups() >= request.groups {
+        if aggregator.len_of_filled_best_groups() >= target_groups {
             needs_filling = false;
             break;
         }
@@ -448,7 +461,7 @@ pub async fn group_by(
 
             aggregator.add_points(&points);
 
-            if aggregator.len_of_filled_best_groups() >= request.groups {
+            if aggregator.len_of_filled_best_groups() >= target_groups {
                 break;
             }
         }
@@ -456,6 +469,12 @@ pub async fn group_by(
 
     // extract best results
     let mut groups = aggregator.distill();
+
+    // Apply group offset if requested
+    let drop_count = request.offset.min(groups.len());
+    if drop_count > 0 {
+        groups.drain(0..drop_count);
+    }
 
     // flatten results
     let bare_points = groups
