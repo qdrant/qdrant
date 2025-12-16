@@ -45,17 +45,17 @@ class PartialMonitor(threading.Thread):
         self.peer_urls = peer_urls
         self.target_url = target_url
         self.killed = False
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self):
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             for url in self.peer_urls:
                 if "Partial" in get_shard_states(url).values():
                     self.killed = kill_peer(self.target_url)
                     return
 
     def stop(self):
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=2)
 
 
