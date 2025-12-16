@@ -233,7 +233,7 @@ urlencoding = "2.1.3"
 indicatif = { version = "0.18.3", features = ["rayon"] }
 integer-encoding = "4.1.0"
 itertools = "0.14.0"
-log = "0.4.28"
+log = "0.4.29"
 memmap2 = "0.9.9"
 nix = { version = "0.30", features = ["fs", "feature"] }
 num-traits = "0.2.19"
