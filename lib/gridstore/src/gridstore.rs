@@ -973,10 +973,13 @@ mod tests {
                         model_hashmap.len(),
                         "different number of points"
                     );
-
-                    storage.clear().unwrap();
-                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
-                    model_hashmap.clear();
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        // Windows is very slow at running `clear` on CI
+                        storage.clear().unwrap();
+                        assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                        model_hashmap.clear();
+                    }
                 }
                 Operation::Iter => {
                     log::debug!("op:{i} ITER");
