@@ -22,6 +22,12 @@ if [ "$MODE" == "distributed" ]; then
   export QDRANT__CLUSTER__ENABLED="true"
   # Run in background
   $QDRANT_EXECUTABLE --uri "http://127.0.0.1:6335" &
+elif [ "$MODE" == "readonly" ]; then
+  QDRANT_HOST='localhost:6337'
+  export QDRANT__SERVICE__HTTP_PORT="6337"
+  export QDRANT__SERVICE__GRPC_PORT="6338"
+  # Run in background
+  $QDRANT_EXECUTABLE &
 else
   # Run in background
   $QDRANT_EXECUTABLE &
@@ -60,16 +66,21 @@ if [ "$MODE" == "distributed" ]; then
   sleep 10
 fi
 
-pytest tests/openapi --durations=10
+if [ "$MODE" == "readonly" ]; then
+  export PID=$PID
+  ./tests/readonly_filesystem_test.sh
+else
+  pytest tests/openapi --durations=10
 
-./tests/basic_api_test.sh
+  ./tests/basic_api_test.sh
 
-./tests/basic_sparse_test.sh
+  ./tests/basic_sparse_test.sh
 
-./tests/basic_grpc_test.sh
+  ./tests/basic_grpc_test.sh
 
-./tests/basic_sparse_grpc_test.sh
+  ./tests/basic_sparse_grpc_test.sh
 
-./tests/basic_multivector_grpc_test.sh
+  ./tests/basic_multivector_grpc_test.sh
 
-./tests/basic_query_grpc_test.sh
+  ./tests/basic_query_grpc_test.sh
+fi

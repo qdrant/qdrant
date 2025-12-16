@@ -444,6 +444,8 @@ impl LocalShard {
             )?;
         }
 
+        let read_only_mode = shared_storage_config.read_only_mode;
+
         let local_shard = LocalShard::new(
             collection_id.clone(),
             segment_holder,
@@ -460,8 +462,15 @@ impl LocalShard {
         )
         .await;
 
-        // Apply outstanding operations from WAL
-        local_shard.load_from_wal(collection_id).await?;
+        // Apply outstanding operations from WAL (skip in read-only mode)
+        if !read_only_mode {
+            local_shard.load_from_wal(collection_id).await?;
+        } else {
+            log::info!(
+                "Skipping WAL loading in read-only mode for shard at {}",
+                shard_path.display()
+            );
+        }
 
         Ok(local_shard)
     }

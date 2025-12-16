@@ -42,6 +42,10 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub hide_jwt_dashboard: Option<bool>,
 
+    /// Read-only mode flag. Can be set via config or CLI).
+    #[serde(default)]
+    pub read_only_mode: bool,
+
     /// Directory where static files are served from.
     /// For example, the Web-UI should be placed here.
     #[serde(default)]
