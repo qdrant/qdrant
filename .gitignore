@@ -18,3 +18,4 @@ tests/storage-compat/storage.tar.bz2
 venv
 .venv
 .env
+.python-version
