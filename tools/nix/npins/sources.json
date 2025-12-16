@@ -18,19 +18,6 @@
       "name": "nixpkgs-unstable",
       "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre800239.b1bebd0fe266/nixexprs.tar.xz",
       "hash": "0vnfj9d7kzk673i7s1vnkbx513a4gh5mfcd8fag2c7wi6hz471n6"
-    },
-    "poetry2nix": {
-      "type": "Git",
-      "repository": {
-        "type": "GitHub",
-        "owner": "nix-community",
-        "repo": "poetry2nix"
-      },
-      "branch": "master",
-      "submodules": false,
-      "revision": "ce2369db77f45688172384bbeb962bc6c2ea6f94",
-      "url": "https://github.com/nix-community/poetry2nix/archive/ce2369db77f45688172384bbeb962bc6c2ea6f94.tar.gz",
-      "hash": "0xq52gq2920xnv7n8rchy3myxbijfpap8z0sd572ifla9dnpqzvi"
     }
   },
   "version": 5

@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
 env:
-  POETRY_VERSION: 2.2.1
+  UV_VERSION: 0.9.17
 
 jobs:
   unit-coverage:
@@ -65,13 +65,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install dependencies
+      - name: Install uv and Python dependencies
         run: |
-          echo "Installing Poetry $POETRY_VERSION"
-          curl -sSL https://install.python-poetry.org | python3 - --version "$POETRY_VERSION"
-
-          poetry --project tests check --lock
-          poetry --project tests install --no-root
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv lock --check
+          uv sync
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
