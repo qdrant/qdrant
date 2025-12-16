@@ -966,24 +966,36 @@ mod tests {
         for (i, operation) in operations.enumerate() {
             match operation {
                 Operation::Clear => {
+                    log::debug!("op:{i} CLEAR");
+                    // assert same length before clearing
+                    assert_eq!(
+                        storage.tracker.read().mapping_len(),
+                        model_hashmap.len(),
+                        "different number of points"
+                    );
+
                     storage.clear().unwrap();
                     assert_eq!(storage.max_point_id(), 0, "storage should be empty");
                     model_hashmap.clear();
                 }
                 Operation::Iter => {
-                    let mut tmp = AHashMap::new();
+                    log::debug!("op:{i} ITER");
+                    let mut stored_points = AHashMap::new();
                     storage
                         .iter::<_, String>(
                             |p, v| {
-                                let prev = tmp.insert(p, v);
-                                assert!(prev.is_none(), "duplicate point found {prev:?}");
+                                let prev = stored_points.insert(p, v);
+                                assert!(
+                                    prev.is_none(),
+                                    "duplicate point offset {p} found with value {prev:?}"
+                                );
                                 Ok(true) // no shortcutting
                             },
                             hw_counter_ref,
                         )
                         .unwrap();
                     assert_eq!(
-                        tmp, model_hashmap,
+                        stored_points, model_hashmap,
                         "storage and model are different when using `iter`"
                     );
                 }
@@ -1066,7 +1078,11 @@ mod tests {
         }
 
         // asset same length
-        assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+        assert_eq!(
+            storage.tracker.read().mapping_len(),
+            model_hashmap.len(),
+            "different number of points"
+        );
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
@@ -1103,6 +1119,15 @@ mod tests {
                 "failed for point_offset: {point_offset}",
             );
         }
+
+        // wipe storage
+        storage.wipe().unwrap();
+
+        // assert base folder is gone
+        assert!(
+            !dir.path().exists(),
+            "base folder should be deleted by wipe"
+        );
     }
 
     #[test]
