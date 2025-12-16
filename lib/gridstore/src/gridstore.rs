@@ -980,14 +980,12 @@ mod tests {
                         model_hashmap.len(),
                         "different number of points"
                     );
-                    // Windows is very slow at running `clear` on CI
                     storage.clear().unwrap();
                     assert_eq!(storage.max_point_id(), 0, "storage should be empty");
                     model_hashmap.clear();
                 }
                 Operation::Iter => {
                     log::debug!("op:{i} ITER");
-                    // Windows is very slow at running `iter` on CI
                     let mut stored_points = AHashMap::new();
                     storage
                         .iter::<_, String>(
