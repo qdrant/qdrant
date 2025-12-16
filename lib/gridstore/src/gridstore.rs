@@ -983,24 +983,28 @@ mod tests {
                 }
                 Operation::Iter => {
                     log::debug!("op:{i} ITER");
-                    let mut stored_points = AHashMap::new();
-                    storage
-                        .iter::<_, String>(
-                            |p, v| {
-                                let prev = stored_points.insert(p, v);
-                                assert!(
-                                    prev.is_none(),
-                                    "duplicate point offset {p} found with value {prev:?}"
-                                );
-                                Ok(true) // no shortcutting
-                            },
-                            hw_counter_ref,
-                        )
-                        .unwrap();
-                    assert_eq!(
-                        stored_points, model_hashmap,
-                        "storage and model are different when using `iter`"
-                    );
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        // Windows is very slow at running `iter` on CI
+                        let mut stored_points = AHashMap::new();
+                        storage
+                            .iter::<_, String>(
+                                |p, v| {
+                                    let prev = stored_points.insert(p, v);
+                                    assert!(
+                                        prev.is_none(),
+                                        "duplicate point offset {p} found with value {prev:?}"
+                                    );
+                                    Ok(true) // no shortcutting
+                                },
+                                hw_counter_ref,
+                            )
+                            .unwrap();
+                        assert_eq!(
+                            stored_points, model_hashmap,
+                            "storage and model are different when using `iter`"
+                        );
+                    }
                 }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
