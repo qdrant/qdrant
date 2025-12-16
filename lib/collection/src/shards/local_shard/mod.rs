@@ -972,8 +972,8 @@ impl LocalShard {
     }
 
     /// Update the newest clocks snapshot on the current shard
-    pub async fn update_newest_clocks_snapshot(&self, action: ClockMapSnapshot) {
-        self.wal.update_newest_clocks_snapshot(action).await
+    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) {
+        self.wal.snapshot_newest_clocks(action).await
     }
 
     /// Update the cutoff point on the current shard

@@ -76,7 +76,7 @@ impl RecoverableWal {
     /// clock tags were bumped during a different transfer that was not finished.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
-    pub async fn update_newest_clocks_snapshot(&self, action: ClockMapSnapshot) {
+    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) {
         self.newest_clocks.lock().await.snapshot(action);
     }
 

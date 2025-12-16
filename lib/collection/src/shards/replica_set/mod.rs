@@ -798,7 +798,7 @@ impl ShardReplicaSet {
             } else {
                 ClockMapSnapshot::Take
             };
-            local_shard.update_newest_clocks_snapshot(action).await?;
+            local_shard.snapshot_newest_clocks(action).await?;
         }
 
         Ok(())

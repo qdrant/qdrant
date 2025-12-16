@@ -263,12 +263,19 @@ impl Shard {
         }
     }
 
-    pub async fn update_newest_clocks_snapshot(
-        &self,
-        action: ClockMapSnapshot,
-    ) -> CollectionResult<()> {
+    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) -> CollectionResult<()> {
         match self {
-            Self::Local(local_shard) => local_shard.update_newest_clocks_snapshot(action).await,
+            Self::Local(local_shard) => {
+                local_shard.snapshot_newest_clocks(action).await;
+
+                // When taking clocks snapshot, persist changes immediately
+                local_shard
+                    .update_handler
+                    .lock()
+                    .await
+                    .store_clocks_if_changed()
+                    .await?;
+            }
 
             Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(

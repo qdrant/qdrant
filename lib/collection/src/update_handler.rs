@@ -292,4 +292,21 @@ impl UpdateHandler {
 
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
+
+    pub async fn store_clocks_if_changed(&self) -> CollectionResult<()> {
+        let clocks = self.clocks.clone();
+        let segments = self.segments.clone();
+        let shard_path = self.shard_path.clone();
+
+        self.runtime_handle
+            .spawn_blocking(move || {
+                if let Err(err) = clocks.store_if_changed(&shard_path) {
+                    log::warn!("Failed to store clock maps to disk: {err}");
+                    segments.write().report_optimizer_error(err);
+                }
+            })
+            .await?;
+
+        Ok(())
+    }
 }
