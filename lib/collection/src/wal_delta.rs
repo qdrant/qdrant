@@ -17,6 +17,12 @@ pub struct RecoverableWal {
     /// Map of all highest seen clocks for each peer and clock ID.
     pub(super) newest_clocks: Arc<Mutex<ClockMap>>,
 
+    /// Snapshot of all highest seen clocks for each peer and clock ID
+    ///
+    /// Snapshot is taken from highest seen clocks when this replica last got into inactive state.
+    /// `None` if replica is currently in active state.
+    pub(super) newest_clocks_snapshot: Arc<Mutex<Option<ClockMap>>>,
+
     /// Map of all clocks and ticks that are cut off.
     ///
     /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
@@ -32,13 +38,15 @@ pub struct RecoverableWal {
 impl RecoverableWal {
     pub fn new(
         wal: LockedWal,
-        highest_clocks: Arc<Mutex<ClockMap>>,
-        cutoff_clocks: Arc<Mutex<ClockMap>>,
+        newest_clocks: Arc<Mutex<ClockMap>>,
+        newest_clocks_snapshot: Arc<Mutex<Option<ClockMap>>>,
+        oldest_clocks: Arc<Mutex<ClockMap>>,
     ) -> Self {
         Self {
             wal,
-            newest_clocks: highest_clocks,
-            oldest_clocks: cutoff_clocks,
+            newest_clocks,
+            newest_clocks_snapshot,
+            oldest_clocks,
         }
     }
 
@@ -293,6 +301,7 @@ mod tests {
             RecoverableWal::new(
                 Arc::new(Mutex::new(wal)),
                 Arc::new(Mutex::new(ClockMap::default())),
+                Arc::new(Mutex::new(None)),
                 Arc::new(Mutex::new(ClockMap::default())),
             ),
             dir,

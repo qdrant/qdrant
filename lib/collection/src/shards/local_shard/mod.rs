@@ -88,7 +88,7 @@ const WAL_PATH: &str = "wal";
 const SEGMENTS_PATH: &str = "segments";
 
 const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
-
+const NEWEST_CLOCKS_SNAPSHOT_PATH: &str = "newest_clocks_active.json";
 const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 
 /// LocalShard
@@ -258,7 +258,12 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            wal: RecoverableWal::new(locked_wal, clocks.newest_clocks, clocks.oldest_clocks),
+            wal: RecoverableWal::new(
+                locked_wal,
+                clocks.newest_clocks,
+                clocks.newest_clocks_snapshot,
+                clocks.oldest_clocks,
+            ),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -1054,13 +1059,19 @@ fn deduplicate_points_async(
 #[derive(Clone, Debug, Default)]
 pub struct LocalShardClocks {
     newest_clocks: Arc<Mutex<ClockMap>>,
+    newest_clocks_snapshot: Arc<Mutex<Option<ClockMap>>>,
     oldest_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl LocalShardClocks {
-    fn new(newest_clocks: ClockMap, oldest_clocks: ClockMap) -> Self {
+    fn new(
+        newest_clocks: ClockMap,
+        newest_clocks_snaphsot: Option<ClockMap>,
+        oldest_clocks: ClockMap,
+    ) -> Self {
         Self {
             newest_clocks: Arc::new(Mutex::new(newest_clocks)),
+            newest_clocks_snapshot: Arc::new(Mutex::new(newest_clocks_snaphsot)),
             oldest_clocks: Arc::new(Mutex::new(oldest_clocks)),
         }
     }
@@ -1068,8 +1079,14 @@ impl LocalShardClocks {
     // Load clock maps from disk
     pub fn load(shard_path: &Path) -> CollectionResult<Self> {
         let newest_clocks = ClockMap::load_or_default(&Self::newest_clocks_path(shard_path))?;
+        let newest_clocks_snapshot =
+            ClockMap::load(&Self::newest_clocks_snapshot_path(shard_path)).ok();
         let oldest_clocks = ClockMap::load_or_default(&Self::oldest_clocks_path(shard_path))?;
-        Ok(Self::new(newest_clocks, oldest_clocks))
+        Ok(Self::new(
+            newest_clocks,
+            newest_clocks_snapshot,
+            oldest_clocks,
+        ))
     }
 
     /// Persist clock maps to disk
@@ -1077,6 +1094,14 @@ impl LocalShardClocks {
         self.oldest_clocks
             .blocking_lock()
             .store_if_changed(&Self::oldest_clocks_path(shard_path))?;
+
+        let newest_clocks_snapshot_path = Self::newest_clocks_snapshot_path(shard_path);
+        if let Some(clocks) = self.newest_clocks_snapshot.blocking_lock().as_mut() {
+            clocks.store_if_changed(&newest_clocks_snapshot_path)?;
+        } else if newest_clocks_snapshot_path.exists() {
+            // Remove file if we no longer have newest active clocks
+            fs_err::remove_file(&newest_clocks_snapshot_path)?;
+        }
 
         self.newest_clocks
             .blocking_lock()
@@ -1088,11 +1113,20 @@ impl LocalShardClocks {
     /// Put clock data from the disk into an archive.
     pub async fn archive_data(from: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         let newest_clocks_from = Self::newest_clocks_path(from);
+        let newest_clocks_snapshot_from = Self::newest_clocks_snapshot_path(from);
         let oldest_clocks_from = Self::oldest_clocks_path(from);
 
         if newest_clocks_from.exists() {
             tar.append_file(&newest_clocks_from, Path::new(NEWEST_CLOCKS_PATH))
                 .await?;
+        }
+
+        if newest_clocks_snapshot_from.exists() {
+            tar.append_file(
+                &newest_clocks_snapshot_from,
+                Path::new(NEWEST_CLOCKS_SNAPSHOT_PATH),
+            )
+            .await?;
         }
 
         if oldest_clocks_from.exists() {
@@ -1106,11 +1140,17 @@ impl LocalShardClocks {
     /// Move clock data on disk from one shard path to another.
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
         let newest_clocks_from = Self::newest_clocks_path(from);
+        let newest_clocks_snapshot_from = Self::newest_clocks_snapshot_path(from);
         let oldest_clocks_from = Self::oldest_clocks_path(from);
 
         if newest_clocks_from.exists() {
             let newest_clocks_to = Self::newest_clocks_path(to);
             move_file(newest_clocks_from, newest_clocks_to).await?;
+        }
+
+        if newest_clocks_snapshot_from.exists() {
+            let newest_clocks_snapshot_to = Self::newest_clocks_snapshot_path(to);
+            move_file(newest_clocks_snapshot_from, newest_clocks_snapshot_to).await?;
         }
 
         if oldest_clocks_from.exists() {
@@ -1124,10 +1164,15 @@ impl LocalShardClocks {
     /// Delete clock data from disk at the given shard path.
     pub async fn delete_data(shard_path: &Path) -> CollectionResult<()> {
         let newest_clocks_path = Self::newest_clocks_path(shard_path);
+        let newest_clocks_snapshot_path = Self::newest_clocks_snapshot_path(shard_path);
         let oldest_clocks_path = Self::oldest_clocks_path(shard_path);
 
         if newest_clocks_path.exists() {
             tokio_fs::remove_file(newest_clocks_path).await?;
+        }
+
+        if newest_clocks_snapshot_path.exists() {
+            tokio_fs::remove_file(newest_clocks_snapshot_path).await?;
         }
 
         if oldest_clocks_path.exists() {
@@ -1139,6 +1184,10 @@ impl LocalShardClocks {
 
     fn newest_clocks_path(shard_path: &Path) -> PathBuf {
         shard_path.join(NEWEST_CLOCKS_PATH)
+    }
+
+    fn newest_clocks_snapshot_path(shard_path: &Path) -> PathBuf {
+        shard_path.join(NEWEST_CLOCKS_SNAPSHOT_PATH)
     }
 
     fn oldest_clocks_path(shard_path: &Path) -> PathBuf {
