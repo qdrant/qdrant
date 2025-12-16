@@ -8,6 +8,9 @@ use memory::mmap_ops::{
 };
 use smallvec::SmallVec;
 
+use crate::Result;
+use crate::error::GridstoreError;
+
 pub type PointOffset = u32;
 pub type BlockOffset = u32;
 pub type PageId = u32;
@@ -218,13 +221,15 @@ impl Tracker {
 
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return None
-    pub fn open(path: &Path) -> Result<Self, String> {
+    pub fn open(path: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         if !path.exists() {
-            return Err(format!("Tracker file does not exist: {}", path.display()));
+            return Err(GridstoreError::service_error(format!(
+                "Tracker file does not exist: {}",
+                path.display()
+            )));
         }
-        let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
         let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
         let pending_updates = AHashMap::new();
         Ok(Self {
