@@ -843,9 +843,7 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
 pub enum QuantizationConfig {

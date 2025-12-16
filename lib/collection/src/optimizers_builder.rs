@@ -177,7 +177,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            *quantization_config,
+            quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
@@ -187,7 +187,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            *quantization_config,
+            quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -198,7 +198,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            *quantization_config,
+            quantization_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
@@ -207,7 +207,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            *quantization_config,
+            quantization_config.clone(),
         )),
     ])
 }

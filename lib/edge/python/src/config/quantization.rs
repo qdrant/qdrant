@@ -8,7 +8,7 @@ use segment::types::*;
 
 use crate::repr::*;
 
-#[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyQuantizationConfig(pub QuantizationConfig);
 

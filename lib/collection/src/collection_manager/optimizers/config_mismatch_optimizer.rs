@@ -139,7 +139,9 @@ impl ConfigMismatchOptimizer {
                                 .collection_params
                                 .vectors
                                 .get_params(vector_name)
-                                .and_then(|vector_params| vector_params.quantization_config);
+                                .and_then(|vector_params| {
+                                    vector_params.quantization_config.clone()
+                                });
                             let target_quantization = target_quantization_vector
                                 .as_ref()
                                 .or(target_quantization_collection);
@@ -230,7 +232,7 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
     }
 
     fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config
+        self.quantization_config.clone()
     }
 
     fn threshold_config(&self) -> &OptimizerThresholds {
@@ -632,7 +634,7 @@ mod tests {
                 (
                     VECTOR1_NAME.to_owned(),
                     VectorParamsBuilder::new(vector1_dim as u64, Distance::Dot)
-                        .with_quantization_config(quantization_config_vector1)
+                        .with_quantization_config(quantization_config_vector1.clone())
                         .build(),
                 ),
                 (
@@ -677,7 +679,7 @@ mod tests {
             collection_params.clone(),
             Default::default(),
             HnswGlobalConfig::default(),
-            Some(quantization_config_collection),
+            Some(quantization_config_collection.clone()),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -729,7 +731,7 @@ mod tests {
                 map.get_mut(VECTOR2_NAME)
                     .unwrap()
                     .quantization_config
-                    .replace(quantization_config_vector2);
+                    .replace(quantization_config_vector2.clone());
             }
         }
 
@@ -762,12 +764,12 @@ mod tests {
             .for_each(|segment| {
                 assert_eq!(
                     segment.config().vector_data[VECTOR1_NAME].quantization_config,
-                    Some(quantization_config_vector1),
+                    Some(quantization_config_vector1.clone()),
                     "Quantization config of vector1 is not what we expect",
                 );
                 assert_eq!(
                     segment.config().vector_data[VECTOR2_NAME].quantization_config,
-                    Some(quantization_config_vector2),
+                    Some(quantization_config_vector2.clone()),
                     "Quantization config of vector2 is not what we expect",
                 );
             });

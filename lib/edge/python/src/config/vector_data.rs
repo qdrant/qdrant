@@ -78,7 +78,7 @@ impl PyVectorDataConfig {
 
     #[getter]
     pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
-        self.0.quantization_config.map(PyQuantizationConfig)
+        self.0.quantization_config.clone().map(PyQuantizationConfig)
     }
 
     #[getter]
