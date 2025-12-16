@@ -20,8 +20,10 @@ message GetPeerTelemetryResponse {
 message PeerTelemetry {
   reserved 1; // id
   reserved 2; // app
-  map<string, CollectionTelemetry> collections = 3; // Mapping from collection name to its telemetry
-  ClusterTelemetry cluster = 4; // Telemetry about the cluster and peers
+  // Mapping from collection name to its telemetry
+  map<string, CollectionTelemetry> collections = 3;
+  // Telemetry about the cluster and peers
+  ClusterTelemetry cluster = 4;
   reserved 5; // requests
   reserved 6; // memory
   reserved 7; // hardware
@@ -110,10 +112,10 @@ message ShardCleanStatusTelemetry {
 
 message ClusterTelemetry {
   ClusterStatusTelemetry status = 1;
-  reserved 2; // config
+  reserved 2;                      // config
   map<uint64, PeerInfo> peers = 3; // peers
-  reserved 4; // peer_metadata
-  reserved 5; // metadata
+  reserved 4;                      // peer_metadata
+  reserved 5;                      // metadata
 }
 
 message ClusterStatusTelemetry {
