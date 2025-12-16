@@ -19,3 +19,4 @@ venv
 .venv
 .env
 uv.lock
+.python-version
