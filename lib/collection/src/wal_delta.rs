@@ -17,12 +17,6 @@ pub struct RecoverableWal {
     /// Map of all highest seen clocks for each peer and clock ID.
     pub(super) newest_clocks: Arc<Mutex<ClockMap>>,
 
-    /// Snapshot of all highest seen clocks for each peer and clock ID
-    ///
-    /// Snapshot is taken from highest seen clocks when this replica last got into inactive state.
-    /// `None` if replica is currently in active state.
-    pub(super) newest_clocks_snapshot: Arc<Mutex<Option<ClockMap>>>,
-
     /// Map of all clocks and ticks that are cut off.
     ///
     /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
@@ -39,13 +33,11 @@ impl RecoverableWal {
     pub fn new(
         wal: LockedWal,
         newest_clocks: Arc<Mutex<ClockMap>>,
-        newest_clocks_snapshot: Arc<Mutex<Option<ClockMap>>>,
         oldest_clocks: Arc<Mutex<ClockMap>>,
     ) -> Self {
         Self {
             wal,
             newest_clocks,
-            newest_clocks_snapshot,
             oldest_clocks,
         }
     }
@@ -85,23 +77,7 @@ impl RecoverableWal {
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
     pub async fn update_newest_clocks_snapshot(&self, action: ClockMapSnapshot) {
-        let mut newest_clocks_snapshot = self.newest_clocks_snapshot.lock().await;
-
-        match action {
-            ClockMapSnapshot::Take => {
-                if newest_clocks_snapshot.is_none() {
-                    let newest_clocks = self.newest_clocks.lock().await;
-                    let snapshot = ClockMap::init_from(&newest_clocks);
-                    newest_clocks_snapshot.replace(snapshot);
-                } else {
-                    debug_assert!(false, "should not snapshot newest clocks twice");
-                    log::warn!("Tried to snapshot newest WAL delta clocks a second time, ignoring");
-                }
-            }
-            ClockMapSnapshot::Clear => {
-                newest_clocks_snapshot.take();
-            }
-        }
+        self.newest_clocks.lock().await.snapshot(action);
     }
 
     /// Update the cutoff clock map based on the given recovery point
@@ -132,12 +108,7 @@ impl RecoverableWal {
     ///
     /// Uses newest clocks snapshot if set, otherwise uses newest clocks.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        // Use newest clocks snapshot if set
-        if let Some(clocks) = self.newest_clocks_snapshot.lock().await.as_ref() {
-            return clocks.to_recovery_point();
-        }
-
-        self.newest_clocks.lock().await.to_recovery_point()
+        self.newest_clocks.lock().await.to_recovery_point(true)
     }
 
     pub async fn resolve_wal_delta(
@@ -146,7 +117,7 @@ impl RecoverableWal {
     ) -> Result<Option<u64>, WalDeltaError> {
         let newest_clocks = self.recovery_point().await;
 
-        let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point();
+        let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point(false);
 
         resolve_wal_delta(
             self.wal
@@ -335,7 +306,6 @@ mod tests {
             RecoverableWal::new(
                 Arc::new(Mutex::new(wal)),
                 Arc::new(Mutex::new(ClockMap::default())),
-                Arc::new(Mutex::new(None)),
                 Arc::new(Mutex::new(ClockMap::default())),
             ),
             dir,

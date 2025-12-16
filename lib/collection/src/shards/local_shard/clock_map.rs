@@ -15,21 +15,13 @@ use crate::shards::shard::PeerId;
 #[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
-    /// Whether this clock map has changed since the last time it was persisted.
+    /// Optional snapshot with earlier version of clocks
+    snapshot: Option<HashMap<Key, Clock>>,
+    /// Whether this clock map has changed since the last time it was persisted
     changed: bool,
 }
 
 impl ClockMap {
-    /// Initialize from other clock map
-    ///
-    /// Always assume changed.
-    pub fn init_from(other: &Self) -> Self {
-        Self {
-            clocks: other.clocks.clone(),
-            changed: true,
-        }
-    }
-
     pub fn load_or_default(path: &Path) -> Result<Self> {
         let result = Self::load(path);
 
@@ -136,15 +128,41 @@ impl ClockMap {
         (is_accepted, new_tick)
     }
 
+    /// Take or clear a snapshot of clocks
+    pub fn snapshot(&mut self, action: ClockMapSnapshot) {
+        match action {
+            ClockMapSnapshot::Take if self.snapshot.is_some() => {
+                debug_assert!(false, "should not snapshot clock map twice");
+                log::warn!("Tried to snapshot WAL clocks a second time, ignoring");
+            }
+            ClockMapSnapshot::Take => {
+                self.snapshot.replace(self.clocks.clone());
+                self.changed = true;
+            }
+            ClockMapSnapshot::Clear => {
+                self.snapshot.take();
+                self.changed = true;
+            }
+        }
+    }
+
     /// Create a recovery point based on the current clock map state, so that we can recover any
     /// new operations with new clock values
     ///
+    /// If `use_snapshot` is `true`, the recovery point is created from the clocks snapshot if it
+    /// exists. Otherwise the current clocks are used.
+    ///
     /// The recovery point contains every clock that is in this clock map. So, it represents all
     /// the clock ticks we have.
-    pub fn to_recovery_point(&self) -> RecoveryPoint {
+    pub fn to_recovery_point(&self, use_snapshot: bool) -> RecoveryPoint {
+        let clocks = if use_snapshot {
+            self.snapshot.as_ref().unwrap_or(&self.clocks)
+        } else {
+            &self.clocks
+        };
+
         RecoveryPoint {
-            clocks: self
-                .clocks
+            clocks: clocks
                 .iter()
                 .map(|(&key, clock)| (key, (clock.current_tick, clock.token)))
                 .collect(),
@@ -402,12 +420,17 @@ pub enum ClockMapSnapshot {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct ClockMapHelper {
     clocks: Vec<KeyClockHelper>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot: Option<Vec<KeyClockHelper>>,
 }
 
 impl From<ClockMap> for ClockMapHelper {
     fn from(clock_map: ClockMap) -> Self {
         Self {
             clocks: clock_map.clocks.into_iter().map(Into::into).collect(),
+            snapshot: clock_map
+                .snapshot
+                .map(|clocks| clocks.into_iter().map(Into::into).collect()),
         }
     }
 }
@@ -416,6 +439,9 @@ impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
         Self {
             clocks: helper.clocks.into_iter().map(Into::into).collect(),
+            snapshot: helper
+                .snapshot
+                .map(|clocks| clocks.into_iter().map(Into::into).collect()),
             changed: false,
         }
     }
