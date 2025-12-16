@@ -128,8 +128,15 @@ impl RecoverableWal {
         }
     }
 
-    /// Get a recovery point for this WAL.
+    /// Get a recovery point for this WAL
+    ///
+    /// Uses newest clocks snapshot if set, otherwise uses newest clocks.
     pub async fn recovery_point(&self) -> RecoveryPoint {
+        // Use newest clocks snapshot if set
+        if let Some(clocks) = self.newest_clocks_snapshot.lock().await.as_ref() {
+            return clocks.to_recovery_point();
+        }
+
         self.newest_clocks.lock().await.to_recovery_point()
     }
 
