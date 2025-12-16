@@ -1,4 +1,5 @@
 use std::backtrace::Backtrace;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
@@ -389,17 +390,19 @@ pub struct RemoteShardInfo {
     pub state: ReplicaState,
 }
 
+/// Ordered by priority
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
-    Acknowledged,
-    Completed,
-    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
-    ClockRejected,
+    ClockRejected = 0,
+    Acknowledged = 1,
+    Completed = 2,
+    WaitTimeout = 3,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]

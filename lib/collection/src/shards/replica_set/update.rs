@@ -733,53 +733,38 @@ impl ShardReplicaSet {
     where
         F: Fn(PeerId) -> bool,
     {
-        assert!(!successes.is_empty());
+        debug_assert!(!successes.is_empty());
+        debug_assert!(
+            !successes
+                .iter()
+                .any(|(_, r)| r.status == UpdateStatus::ClockRejected),
+            "ClockRejected must be handled before merging successful results"
+        );
 
-        let mut status = UpdateStatus::Acknowledged;
-        let mut best = None::<(u8, UpdateResult)>;
-        let mut max_clock = None::<ClockTag>;
+        // Aggregate status: WaitTimeout > .. > ClockRejected
+        let status = successes
+            .iter()
+            .map(|(_, res)| res.status)
+            .max()
+            .unwrap_or(UpdateStatus::Acknowledged);
 
-        for &(peer_id, res) in successes {
-            match res.status {
-                UpdateStatus::WaitTimeout => status = UpdateStatus::WaitTimeout,
-                UpdateStatus::Completed if status != UpdateStatus::WaitTimeout => {
-                    status = UpdateStatus::Completed
-                }
-                _ => {}
-            }
+        // Pick a representative result to carry non-aggregated fields (operation_id, etc.).
+        // Prefer the most authoritative peer: local source-of-truth > any source-of-truth > local > any.
+        let mut result = successes
+            .iter()
+            .max_by_key(|(peer_id, _)| (is_source_of_truth(*peer_id), *peer_id == this_peer_id))
+            .map(|(_, res)| *res)
+            .expect("successes is not empty");
 
-            let prio = if peer_id == this_peer_id && is_source_of_truth(peer_id) {
-                0
-            } else if is_source_of_truth(peer_id) {
-                1
-            } else if peer_id == this_peer_id {
-                2
-            } else {
-                3
-            };
-
-            if best.is_none_or(|(best_prio, _)| prio < best_prio) {
-                best = Some((prio, res));
-            }
-
-            if let Some(tag) = res.clock_tag {
-                max_clock = Some(match max_clock {
-                    Some(cur) if cur.clock_tick >= tag.clock_tick => cur,
-                    _ => tag,
-                });
-            }
-        }
-
-        let mut result = best.map(|(_, r)| r).unwrap_or(UpdateResult {
-            operation_id: None,
-            status: UpdateStatus::Acknowledged,
-            clock_tag: None,
-        });
-
+        // Overwrite with the aggregated status across all successful replies
         result.status = status;
-        if let Some(clock) = max_clock {
-            result.clock_tag = Some(clock);
-        }
+
+        // Propagate the freshest clock we observed among successful replies.
+        // This avoids returning a stale clock_tag when replicas progressed at different speeds.
+        result.clock_tag = successes
+            .iter()
+            .filter_map(|(_, res)| res.clock_tag)
+            .max_by_key(|tag| tag.clock_tick);
 
         result
     }
