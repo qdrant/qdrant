@@ -6,35 +6,38 @@ option csharp_namespace = "Qdrant.Client.Grpc";
 import "telemetry_internal.proto";
 
 service QdrantInternal {
-  /*
-  Get current commit and term on the target peer.
-   */
-  rpc GetConsensusCommit (GetConsensusCommitRequest) returns (GetConsensusCommitResponse) {}
+  // Get current commit and term on the target peer.
+  rpc GetConsensusCommit(GetConsensusCommitRequest)
+      returns (GetConsensusCommitResponse) {}
 
-  /*
-  Wait until the target peer reached the given commit ID.
-  */
-  rpc WaitOnConsensusCommit (WaitOnConsensusCommitRequest) returns (WaitOnConsensusCommitResponse) {}
+  // Wait until the target peer reached the given commit ID.
+  rpc WaitOnConsensusCommit(WaitOnConsensusCommitRequest)
+      returns (WaitOnConsensusCommitResponse) {}
 
-  /*
-  Get telemetry from a peer
-  */
-  rpc GetPeerTelemetry (GetPeerTelemetryRequest) returns (GetPeerTelemetryResponse) {}
+  // Get telemetry from a peer
+  rpc GetPeerTelemetry(GetPeerTelemetryRequest)
+      returns (GetPeerTelemetryResponse) {}
 }
 
 message GetConsensusCommitRequest {}
 
 message GetConsensusCommitResponse {
-  int64 commit = 1; // Raft commit as u64
-  int64 term = 2; // Raft term as u64
+  // Raft commit as u64
+  int64 commit = 1;
+  // Raft term as u64
+  int64 term = 2;
 }
 
 message WaitOnConsensusCommitRequest {
-  int64 commit = 1; // Raft commit as u64
-  int64 term = 2; // Raft term as u64
-  int64 timeout = 3; // Timeout in seconds
+  // Raft commit as u64
+  int64 commit = 1;
+  // Raft term as u64
+  int64 term = 2;
+  // Timeout in seconds
+  int64 timeout = 3;
 }
 
 message WaitOnConsensusCommitResponse {
-  bool ok = 1; // False if commit/term is diverged and never reached or if timed out.
+  // False if commit/term is diverged and never reached or if timed out.
+  bool ok = 1;
 }

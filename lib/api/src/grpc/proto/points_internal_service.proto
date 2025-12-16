@@ -7,36 +7,51 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 service PointsInternal {
-  rpc Upsert (UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc Sync (SyncPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc Delete (DeletePointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc UpdateVectors (UpdateVectorsInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeleteVectors (DeleteVectorsInternal) returns (PointsOperationResponseInternal) {}
-  rpc SetPayload (SetPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc OverwritePayload (SetPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeletePayload (DeletePayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
-  rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc UpdateBatch (UpdateBatchInternal) returns (PointsOperationResponseInternal) {}
-  rpc CoreSearchBatch (CoreSearchBatchPointsInternal) returns (SearchBatchResponse) {}
-  rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
-  rpc Count (CountPointsInternal) returns (CountResponse) {}
-  rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
-  rpc Get (GetPointsInternal) returns (GetResponse) {}
-  rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponseInternal) {}
+  rpc Upsert(UpsertPointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc Sync(SyncPointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc Delete(DeletePointsInternal) returns (PointsOperationResponseInternal) {}
+  rpc UpdateVectors(UpdateVectorsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeleteVectors(DeleteVectorsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc SetPayload(SetPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc OverwritePayload(SetPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeletePayload(DeletePayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc ClearPayload(ClearPayloadPointsInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc CreateFieldIndex(CreateFieldIndexCollectionInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc DeleteFieldIndex(DeleteFieldIndexCollectionInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc UpdateBatch(UpdateBatchInternal)
+      returns (PointsOperationResponseInternal) {}
+  rpc CoreSearchBatch(CoreSearchBatchPointsInternal)
+      returns (SearchBatchResponse) {}
+  rpc Scroll(ScrollPointsInternal) returns (ScrollResponse) {}
+  rpc Count(CountPointsInternal) returns (CountResponse) {}
+  rpc Recommend(RecommendPointsInternal) returns (RecommendResponse) {}
+  rpc Get(GetPointsInternal) returns (GetResponse) {}
+  rpc QueryBatch(QueryBatchPointsInternal)
+      returns (QueryBatchResponseInternal) {}
   rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
 }
 
-
 message SyncPoints {
-  string collection_name = 1; // name of the collection
-  optional bool wait = 2; // Wait until the changes have been applied?
+  // name of the collection
+  string collection_name = 1;
+  // Wait until the changes have been applied?
+  optional bool wait = 2;
   repeated PointStruct points = 3;
-  optional PointId from_id = 4; // Start of the sync range
-  optional PointId to_id = 5; // End of the sync range
+  // Start of the sync range
+  optional PointId from_id = 4;
+  // End of the sync range
+  optional PointId to_id = 5;
   optional WriteOrdering ordering = 6;
-  optional uint64 timeout = 7; // Timeout for the request in seconds
+  // Timeout for the request in seconds
+  optional uint64 timeout = 7;
 }
 
 message SyncPointsInternal {
@@ -100,39 +115,40 @@ message DeleteFieldIndexCollectionInternal {
 }
 
 message UpdateOperation {
-    oneof update {
-        SyncPointsInternal sync = 1;
-        UpsertPointsInternal upsert = 2;
-        DeletePointsInternal delete = 3;
-        UpdateVectorsInternal update_vectors = 4;
-        DeleteVectorsInternal delete_vectors = 5;
-        SetPayloadPointsInternal set_payload = 6;
-        SetPayloadPointsInternal overwrite_payload = 7;
-        DeletePayloadPointsInternal delete_payload = 8;
-        ClearPayloadPointsInternal clear_payload = 9;
-        CreateFieldIndexCollectionInternal create_field_index = 10;
-        DeleteFieldIndexCollectionInternal delete_field_index = 11;
-    }
+  oneof update {
+    SyncPointsInternal sync = 1;
+    UpsertPointsInternal upsert = 2;
+    DeletePointsInternal delete = 3;
+    UpdateVectorsInternal update_vectors = 4;
+    DeleteVectorsInternal delete_vectors = 5;
+    SetPayloadPointsInternal set_payload = 6;
+    SetPayloadPointsInternal overwrite_payload = 7;
+    DeletePayloadPointsInternal delete_payload = 8;
+    ClearPayloadPointsInternal clear_payload = 9;
+    CreateFieldIndexCollectionInternal create_field_index = 10;
+    DeleteFieldIndexCollectionInternal delete_field_index = 11;
+  }
 }
-
 
 message UpdateBatchInternal {
-    repeated UpdateOperation operations = 1;
+  repeated UpdateOperation operations = 1;
 }
-
 
 // Has to be backward compatible with `PointsOperationResponse`!
 message PointsOperationResponseInternal {
   UpdateResultInternal result = 1;
-  double time = 2; // Time spent to process
+  // Time spent to process
+  double time = 2;
   optional HardwareUsage hardware_usage = 3;
   optional InferenceUsage inference_usage = 4;
 }
 
 // Has to be backward compatible with `UpdateResult`!
 message UpdateResultInternal {
-  optional uint64 operation_id = 1; // Number of operation
-  UpdateStatus status = 2; // Operation status
+  // Number of operation
+  optional uint64 operation_id = 1;
+  // Operation status
+  UpdateStatus status = 2;
   optional ClockTag clock_tag = 3;
 }
 
@@ -176,24 +192,31 @@ message ContextQuery {
 }
 
 message FeedbackStrategy {
-    oneof variant {
-        NaiveFeedbackStrategy naive = 1;
-    }
+  oneof variant {
+    NaiveFeedbackStrategy naive = 1;
+  }
 }
 
 message NaiveFeedbackStrategy {
-    float a = 1;
-    float b = 2;
-    float c = 3;
+  float a = 1;
+  float b = 2;
+  float c = 3;
 }
 
 message QueryEnum {
   oneof query {
-    Vector nearest_neighbors = 1; // ANN
-    RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
-    DiscoveryQuery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
-    ContextQuery context = 4; // Use only the context to find points that minimize loss against negative examples
-    RecoQuery recommend_sum_scores = 5; // Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+    // ANN
+    Vector nearest_neighbors = 1;
+    // Recommend points with higher similarity to positive examples
+    RecoQuery recommend_best_score = 2;
+    // Search for points that get closer to a target,
+    // constrained by a context of positive and negative pairs
+    DiscoveryQuery discover = 3;
+    // Use only the context to find points that minimize loss against negative examples
+    ContextQuery context = 4;
+    // Recommend points which have the greatest sum of scores against all vectors.
+    // Positive vectors are added, negatives are subtracted.
+    RecoQuery recommend_sum_scores = 5;
   }
 }
 
@@ -270,42 +293,59 @@ message RawQuery {
   }
 
   message Feedback {
-      RawVector target = 1;
-      repeated FeedbackItem feedback = 2;
-      FeedbackStrategy strategy = 3;
+    RawVector target = 1;
+    repeated FeedbackItem feedback = 2;
+    FeedbackStrategy strategy = 3;
   }
 
   message FeedbackItem {
-      RawVector vector = 1;
-      float score = 2;
+    RawVector vector = 1;
+    float score = 2;
   }
 
   oneof variant {
-    RawVector nearest = 1; // ANN
-    Recommend recommend_best_score = 2; // Recommend points with highest similarity to positive examples, or lowest to negative examples
-    Discovery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
-    Context context = 4; // Use only the context to find points that minimize loss against negative examples
-    Recommend recommend_sum_scores = 5; // Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+    // ANN
+    RawVector nearest = 1;
+    // Recommend points with highest similarity to positive examples,
+    // or lowest to negative examples
+    Recommend recommend_best_score = 2;
+    // Search for points that get closer to a target,
+    // constrained by a context of positive and negative pairs
+    Discovery discover = 3;
+    // Use only the context to find points that minimize loss against negative examples
+    Context context = 4;
+    // Recommend points which have the greatest sum of scores against all vectors.
+    // Positive vectors are added, negatives are subtracted.
+    Recommend recommend_sum_scores = 5;
     Feedback feedback = 6;
   }
 }
 
 message MmrInternal {
-    RawVector vector = 1; // Query vector to use for relevance
-    float lambda = 2; // Lambda parameter controlling diversity vs relevance trade-off
-    uint32 candidates_limit = 3;
+  // Query vector to use for relevance
+  RawVector vector = 1;
+  // Lambda parameter controlling diversity vs relevance trade-off
+  float lambda = 2;
+  uint32 candidates_limit = 3;
 }
 
 message QueryShardPoints {
   message Query {
     oneof score {
-      RawQuery vector = 1; // (re)score against a vector query
-      Fusion fusion = 2; // One of the fusion methods
-      OrderBy order_by = 3; // Order by a field
-      Sample sample = 4; // Sample points
-      Formula formula = 5; // Use an arbitrary formula to rescore points
-      MmrInternal mmr = 6; // Maximal Marginal Relevance
-      Rrf rrf = 7; // Parameterized RRF fusion
+      // (re)score against a vector query
+      RawQuery vector = 1;
+      // One of the fusion methods
+      Fusion fusion = 2;
+      // Order by a field
+      OrderBy order_by = 3;
+      // Sample points
+      Sample sample = 4;
+      // Use an arbitrary formula to rescore points
+      Formula formula = 5;
+      // Maximal Marginal Relevance
+      MmrInternal mmr = 6;
+      // Parameterized RRF fusion
+      Rrf rrf = 7;
     }
   }
 
@@ -343,42 +383,44 @@ message IntermediateResult {
 }
 
 message QueryResultInternal {
-    repeated IntermediateResult intermediate_results = 1;
+  repeated IntermediateResult intermediate_results = 1;
 }
 
 message QueryBatchResponseInternal {
   repeated QueryResultInternal results = 1;
-  double time = 2; // Time spent to process
+  // Time spent to process
+  double time = 2;
   optional HardwareUsage hardware_usage = 5;
   optional InferenceUsage inference_usage = 6;
 }
 
 message FacetCountsInternal {
-    string collection_name = 1;
-    string key = 2;
-    optional Filter filter = 3;
-    uint64 limit = 4;
-    bool exact = 5;
-    uint32 shard_id = 6;
-    optional uint64 timeout = 7;
+  string collection_name = 1;
+  string key = 2;
+  optional Filter filter = 3;
+  uint64 limit = 4;
+  bool exact = 5;
+  uint32 shard_id = 6;
+  optional uint64 timeout = 7;
 }
 
 message FacetValueInternal {
-    oneof variant {
-        string keyword_value = 1;
-        int64 integer_value = 2;
-        bytes uuid_value = 3;
-        bool bool_value = 4;
-    }
+  oneof variant {
+    string keyword_value = 1;
+    int64 integer_value = 2;
+    bytes uuid_value = 3;
+    bool bool_value = 4;
+  }
 }
 
 message FacetHitInternal {
-    FacetValueInternal value = 1;
-    uint64 count = 2;
+  FacetValueInternal value = 1;
+  uint64 count = 2;
 }
 
 message FacetResponseInternal {
-    repeated FacetHitInternal hits = 1;
-    double time = 2; // Time spent to process
-    optional HardwareUsage usage = 3;
+  repeated FacetHitInternal hits = 1;
+  // Time spent to process
+  double time = 2;
+  optional HardwareUsage usage = 3;
 }

@@ -8,8 +8,10 @@ import "google/protobuf/timestamp.proto";
 
 message PointId {
   oneof point_id_options {
-    uint64 num = 1; // Numerical ID of the point
-    string uuid = 2; // UUID
+    // Numerical ID of the point
+    uint64 num = 1;
+    // UUID
+    string uuid = 2;
   }
 }
 
@@ -19,10 +21,14 @@ message GeoPoint {
 }
 
 message Filter {
-  repeated Condition should = 1; // At least one of those conditions should match
-  repeated Condition must = 2; // All conditions must match
-  repeated Condition must_not = 3; // All conditions must NOT match
-  optional MinShould min_should = 4; // At least minimum amount of given conditions should match
+  // At least one of those conditions should match
+  repeated Condition should = 1;
+  // All conditions must match
+  repeated Condition must = 2;
+  // All conditions must NOT match
+  repeated Condition must_not = 3;
+  // At least minimum amount of given conditions should match
+  optional MinShould min_should = 4;
 }
 
 message MinShould {
@@ -47,7 +53,7 @@ message IsEmptyCondition {
 }
 
 message IsNullCondition {
-    string key = 1;
+  string key = 1;
 }
 
 message HasIdCondition {
@@ -59,35 +65,56 @@ message HasVectorCondition {
 }
 
 message NestedCondition {
-  string key = 1; // Path to nested object
-  Filter filter = 2; // Filter condition
+  // Path to nested object
+  string key = 1;
+  // Filter condition
+  Filter filter = 2;
 }
 
 message FieldCondition {
   string key = 1;
-  Match match = 2; // Check if point has field with a given value
-  Range range = 3; // Check if points value lies in a given range
-  GeoBoundingBox geo_bounding_box = 4; // Check if points geolocation lies in a given area
-  GeoRadius geo_radius = 5; // Check if geo point is within a given radius
-  ValuesCount values_count = 6; // Check number of values for a specific field
-  GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
-  DatetimeRange datetime_range = 8; // Check if datetime is within a given range
-  optional bool is_empty = 9; // Check if field is empty
-  optional bool is_null = 10; // Check if field is null
+  // Check if point has field with a given value
+  Match match = 2;
+  // Check if points value lies in a given range
+  Range range = 3;
+  // Check if points geolocation lies in a given area
+  GeoBoundingBox geo_bounding_box = 4;
+  // Check if geo point is within a given radius
+  GeoRadius geo_radius = 5;
+  // Check number of values for a specific field
+  ValuesCount values_count = 6;
+  // Check if geo point is within a given polygon
+  GeoPolygon geo_polygon = 7;
+  // Check if datetime is within a given range
+  DatetimeRange datetime_range = 8;
+  // Check if field is empty
+  optional bool is_empty = 9;
+  // Check if field is null
+  optional bool is_null = 10;
 }
 
 message Match {
   oneof match_value {
-    string keyword = 1; // Match string keyword
-    int64 integer = 2; // Match integer
-    bool boolean = 3; // Match boolean
-    string text = 4; // Match text
-    RepeatedStrings keywords = 5; // Match multiple keywords
-    RepeatedIntegers integers = 6; // Match multiple integers
-    RepeatedIntegers except_integers = 7; // Match any other value except those integers
-    RepeatedStrings except_keywords = 8; // Match any other value except those keywords
-    string phrase = 9; // Match phrase text
-    string text_any = 10; // Match any word in the text
+    // Match string keyword
+    string keyword = 1;
+    // Match integer
+    int64 integer = 2;
+    // Match boolean
+    bool boolean = 3;
+    // Match text
+    string text = 4;
+    // Match multiple keywords
+    RepeatedStrings keywords = 5;
+    // Match multiple integers
+    RepeatedIntegers integers = 6;
+    // Match any other value except those integers
+    RepeatedIntegers except_integers = 7;
+    // Match any other value except those keywords
+    RepeatedStrings except_keywords = 8;
+    // Match phrase text
+    string phrase = 9;
+    // Match any word in the text
+    string text_any = 10;
   }
 }
 
@@ -114,24 +141,32 @@ message DatetimeRange {
 }
 
 message GeoBoundingBox {
-  GeoPoint top_left = 1; // north-west corner
-  GeoPoint bottom_right = 2; // south-east corner
+  // north-west corner
+  GeoPoint top_left = 1;
+  // south-east corner
+  GeoPoint bottom_right = 2;
 }
 
 message GeoRadius {
-  GeoPoint center = 1; // Center of the circle
-  float radius = 2; // In meters
+  // Center of the circle
+  GeoPoint center = 1;
+  // In meters
+  float radius = 2;
 }
 
 message GeoLineString {
-  repeated GeoPoint points = 1;  // Ordered sequence of GeoPoints representing the line
+  // Ordered sequence of GeoPoints representing the line
+  repeated GeoPoint points = 1;
 }
 
-// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
+// consist of a minimum of 4 points.
 // Additionally, the first and last points of each GeoLineString must be the same.
 message GeoPolygon {
-  GeoLineString exterior = 1; // The exterior line bounds the surface
-  repeated GeoLineString interiors = 2; // Interior lines (if present) bound holes within the surface
+  // The exterior line bounds the surface
+  GeoLineString exterior = 1;
+  // Interior lines (if present) bound holes within the surface
+  repeated GeoLineString interiors = 2;
 }
 
 message ValuesCount {
