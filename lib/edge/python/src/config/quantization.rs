@@ -1,9 +1,15 @@
+use std::fmt;
+
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::types::*;
 
-#[derive(Clone, Debug, Into)]
+use crate::repr::*;
+
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyQuantizationConfig(pub QuantizationConfig);
 
 impl FromPyObject<'_, '_> for PyQuantizationConfig {
@@ -53,10 +59,28 @@ impl<'py> IntoPyObject<'py> for PyQuantizationConfig {
     }
 }
 
+impl Repr for PyQuantizationConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            QuantizationConfig::Scalar(scalar) => {
+                PyScalarQuantizationConfig::wrap_ref(&scalar.scalar).fmt(f)
+            }
+            QuantizationConfig::Product(product) => {
+                PyProductQuantizationConfig::wrap_ref(&product.product).fmt(f)
+            }
+            QuantizationConfig::Binary(binary) => {
+                PyBinaryQuantizationConfig::wrap_ref(&binary.binary).fmt(f)
+            }
+        }
+    }
+}
+
 #[pyclass(name = "ScalarQuantizationConfig")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyScalarQuantizationConfig(ScalarQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyScalarQuantizationConfig {
     #[new]
@@ -83,12 +107,44 @@ impl PyScalarQuantizationConfig {
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyScalarQuantizationConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ScalarQuantizationConfig {
+            r#type: _,
+            quantile: _,
+            always_ram: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "ScalarType")]
 #[derive(Copy, Clone, Debug)]
 pub enum PyScalarType {
     Int8,
+}
+
+#[pymethods]
+impl PyScalarType {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyScalarType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Int8 => "Int8",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<ScalarType> for PyScalarType {
@@ -108,9 +164,11 @@ impl From<PyScalarType> for ScalarType {
 }
 
 #[pyclass(name = "ProductQuantizationConfig")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyProductQuantizationConfig(ProductQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyProductQuantizationConfig {
     #[new]
@@ -131,6 +189,20 @@ impl PyProductQuantizationConfig {
     pub fn always_ram(&self) -> Option<bool> {
         self.0.always_ram
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyProductQuantizationConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ProductQuantizationConfig {
+            compression: _,
+            always_ram: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "CompressionRatio")]
@@ -141,6 +213,27 @@ pub enum PyCompressionRatio {
     X16,
     X32,
     X64,
+}
+
+#[pymethods]
+impl PyCompressionRatio {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyCompressionRatio {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::X4 => "X4",
+            Self::X8 => "X8",
+            Self::X16 => "X16",
+            Self::X32 => "X32",
+            Self::X64 => "X64",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<CompressionRatio> for PyCompressionRatio {
@@ -168,9 +261,11 @@ impl From<PyCompressionRatio> for CompressionRatio {
 }
 
 #[pyclass(name = "BinaryQuantizationConfig")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyBinaryQuantizationConfig(BinaryQuantizationConfig);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyBinaryQuantizationConfig {
     #[new]
@@ -203,6 +298,21 @@ impl PyBinaryQuantizationConfig {
             .query_encoding
             .map(PyBinaryQuantizationQueryEncoding::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyBinaryQuantizationConfig {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let BinaryQuantizationConfig {
+            always_ram: _,
+            encoding: _,
+            query_encoding: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "BinaryQuantizationEncoding")]
@@ -211,6 +321,25 @@ pub enum PyBinaryQuantizationEncoding {
     OneBit,
     TwoBits,
     OneAndHalfBits,
+}
+
+#[pymethods]
+impl PyBinaryQuantizationEncoding {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyBinaryQuantizationEncoding {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::OneBit => "OneBit",
+            Self::TwoBits => "TwoBits",
+            Self::OneAndHalfBits => "OneAndHalfBits",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<BinaryQuantizationEncoding> for PyBinaryQuantizationEncoding {
@@ -244,6 +373,26 @@ pub enum PyBinaryQuantizationQueryEncoding {
     Binary,
     Scalar4Bits,
     Scalar8Bits,
+}
+
+#[pymethods]
+impl PyBinaryQuantizationQueryEncoding {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyBinaryQuantizationQueryEncoding {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Default => "Default",
+            Self::Binary => "Binary",
+            Self::Scalar4Bits => "Scalar4Bits",
+            Self::Scalar8Bits => "Scalar8Bits",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
 }
 
 impl From<BinaryQuantizationQueryEncoding> for PyBinaryQuantizationQueryEncoding {

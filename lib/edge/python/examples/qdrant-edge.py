@@ -13,11 +13,10 @@ points = [
 
 # Test points conversion into internal representation and back
 for point in points:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
+    print(point)
 
 
 print("---- Load shard ----")
-
 
 shard = load_new_shard()
 
@@ -82,7 +81,7 @@ result = shard.query(QueryRequest(
 ))
 
 for point in result:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+    print(point)
 
 
 print("---- Search ----")
@@ -99,7 +98,7 @@ points = shard.search(SearchRequest(
 ))
 
 for point in points:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+    print(point)
 
 
 print("---- Search + Filter ----")
@@ -129,7 +128,7 @@ points = shard.search(SearchRequest(
 ))
 
 for point in points:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
+    print(point)
 
 
 print("---- Retrieve ----")
@@ -137,4 +136,4 @@ print("---- Retrieve ----")
 points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
 
 for point in points:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}")
+    print(point)

@@ -5,8 +5,6 @@ from common import *
 shard = load_new_shard()
 fill_dummy_data(shard)
 
-
-
 result = shard.query(QueryRequest(
     prefetches = [],
     query = Mmr([6.0, 9.0, 4.0, 2.0], None, 0.9, 100),
@@ -19,9 +17,5 @@ result = shard.query(QueryRequest(
     with_payload = True,
 ))
 
-
 for point in result:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
-
-
-
+    print(point)

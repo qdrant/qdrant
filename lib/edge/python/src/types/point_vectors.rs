@@ -1,16 +1,19 @@
-use bytemuck::TransparentWrapper as _;
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::{pyclass, pymethods};
 use segment::types::PointIdType;
 use shard::operations::point_ops::VectorStructPersisted;
 use shard::operations::vector_ops::PointVectorsPersisted;
 
+use crate::repr::*;
 use crate::types::{PyPointId, PyVector};
 
 #[pyclass(name = "PointVectors")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyPointVectors(pub PointVectorsPersisted);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyPointVectors {
     #[new]
@@ -22,12 +25,23 @@ impl PyPointVectors {
     }
 
     #[getter]
-    fn id(&self) -> PyPointId {
+    pub fn id(&self) -> PyPointId {
         PyPointId(self.0.id)
     }
 
     #[getter]
-    fn vector(&self) -> &PyVector {
+    pub fn vector(&self) -> &PyVector {
         PyVector::wrap_ref(&self.0.vector)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyPointVectors {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let PointVectorsPersisted { id: _, vector: _ } = self.0;
     }
 }

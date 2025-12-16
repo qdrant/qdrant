@@ -1,9 +1,12 @@
+use std::fmt;
+
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::types::*;
 
 use super::value::*;
+use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -35,5 +38,11 @@ impl<'py> IntoPyObject<'py> for &PyPayload {
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         value_map_into_py(&self.0.0, py)
+    }
+}
+
+impl Repr for PyPayload {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.0.fmt(f)
     }
 }
