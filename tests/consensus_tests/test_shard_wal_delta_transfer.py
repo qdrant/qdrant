@@ -623,3 +623,125 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
         data.append(r.json()["result"])
 
     check_data_consistency(data)
+
+
+# Test node recovery with a WAL delta transfer.
+#
+# The second node is killed while operations are ongoing. We later restart the
+# node, and manually trigger rereplication to sync it up again.
+#
+# Test that data on the both sides is consistent
+def test_abort_stream_records_breaks_wal_delta(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    env={
+        # Prevent automatic recovery on restarted node, so we can manually control transfers
+        "QDRANT__STORAGE__PERFORMANCE__INCOMING_SHARD_TRANSFERS_LIMIT": "0",
+        "QDRANT__STORAGE__PERFORMANCE__OUTGOING_SHARD_TRANSFERS_LIMIT": "0",
+        # Artificially make stream records transfer very slow
+        "QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC": "1",
+    }
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, 20000, extra_env=env)
+
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    # Kill last peer
+    processes.pop().kill()
+
+    # Upsert data, last peer won't receive it
+    upsert_random_points(peer_api_uris[0], 2000, COLLECTION_NAME, batch_size=100)
+
+    # Restart the peer
+    peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
+    wait_for_peer_online(peer_api_uris[-1], "/")
+
+    # Recover shard with stream records transfer
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": 0,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+    wait_for_collection_shard_transfers_count(peer_api_uris[2], COLLECTION_NAME, 1)
+
+    # Send new update through first peer
+    #
+    # Important: bumps last seen clocks on receiving node, making incorrect WAL delta resolution possible
+    #
+    # In practice you need to bump all known clocks, and may need to send
+    # updates through multiple peers. But since we've only sent updates through
+    # the first peer and it is the only known clock, we only have to bump that
+    # one clock here.
+    upsert_random_points(peer_api_uris[0], 1, COLLECTION_NAME)
+
+    # Stream records transfer must still be ongoing
+    # We artificially slow it down through an environment variable
+    assert check_collection_shard_transfer_method(peer_api_uris[0], COLLECTION_NAME, "stream_records") and check_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
+    # Abort stream records transfer
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "abort_transfer": {
+                "shard_id": 0,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+            }
+        })
+    assert_http_ok(r)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    sleep(1)
+
+    # Abort must leave replica in Dead state
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    assert len(receiver_collection_cluster_info['local_shards']) == 1
+    assert receiver_collection_cluster_info['local_shards'][0]['state'] == 'Dead'
+
+    # Recover shard with WAL delta transfer
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": 0,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "wal_delta",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for WAL delta transfer to start, it must finish very quickly
+    # If it doesn't finish quickly, it did likely fall back to stream records
+    wait_for_collection_shard_transfer_method(peer_api_uris[0], COLLECTION_NAME, "wal_delta")
+    sleep(2)
+    assert check_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Ensure data consistency
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)
