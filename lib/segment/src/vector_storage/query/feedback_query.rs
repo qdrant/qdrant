@@ -66,7 +66,7 @@ impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> 
         let Self {
             target,
             feedback,
-            coefficients: strategy,
+            coefficients,
         } = self;
         Ok(NaiveFeedbackQuery {
             target: f(target)?,
@@ -74,7 +74,7 @@ impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> 
                 .into_iter()
                 .map(|item| item.transform(&mut f))
                 .try_collect()?,
-            coefficients: strategy,
+            coefficients,
         })
     }
 }
