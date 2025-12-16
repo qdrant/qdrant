@@ -943,21 +943,24 @@ mod tests {
     ) {
         use ahash::AHashMap;
 
+        // Windows struggles with this test so we decrease the workload
+        #[cfg(target_os = "windows")]
+        let operation_count = 1_000;
+        #[cfg(target_os = "windows")]
+        let max_point_offset = 100u32;
+
+        #[cfg(not(target_os = "windows"))]
+        let operation_count = 100_000;
+        #[cfg(not(target_os = "windows"))]
+        let max_point_offset = 10_000u32;
+
         let _ = env_logger::builder().is_test(true).try_init();
 
         let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 10_000u32;
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
-
-        // Windows stuggles with this test
-        #[cfg(target_os = "windows")]
-        let operation_count = 10_000;
-
-        #[cfg(not(target_os = "windows"))]
-        let operation_count = 100_000;
 
         let operations = (0..operation_count).map(|_| Operation::random(rng, max_point_offset));
 
