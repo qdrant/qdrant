@@ -13,7 +13,7 @@ env:
 jobs:
   integration-tests:
 
-    runs-on: ubuntu-latest
+    runs-on: testing
 
     steps:
       - name: Install minimal stable
@@ -44,7 +44,7 @@ jobs:
 
   integration-tests-consensus:
 
-    runs-on: ubuntu-latest
+    runs-on: testing
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
@@ -85,7 +85,7 @@ jobs:
 
   test-consensus-compose:
 
-    runs-on: ubuntu-latest
+    runs-on: testing
 
     steps:
       - uses: actions/checkout@v6
@@ -119,7 +119,7 @@ jobs:
 
   test-consistency:
 
-    runs-on: ubuntu-latest
+    runs-on: testing
 
     steps:
       - name: Install minimal stable
@@ -155,7 +155,7 @@ jobs:
         run: ./tests/openapi_consistency_check.sh
 
   test-shard-snapshot-api-s3-minio:
-    runs-on: ubuntu-latest
+    runs-on: testing
     # Setup minio server
     services:
       minio:
@@ -211,7 +211,7 @@ jobs:
           ./tests/shard-snapshot-api.sh test-all
 
   e2e-tests:
-    runs-on: ubuntu-latest
+    runs-on: testing
 
     # Setup minio server
     services:

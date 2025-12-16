@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ testing, windows-latest, macos-latest ]
 
     steps:
     - name: Install minimal stable
@@ -53,14 +53,14 @@ jobs:
   # and will create a GH Issue if there is a test marked as flaky,
   # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
-    runs-on: ubuntu-latest
+    runs-on: testing
     needs: rust-tests
     permissions:
       contents: read
       issues: write
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest  ]
+        os: [ testing, windows-latest, macos-latest  ]
     steps:
       - name: Download test report
         uses: actions/download-artifact@v6
