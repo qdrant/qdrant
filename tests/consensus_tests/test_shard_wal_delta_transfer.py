@@ -73,7 +73,7 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     # Insert some initial number of points
@@ -125,7 +125,7 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
     assert len(cluster_info_0['local_shards']) == 1
     assert len(cluster_info_1['local_shards']) == 1
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -161,7 +161,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
@@ -214,7 +214,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     upload_process_2.kill()
     sleep(1)
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -253,7 +253,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=5)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     peer_cluster_info = [get_collection_cluster_info(uri, COLLECTION_NAME) for uri in peer_api_uris]
@@ -337,7 +337,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
         cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
         assert len(cluster_info['local_shards']) == 1
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -375,7 +375,7 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
@@ -462,7 +462,7 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     upload_process_2.kill()
     sleep(1)
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -493,7 +493,7 @@ def test_shard_wal_delta_transfer_fallback(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=3, replication_factor=1)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     # Insert some initial number of points
@@ -531,7 +531,7 @@ def test_shard_wal_delta_transfer_fallback(tmp_path: pathlib.Path):
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
     assert number_local_shards == 2
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
@@ -564,7 +564,7 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
@@ -609,7 +609,7 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
-    # Match all points on all nodes exactly
+    # Ensure data consistency
     data = []
     for uri in peer_api_uris:
         r = requests.post(
