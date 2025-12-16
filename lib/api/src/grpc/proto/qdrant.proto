@@ -14,7 +14,7 @@ package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
 service Qdrant {
-  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckReply) {}
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckReply) {}
 }
 
 message HealthCheckRequest {}

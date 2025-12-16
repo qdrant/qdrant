@@ -7,34 +7,34 @@ import "google/protobuf/empty.proto";
 
 service Raft {
   // Send Raft message to another peer
-  rpc Send (RaftMessage) returns (google.protobuf.Empty);
+  rpc Send(RaftMessage) returns (google.protobuf.Empty);
   // Send to bootstrap peer
   // Returns uri by id if bootstrap knows this peer
-  rpc WhoIs (PeerId) returns (Uri);
+  rpc WhoIs(PeerId) returns (Uri);
   // Send to bootstrap peer
   // Adds peer to the network
   // Returns all peers
-  rpc AddPeerToKnown (AddPeerToKnownMessage) returns (AllPeers);
+  rpc AddPeerToKnown(AddPeerToKnownMessage) returns (AllPeers);
   // DEPRECATED
   // Its functionality is now included in `AddPeerToKnown`
   //
   // Send to bootstrap peer
   // Proposes to add this peer as participant of consensus
-  rpc AddPeerAsParticipant (PeerId) returns (google.protobuf.Empty);
+  rpc AddPeerAsParticipant(PeerId) returns (google.protobuf.Empty);
 }
 
 message RaftMessage {
-    bytes message = 1;
+  bytes message = 1;
 }
 
 message AllPeers {
-    repeated Peer all_peers = 1;
-    uint64 first_peer_id = 2;
+  repeated Peer all_peers = 1;
+  uint64 first_peer_id = 2;
 }
 
 message Peer {
-    string uri = 1;
-    uint64 id = 2;
+  string uri = 1;
+  uint64 id = 2;
 }
 
 message AddPeerToKnownMessage {
