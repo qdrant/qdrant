@@ -342,7 +342,6 @@ impl UpdateWorkers {
                             let (tracker, progress) =
                                 Tracker::start(optimizer.as_ref().name(), nsi.clone());
                             let tracker_handle = tracker.handle();
-                            optimizers_log.lock().register(tracker);
 
                             // Optimize and handle result
                             let result = optimizer.as_ref().optimize(
@@ -352,6 +351,11 @@ impl UpdateWorkers {
                                 resource_budget,
                                 stopped,
                                 progress,
+                                Box::new(move || {
+                                    // Do not clutter the log with early cancelled optimizations,
+                                    // wait for `on_successful_start` instead.
+                                    optimizers_log.lock().register(tracker);
+                                }),
                             );
                             match result {
                                 // Perform some actions when optimization if finished

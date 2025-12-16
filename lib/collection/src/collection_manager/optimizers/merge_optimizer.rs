@@ -258,6 +258,7 @@ mod tests {
                 budget,
                 &AtomicBool::new(false),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 
