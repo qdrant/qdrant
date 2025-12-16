@@ -21,7 +21,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
-use segment::vector_storage::query::{self as segment_query, SimpleFeedbackStrategy};
+use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 use uuid::Uuid;
@@ -2855,23 +2855,19 @@ impl TryFrom<raw_query::Discovery>
     }
 }
 
-impl From<segment_query::FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>>
-    for raw_query::Feedback
-{
-    fn from(
-        value: segment_query::FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>,
-    ) -> Self {
-        let segment_query::FeedbackQueryInternal {
+impl From<segment_query::NaiveFeedbackQuery<VectorInternal>> for raw_query::Feedback {
+    fn from(value: segment_query::NaiveFeedbackQuery<VectorInternal>) -> Self {
+        let segment_query::NaiveFeedbackQuery {
             target,
             feedback,
-            strategy,
+            coefficients,
         } = value;
 
         Self {
             target: Some(target.into()),
             feedback: feedback.into_iter().map_into().collect(),
             strategy: Some(grpc::FeedbackStrategy {
-                variant: Some(grpc::feedback_strategy::Variant::Simple(strategy.into())),
+                variant: Some(grpc::feedback_strategy::Variant::Naive(coefficients.into())),
             }),
         }
     }
@@ -3222,9 +3218,9 @@ impl From<HardwareUsage> for HardwareData {
     }
 }
 
-impl From<SimpleFeedbackStrategy> for grpc::SimpleFeedbackStrategy {
-    fn from(value: SimpleFeedbackStrategy) -> Self {
-        let SimpleFeedbackStrategy { a, b, c } = value;
+impl From<NaiveFeedbackCoefficients> for grpc::NaiveFeedbackStrategy {
+    fn from(value: NaiveFeedbackCoefficients) -> Self {
+        let NaiveFeedbackCoefficients { a, b, c } = value;
 
         Self {
             a: a.0,
@@ -3234,9 +3230,9 @@ impl From<SimpleFeedbackStrategy> for grpc::SimpleFeedbackStrategy {
     }
 }
 
-impl From<grpc::SimpleFeedbackStrategy> for SimpleFeedbackStrategy {
-    fn from(value: grpc::SimpleFeedbackStrategy) -> Self {
-        let grpc::SimpleFeedbackStrategy { a, b, c } = value;
+impl From<grpc::NaiveFeedbackStrategy> for NaiveFeedbackCoefficients {
+    fn from(value: grpc::NaiveFeedbackStrategy) -> Self {
+        let grpc::NaiveFeedbackStrategy { a, b, c } = value;
 
         Self {
             a: OrderedFloat(a),

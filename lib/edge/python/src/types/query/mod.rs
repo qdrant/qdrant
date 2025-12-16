@@ -49,9 +49,9 @@ impl FromPyObject<'_, '_> for PyQuery {
                 using,
             }),
 
-            PyQueryInterface::FeedbackSimple { query, using } => {
-                QueryEnum::FeedbackSimple(NamedQuery {
-                    query: FeedbackQueryInternal::from(query),
+            PyQueryInterface::FeedbackNaive { query, using } => {
+                QueryEnum::FeedbackNaive(NamedQuery {
+                    query: NaiveFeedbackQuery::from(query),
                     using,
                 })
             }
@@ -97,9 +97,9 @@ impl<'py> IntoPyObject<'py> for PyQuery {
                 using,
             },
 
-            QueryEnum::FeedbackSimple(NamedQuery { query, using }) => {
-                PyQueryInterface::FeedbackSimple {
-                    query: PyFeedbackSimpleQuery(query),
+            QueryEnum::FeedbackNaive(NamedQuery { query, using }) => {
+                PyQueryInterface::FeedbackNaive {
+                    query: PyFeedbackNaiveQuery(query),
                     using,
                 }
             }
@@ -141,9 +141,9 @@ impl Repr for PyQuery {
             QueryEnum::Context(NamedQuery { query, using }) => {
                 ("Context", PyContextQuery::wrap_ref(query), using)
             }
-            QueryEnum::FeedbackSimple(NamedQuery { query, using }) => (
-                "FeedbackSimple",
-                PyFeedbackSimpleQuery::wrap_ref(query),
+            QueryEnum::FeedbackNaive(NamedQuery { query, using }) => (
+                "FeedbackNaive",
+                PyFeedbackNaiveQuery::wrap_ref(query),
                 using,
             ),
         };
@@ -186,8 +186,8 @@ pub enum PyQueryInterface {
     },
 
     #[pyo3(constructor = (query, using = None))]
-    FeedbackSimple {
-        query: PyFeedbackSimpleQuery,
+    FeedbackNaive {
+        query: PyFeedbackNaiveQuery,
         using: Option<String>,
     },
 }
@@ -211,7 +211,7 @@ impl Repr for PyQueryInterface {
             }
             PyQueryInterface::Discover { query, using } => ("Discover", query, using),
             PyQueryInterface::Context { query, using } => ("Context", query, using),
-            PyQueryInterface::FeedbackSimple { query, using } => ("FeedbackSimple", query, using),
+            PyQueryInterface::FeedbackNaive { query, using } => ("FeedbackNaive", query, using),
         };
 
         f.complex_enum::<Self>(repr, &[("query", query), ("using", using)])
@@ -386,24 +386,24 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     }
 }
 
-#[pyclass(name = "FeedbackSimpleQuery")]
+#[pyclass(name = "FeedbackNaiveQuery")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyFeedbackSimpleQuery(FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>);
+pub struct PyFeedbackNaiveQuery(NaiveFeedbackQuery<VectorInternal>);
 
 #[pyclass_repr]
 #[pymethods]
-impl PyFeedbackSimpleQuery {
+impl PyFeedbackNaiveQuery {
     #[new]
     pub fn new(
         target: PyNamedVectorInternal,
         feedback: Vec<PyFeedbackItem>,
-        strategy: PySimpleFeedbackStrategy,
+        strategy: PyNaiveFeedbackCoefficients,
     ) -> Self {
-        Self(FeedbackQueryInternal {
+        Self(NaiveFeedbackQuery {
             target: VectorInternal::from(target),
             feedback: PyFeedbackItem::peel_vec(feedback),
-            strategy: SimpleFeedbackStrategy::from(strategy),
+            coefficients: NaiveFeedbackCoefficients::from(strategy),
         })
     }
 
@@ -418,8 +418,8 @@ impl PyFeedbackSimpleQuery {
     }
 
     #[getter]
-    pub fn strategy(&self) -> PySimpleFeedbackStrategy {
-        PySimpleFeedbackStrategy(self.0.strategy)
+    pub fn coefficients(&self) -> PyNaiveFeedbackCoefficients {
+        PyNaiveFeedbackCoefficients(self.0.coefficients)
     }
 
     pub fn __repr__(&self) -> String {
@@ -427,13 +427,13 @@ impl PyFeedbackSimpleQuery {
     }
 }
 
-impl PyFeedbackSimpleQuery {
+impl PyFeedbackNaiveQuery {
     fn _getters(self) {
         // Every field should have a getter method
-        let FeedbackQueryInternal {
+        let NaiveFeedbackQuery {
             target: _,
             feedback: _,
-            strategy: _,
+            coefficients: _,
         } = self.0;
     }
 }
@@ -489,16 +489,16 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     }
 }
 
-#[pyclass(name = "SimpleFeedbackStrategy")]
+#[pyclass(name = "NaiveFeedbackStrategy")]
 #[derive(Copy, Clone, Debug, Into)]
-pub struct PySimpleFeedbackStrategy(SimpleFeedbackStrategy);
+pub struct PyNaiveFeedbackCoefficients(NaiveFeedbackCoefficients);
 
 #[pyclass_repr]
 #[pymethods]
-impl PySimpleFeedbackStrategy {
+impl PyNaiveFeedbackCoefficients {
     #[new]
     pub fn new(a: f32, b: f32, c: f32) -> Self {
-        Self(SimpleFeedbackStrategy {
+        Self(NaiveFeedbackCoefficients {
             a: OrderedFloat(a),
             b: OrderedFloat(b),
             c: OrderedFloat(c),
@@ -525,9 +525,9 @@ impl PySimpleFeedbackStrategy {
     }
 }
 
-impl PySimpleFeedbackStrategy {
+impl PyNaiveFeedbackCoefficients {
     fn _getters(self) {
         // Every field should have a getter method
-        let SimpleFeedbackStrategy { a: _, b: _, c: _ } = self.0;
+        let NaiveFeedbackCoefficients { a: _, b: _, c: _ } = self.0;
     }
 }
