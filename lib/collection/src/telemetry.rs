@@ -209,11 +209,7 @@ mod internal_conversions {
                         Status::invalid_argument(format!("cannot decode ShardTransferMethod {err}"))
                     })?,
                 )),
-                comment: if value.comment.is_empty() {
-                    None
-                } else {
-                    Some(value.comment)
-                },
+                comment: (!value.comment.is_empty()).then_some(value.comment),
             })
         }
     }
