@@ -9,7 +9,6 @@ use memory::mmap_type::MmapSlice;
 
 use super::{RegionId, StorageConfig};
 use crate::Result;
-use crate::error::GridstoreError;
 
 /// Gaps of contiguous zeros in a bitmask region.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -130,7 +129,7 @@ impl BitmaskGaps {
     }
 
     pub fn flush(&self) -> Result<()> {
-        self.mmap_slice.flusher()().map_err(GridstoreError::from)
+        Ok(self.mmap_slice.flusher()()?)
     }
 
     /// Extends the mmap file to fit the new regions
