@@ -212,7 +212,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Get the path for a given page id
-    pub fn page_path(&self, page_id: u32) -> PathBuf {
+    fn page_path(&self, page_id: u32) -> PathBuf {
         self.base_path.join(format!("page_{page_id}.dat"))
     }
 
@@ -902,11 +902,13 @@ mod tests {
         Delete(PointOffset),
         Get(PointOffset),
         FlushDelay(Duration),
+        Clear,
+        Iter,
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let operation = rng.random_range(0..=3);
+            let operation = rng.random_range(0..=5);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -927,6 +929,8 @@ mod tests {
                     let delay = Duration::from_millis(delay_ms);
                     Operation::FlushDelay(delay)
                 }
+                4 => Operation::Clear,
+                5 => Operation::Iter,
                 op => panic!("{op} out of range"),
             }
         }
@@ -961,6 +965,28 @@ mod tests {
         // apply operations to storage and model_hashmap
         for (i, operation) in operations.enumerate() {
             match operation {
+                Operation::Clear => {
+                    storage.clear().unwrap();
+                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                    model_hashmap.clear();
+                }
+                Operation::Iter => {
+                    let mut tmp = AHashMap::new();
+                    storage
+                        .iter::<_, String>(
+                            |p, v| {
+                                let prev = tmp.insert(p, v);
+                                assert!(prev.is_none(), "duplicate point found {prev:?}");
+                                Ok(true) // no shortcutting
+                            },
+                            hw_counter_ref,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        tmp, model_hashmap,
+                        "storage and model are different when using `iter`"
+                    );
+                }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
                     let old1 = storage
@@ -1046,7 +1072,11 @@ mod tests {
         for point_offset in 0..=max_point_offset {
             let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
-            assert_eq!(stored_payload.as_ref(), model_payload);
+            assert_eq!(
+                stored_payload.as_ref(),
+                model_payload,
+                "storage and model differ for offset:{point_offset} {stored_payload:?} vs {model_payload:?}"
+            );
         }
 
         // flush data
