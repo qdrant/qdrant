@@ -71,7 +71,7 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.31.0"
+geo = "0.32.0"
 geohash = "0.13.1"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
