@@ -400,6 +400,7 @@ mod tests {
                 budget.clone(),
                 &stopped,
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 
@@ -550,6 +551,7 @@ mod tests {
                 budget.clone(),
                 &stopped,
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         eprintln!("Done");
@@ -567,6 +569,7 @@ mod tests {
                 budget.clone(),
                 &stopped,
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 
@@ -697,6 +700,7 @@ mod tests {
                 budget.clone(),
                 &stopped,
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 
@@ -818,6 +822,7 @@ mod tests {
                     budget.clone(),
                     &stopped,
                     ProgressTracker::new_for_test(),
+                    Box::new(|| ()),
                 )
                 .unwrap();
             numer_of_optimizations += 1;
@@ -988,6 +993,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(
