@@ -24,10 +24,6 @@ dependencies = [
 [tool.uv]
 package = false
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [tool.pytest.ini_options]
 markers = [
     "longrunning: marks tests as long-running (deselect with '-m \"not longrunning\"')",
