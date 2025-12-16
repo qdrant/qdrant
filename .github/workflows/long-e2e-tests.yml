@@ -50,7 +50,7 @@ jobs:
         shell: bash
         timeout-minutes: 40
       - name: Upload test logs on failure
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: e2e-test-logs

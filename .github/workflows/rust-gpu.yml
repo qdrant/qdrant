@@ -37,7 +37,7 @@ jobs:
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --features "gpu rocksdb" --profile ci --locked
     - name: Upload test report
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
