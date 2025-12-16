@@ -29,7 +29,7 @@ fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 ndarray = "0.17.1"
-ndarray-npy = { version = "0.9.1", default-features = false }
+ndarray-npy = { version = "0.10.0", default-features = false }
 rmp-serde = "~1.3"
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
