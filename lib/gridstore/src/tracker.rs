@@ -281,7 +281,10 @@ impl Tracker {
                 if is_empty {
                     let prev = self.pending_updates.remove(&point_offset);
                     if let Some(prev) = prev {
-                        log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                        debug_assert!(
+                            prev.is_empty(),
+                            "remove pending element should be empty but got {prev:?}"
+                        );
                     }
                 }
             }
