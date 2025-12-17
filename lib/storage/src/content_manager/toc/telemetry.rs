@@ -19,6 +19,15 @@ pub(super) struct TocTelemetryCollector {
     snapshots: DashMap<String, SnapshotTelemetryCollector>,
 }
 
+impl TocTelemetryCollector {
+    /// Initialize snapshot telemetry entry for a collection.
+    pub fn init_snapshot_telemetry(&self, collection_name: &str) {
+        self.snapshots
+            .entry(collection_name.to_string())
+            .or_default();
+    }
+}
+
 /// Collected telemetry data provided by ToC.
 pub struct TocTelemetryData {
     pub collection_telemetry: Vec<CollectionTelemetry>,
