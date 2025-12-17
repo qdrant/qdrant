@@ -972,7 +972,7 @@ impl LocalShard {
 
     /// Take snapshot of newest clocks, if not snapshotted already
     ///
-    /// Also immedaitely persists clocks to disk.
+    /// Also immediately persists clocks to disk.
     pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
         let changed = self.wal.take_newest_clocks_snapshot().await;
 
@@ -990,7 +990,7 @@ impl LocalShard {
 
     /// Clear any snapshot of newest clocks
     ///
-    /// Also immedaitely persists clocks to disk.
+    /// Also immediately persists clocks to disk.
     pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
         let changed = self.wal.clear_newest_clocks_snapshot().await;
 
