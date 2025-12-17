@@ -337,7 +337,7 @@ def start_preconfigured_cluster(tmp_path: pathlib.Path, peers: int = 3):
     #
     # It's just an "empty" peer, but its peer ID is *not* committed into WAL. We can use this peer to
     # test that first peer ID is correctly recovered/propagated, even when it's not committed into WAL.
-    shutil.copytree("tests/consensus_tests/test_cluster_rejoin_data", f"{peer_dirs[0]}/storage")
+    shutil.copytree(PROJECT_ROOT / "tests/consensus_tests/test_cluster_rejoin_data", f"{peer_dirs[0]}/storage")
 
     # Modify peer URI in Raft state to prevent URI change on startup 🙄
     p2p_port = get_port()

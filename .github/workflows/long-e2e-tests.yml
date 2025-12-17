@@ -26,8 +26,8 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build Qdrant Docker image
         uses: docker/build-push-action@v6
         with:
@@ -44,7 +44,7 @@ jobs:
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: uv run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5 -m "longrunning"
+        run: uv --project tests run pytest -n 4 tests/e2e_tests -v --tb=short --durations=5 -m "longrunning"
         shell: bash
         timeout-minutes: 40
       - name: Upload test logs on failure
