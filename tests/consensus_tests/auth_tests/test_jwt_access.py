@@ -1,7 +1,6 @@
 import json
 import tempfile
 from inspect import isfunction
-from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
@@ -9,6 +8,7 @@ import grpc_requests
 import pytest
 import requests
 from consensus_tests import fixtures
+from consensus_tests.utils import PROJECT_ROOT
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import (
@@ -20,7 +20,7 @@ from .utils import (
     REST_URI,
     SECRET,
     encode_jwt,
-    random_str, decode_jwt,
+    random_str,
 )
 
 COLL_NAME = "jwt_test_collection"
@@ -597,9 +597,8 @@ def test_all_actions_have_tests():
 
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
-    project_root = Path(__file__).parent.parent.parent.parent
-    with open(project_root / "docs" / "redoc" / "master" / "openapi.json", "r") as file:
-        openapi_data = json.load(file)
+    openapi_path = PROJECT_ROOT / "docs" / "redoc" / "master" / "openapi.json"
+    openapi_data = json.loads(openapi_path.read_text())
 
     # Extract all endpoint paths
     endpoint_paths = []

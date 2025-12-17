@@ -16,7 +16,7 @@ from .assertions import assert_http_ok
 
 WAIT_TIME_SEC = 30
 RETRY_INTERVAL_SEC = 0.2
-
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Tracks processes that need to be killed at the end of the test
 processes: List['PeerProcess'] = []
@@ -109,30 +109,23 @@ def get_uri(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def get_project_root() -> Path:
-    """Get project root based on this file's location, works from any working directory."""
-    return Path(__file__).parent.parent.parent
-
-
 def assert_project_root():
     """Deprecated: No longer needed as paths are resolved relative to __file__."""
     pass
 
 
 def get_qdrant_exec() -> str:
-    project_root = get_project_root()
     if is_coverage_mode():
-        qdrant_exec = project_root / "target" / "llvm-cov-target" / "debug" / "qdrant"
+        qdrant_exec = PROJECT_ROOT / "target" / "llvm-cov-target" / "debug" / "qdrant"
     else:
-        qdrant_exec = project_root / "target" / "debug" / "qdrant"
+        qdrant_exec = PROJECT_ROOT / "target" / "debug" / "qdrant"
     return str(qdrant_exec)
 
 def get_llvm_profile_file() -> str:
-    project_root = get_project_root()
     # %m: keep merging results from each test into the same file
     # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
     # Not using -%p since each test will generate a new file
-    llvm_profile_file = project_root / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%m.profraw"
+    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%m.profraw"
     return str(llvm_profile_file)
 
 
@@ -260,7 +253,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
 def make_peer_folder(base_path: Path, peer_number: int) -> Path:
     peer_dir = base_path / f"peer{peer_number}"
     peer_dir.mkdir()
-    shutil.copytree(get_project_root() / "config", peer_dir / "config")
+    shutil.copytree(PROJECT_ROOT / "config", peer_dir / "config")
     return peer_dir
 
 
