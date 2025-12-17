@@ -228,7 +228,6 @@ impl CollectionsTelemetry {
         let mut shard_transfers_out = Vec::with_capacity(num_collections);
         let mut shard_transfers_failed = Vec::with_capacity(num_collections);
         let mut shard_transfers_points_transferred = Vec::with_capacity(num_collections);
-        let mut shard_transfers_points_total = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -346,7 +345,6 @@ impl CollectionsTelemetry {
             let mut outgoing_transfers = 0;
             let mut failed_transfers = 0;
             let mut points_transferred = 0;
-            let mut points_total = 0;
 
             if let Some(this_peer_id) = peer_id {
                 for transfer in collection.transfers.iter().flatten() {
@@ -371,7 +369,6 @@ impl CollectionsTelemetry {
                     }
 
                     points_transferred += status.map(|i| i.points_transferred).unwrap_or_default();
-                    points_total += status.map(|i| i.points_total).unwrap_or_default();
                 }
             }
 
@@ -389,8 +386,6 @@ impl CollectionsTelemetry {
             ));
             shard_transfers_points_transferred
                 .push(gauge(points_transferred as f64, &[("id", &collection.id)]));
-            shard_transfers_points_total
-                .push(gauge(points_total as f64, &[("id", &collection.id)]));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -546,14 +541,6 @@ impl CollectionsTelemetry {
             "number of points already transferred",
             MetricType::GAUGE,
             shard_transfers_points_transferred,
-            prefix,
-        ));
-
-        metrics.push_metric(metric_family(
-            "collection_shard_transfer_transferred_total_points",
-            "total number of points to transfer",
-            MetricType::GAUGE,
-            shard_transfers_points_total,
             prefix,
         ));
     }
