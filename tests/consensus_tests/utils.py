@@ -481,13 +481,21 @@ def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: s
                                            expected_method: str) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
 
+    # Shortcut if no transfers
+    if len(collection_cluster_info["shard_transfers"]) == 0:
+        print(f"check_collection_shard_transfer_method: no transfers for collection '{collection_name}'")
+        return False
+
     # Check method on each transfer
     for transfer in collection_cluster_info["shard_transfers"]:
         if "method" not in transfer:
+            print(f"check_collection_shard_transfer_method: unknown method not match expected '{expected_method}'")
             continue
         method = transfer["method"]
         if method == expected_method:
             return True
+        else:
+            print(f"check_collection_shard_transfer_method: method '{method}' does not match expected '{expected_method}'")
 
     return False
 

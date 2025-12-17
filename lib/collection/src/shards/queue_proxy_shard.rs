@@ -126,6 +126,11 @@ impl QueueProxyShard {
         })
     }
 
+    /// Get the wrapped local shard
+    pub(super) fn wrapped_shard(&self) -> Option<&LocalShard> {
+        self.inner.as_ref().map(|inner| &inner.wrapped_shard)
+    }
+
     /// Get inner queue proxy shard. Will panic if the queue proxy has been finalized.
     fn inner_unchecked(&self) -> &Inner {
         self.inner.as_ref().expect("Queue proxy has been finalized")

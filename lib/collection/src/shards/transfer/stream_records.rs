@@ -45,6 +45,16 @@ pub(super) async fn transfer_stream_records(
     let filter = transfer_config.filter;
     let merge_points = filter.is_some();
 
+    #[cfg(feature = "staging")]
+    let staging_delay = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC")
+        .ok()
+        .map(|val| {
+            std::time::Duration::from_secs_f64(
+                val.parse::<f64>()
+                    .expect("invalid QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC value"),
+            )
+        });
+
     // Whether we need an intermediate replica state (ActiveRead) during transfer to sync nodes
     // We use this when transferring between different shard IDs to ensure data consistency, this
     // way all readers can be switched to the new shard before any writers
@@ -124,6 +134,11 @@ pub(super) async fn transfer_stream_records(
 
         offset = new_offset;
         progress.lock().add(count);
+
+        #[cfg(feature = "staging")]
+        if let Some(delay) = staging_delay {
+            tokio::time::sleep(delay).await;
+        }
 
         // If this is the last batch, finalize
         if offset.is_none() {

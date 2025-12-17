@@ -19,8 +19,9 @@ impl ReplicaSetState {
         self.peers.get(&peer_id).copied()
     }
 
-    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
-        self.peers.insert(peer_id, state);
+    /// Returns previous state if any
+    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) -> Option<ReplicaState> {
+        self.peers.insert(peer_id, state)
     }
 
     pub fn remove_peer_state(&mut self, peer_id: PeerId) -> Option<ReplicaState> {
