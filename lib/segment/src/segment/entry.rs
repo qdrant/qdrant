@@ -699,39 +699,66 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is removed, skip flush
-                return Err(OperationError::cancelled(
-                    "Aborted flushing on a dropped segment",
-                ));
+                log::debug!("Segment was dropped, skip flush");
+                return Ok(());
             };
 
-            // Flush mapping first to prevent having orphan internal ids.
-            id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
-            })?;
-            for vector_storage_flusher in vector_storage_flushers {
-                vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
-                })?;
-            }
-            for quantization_flusher in quantization_flushers {
-                quantization_flusher().map_err(|err| {
+            let flush_components = || {
+                // Flush mapping first to prevent having orphan internal ids.
+                id_tracker_mapping_flusher().map_err(|err| {
                     OperationError::service_error(format!(
-                        "Failed to flush quantized vectors: {err}"
+                        "Failed to flush id_tracker mapping: {err}"
                     ))
                 })?;
-            }
-            payload_index_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush payload_index: {err}"))
-            })?;
-            // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
-            // This is because vector_storage and payload_index flush are not atomic.
-            // If payload or vector flush fails, we will be able to recover data from WAL.
-            // If Id Tracker flush fails, we are also able to recover data from WAL
-            //  by simply overriding data in vector and payload storages.
-            // Once versions are saved - points are considered persisted.
-            id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
-            })?;
+                for vector_storage_flusher in vector_storage_flushers {
+                    vector_storage_flusher().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush vector_storage: {err}"
+                        ))
+                    })?;
+                }
+                for quantization_flusher in quantization_flushers {
+                    quantization_flusher().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush quantized vectors: {err}"
+                        ))
+                    })?;
+                }
+                payload_index_flusher().map_err(|err| {
+                    OperationError::service_error(format!("Failed to flush payload_index: {err}"))
+                })?;
+                // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
+                // This is because vector_storage and payload_index flush are not atomic.
+                // If payload or vector flush fails, we will be able to recover data from WAL.
+                // If Id Tracker flush fails, we are also able to recover data from WAL
+                //  by simply overriding data in vector and payload storages.
+                // Once versions are saved - points are considered persisted.
+                id_tracker_versions_flusher().map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to flush id_tracker versions: {err}"
+                    ))
+                })?;
+
+                Ok(())
+            };
+
+            match flush_components() {
+                // Only continue if all components flushed Ok
+                Ok(()) => {}
+
+                // Return early to avoid updating persisted version
+                Err(err) => {
+                    return match err {
+                        // Flush was cancelled, bypass
+                        OperationError::Cancelled { description } => {
+                            log::debug!("Segment flush cancelled: {description}");
+                            Ok(())
+                        }
+                        // Propagate other errors
+                        _ => Err(err),
+                    };
+                }
+            };
 
             let mut current_persisted_version_guard = persisted_version.lock();
             let persisted_version_value_opt = *current_persisted_version_guard;
