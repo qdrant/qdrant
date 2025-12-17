@@ -6,7 +6,7 @@ use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::operations::{ClockTag, OperationWithClockTag};
-use crate::shards::local_shard::clock_map::{ClockMap, ClockMapSnapshot, RecoveryPoint};
+use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 
 pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
 
@@ -69,15 +69,28 @@ impl RecoverableWal {
         wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
-    /// Update the clocks snapshot because we either activated or deactivated our replica
+    /// Take clocks snapshot because we deactivated our replica
+    ///
+    /// Does nothing if a snapshot already existed.
     ///
     /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
     /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
     /// clock tags were bumped during a different transfer that was not finished.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
-    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) {
-        self.newest_clocks.lock().await.snapshot(action);
+    pub async fn take_newest_clocks_snapshot(&self) {
+        self.newest_clocks.lock().await.take_snapshot();
+    }
+
+    /// Clear any clocks snapshot because we activated our replica
+    ///
+    /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
+    /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
+    /// clock tags were bumped during a different transfer that was not finished.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7787>
+    pub async fn clear_newest_clocks_snapshot(&self) {
+        self.newest_clocks.lock().await.clear_snapshot();
     }
 
     /// Update the cutoff clock map based on the given recovery point

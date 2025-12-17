@@ -128,21 +128,26 @@ impl ClockMap {
         (is_accepted, new_tick)
     }
 
-    /// Take or clear a snapshot of clocks
-    pub fn snapshot(&mut self, action: ClockMapSnapshot) {
-        match action {
-            ClockMapSnapshot::TakeIfMissing if self.snapshot.is_some() => {}
-            ClockMapSnapshot::Clear if self.snapshot.is_none() => {}
-
-            ClockMapSnapshot::TakeIfMissing => {
-                self.snapshot.replace(self.clocks.clone());
-                self.changed = true;
-            }
-            ClockMapSnapshot::Clear => {
-                self.snapshot.take();
-                self.changed = true;
-            }
+    /// Take a snapshot of clocks
+    ///
+    /// Does nothing if a snapshot already exists.
+    pub fn take_snapshot(&mut self) {
+        if self.snapshot.is_some() {
+            return;
         }
+
+        self.snapshot.replace(self.clocks.clone());
+        self.changed = true;
+    }
+
+    /// Clear any snapshot of clocks
+    pub fn clear_snapshot(&mut self) {
+        if self.snapshot.is_none() {
+            return;
+        }
+
+        self.snapshot.take();
+        self.changed = true;
     }
 
     /// Create a recovery point based on the current clock map state, so that we can recover any
@@ -408,12 +413,6 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
 
         Ok(Self { clocks })
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ClockMapSnapshot {
-    TakeIfMissing,
-    Clear,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -20,7 +20,6 @@ use crate::operations::types::{CollectionError, CollectionResult, OptimizersStat
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::local_shard::clock_map::ClockMapSnapshot;
 use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -39,7 +38,7 @@ pub type ShardReplicasPlacement = Vec<PeerId>;
 /// Example: [
 ///     [1, 2],
 ///     [2, 3],
-///     [3, 4]
+///     [3, 4],
 /// ] - 3 shards, each has 2 replicas
 pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
 
@@ -263,16 +262,35 @@ impl Shard {
         }
     }
 
-    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) -> CollectionResult<()> {
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
         match self {
-            Self::Local(local_shard) => local_shard.snapshot_newest_clocks(action).await,
+            Self::Local(local_shard) => local_shard.take_newest_clocks_snapshot().await,
             Self::Proxy(ProxyShard { wrapped_shard, .. })
             | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
-                wrapped_shard.snapshot_newest_clocks(action).await
+                wrapped_shard.take_newest_clocks_snapshot().await
             }
             Self::QueueProxy(proxy) => {
                 if let Some(local_shard) = proxy.wrapped_shard() {
-                    local_shard.snapshot_newest_clocks(action).await
+                    local_shard.take_newest_clocks_snapshot().await
+                } else {
+                    Ok(())
+                }
+            }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
+        }
+    }
+
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.clear_newest_clocks_snapshot().await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.clear_newest_clocks_snapshot().await
+            }
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.clear_newest_clocks_snapshot().await
                 } else {
                     Ok(())
                 }

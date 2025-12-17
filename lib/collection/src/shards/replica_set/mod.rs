@@ -44,7 +44,6 @@ use crate::operations::{CollectionUpdateOperations, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
-use crate::shards::local_shard::clock_map::ClockMapSnapshot;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -779,12 +778,11 @@ impl ShardReplicaSet {
     async fn on_local_state_updated(&self, new_state: ReplicaState) -> CollectionResult<()> {
         // Update newest clocks snapshot on each state change
         if let Some(local_shard) = self.local.read().await.as_ref() {
-            let action = if new_state.is_active() {
-                ClockMapSnapshot::Clear
+            if new_state.is_active() {
+                local_shard.clear_newest_clocks_snapshot().await?;
             } else {
-                ClockMapSnapshot::TakeIfMissing
-            };
-            local_shard.snapshot_newest_clocks(action).await?;
+                local_shard.take_newest_clocks_snapshot().await?;
+            }
         }
 
         Ok(())

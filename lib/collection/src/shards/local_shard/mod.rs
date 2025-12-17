@@ -75,7 +75,6 @@ use crate::operations::types::{
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
-use crate::shards::local_shard::clock_map::ClockMapSnapshot;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
@@ -971,13 +970,27 @@ impl LocalShard {
         self.wal.recovery_point().await
     }
 
-    /// Update the newest clocks snapshot on the current shard
+    /// Take snapshot of newest clocks, if not snapshotted already
     ///
     /// Also immedaitely persists clocks to disk.
-    pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) -> CollectionResult<()> {
-        self.wal.snapshot_newest_clocks(action).await;
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        self.wal.take_newest_clocks_snapshot().await;
 
         // When taking clocks snapshot, persist changes immediately
+        self.update_handler
+            .lock()
+            .await
+            .store_clocks_if_changed()
+            .await
+    }
+
+    /// Clear any snapshot of newest clocks
+    ///
+    /// Also immedaitely persists clocks to disk.
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        self.wal.clear_newest_clocks_snapshot().await;
+
+        // When clearing clocks snapshot, persist changes immediately
         self.update_handler
             .lock()
             .await
