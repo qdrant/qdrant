@@ -164,8 +164,15 @@ impl TableOfContent {
                 storage_config.optimizers_overwrite.clone(),
             ));
 
-            collections.insert(collection_name, collection);
+            collections.insert(collection_name.clone(), collection);
         }
+
+        // Initialize snapshot telemetry for all loaded collections.
+        let telemetry = TocTelemetryCollector::default();
+        for collection_name in collections.keys() {
+            telemetry.init_snapshot_telemetry(collection_name);
+        }
+
         let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence = AliasPersistence::open(&alias_path)
             .expect("Can't open database by the provided config");
@@ -202,7 +209,7 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
-            telemetry: TocTelemetryCollector::default(),
+            telemetry,
         }
     }
 

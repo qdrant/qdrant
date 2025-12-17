@@ -250,6 +250,8 @@ impl TableOfContent {
                 );
                 existing_collection.stop_gracefully().await;
             }
+
+            self.telemetry.init_snapshot_telemetry(collection_name);
         }
 
         drop(collection_create_guard);
