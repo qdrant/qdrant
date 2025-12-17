@@ -34,12 +34,12 @@ jobs:
           sudo apt-get install clang
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build
         run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests
-        run: uv run bash ./tests/integration-tests.sh
+        run: uv --project tests run bash ./tests/integration-tests.sh
         shell: bash
 
   integration-tests-consensus:
@@ -65,15 +65,15 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build
         run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests - 1 peer
-        run: uv run bash ./tests/integration-tests.sh distributed
+        run: uv --project tests run bash ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: uv run pytest tests/consensus_tests --durations=10
+        run: uv --project tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: upload logs
         uses: actions/upload-artifact@v6
@@ -96,8 +96,8 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -114,7 +114,7 @@ jobs:
             PROFILE=ci
             FEATURES=staging
       - name: Run integration tests - multiple peers - compose
-        run: uv run bash ./test_restart.sh
+        run: uv --project tests run bash ./test_restart.sh
         working-directory: ./tests/consensus_tests
 
   test-consistency:
@@ -243,8 +243,8 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build Qdrant Docker image
         uses: docker/build-push-action@v6
         with:
@@ -261,7 +261,7 @@ jobs:
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: uv run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 20
       - name: Upload test logs on failure
