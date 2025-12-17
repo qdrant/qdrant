@@ -22,6 +22,8 @@ lazy_static! {
     /// regardless of the shard id. In order to keep consensus consistent, we can only
     /// enable new fixed logic once cluster fully switched to this version.
     /// Otherwise, some node might follow old logic and some - new logic.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7792>
     static ref ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: Version = Version::parse("1.16.3-dev").unwrap();
 }
 
