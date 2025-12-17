@@ -388,19 +388,6 @@ pub enum UpdateStatus {
     ClockRejected,
 }
 
-impl UpdateStatus {
-    /// Priority of the update status for ReplicaSet in update_impl
-    #[inline]
-    pub const fn priority(&self) -> u8 {
-        match self {
-            UpdateStatus::ClockRejected => 0,
-            UpdateStatus::Acknowledged => 1,
-            UpdateStatus::Completed => 2,
-            UpdateStatus::WaitTimeout => 3,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
