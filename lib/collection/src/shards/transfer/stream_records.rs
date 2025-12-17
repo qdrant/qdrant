@@ -137,7 +137,7 @@ pub(super) async fn transfer_stream_records(
 
         #[cfg(feature = "staging")]
         if let Some(delay) = staging_delay {
-            std::thread::sleep(delay);
+            tokio::time::sleep(delay).await;
         }
 
         // If this is the last batch, finalize
