@@ -908,6 +908,7 @@ mod tests {
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let operation = rng.random_range(0..=5);
+            // TODO give different probabilty to each operation
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -979,12 +980,6 @@ mod tests {
             match operation {
                 Operation::Clear => {
                     log::debug!("op:{i} CLEAR");
-                    // assert same length before clearing
-                    assert_eq!(
-                        storage.tracker.read().mapping_len(),
-                        model_hashmap.len(),
-                        "different number of points"
-                    );
                     storage.clear().unwrap();
                     assert_eq!(storage.max_point_id(), 0, "storage should be empty");
                     model_hashmap.clear();

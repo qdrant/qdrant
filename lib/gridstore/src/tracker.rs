@@ -348,6 +348,7 @@ impl Tracker {
 
     /// Get the length of the mapping
     /// Excludes None values
+    /// Warning: performs a full scan of the tracker.
     #[cfg(test)]
     pub fn mapping_len(&self) -> usize {
         (0..self.next_pointer_offset)
