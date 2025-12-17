@@ -743,7 +743,7 @@ impl ShardReplicaSet {
         let status = successes
             .iter()
             .map(|(_, res)| res.status)
-            .max()
+            .max_by_key(|s| s.priority())
             .unwrap_or(UpdateStatus::Acknowledged);
 
         // Pick a representative result to carry non-aggregated fields (operation_id, etc.).
