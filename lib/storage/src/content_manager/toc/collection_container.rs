@@ -311,10 +311,9 @@ impl TableOfContent {
                 );
                 if let Err(send_error) = proposal_sender.send(operation) {
                     log::error!(
-                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {}",
+                        "Can't send proposal to abort transfer of shard {} of collection {}. Error: {send_error}",
                         transfer.shard_id,
                         collection_name,
-                        send_error
                     );
                 }
             }
@@ -330,10 +329,9 @@ impl TableOfContent {
                     ConsensusOperations::finish_transfer(collection_name.clone(), transfer.clone());
                 if let Err(send_error) = proposal_sender.send(operation) {
                     log::error!(
-                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {}",
+                        "Can't send proposal to complete transfer of shard {} of collection {}. Error: {send_error}",
                         transfer.shard_id,
                         collection_name,
-                        send_error
                     );
                 }
             }

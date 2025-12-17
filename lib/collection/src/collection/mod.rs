@@ -625,8 +625,7 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
 
         let get_shard_transfers = |shard_id, from| {
-            shard_holder
-                .get_transfers(|transfer| transfer.shard_id == shard_id && transfer.from == from)
+            shard_holder.get_transfers(|transfer| transfer.is_source(from, shard_id))
         };
 
         for replica_set in shard_holder.all_shards() {
