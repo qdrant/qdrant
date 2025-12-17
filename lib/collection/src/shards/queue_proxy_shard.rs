@@ -127,7 +127,7 @@ impl QueueProxyShard {
     }
 
     /// Get the wrapped local shard
-    pub(crate) fn wrapped_shard(&self) -> Option<&LocalShard> {
+    pub(super) fn wrapped_shard(&self) -> Option<&LocalShard> {
         self.inner.as_ref().map(|inner| &inner.wrapped_shard)
     }
 
