@@ -13,6 +13,11 @@ crate-type = ["cdylib"]
 workspace = true
 
 
+[features]
+default = []
+abi3 = ["pyo3/abi3-py310"]
+
+
 [dependencies]
 edge = { path = ".." }
 edge-py-codegen = { path = "./codegen" }
@@ -34,4 +39,4 @@ features = ["into"]
 
 [dependencies.pyo3]
 version = "0.27.2"
-features = ["abi3-py310", "uuid"]
+features = ["uuid"]
