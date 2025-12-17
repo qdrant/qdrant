@@ -280,7 +280,9 @@ impl Tracker {
                 let is_empty = latest_updates.drain_persisted(&updates);
                 if is_empty {
                     let prev = self.pending_updates.remove(&point_offset);
-                    log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                    if let Some(prev) = prev {
+                        log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                    }
                 }
             }
         }

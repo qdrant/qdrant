@@ -272,9 +272,6 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-        log::trace!(
-            "get_value offset:{point_offset} page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -445,9 +442,6 @@ impl<V: Blob> Gridstore<V> {
         // update the pointer
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
-        log::trace!(
-            "put_value offset:{point_offset} set page_id:{start_page_id} block_offset:{block_offset} length:{value_size}"
-        );
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -469,9 +463,6 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
-        log::trace!(
-            "delete_value offset:{point_offset} unset page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
