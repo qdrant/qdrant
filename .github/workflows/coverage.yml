@@ -69,8 +69,8 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          uv lock --check
-          uv sync
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
