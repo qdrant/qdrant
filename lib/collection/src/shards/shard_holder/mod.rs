@@ -915,6 +915,7 @@ impl ShardHolder {
                 );
                 replica_set
                     .set_replica_state(local_peer_id, ReplicaState::Active)
+                    .await
                     .expect("Failed to set local shard state");
             }
             let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();

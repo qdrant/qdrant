@@ -970,6 +970,42 @@ impl LocalShard {
         self.wal.recovery_point().await
     }
 
+    /// Take snapshot of newest clocks, if not snapshotted already
+    ///
+    /// Also immedaitely persists clocks to disk.
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        let changed = self.wal.take_newest_clocks_snapshot().await;
+
+        // When taking clocks snapshot, persist changes immediately
+        if changed {
+            self.update_handler
+                .lock()
+                .await
+                .store_clocks_if_changed()
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear any snapshot of newest clocks
+    ///
+    /// Also immedaitely persists clocks to disk.
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        let changed = self.wal.clear_newest_clocks_snapshot().await;
+
+        // When clearing clocks snapshot, persist changes immediately
+        if changed {
+            self.update_handler
+                .lock()
+                .await
+                .store_clocks_if_changed()
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Update the cutoff point on the current shard
     ///
     /// This also updates the highest seen clocks.
