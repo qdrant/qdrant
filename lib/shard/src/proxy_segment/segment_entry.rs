@@ -630,7 +630,7 @@ impl SegmentEntry for ProxySegment {
         let vector_data = wrapped_info.vector_data;
 
         SegmentInfo {
-            segment_uuid: wrapped_info.segment_uuid,
+            uuid: wrapped_info.uuid,
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,

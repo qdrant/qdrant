@@ -669,7 +669,7 @@ impl SegmentEntry for Segment {
             .unwrap_or(0);
 
         SegmentInfo {
-            segment_uuid: self.segment_uuid(),
+            uuid: self.segment_uuid(),
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
