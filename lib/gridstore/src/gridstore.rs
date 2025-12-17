@@ -212,7 +212,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Get the path for a given page id
-    pub fn page_path(&self, page_id: u32) -> PathBuf {
+    fn page_path(&self, page_id: u32) -> PathBuf {
         self.base_path.join(format!("page_{page_id}.dat"))
     }
 
@@ -272,9 +272,6 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-        log::trace!(
-            "get_value offset:{point_offset} page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -445,9 +442,6 @@ impl<V: Blob> Gridstore<V> {
         // update the pointer
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
-        log::trace!(
-            "put_value offset:{point_offset} set page_id:{start_page_id} block_offset:{block_offset} length:{value_size}"
-        );
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -469,9 +463,6 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
-        log::trace!(
-            "delete_value offset:{point_offset} unset page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
@@ -531,6 +522,8 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Iterate over all the values in the storage
+    ///
+    /// Stops when the callback returns Ok(false)
     pub fn iter<F, E>(
         &self,
         mut callback: F,
@@ -898,15 +891,24 @@ mod tests {
     }
 
     enum Operation {
+        // Insert point with payload
         Put(PointOffset, Payload),
+        // Delete point by offset
         Delete(PointOffset),
+        // Get point by offset
         Get(PointOffset),
+        // Flush after delay
         FlushDelay(Duration),
+        // Clear storage
+        Clear,
+        // Iter up to limit
+        Iter(PointOffset),
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let operation = rng.random_range(0..=3);
+            let operation = rng.random_range(0..=5);
+            // TODO give different probability to each operation
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -927,6 +929,11 @@ mod tests {
                     let delay = Duration::from_millis(delay_ms);
                     Operation::FlushDelay(delay)
                 }
+                4 => Operation::Clear,
+                5 => {
+                    let limit = rng.random_range(0..=10);
+                    Operation::Iter(limit)
+                }
                 op => panic!("{op} out of range"),
             }
         }
@@ -939,16 +946,26 @@ mod tests {
     ) {
         use ahash::AHashMap;
 
+        // Windows struggles with this test on CI so we decrease the workload
+        #[cfg(target_os = "windows")]
+        let operation_count = 1_000;
+        #[cfg(target_os = "windows")]
+        let max_point_offset = 100u32;
+
+        #[cfg(not(target_os = "windows"))]
+        let operation_count = 100_000;
+        #[cfg(not(target_os = "windows"))]
+        let max_point_offset = 10_000u32;
+
         let _ = env_logger::builder().is_test(true).try_init();
 
         let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 10_000u32;
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100_000u32).map(|_| Operation::random(rng, max_point_offset));
+        let operations = (0..operation_count).map(|_| Operation::random(rng, max_point_offset));
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -961,6 +978,30 @@ mod tests {
         // apply operations to storage and model_hashmap
         for (i, operation) in operations.enumerate() {
             match operation {
+                Operation::Clear => {
+                    log::debug!("op:{i} CLEAR");
+                    storage.clear().unwrap();
+                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                    model_hashmap.clear();
+                }
+                Operation::Iter(limit) => {
+                    log::debug!("op:{i} ITER limit:{limit}");
+                    storage
+                        .iter::<_, String>(
+                            |point_offset, payload| {
+                                if point_offset >= limit {
+                                    return Ok(false); // shortcut iteration
+                                }
+                                assert_eq!(
+                                    model_hashmap.get(&point_offset), Some(&payload),
+                                    "storage and model are different when using `iter` for offset:{point_offset}"
+                                );
+                                Ok(true) // no shortcutting
+                            },
+                            hw_counter_ref,
+                        )
+                        .unwrap();
+                }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
                     let old1 = storage
@@ -1040,13 +1081,21 @@ mod tests {
         }
 
         // asset same length
-        assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+        assert_eq!(
+            storage.tracker.read().mapping_len(),
+            model_hashmap.len(),
+            "different number of points"
+        );
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
             let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
-            assert_eq!(stored_payload.as_ref(), model_payload);
+            assert_eq!(
+                stored_payload.as_ref(),
+                model_payload,
+                "storage and model differ for offset:{point_offset} {stored_payload:?} vs {model_payload:?}"
+            );
         }
 
         // flush data
@@ -1073,6 +1122,15 @@ mod tests {
                 "failed for point_offset: {point_offset}",
             );
         }
+
+        // wipe storage
+        storage.wipe().unwrap();
+
+        // assert base folder is gone
+        assert!(
+            !dir.path().exists(),
+            "base folder should be deleted by wipe"
+        );
     }
 
     #[test]
