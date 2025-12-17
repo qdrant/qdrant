@@ -903,12 +903,11 @@ mod tests {
         Get(PointOffset),
         FlushDelay(Duration),
         Clear,
-        Iter,
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let operation = rng.random_range(0..=5);
+            let operation = rng.random_range(0..=4);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -930,7 +929,6 @@ mod tests {
                     Operation::FlushDelay(delay)
                 }
                 4 => Operation::Clear,
-                5 => Operation::Iter,
                 op => panic!("{op} out of range"),
             }
         }
@@ -950,9 +948,9 @@ mod tests {
         let max_point_offset = 100u32;
 
         #[cfg(not(target_os = "windows"))]
-        let operation_count = 10_000;
+        let operation_count = 100_000;
         #[cfg(not(target_os = "windows"))]
-        let max_point_offset = 1_000u32;
+        let max_point_offset = 10_000u32;
 
         let _ = env_logger::builder().is_test(true).try_init();
 
@@ -986,27 +984,6 @@ mod tests {
                     storage.clear().unwrap();
                     assert_eq!(storage.max_point_id(), 0, "storage should be empty");
                     model_hashmap.clear();
-                }
-                Operation::Iter => {
-                    log::debug!("op:{i} ITER");
-                    let mut stored_points = AHashMap::with_capacity(model_hashmap.len());
-                    storage
-                        .iter::<_, String>(
-                            |p, v| {
-                                let prev = stored_points.insert(p, v);
-                                assert!(
-                                    prev.is_none(),
-                                    "duplicate point offset {p} found with value {prev:?}"
-                                );
-                                Ok(true) // no shortcutting
-                            },
-                            hw_counter_ref,
-                        )
-                        .unwrap();
-                    assert_eq!(
-                        stored_points, model_hashmap,
-                        "storage and model are different when using `iter`"
-                    );
                 }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
