@@ -560,7 +560,7 @@ impl ShardHolder {
     }
 
     /// Get all transfers related to the given peer and shard ID pair
-    pub fn get_related_transfers(&self, shard_id: ShardId, peer_id: PeerId) -> Vec<ShardTransfer> {
+    pub fn get_related_transfers(&self, peer_id: PeerId, shard_id: ShardId) -> Vec<ShardTransfer> {
         self.get_transfers(|transfer| transfer.is_source_or_target(peer_id, shard_id))
     }
 

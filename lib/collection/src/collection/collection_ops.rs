@@ -256,7 +256,7 @@ impl Collection {
 
             // Collect shard transfers related to removed shard...
             let transfers = if all_nodes_fixed_cancellation {
-                shard_holder.get_related_transfers(shard_id, peer_id)
+                shard_holder.get_related_transfers(peer_id, shard_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
                 // for maintaining consistency in a cluster with mixed versions.
