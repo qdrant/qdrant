@@ -178,7 +178,7 @@ jobs:
       - edge-py-macos
       - edge-py-windows
 
-    if: github.event.inputs.publish
+    if: inputs.publish
 
     steps:
       - name: Merge release artifacts
@@ -196,7 +196,7 @@ jobs:
     needs:
       - merge-artifacts
 
-    if: github.event.inputs.publish
+    if: inputs.publish
 
     steps:
       - name: Install Python
