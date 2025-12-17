@@ -584,14 +584,13 @@ impl<V> Gridstore<V> {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                // Gridstore is cleared, cancel flush
-                return Err(GridstoreError::FlushCancelled);
-            };
-
-            let (Some(pages), Some(tracker), Some(bitmask)) =
-                (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
-            else {
+            let (Some(is_alive_flush_guard), Some(pages), Some(tracker), Some(bitmask)) = (
+                is_alive_flush_lock.lock_if_alive(),
+                pages.upgrade(),
+                tracker.upgrade(),
+                bitmask.upgrade(),
+            ) else {
+                log::trace!("Gridstore was cleared, cancelling flush");
                 return Err(GridstoreError::FlushCancelled);
             };
 

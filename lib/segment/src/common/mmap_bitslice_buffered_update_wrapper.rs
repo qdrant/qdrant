@@ -91,6 +91,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
                 pending_updates_weak.upgrade(),
             ) else {
                 // Already dropped, skip flush
+                log::trace!("MmapBitsliceBuffered was dropped, cancelling flush");
                 return Err(OperationError::cancelled(
                     "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance",
                 ));
