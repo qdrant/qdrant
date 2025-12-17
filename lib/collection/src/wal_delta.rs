@@ -84,7 +84,7 @@ impl RecoverableWal {
 
     /// Clear any clocks snapshot because we activated our replica
     ///
-    /// Returns `false` if a snapshot was cleared.
+    /// Returns `true` if a snapshot was cleared.
     ///
     /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
     /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
