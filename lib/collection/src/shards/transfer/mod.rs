@@ -66,6 +66,24 @@ impl ShardTransfer {
         self.method.is_some_and(|method| method.is_resharding())
     }
 
+    /// Checks whether this peer and shard ID pair is the source or target of this transfer
+    #[inline]
+    pub fn is_source_or_target(&self, peer_id: PeerId, shard_id: ShardId) -> bool {
+        self.is_source(peer_id, shard_id) || self.is_target(peer_id, shard_id)
+    }
+
+    /// Checks whether this peer and shard ID pair is the source of this transfer
+    #[inline]
+    pub fn is_source(&self, peer_id: PeerId, shard_id: ShardId) -> bool {
+        self.from == peer_id && self.shard_id == shard_id
+    }
+
+    /// Checks whether this peer and shard ID pair is the target of this transfer
+    #[inline]
+    pub fn is_target(&self, peer_id: PeerId, shard_id: ShardId) -> bool {
+        self.to == peer_id && self.to_shard_id.unwrap_or(self.shard_id) == shard_id
+    }
+
     /// Check if this transfer is related to a specific resharding operation
     pub fn is_related_to_resharding(&self, key: &ReshardKey) -> bool {
         // Must be a resharding transfer
