@@ -157,17 +157,13 @@ impl ClockMap {
     /// Create a recovery point based on the current clock map state, so that we can recover any
     /// new operations with new clock values
     ///
-    /// If `use_snapshot` is `true`, the recovery point is created from the clocks snapshot if it
-    /// exists. Otherwise the current clocks are used.
+    /// The recovery point will be derived from a clocks snapshot if it exists. Otherwise the
+    /// current clocks are used.
     ///
     /// The recovery point contains every clock that is in this clock map. So, it represents all
     /// the clock ticks we have.
-    pub fn to_recovery_point(&self, use_snapshot: bool) -> RecoveryPoint {
-        let clocks = if use_snapshot {
-            self.snapshot.as_ref().unwrap_or(&self.clocks)
-        } else {
-            &self.clocks
-        };
+    pub fn to_recovery_point(&self) -> RecoveryPoint {
+        let clocks = self.snapshot.as_ref().unwrap_or(&self.clocks);
 
         RecoveryPoint {
             clocks: clocks

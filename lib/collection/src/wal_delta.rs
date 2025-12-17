@@ -123,7 +123,7 @@ impl RecoverableWal {
     ///
     /// Uses newest clocks snapshot if set, otherwise uses newest clocks.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.newest_clocks.lock().await.to_recovery_point(true)
+        self.newest_clocks.lock().await.to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
@@ -132,7 +132,7 @@ impl RecoverableWal {
     ) -> Result<Option<u64>, WalDeltaError> {
         let newest_clocks = self.recovery_point().await;
 
-        let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point(false);
+        let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point();
 
         resolve_wal_delta(
             self.wal
