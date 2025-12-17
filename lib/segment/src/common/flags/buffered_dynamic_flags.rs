@@ -66,13 +66,9 @@ impl BufferedDynamicFlags {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                return Err(OperationError::cancelled(
-                    "Aborted flushing on a dropped BufferedDynamicFlags instance",
-                ));
-            };
-
-            let Some(flags_arc) = flags_arc.upgrade() else {
+            let (Some(is_alive_flush_guard), Some(flags_arc)) =
+                (is_alive_flush_lock.lock_if_alive(), flags_arc.upgrade())
+            else {
                 return Err(OperationError::cancelled(
                     "Aborted flushing on a dropped BufferedDynamicFlags instance",
                 ));
