@@ -1046,7 +1046,7 @@ impl LocalShard {
     }
 
     // Returns configured default search timeout if timeout is None
-    pub fn timeout_or_default_search_timeout(&self, timeout: Option<Duration>) -> Duration {
+    fn timeout_or_default_search_timeout(&self, timeout: Option<Duration>) -> Duration {
         timeout.unwrap_or(self.shared_storage_config.search_timeout)
     }
 }
