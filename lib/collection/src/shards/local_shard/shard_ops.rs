@@ -111,7 +111,10 @@ impl ShardOperation for LocalShard {
             if let Some(t) = timeout {
                 return match tokio::time::timeout(t.saturating_sub(start.elapsed()), receiver).await
                 {
-                    Ok(_) => Ok(success),
+                    Ok(res) => {
+                        let _ = res??;
+                        Ok(success)
+                    }
                     Err(_) => Ok(UpdateResult {
                         operation_id: Some(operation_id),
                         status: UpdateStatus::WaitTimeout,
