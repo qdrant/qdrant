@@ -280,7 +280,9 @@ impl Tracker {
                 let is_empty = latest_updates.drain_persisted(&updates);
                 if is_empty {
                     let prev = self.pending_updates.remove(&point_offset);
-                    log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                    if let Some(prev) = prev {
+                        log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                    }
                 }
             }
         }
@@ -346,6 +348,7 @@ impl Tracker {
 
     /// Get the length of the mapping
     /// Excludes None values
+    /// Warning: performs a full scan of the tracker.
     #[cfg(test)]
     pub fn mapping_len(&self) -> usize {
         (0..self.next_pointer_offset)
