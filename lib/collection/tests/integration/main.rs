@@ -7,4 +7,5 @@ mod grouping_test;
 mod lookup_test;
 mod multi_vec_test;
 mod pagination_test;
+mod read_only_tests;
 mod snapshot_recovery_test;

@@ -99,15 +99,15 @@ impl Collection {
             for (shard_id, replica_set) in shards_holder.get_shards() {
                 let shard_snapshot_path = shard_path(Path::new(""), shard_id);
 
-                // If node is listener, we can save whatever currently is in the storage
-                let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
+                // Listener node should not block update by locking WAL during snapshot
+                let lock_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
                     .create_snapshot(
                         snapshot_temp_temp_dir.path(),
                         &tar.descend(&shard_snapshot_path)?,
                         SnapshotFormat::Regular,
                         None,
-                        save_wal,
+                        lock_wal,
                     )
                     .await
                     .map_err(|err| {

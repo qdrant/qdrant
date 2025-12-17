@@ -86,6 +86,8 @@ pub struct TableOfContent {
     collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
     /// Collector for various telemetry/metrics.
     telemetry: TocTelemetryCollector,
+    /// Whether the service is running in read-only mode
+    read_only: bool,
 }
 
 impl TableOfContent {
@@ -100,12 +102,15 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
+        read_only: bool,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
-        fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
-        if let Some(path) = storage_config.temp_path.as_deref() {
-            let temp_path = Path::new(path);
-            fs::create_dir_all(temp_path).expect("Can't create temporary files directory");
+        if !read_only {
+            fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
+            if let Some(path) = storage_config.temp_path.as_deref() {
+                let temp_path = Path::new(path);
+                fs::create_dir_all(temp_path).expect("Can't create temporary files directory");
+            }
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
@@ -162,13 +167,18 @@ impl TableOfContent {
                 Some(update_runtime.handle().clone()),
                 optimizer_resource_budget.clone(),
                 storage_config.optimizers_overwrite.clone(),
+                read_only,
             ));
 
             collections.insert(collection_name, collection);
         }
         let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
-        let alias_persistence = AliasPersistence::open(&alias_path)
-            .expect("Can't open database by the provided config");
+        let alias_persistence = if !read_only {
+            AliasPersistence::open(&alias_path).expect("Can't open database by the provided config")
+        } else {
+            AliasPersistence::open_read_only(&alias_path)
+                .expect("Can't open database in read-only mode")
+        };
 
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),
@@ -203,7 +213,13 @@ impl TableOfContent {
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
             telemetry: TocTelemetryCollector::default(),
+            read_only,
         }
+    }
+
+    /// Return `true` if service is running in read-only mode.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
     }
 
     /// Return `true` if service is working in distributed mode.

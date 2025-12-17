@@ -45,7 +45,7 @@ impl DummyShard {
         _tar: &tar_ext::BuilderExt,
         _format: SnapshotFormat,
         _manifest: Option<SnapshotManifest>,
-        _save_wal: bool,
+        _lock_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()
     }
