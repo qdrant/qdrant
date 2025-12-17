@@ -15,7 +15,9 @@ use crate::shards::shard::PeerId;
 #[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
-    /// Whether this clock map has changed since the last time it was persisted.
+    /// Optional snapshot with earlier version of clocks
+    snapshot: Option<HashMap<Key, Clock>>,
+    /// Whether this clock map has changed since the last time it was persisted
     changed: bool,
 }
 
@@ -126,15 +128,45 @@ impl ClockMap {
         (is_accepted, new_tick)
     }
 
+    /// Take a snapshot of clocks
+    ///
+    /// Does nothing if a snapshot already exists. Returns `true` if a snapshot was taken.
+    pub fn take_snapshot(&mut self) -> bool {
+        if self.snapshot.is_some() {
+            return false;
+        }
+
+        self.snapshot.replace(self.clocks.clone());
+        self.changed = true;
+        true
+    }
+
+    /// Clear any snapshot of clocks
+    ///
+    /// Returns `true` if a snapshot was cleared.
+    pub fn clear_snapshot(&mut self) -> bool {
+        if self.snapshot.is_none() {
+            return false;
+        }
+
+        self.snapshot.take();
+        self.changed = true;
+        true
+    }
+
     /// Create a recovery point based on the current clock map state, so that we can recover any
     /// new operations with new clock values
+    ///
+    /// The recovery point will be derived from a clocks snapshot if it exists. Otherwise the
+    /// current clocks are used.
     ///
     /// The recovery point contains every clock that is in this clock map. So, it represents all
     /// the clock ticks we have.
     pub fn to_recovery_point(&self) -> RecoveryPoint {
+        let clocks = self.snapshot.as_ref().unwrap_or(&self.clocks);
+
         RecoveryPoint {
-            clocks: self
-                .clocks
+            clocks: clocks
                 .iter()
                 .map(|(&key, clock)| (key, (clock.current_tick, clock.token)))
                 .collect(),
@@ -386,12 +418,17 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct ClockMapHelper {
     clocks: Vec<KeyClockHelper>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot: Option<Vec<KeyClockHelper>>,
 }
 
 impl From<ClockMap> for ClockMapHelper {
     fn from(clock_map: ClockMap) -> Self {
         Self {
             clocks: clock_map.clocks.into_iter().map(Into::into).collect(),
+            snapshot: clock_map
+                .snapshot
+                .map(|clocks| clocks.into_iter().map(Into::into).collect()),
         }
     }
 }
@@ -400,6 +437,9 @@ impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
         Self {
             clocks: helper.clocks.into_iter().map(Into::into).collect(),
+            snapshot: helper
+                .snapshot
+                .map(|clocks| clocks.into_iter().map(Into::into).collect()),
             changed: false,
         }
     }

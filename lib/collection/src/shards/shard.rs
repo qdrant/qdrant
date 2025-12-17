@@ -38,7 +38,7 @@ pub type ShardReplicasPlacement = Vec<PeerId>;
 /// Example: [
 ///     [1, 2],
 ///     [2, 3],
-///     [3, 4]
+///     [3, 4],
 /// ] - 3 shards, each has 2 replicas
 pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
 
@@ -259,6 +259,44 @@ impl Shard {
                     self.variant_name(),
                 )))
             }
+        }
+    }
+
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.take_newest_clocks_snapshot().await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.take_newest_clocks_snapshot().await
+            }
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.take_newest_clocks_snapshot().await
+                } else {
+                    Ok(())
+                }
+            }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
+        }
+    }
+
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.clear_newest_clocks_snapshot().await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.clear_newest_clocks_snapshot().await
+            }
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.clear_newest_clocks_snapshot().await
+                } else {
+                    Ok(())
+                }
+            }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
         }
     }
 
