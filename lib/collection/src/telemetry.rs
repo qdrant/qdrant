@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use itertools::Itertools;
 use schemars::JsonSchema;
@@ -17,8 +18,6 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::telemetry::{LocalShardTelemetry, ReplicaSetTelemetry};
-
-const MICROSECONDS_PER_SECOND: usize = 1_000_000;
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionTelemetry {
@@ -180,16 +179,17 @@ impl CollectionTelemetry {
             .count()
     }
 
-    pub fn optimization_time_spent_seconds(&self) -> usize {
+    pub fn optimization_time_spent(&self) -> Duration {
         self.local_shard_iter()
             .map(|i| {
-                i.optimizations
-                    .optimizations
-                    .total_duration_micros
-                    .unwrap_or(0) as usize
-                    / MICROSECONDS_PER_SECOND
+                Duration::from_micros(
+                    i.optimizations
+                        .optimizations
+                        .total_duration_micros
+                        .unwrap_or_default(),
+                )
             })
-            .sum::<usize>()
+            .sum()
     }
 }
 

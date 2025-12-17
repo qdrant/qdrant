@@ -89,7 +89,7 @@ impl CollectionsTelemetry {
             total_dead_replicas += collection.dead_replicas();
 
             total_optimizers_time_spent.push(counter(
-                collection.optimization_time_spent_seconds() as f64,
+                collection.optimization_time_spent().as_secs_f64(),
                 &[("id", &collection.id)],
             ));
 
