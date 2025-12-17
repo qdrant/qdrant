@@ -1,3 +1,4 @@
+#![expect(dead_code)]
 use std::cmp::Reverse;
 
 use ahash::HashMap;
