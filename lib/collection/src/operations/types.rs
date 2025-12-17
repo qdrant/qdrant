@@ -1,5 +1,4 @@
 use std::backtrace::Backtrace;
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
