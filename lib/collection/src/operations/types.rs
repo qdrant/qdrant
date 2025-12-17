@@ -389,19 +389,30 @@ pub struct RemoteShardInfo {
     pub state: ReplicaState,
 }
 
-/// Ordered by priority
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
+    Acknowledged,
+    Completed,
+    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
-    ClockRejected = 0,
-    Acknowledged = 1,
-    Completed = 2,
-    WaitTimeout = 3,
+    ClockRejected,
+}
+
+impl UpdateStatus {
+    /// Priority of the update status for ReplicaSet in update_impl
+    #[inline]
+    pub const fn priority(&self) -> u8 {
+        match self {
+            UpdateStatus::ClockRejected => 0,
+            UpdateStatus::Acknowledged => 1,
+            UpdateStatus::Completed => 2,
+            UpdateStatus::WaitTimeout => 3,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
