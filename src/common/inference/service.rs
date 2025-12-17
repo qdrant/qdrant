@@ -202,7 +202,7 @@ impl InferenceService {
             ));
         };
 
-        let mut request_body = InferenceRequest {
+        let request_body = InferenceRequest {
             inputs: inference_inputs,
             inference: Some(inference_type),
             token,
@@ -210,19 +210,6 @@ impl InferenceService {
 
         let request = self.client.post(url);
         let request = if let Some(timeout) = timeout {
-            // Apply timeout from params as fallback
-            for i in &mut request_body.inputs {
-                if let Some(opts) = i.options.as_mut() {
-                    opts.entry(String::from("timeout"))
-                        .or_insert(serde_json::Value::from(timeout.as_secs()));
-                } else {
-                    i.options = Some(HashMap::from_iter([(
-                        String::from("timeout"),
-                        serde_json::Value::from(timeout.as_secs()),
-                    )]))
-                }
-            }
-
             request.timeout(timeout)
         } else {
             request

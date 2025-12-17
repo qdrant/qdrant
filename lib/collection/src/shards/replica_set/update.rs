@@ -560,9 +560,7 @@ impl ShardReplicaSet {
             return Ok(None);
         }
 
-        let res = Self::merge_successful_update_results(this_peer_id, &successes, |peer_id| {
-            self.peer_can_be_source_of_truth(peer_id)
-        });
+        let res = Self::merge_successful_update_results(&successes);
 
         Ok(Some(res))
     }
@@ -720,19 +718,10 @@ impl ShardReplicaSet {
             .await
     }
 
-    /// Merges successful update results from a replica set.
+    /// Pick a successful update result to return from a replica set.
     ///
-    /// If there are WaitTimeout results, the merged result will be WaitTimeout.
-    /// If there are Completed results, the merged result will be Completed.
-    /// Otherwise, the merged result will be Acknowledged.
-    fn merge_successful_update_results<F>(
-        this_peer_id: PeerId,
-        successes: &[(PeerId, UpdateResult)],
-        is_source_of_truth: F,
-    ) -> UpdateResult
-    where
-        F: Fn(PeerId) -> bool,
-    {
+    /// We pick the reply from the highest peer ID. This makes the returned response deterministic.
+    fn merge_successful_update_results(successes: &[(PeerId, UpdateResult)]) -> UpdateResult {
         debug_assert!(!successes.is_empty());
         debug_assert!(
             !successes
@@ -741,32 +730,11 @@ impl ShardReplicaSet {
             "ClockRejected must be handled before merging successful results"
         );
 
-        // Aggregate status: WaitTimeout > .. > ClockRejected
-        let status = successes
+        successes
             .iter()
-            .map(|(_, res)| res.status)
-            .max_by_key(|s| s.priority())
-            .unwrap_or(UpdateStatus::Acknowledged);
-
-        // Pick a representative result to carry non-aggregated fields (operation_id, etc.).
-        // Prefer the most authoritative peer: local source-of-truth > any source-of-truth > local > any.
-        let mut result = successes
-            .iter()
-            .max_by_key(|(peer_id, _)| (is_source_of_truth(*peer_id), *peer_id == this_peer_id))
+            .max_by_key(|(peer_id, _)| *peer_id)
             .map(|(_, res)| *res)
-            .expect("successes is not empty");
-
-        // Overwrite with the aggregated status across all successful replies
-        result.status = status;
-
-        // Propagate the freshest clock we observed among successful replies.
-        // This avoids returning a stale clock_tag when replicas progressed at different speeds.
-        result.clock_tag = successes
-            .iter()
-            .filter_map(|(_, res)| res.clock_tag)
-            .max_by_key(|tag| tag.clock_tick);
-
-        result
+            .expect("successes is not empty")
     }
 }
 
@@ -816,16 +784,15 @@ mod tests {
             ),
         ];
 
-        let merged =
-            ShardReplicaSet::merge_successful_update_results(this_peer_id, &successes, |_| true);
+        let merged = ShardReplicaSet::merge_successful_update_results(&successes);
 
         assert_eq!(merged.status, UpdateStatus::WaitTimeout);
-        assert_eq!(merged.operation_id, Some(10));
+        assert_eq!(merged.operation_id, Some(20));
         assert_eq!(merged.clock_tag.unwrap().clock_tick, 12);
     }
 
     #[test]
-    fn test_merge_successful_update_results_prefers_source_of_truth() {
+    fn test_merge_successful_update_results_prefers_highest_peer_id() {
         let this_peer_id: PeerId = 1;
 
         let local_tag = ClockTag::new_with_token(this_peer_id, 7, 10, 0);
@@ -850,10 +817,7 @@ mod tests {
             ),
         ];
 
-        let merged =
-            ShardReplicaSet::merge_successful_update_results(this_peer_id, &successes, |peer_id| {
-                peer_id == 2
-            });
+        let merged = ShardReplicaSet::merge_successful_update_results(&successes);
 
         assert_eq!(merged.status, UpdateStatus::Completed);
         assert_eq!(merged.operation_id, Some(20));
