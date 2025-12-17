@@ -908,7 +908,7 @@ mod tests {
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
             let operation = rng.random_range(0..=5);
-            // TODO give different probabilty to each operation
+            // TODO give different probability to each operation
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -931,8 +931,8 @@ mod tests {
                 }
                 4 => Operation::Clear,
                 5 => {
-                    let point_offset = rng.random_range(0..=max_point_offset);
-                    Operation::Iter(point_offset)
+                    let limit = rng.random_range(0..=10);
+                    Operation::Iter(limit)
                 }
                 op => panic!("{op} out of range"),
             }
