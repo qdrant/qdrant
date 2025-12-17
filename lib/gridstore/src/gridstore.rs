@@ -531,6 +531,8 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Iterate over all the values in the storage
+    ///
+    /// Stops when the callback returns Ok(false)
     pub fn iter<F, E>(
         &self,
         mut callback: F,
@@ -898,12 +900,18 @@ mod tests {
     }
 
     enum Operation {
+        // Insert point with payload
         Put(PointOffset, Payload),
+        // Delete point by offset
         Delete(PointOffset),
+        // Get point by offset
         Get(PointOffset),
+        // Flush after delay
         FlushDelay(Duration),
+        // Clear storage
         Clear,
-        Iter,
+        // Iter up to limit
+        Iter(PointOffset),
     }
 
     impl Operation {
@@ -930,7 +938,10 @@ mod tests {
                     Operation::FlushDelay(delay)
                 }
                 4 => Operation::Clear,
-                5 => Operation::Iter,
+                5 => {
+                    let point_offset = rng.random_range(0..=max_point_offset);
+                    Operation::Iter(point_offset)
+                }
                 op => panic!("{op} out of range"),
             }
         }
@@ -950,9 +961,9 @@ mod tests {
         let max_point_offset = 100u32;
 
         #[cfg(not(target_os = "windows"))]
-        let operation_count = 10_000;
+        let operation_count = 100_000;
         #[cfg(not(target_os = "windows"))]
-        let max_point_offset = 1_000u32;
+        let max_point_offset = 10_000u32;
 
         let _ = env_logger::builder().is_test(true).try_init();
 
@@ -987,26 +998,23 @@ mod tests {
                     assert_eq!(storage.max_point_id(), 0, "storage should be empty");
                     model_hashmap.clear();
                 }
-                Operation::Iter => {
-                    log::debug!("op:{i} ITER");
-                    let mut stored_points = AHashMap::with_capacity(model_hashmap.len());
+                Operation::Iter(limit) => {
+                    log::debug!("op:{i} ITER limit:{limit}");
                     storage
                         .iter::<_, String>(
-                            |p, v| {
-                                let prev = stored_points.insert(p, v);
-                                assert!(
-                                    prev.is_none(),
-                                    "duplicate point offset {p} found with value {prev:?}"
+                            |point_offset, payload| {
+                                if point_offset >= limit {
+                                    return Ok(false); // shortcut iteration
+                                }
+                                assert_eq!(
+                                    model_hashmap.get(&point_offset), Some(&payload),
+                                    "storage and model are different when using `iter` for offset:{point_offset}"
                                 );
                                 Ok(true) // no shortcutting
                             },
                             hw_counter_ref,
                         )
                         .unwrap();
-                    assert_eq!(
-                        stored_points, model_hashmap,
-                        "storage and model are different when using `iter`"
-                    );
                 }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
