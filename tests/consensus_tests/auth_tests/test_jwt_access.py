@@ -1,6 +1,7 @@
 import json
 import tempfile
 from inspect import isfunction
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
@@ -596,7 +597,8 @@ def test_all_actions_have_tests():
 
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
-    with open("./docs/redoc/master/openapi.json", "r") as file:
+    project_root = Path(__file__).parent.parent.parent.parent
+    with open(project_root / "docs" / "redoc" / "master" / "openapi.json", "r") as file:
         openapi_data = json.load(file)
 
     # Extract all endpoint paths
