@@ -130,24 +130,28 @@ impl ClockMap {
 
     /// Take a snapshot of clocks
     ///
-    /// Does nothing if a snapshot already exists.
-    pub fn take_snapshot(&mut self) {
+    /// Does nothing if a snapshot already exists. Returns `true` if a snapshot was taken.
+    pub fn take_snapshot(&mut self) -> bool {
         if self.snapshot.is_some() {
-            return;
+            return false;
         }
 
         self.snapshot.replace(self.clocks.clone());
         self.changed = true;
+        true
     }
 
     /// Clear any snapshot of clocks
-    pub fn clear_snapshot(&mut self) {
+    ///
+    /// Returns `true` if a snapshot was cleared.
+    pub fn clear_snapshot(&mut self) -> bool {
         if self.snapshot.is_none() {
-            return;
+            return false;
         }
 
         self.snapshot.take();
         self.changed = true;
+        true
     }
 
     /// Create a recovery point based on the current clock map state, so that we can recover any

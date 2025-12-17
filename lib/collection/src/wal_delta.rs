@@ -71,26 +71,28 @@ impl RecoverableWal {
 
     /// Take clocks snapshot because we deactivated our replica
     ///
-    /// Does nothing if a snapshot already existed.
+    /// Does nothing if a snapshot already existed. Returns `true` if a snapshot was taken.
     ///
     /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
     /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
     /// clock tags were bumped during a different transfer that was not finished.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
-    pub async fn take_newest_clocks_snapshot(&self) {
-        self.newest_clocks.lock().await.take_snapshot();
+    pub async fn take_newest_clocks_snapshot(&self) -> bool {
+        self.newest_clocks.lock().await.take_snapshot()
     }
 
     /// Clear any clocks snapshot because we activated our replica
     ///
+    /// Returns `false` if a snapshot was cleared.
+    ///
     /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
     /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
     /// clock tags were bumped during a different transfer that was not finished.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7787>
-    pub async fn clear_newest_clocks_snapshot(&self) {
-        self.newest_clocks.lock().await.clear_snapshot();
+    pub async fn clear_newest_clocks_snapshot(&self) -> bool {
+        self.newest_clocks.lock().await.clear_snapshot()
     }
 
     /// Update the cutoff clock map based on the given recovery point
