@@ -412,8 +412,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ScalarQuantizationMethod::Int8)]
-    fn test_sq_u8_encode_internal(#[case] method: ScalarQuantizationMethod) {
+    #[case(ScalarQuantizationMethod::Int8, false)]
+    #[case(ScalarQuantizationMethod::Int8, true)]
+    fn test_sq_u8_encode_internal(#[case] method: ScalarQuantizationMethod, #[case] invert: bool) {
         let vectors_count = 129;
         let vector_dim = 70;
         let error = 1e-3;
@@ -427,12 +428,12 @@ mod tests {
             vector_data.push(vector);
         }
 
-        for distance_type in [DistanceType::Dot, DistanceType::L2] {
+        for distance_type in [DistanceType::Dot, DistanceType::L2, DistanceType::L1] {
             let vector_parameters = VectorParameters {
                 dim: vector_dim,
                 deprecated_count: None,
                 distance_type,
-                invert: false,
+                invert,
             };
             let quantized_vector_size =
                 EncodedVectorsU8::<TestEncodedStorage>::get_quantized_vector_size(
