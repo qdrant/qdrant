@@ -808,9 +808,8 @@ impl ShardReplicaSet {
             state.set_peers(replicas.clone());
         })?;
 
-        if replicas.contains_key(&self.this_peer_id()) {
-            self.on_local_state_updated(replicas.get(&self.this_peer_id()).copied().unwrap())
-                .await?;
+        if let Some(&state) = replicas.get(&self.this_peer_id()) {
+            self.on_local_state_updated(state).await?;
         }
 
         self.locally_disabled_peers.write().clear();
