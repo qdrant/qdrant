@@ -81,7 +81,7 @@ impl ShardTransfer {
     /// Checks whether this peer and shard ID pair is the target of this transfer
     #[inline]
     pub fn is_target(&self, peer_id: PeerId, shard_id: ShardId) -> bool {
-        self.from == peer_id && self.to_shard_id.unwrap_or(self.shard_id) == shard_id
+        self.to == peer_id && self.to_shard_id.unwrap_or(self.shard_id) == shard_id
     }
 
     /// Check if this transfer is related to a specific resharding operation
