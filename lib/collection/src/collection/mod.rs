@@ -29,6 +29,7 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
+use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::collection_size_stats::{
@@ -453,7 +454,20 @@ impl Collection {
 
         if new_state == ReplicaState::Dead {
             let resharding_state = shard_holder.resharding_state.read().clone();
-            let related_transfers = shard_holder.get_related_transfers(shard_id, peer_id);
+
+            let all_nodes_fixed_cancellation = self
+                .channel_service
+                .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+            let related_transfers = if all_nodes_fixed_cancellation {
+                shard_holder.get_related_transfers(shard_id, peer_id)
+            } else {
+                // This is the old buggy logic, but we have to keep it
+                // for maintaining consistency in a cluster with mixed versions.
+                shard_holder.get_transfers(|transfer| {
+                    transfer.shard_id == shard_id
+                        && (transfer.from == peer_id || transfer.to == peer_id)
+                })
+            };
 
             // Functions below lock `shard_holder`!
             drop(shard_holder);

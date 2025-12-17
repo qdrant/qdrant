@@ -24,7 +24,7 @@ lazy_static! {
     /// Otherwise, some node might follow old logic and some - new logic.
     ///
     /// See: <https://github.com/qdrant/qdrant/pull/7792>
-    static ref ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: Version = Version::parse("1.16.3-dev").unwrap();
+    pub(super) static ref ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: Version = Version::parse("1.16.3-dev").unwrap();
 }
 
 impl Collection {
@@ -256,10 +256,7 @@ impl Collection {
 
             // Collect shard transfers related to removed shard...
             let transfers = if all_nodes_fixed_cancellation {
-                shard_holder.get_transfers(|transfer| {
-                    (transfer.from == peer_id || transfer.to == peer_id)
-                        && transfer.shard_id == shard_id
-                })
+                shard_holder.get_related_transfers(shard_id, peer_id)
             } else {
                 // This is the old buggy logic, but we have to keep it
                 // for maintaining consistency in a cluster with mixed versions.
