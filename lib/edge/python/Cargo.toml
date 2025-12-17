@@ -1,5 +1,5 @@
 [package]
-name = "edge-py"
+name = "qdrant-edge-py"
 version = "0.1.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
@@ -34,4 +34,4 @@ features = ["into"]
 
 [dependencies.pyo3]
 version = "0.27.2"
-features = ["uuid"]
+features = ["abi3-py310", "uuid"]
