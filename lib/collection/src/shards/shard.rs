@@ -265,26 +265,21 @@ impl Shard {
 
     pub async fn snapshot_newest_clocks(&self, action: ClockMapSnapshot) -> CollectionResult<()> {
         match self {
-            Self::Local(local_shard) => {
-                local_shard.snapshot_newest_clocks(action).await;
-
-                // When taking clocks snapshot, persist changes immediately
-                local_shard
-                    .update_handler
-                    .lock()
-                    .await
-                    .store_clocks_if_changed()
-                    .await?;
+            Self::Local(local_shard) => local_shard.snapshot_newest_clocks(action).await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.snapshot_newest_clocks(action).await
             }
-
-            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
-                return Err(CollectionError::service_error(format!(
-                    "Updating clocks snapshot not supported on {}",
-                    self.variant_name(),
-                )));
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.snapshot_newest_clocks(action).await
+                } else {
+                    Ok(())
+                }
             }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
         }
-        Ok(())
     }
 
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) -> CollectionResult<()> {
