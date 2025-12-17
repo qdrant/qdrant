@@ -559,10 +559,9 @@ impl ShardHolder {
         Some(resharding_operations)
     }
 
-    pub fn get_related_transfers(&self, shard_id: ShardId, peer_id: PeerId) -> Vec<ShardTransfer> {
-        self.get_transfers(|transfer| {
-            transfer.shard_id == shard_id && (transfer.from == peer_id || transfer.to == peer_id)
-        })
+    /// Get all transfers related to the given peer and shard ID pair
+    pub fn get_related_transfers(&self, peer_id: PeerId, shard_id: ShardId) -> Vec<ShardTransfer> {
+        self.get_transfers(|transfer| transfer.is_source_or_target(peer_id, shard_id))
     }
 
     pub fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {

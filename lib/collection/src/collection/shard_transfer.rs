@@ -439,12 +439,9 @@ impl Collection {
                 let replica_set = shards_holder_guard.get_shard(shard_id).unwrap();
                 let shard_transfer_registered = shards_holder_guard.shard_transfers.wait_for(
                     |shard_transfers| {
-                        shard_transfers.iter().any(|shard_transfer| {
-                            let to_shard_id = shard_transfer
-                                .to_shard_id
-                                .unwrap_or(shard_transfer.shard_id);
-                            to_shard_id == shard_id && shard_transfer.to == this_peer_id
-                        })
+                        shard_transfers
+                            .iter()
+                            .any(|shard_transfer| shard_transfer.is_target(this_peer_id, shard_id))
                     },
                     Duration::from_secs(60),
                 );
