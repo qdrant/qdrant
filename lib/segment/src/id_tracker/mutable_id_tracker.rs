@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -106,7 +105,7 @@ pub struct MutableIdTracker {
     pending_versions: Arc<Mutex<BTreeMap<PointOffsetType, SeqNumberType>>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
-    pending_mappings: Mutex<Vec<MappingChange>>,
+    pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
 
     is_alive_lock: IsAliveLock,
 }
@@ -294,20 +293,32 @@ impl IdTracker for MutableIdTracker {
     fn mapping_flusher(&self) -> Flusher {
         let mappings_path = mappings_path(&self.segment_path);
 
-        // Take out pending mappings to flush and replace it with a preallocated vector to avoid
-        // frequent reallocation on a busy segment
-        let pending_mappings = {
-            let mut pending_mappings = self.pending_mappings.lock();
-            let count = pending_mappings.len();
-            mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
-        };
+        let changes = self.pending_mappings.lock().clone();
+
+        if changes.is_empty() {
+            return Box::new(|| Ok(()));
+        }
+
+        let is_alive_handle = self.is_alive_lock.handle();
+        let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
 
         Box::new(move || {
-            if pending_mappings.is_empty() {
+            let (Some(is_alive_guard), Some(pending_mappings_arc)) = (
+                is_alive_handle.lock_if_alive(),
+                pending_mappings_weak.upgrade(),
+            ) else {
                 return Ok(());
-            }
+            };
 
-            store_mapping_changes(&mappings_path, pending_mappings)
+            let pending_mappings_guard = pending_mappings_arc.lock();
+
+            store_mapping_changes(&mappings_path, &changes)?;
+
+            reconcile_persisted_mapping_changes(pending_mappings_guard, &changes);
+
+            drop(is_alive_guard);
+
+            Ok(())
         })
     }
 
@@ -317,6 +328,11 @@ impl IdTracker for MutableIdTracker {
     fn versions_flusher(&self) -> Flusher {
         let versions_path = versions_path(&self.segment_path);
         let changes = self.pending_versions.lock().clone();
+
+        if changes.is_empty() {
+            return Box::new(|| Ok(()));
+        }
+
         let pending_versions_weak = Arc::downgrade(&self.pending_versions);
         let is_alive_handle = self.is_alive_lock.handle();
 
@@ -332,7 +348,7 @@ impl IdTracker for MutableIdTracker {
 
             store_version_changes(&versions_path, &changes)?;
 
-            reconcile_persisted_changes(pending_versions_guard, changes);
+            reconcile_persisted_version_changes(pending_versions_guard, changes);
 
             drop(is_alive_guard);
 
@@ -378,7 +394,10 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 }
 
 /// Store new mapping changes, appending them to the given file
-fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> OperationResult<()> {
+fn store_mapping_changes(
+    mappings_path: &Path,
+    changes: &Vec<MappingChange>,
+) -> OperationResult<()> {
     // Create or open file in append mode to write new changes to the end
     let file = File::options()
         .create(true)
@@ -413,9 +432,9 @@ fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> O
 /// See [`read_entry`] and [`write_entry`] for more details.
 fn write_mapping_changes<W: Write>(
     mut writer: W,
-    changes: Vec<MappingChange>,
+    changes: &Vec<MappingChange>,
 ) -> OperationResult<()> {
-    for change in changes {
+    for &change in changes {
         write_entry(&mut writer, change)?;
     }
 
@@ -800,7 +819,10 @@ where
     Ok(())
 }
 
-fn reconcile_persisted_changes(mut pending: MutexGuard<'_, BTreeMap<PointOffsetType, SeqNumberType>>, changes: BTreeMap<PointOffsetType, SeqNumberType>) {
+fn reconcile_persisted_version_changes(
+    mut pending: MutexGuard<'_, BTreeMap<PointOffsetType, SeqNumberType>>,
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+) {
     for (point_offset, persisted_version) in changes {
         // Remove persisted version
         let Some(pending_version) = pending.remove(&point_offset) else {
@@ -812,6 +834,25 @@ fn reconcile_persisted_changes(mut pending: MutexGuard<'_, BTreeMap<PointOffsetT
             pending.insert(point_offset, pending_version);
         }
     }
+}
+
+fn reconcile_persisted_mapping_changes(
+    mut pending: MutexGuard<'_, Vec<MappingChange>>,
+    changes: &Vec<MappingChange>,
+) {
+    let mut delete_up_to = 0;
+    for (pending, persisted) in pending.iter().zip(changes) {
+        if pending != persisted {
+            // This should not happen, since flushers are supposed to be requested->executed
+            // one at a time, but if it does, it should be fine.
+            //
+            // The only consequence is to persist some operations again.
+            break;
+        }
+        delete_up_to += 1;
+    }
+
+    *pending = pending.split_off(delete_up_to);
 }
 
 #[cfg(test)]
