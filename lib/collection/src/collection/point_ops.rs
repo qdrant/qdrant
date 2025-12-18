@@ -159,12 +159,8 @@ impl Collection {
             .spawn(async move {
                 let _update_lock = update_lock;
 
-                let mut operations =
-                    shard_holder.split_by_shard(operation, &shard_keys_selection)?;
-                // Sort operations by peer ID to get the UpdateResult from the latest
-                operations.sort_by_key(|(shard, _)| shard.this_peer_id());
-
-                let mut updates = Vec::with_capacity(operations.len());
+                let updates = FuturesUnordered::new();
+                let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
 
                 for (shard, operation) in operations {
                     let operation = shard_holder.split_by_mode(shard.shard_id, operation);
@@ -215,7 +211,7 @@ impl Collection {
                     });
                 }
 
-                let results: Vec<_> = future::join_all(updates).await;
+                let results: Vec<_> = updates.collect().await;
 
                 CollectionResult::Ok(results)
             })
