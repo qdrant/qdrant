@@ -1,7 +1,8 @@
-use std::mem;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::is_alive_lock::IsAliveLock;
+use common::types::PointOffsetType;
 use memory::mmap_type::MmapSlice;
 use parking_lot::{Mutex, RwLock};
 
@@ -19,7 +20,8 @@ where
 {
     mmap_slice: Arc<RwLock<MmapSlice<T>>>,
     len: usize,
-    pending_updates: Mutex<AHashMap<usize, T>>,
+    pending_updates: Arc<Mutex<AHashMap<PointOffsetType, T>>>,
+    is_alive_lock: IsAliveLock,
 }
 
 impl<T> MmapSliceBufferedUpdateWrapper<T>
@@ -31,7 +33,8 @@ where
         Self {
             mmap_slice: Arc::new(RwLock::new(mmap_slice)),
             len,
-            pending_updates: Mutex::new(AHashMap::new()),
+            pending_updates: Arc::new(Mutex::new(AHashMap::new())),
+            is_alive_lock: IsAliveLock::new(),
         }
     }
 
@@ -39,25 +42,67 @@ where
     ///
     /// ## Panics
     /// Panics if the index is out of bounds.
-    pub fn set(&self, index: usize, value: T) {
-        assert!(index < self.len, "index {index} out of range: {}", self.len);
+    pub fn set(&self, index: PointOffsetType, value: T) {
+        assert!(
+            (index as usize) < self.len,
+            "index {index} out of range: {}",
+            self.len
+        );
         self.pending_updates.lock().insert(index, value);
     }
 }
 
 impl<T> MmapSliceBufferedUpdateWrapper<T>
 where
-    T: 'static + Sync + Send,
+    T: 'static + Sync + Send + Clone + PartialEq,
 {
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = mem::take(&mut *self.pending_updates.lock());
-        let slice = self.mmap_slice.clone();
-        Box::new(move || {
-            let mut mmap_slice_write = slice.write();
-            for (index, value) in pending_updates {
-                mmap_slice_write[index] = value;
+        let updates = {
+            let updates_guard = self.pending_updates.lock();
+            if updates_guard.is_empty() {
+                return Box::new(|| Ok(()));
             }
-            Ok(mmap_slice_write.flusher()()?)
+            updates_guard.clone()
+        };
+
+        let pending_updates_weak = Arc::downgrade(&self.pending_updates);
+        let slice = Arc::downgrade(&self.mmap_slice);
+        let is_alive_handle = self.is_alive_lock.handle();
+        Box::new(move || {
+            let (Some(is_alive_guard), Some(pending_updates_arc), Some(slice)) = (
+                is_alive_handle.lock_if_alive(),
+                pending_updates_weak.upgrade(),
+                slice.upgrade(),
+            ) else {
+                log::debug!(
+                    "Aborted flushing on a dropped MmapSliceBufferedUpdateWrapper instance"
+                );
+                return Ok(());
+            };
+
+            let mut mmap_slice_write = slice.write();
+            for (&index, value) in &updates {
+                mmap_slice_write[index as usize] = value.clone();
+            }
+            mmap_slice_write.flusher()()?;
+
+            Self::reconcile_persisted_changes(&pending_updates_arc, updates);
+
+            drop(is_alive_guard);
+
+            Ok(())
         })
+    }
+
+    /// Removes the persisted updates from the pending ones.
+    fn reconcile_persisted_changes(
+        pending: &Mutex<AHashMap<PointOffsetType, T>>,
+        persisted: AHashMap<PointOffsetType, T>,
+    ) {
+        pending.lock().retain(|point_offset, pending_value| {
+            persisted
+                .get(point_offset)
+                .is_none_or(|persisted_value| pending_value != persisted_value)
+        });
     }
 }

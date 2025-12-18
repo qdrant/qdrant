@@ -397,8 +397,7 @@ impl IdTracker for ImmutableIdTracker {
         );
         if has_version {
             self.internal_to_version.set(internal_id, version);
-            self.internal_to_version_wrapper
-                .set(internal_id as usize, version);
+            self.internal_to_version_wrapper.set(internal_id, version);
         }
 
         Ok(())
