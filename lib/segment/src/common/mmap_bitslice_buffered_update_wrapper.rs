@@ -71,7 +71,14 @@ impl MmapBitSliceBufferedUpdateWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = self.pending_updates.lock().clone();
+        let updates = {
+            let updates_guard = self.pending_updates.lock();
+            if updates_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            updates_guard.clone()
+        };
+
         let bitslice = Arc::downgrade(&self.bitslice);
         let pending_updates_arc = Arc::downgrade(&self.pending_updates);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
@@ -89,11 +96,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
             };
 
             let mut mmap_slice_write = bitslice.write();
-            for (index, value) in pending_updates.iter() {
+            for (index, value) in updates.iter() {
                 mmap_slice_write.set(*index, *value);
             }
             mmap_slice_write.flusher()()?;
-            Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+            Self::clear_flushed_updates(updates, pending_updates_arc);
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);

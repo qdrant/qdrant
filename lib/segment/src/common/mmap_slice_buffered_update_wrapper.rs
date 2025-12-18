@@ -57,8 +57,15 @@ where
     T: 'static + Sync + Send + Clone + PartialEq,
 {
     pub fn flusher(&self) -> Flusher {
+        let updates = {
+            let updates_guard = self.pending_updates.lock();
+            if updates_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            updates_guard.clone()
+        };
+
         let pending_updates_weak = Arc::downgrade(&self.pending_updates);
-        let updates = self.pending_updates.lock().clone();
         let slice = Arc::downgrade(&self.mmap_slice);
         let is_alive_handle = self.is_alive_lock.handle();
         Box::new(move || {

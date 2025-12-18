@@ -293,11 +293,13 @@ impl IdTracker for MutableIdTracker {
     fn mapping_flusher(&self) -> Flusher {
         let mappings_path = mappings_path(&self.segment_path);
 
-        let changes = self.pending_mappings.lock().clone();
-
-        if changes.is_empty() {
-            return Box::new(|| Ok(()));
-        }
+        let changes = {
+            let changes_guard = self.pending_mappings.lock();
+            if changes_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            changes_guard.clone()
+        };
 
         let is_alive_handle = self.is_alive_lock.handle();
         let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
@@ -326,12 +328,15 @@ impl IdTracker for MutableIdTracker {
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
     fn versions_flusher(&self) -> Flusher {
-        let versions_path = versions_path(&self.segment_path);
-        let changes = self.pending_versions.lock().clone();
+        let changes = {
+            let changes_guard = self.pending_versions.lock();
+            if changes_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            changes_guard.clone()
+        };
 
-        if changes.is_empty() {
-            return Box::new(|| Ok(()));
-        }
+        let versions_path = versions_path(&self.segment_path);
 
         let pending_versions_weak = Arc::downgrade(&self.pending_versions);
         let is_alive_handle = self.is_alive_lock.handle();
