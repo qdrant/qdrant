@@ -99,16 +99,10 @@ where
         mut pending: MutexGuard<'_, AHashMap<PointOffsetType, T>>,
         persisted: AHashMap<PointOffsetType, T>,
     ) {
-        for (point_offset, persisted_value) in persisted {
-            // remove persisted point offset
-            let Some(pending_value) = pending.remove(&point_offset) else {
-                continue;
-            };
-
-            // reinsert if it is not the persisted change
-            if pending_value != persisted_value {
-                pending.insert(point_offset, pending_value);
-            }
-        }
+        pending.retain(|point_offset, pending_value| {
+            persisted
+                .get(point_offset)
+                .is_none_or(|persisted_value| pending_value != persisted_value)
+        });
     }
 }

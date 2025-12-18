@@ -25,7 +25,7 @@ const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum MappingChange {
     Insert(PointIdType, PointOffsetType),
     Delete(PointIdType),
@@ -824,17 +824,11 @@ fn reconcile_persisted_version_changes(
     mut pending: MutexGuard<'_, BTreeMap<PointOffsetType, SeqNumberType>>,
     changes: BTreeMap<PointOffsetType, SeqNumberType>,
 ) {
-    for (point_offset, persisted_version) in changes {
-        // Remove persisted version
-        let Some(pending_version) = pending.remove(&point_offset) else {
-            continue;
-        };
-
-        // Reinsert if it has changed.
-        if pending_version != persisted_version {
-            pending.insert(point_offset, pending_version);
-        }
-    }
+    pending.retain(|point_offset, pending_version| {
+        changes
+            .get(point_offset)
+            .is_none_or(|persisted_version| pending_version != persisted_version)
+    });
 }
 
 fn reconcile_persisted_mapping_changes(
