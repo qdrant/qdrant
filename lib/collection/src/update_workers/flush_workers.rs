@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use common::panic;
-use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
 use shard::segment_holder::LockedSegmentHolder;
 use shard::wal::WalError;
@@ -68,17 +68,8 @@ impl UpdateWorkers {
             Err(err) => {
                 // Since Self::flush_segments is flushing asynchronously, we can get the error
                 // from the previous flush cycle, not necessarily this one.
-                match err {
-                    OperationError::Cancelled { description: _ } => {
-                        log::debug!("Flush was cancelled: {err}");
-                        // Don't report as optimizer error here, since cancellation can happen due to
-                        // trying to flush an already dropped segment
-                    }
-                    _ => {
-                        log::error!("Failed to flush: {err}");
-                        segments.write().report_optimizer_error(err);
-                    }
-                }
+                log::error!("Failed to flush: {err}");
+                segments.write().report_optimizer_error(err);
                 return;
             }
         };

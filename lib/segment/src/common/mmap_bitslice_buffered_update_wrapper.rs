@@ -80,6 +80,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         Box::new(move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Already dropped, skip flush
+                log::trace!("MmapBitsliceBuffered was dropped, cancelling flush");
                 return Err(OperationError::cancelled(
                     "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance",
                 ));

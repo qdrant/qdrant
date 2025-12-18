@@ -69,6 +69,7 @@ impl BufferedDynamicFlags {
             let (Some(is_alive_flush_guard), Some(flags_arc)) =
                 (is_alive_flush_lock.lock_if_alive(), flags_arc.upgrade())
             else {
+                log::trace!("BufferedDynamicFlags was dropped, cancelling flush");
                 return Err(OperationError::cancelled(
                     "Aborted flushing on a dropped BufferedDynamicFlags instance",
                 ));
