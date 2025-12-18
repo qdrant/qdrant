@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
 use memory::fadvise::OneshotFile;
-use parking_lot::{Mutex, MutexGuard};
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::point_mappings::FileEndianess;
@@ -314,7 +314,7 @@ impl IdTracker for MutableIdTracker {
 
             store_mapping_changes(&mappings_path, &changes)?;
 
-            reconcile_persisted_mapping_changes(pending_mappings_arc.lock(), &changes);
+            reconcile_persisted_mapping_changes(&pending_mappings_arc, &changes);
 
             drop(is_alive_guard);
 
@@ -349,7 +349,7 @@ impl IdTracker for MutableIdTracker {
 
             store_version_changes(&versions_path, &changes)?;
 
-            reconcile_persisted_version_changes(pending_versions_arc.lock(), changes);
+            reconcile_persisted_version_changes(&pending_versions_arc, changes);
 
             drop(is_alive_guard);
 
@@ -821,10 +821,10 @@ where
 }
 
 fn reconcile_persisted_version_changes(
-    mut pending: MutexGuard<'_, BTreeMap<PointOffsetType, SeqNumberType>>,
+    pending: &Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
     changes: BTreeMap<PointOffsetType, SeqNumberType>,
 ) {
-    pending.retain(|point_offset, pending_version| {
+    pending.lock().retain(|point_offset, pending_version| {
         changes
             .get(point_offset)
             .is_none_or(|persisted_version| pending_version != persisted_version)
@@ -832,9 +832,10 @@ fn reconcile_persisted_version_changes(
 }
 
 fn reconcile_persisted_mapping_changes(
-    mut pending: MutexGuard<'_, Vec<MappingChange>>,
+    pending: &Mutex<Vec<MappingChange>>,
     changes: &Vec<MappingChange>,
 ) {
+    let mut pending = pending.lock();
     let mut delete_up_to = 0;
     for (pending, persisted) in pending.iter().zip(changes) {
         if pending != persisted {

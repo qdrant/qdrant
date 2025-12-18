@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use memory::mmap_type::MmapSlice;
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, RwLock};
 
 use crate::common::Flusher;
 
@@ -86,7 +86,7 @@ where
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_changes(pending_updates_arc.lock(), updates);
+            Self::reconcile_persisted_changes(&pending_updates_arc, updates);
 
             drop(is_alive_guard);
 
@@ -96,10 +96,10 @@ where
 
     /// Removes the persisted updates from the pending ones.
     fn reconcile_persisted_changes(
-        mut pending: MutexGuard<'_, AHashMap<PointOffsetType, T>>,
+        pending: &Mutex<AHashMap<PointOffsetType, T>>,
         persisted: AHashMap<PointOffsetType, T>,
     ) {
-        pending.retain(|point_offset, pending_value| {
+        pending.lock().retain(|point_offset, pending_value| {
             persisted
                 .get(point_offset)
                 .is_none_or(|persisted_value| pending_value != persisted_value)

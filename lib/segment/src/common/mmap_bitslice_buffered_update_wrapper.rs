@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use common::is_alive_lock::IsAliveLock;
 use memory::mmap_type::MmapBitSlice;
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, RwLock};
 
 use crate::common::Flusher;
 
@@ -62,10 +62,12 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
     fn reconcile_persisted_updates(
-        mut pending_updates: MutexGuard<AHashMap<usize, bool>>,
+        pending_updates: &Mutex<AHashMap<usize, bool>>,
         persisted: AHashMap<usize, bool>,
     ) {
-        pending_updates.retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
+        pending_updates
+            .lock()
+            .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -99,7 +101,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_updates(pending_updates_arc.lock(), updates);
+            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
