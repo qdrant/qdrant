@@ -222,8 +222,6 @@ pub struct MeasurableRwLockUpgradableReadGuard<'rwlock, T: ?Sized> {
 
 #[derive(Debug)]
 pub struct MeasurableRwLockWriteGuard<'rwlock, T: ?Sized> {
-    upgrade_wait_us_counter: &'static atomic::AtomicU64,
-    upgrade_counter: &'static atomic::AtomicU64,
     #[allow(unused)]
     lock_measurer: Measurer,
     inner: RwLockWriteGuard<'rwlock, T>,
@@ -349,16 +347,12 @@ impl<T: ?Sized> MeasurableRwLock<T> {
             .write_counter
             .fetch_add(1, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
-            upgrade_wait_us_counter: &metrics.upgrade_wait_time_us_counter,
-            upgrade_counter: &metrics.upgrade_counter,
             lock_measurer,
             inner,
         }
     }
 
     pub fn try_write(&self) -> Option<MeasurableRwLockWriteGuard<'_, T>> {
-        let metrics = get_current_measurable_rwlock_metrics().expect("Unitialized metrics");
-
         self.inner.try_write().map(|inner| {
             let lock_measurer = Measurer::start(
                 &get_current_measurable_rwlock_metrics()
@@ -366,8 +360,6 @@ impl<T: ?Sized> MeasurableRwLock<T> {
                     .write_lock_time,
             );
             MeasurableRwLockWriteGuard {
-                upgrade_wait_us_counter: &metrics.upgrade_wait_time_us_counter,
-                upgrade_counter: &metrics.upgrade_counter,
                 lock_measurer,
                 inner,
             }
@@ -376,28 +368,6 @@ impl<T: ?Sized> MeasurableRwLock<T> {
 }
 
 impl<'rwlock, T: ?Sized + 'rwlock> MeasurableRwLockUpgradableReadGuard<'rwlock, T> {
-    pub fn upgrade(s: Self) -> MeasurableRwLockWriteGuard<'rwlock, T> {
-        let start = Instant::now();
-        let inner = RwLockUpgradableReadGuard::upgrade(s.inner);
-        let elapsed = start.elapsed();
-
-        let lock_measurer = Measurer::start(
-            &get_current_measurable_rwlock_metrics()
-                .expect("Measurer unitialized")
-                .write_lock_time,
-        );
-        s.upgrade_wait_us_counter
-            .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
-        s.upgrade_counter.fetch_add(1, atomic::Ordering::Relaxed);
-
-        MeasurableRwLockWriteGuard {
-            upgrade_wait_us_counter: s.upgrade_wait_us_counter,
-            upgrade_counter: s.upgrade_counter,
-            lock_measurer,
-            inner,
-        }
-    }
-
     pub fn with_upgraded<Ret, F>(&mut self, f: F) -> Ret
     where
         F: FnOnce(&mut T) -> Ret,
@@ -444,26 +414,6 @@ impl<'rwlock, T: ?Sized> Deref for MeasurableRwLockUpgradableReadGuard<'rwlock, 
 impl<'rwlock, T: ?Sized> MeasurableRwLockWriteGuard<'rwlock, T> {
     pub fn unlock_fair(s: Self) {
         RwLockWriteGuard::unlock_fair(s.inner);
-    }
-
-    pub fn downgrade_to_upgradable(s: Self) -> MeasurableRwLockUpgradableReadGuard<'rwlock, T> {
-        let start = Instant::now();
-        let inner = RwLockWriteGuard::downgrade_to_upgradable(s.inner);
-        let elapsed = start.elapsed();
-
-        let lock_measurer = Measurer::start(
-            &get_current_measurable_rwlock_metrics()
-                .expect("Measurer unitialized")
-                .read_lock_time,
-        );
-        s.upgrade_wait_us_counter
-            .fetch_add(elapsed.as_micros() as _, atomic::Ordering::Relaxed);
-        MeasurableRwLockUpgradableReadGuard {
-            upgrade_wait_us_counter: s.upgrade_wait_us_counter,
-            upgrade_counter: s.upgrade_counter,
-            lock_measurer,
-            inner,
-        }
     }
 }
 
