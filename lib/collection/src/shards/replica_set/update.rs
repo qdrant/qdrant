@@ -730,11 +730,21 @@ impl ShardReplicaSet {
             "ClockRejected must be handled before merging successful results"
         );
 
-        successes
+        // Aggregate status: WaitTimeout > .. > ClockRejected
+        let status = successes
+            .iter()
+            .map(|(_, res)| res.status)
+            .max_by_key(|s| s.priority())
+            .unwrap_or(UpdateStatus::Acknowledged);
+
+        let mut result = successes
             .iter()
             .max_by_key(|(peer_id, _)| *peer_id)
             .map(|(_, res)| *res)
-            .expect("successes is not empty")
+            .expect("successes is not empty");
+
+        result.status = status;
+        result
     }
 }
 
