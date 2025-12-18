@@ -61,30 +61,34 @@ impl MmapBitSliceBufferedUpdateWrapper {
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updates(
-        flushed: AHashMap<usize, bool>,
-        pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
+    fn reconcile_persisted_updates(
+        pending_updates: &Mutex<AHashMap<usize, bool>>,
+        persisted: AHashMap<usize, bool>,
     ) {
         pending_updates
             .lock()
-            .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
+            .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = self.pending_updates.lock().clone();
+        let updates = {
+            let updates_guard = self.pending_updates.lock();
+            if updates_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            updates_guard.clone()
+        };
+
         let bitslice = Arc::downgrade(&self.bitslice);
-        let pending_updates_arc = Arc::downgrade(&self.pending_updates);
+        let pending_updates_weak = Arc::downgrade(&self.pending_updates);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                // Already dropped, skip flush
-                return Ok(());
-            };
-
-            let (Some(bitslice), Some(pending_updates_arc)) =
-                (bitslice.upgrade(), pending_updates_arc.upgrade())
-            else {
+            let (Some(is_alive_flush_guard), Some(bitslice), Some(pending_updates_arc)) = (
+                is_alive_flush_lock.lock_if_alive(),
+                bitslice.upgrade(),
+                pending_updates_weak.upgrade(),
+            ) else {
                 log::debug!(
                     "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
                 );
@@ -92,11 +96,12 @@ impl MmapBitSliceBufferedUpdateWrapper {
             };
 
             let mut mmap_slice_write = bitslice.write();
-            for (index, value) in pending_updates.iter() {
+            for (index, value) in updates.iter() {
                 mmap_slice_write.set(*index, *value);
             }
             mmap_slice_write.flusher()()?;
-            Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+
+            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
