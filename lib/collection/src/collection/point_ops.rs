@@ -154,7 +154,7 @@ impl Collection {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let mut results = self
+        let results = self
             .update_runtime
             .spawn(async move {
                 let _update_lock = update_lock;
@@ -246,8 +246,21 @@ impl Collection {
                 first_err
             }
         } else {
-            // At least one result is always present.
-            results.pop().unwrap()
+            let results = results.into_iter().flatten().collect::<Vec<_>>();
+
+            // Aggregate status: WaitTimeout > .. > ClockRejected
+            let status = results
+                .iter()
+                .map(|res| res.status)
+                .max_by_key(|s| s.priority())
+                .unwrap_or(UpdateStatus::Acknowledged);
+
+            let mut result = results.into_iter().max_by_key(|r| r.operation_id);
+            if let Some(ref mut res) = result {
+                res.status = status;
+            }
+
+            Ok(result.unwrap())
         }
     }
 
