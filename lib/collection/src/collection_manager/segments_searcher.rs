@@ -402,13 +402,19 @@ impl SegmentsSearcher {
         filter: Option<&Filter>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Option<Duration>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
-            let segments = segments.read();
+            let segments = match timeout {
+                None => Ok(segments.read()),
+                Some(t) => segments
+                    .try_read_for(t)
+                    .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
+            }?;
             let hw_counter = hw_measurement_acc.get_counter_cell();
             let all_points: BTreeSet<_> = segments
                 .non_appendable_then_appendable_segments()
@@ -435,11 +441,14 @@ impl SegmentsSearcher {
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments_guard = segments.read();
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
+            };
             segments_guard
                 .non_appendable_then_appendable_segments()
                 .map(|segment| {

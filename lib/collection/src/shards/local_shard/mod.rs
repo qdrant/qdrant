@@ -841,9 +841,10 @@ impl LocalShard {
         filter: Option<&'a Filter>,
         runtime_handle: &Handle,
         hw_counter: HwMeasurementAcc,
+        timeout: Option<Duration>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter).await
+        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {

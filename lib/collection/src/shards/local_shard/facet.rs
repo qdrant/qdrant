@@ -122,7 +122,12 @@ impl LocalShard {
             let hw_acc = hw_measurement_acc.clone();
             async move {
                 let count = self
-                    .read_filtered(filter.as_ref(), search_runtime_handle, hw_acc)
+                    .read_filtered(
+                        filter.as_ref(),
+                        search_runtime_handle,
+                        hw_acc,
+                        Some(timeout.saturating_sub(instant.elapsed())),
+                    )
                     .await?
                     .len();
                 CollectionResult::Ok(FacetValueHit { value, count })
