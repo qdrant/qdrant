@@ -312,11 +312,9 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             };
 
-            let pending_mappings_guard = pending_mappings_arc.lock();
-
             store_mapping_changes(&mappings_path, &changes)?;
 
-            reconcile_persisted_mapping_changes(pending_mappings_guard, &changes);
+            reconcile_persisted_mapping_changes(pending_mappings_arc.lock(), &changes);
 
             drop(is_alive_guard);
 
@@ -349,11 +347,9 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             };
 
-            let pending_versions_guard = pending_versions_arc.lock();
-
             store_version_changes(&versions_path, &changes)?;
 
-            reconcile_persisted_version_changes(pending_versions_guard, changes);
+            reconcile_persisted_version_changes(pending_versions_arc.lock(), changes);
 
             drop(is_alive_guard);
 

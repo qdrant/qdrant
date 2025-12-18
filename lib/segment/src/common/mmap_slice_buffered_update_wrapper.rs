@@ -80,15 +80,13 @@ where
                 return Ok(());
             };
 
-            let pending_updates_guard = pending_updates_arc.lock();
-
             let mut mmap_slice_write = slice.write();
             for (&index, value) in &updates {
                 mmap_slice_write[index as usize] = value.clone();
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_changes(pending_updates_guard, updates);
+            Self::reconcile_persisted_changes(pending_updates_arc.lock(), updates);
 
             drop(is_alive_guard);
 

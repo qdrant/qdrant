@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use common::is_alive_lock::IsAliveLock;
 use memory::mmap_type::MmapBitSlice;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 
 use crate::common::Flusher;
 
@@ -61,13 +61,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updates(
-        flushed: AHashMap<usize, bool>,
-        pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
+    fn reconcile_persisted_updates(
+        mut pending_updates: MutexGuard<AHashMap<usize, bool>>,
+        persisted: AHashMap<usize, bool>,
     ) {
-        pending_updates
-            .lock()
-            .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
+        pending_updates.retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -80,14 +78,14 @@ impl MmapBitSliceBufferedUpdateWrapper {
         };
 
         let bitslice = Arc::downgrade(&self.bitslice);
-        let pending_updates_arc = Arc::downgrade(&self.pending_updates);
+        let pending_updates_weak = Arc::downgrade(&self.pending_updates);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
             let (Some(is_alive_flush_guard), Some(bitslice), Some(pending_updates_arc)) = (
                 is_alive_flush_lock.lock_if_alive(),
                 bitslice.upgrade(),
-                pending_updates_arc.upgrade(),
+                pending_updates_weak.upgrade(),
             ) else {
                 log::debug!(
                     "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
@@ -100,7 +98,8 @@ impl MmapBitSliceBufferedUpdateWrapper {
                 mmap_slice_write.set(*index, *value);
             }
             mmap_slice_write.flusher()()?;
-            Self::clear_flushed_updates(updates, pending_updates_arc);
+
+            Self::reconcile_persisted_updates(pending_updates_arc.lock(), updates);
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
