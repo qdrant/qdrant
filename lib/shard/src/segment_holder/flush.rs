@@ -124,9 +124,12 @@ impl SegmentHolder {
         std::mem::swap(&mut join_handle, &mut lock);
         if let Some(join_handle) = join_handle {
             // Flush result was reported to segment, so we don't need this value anymore
-            join_handle
+            let flush_result = join_handle
                 .join()
-                .map_err(|_err| OperationError::service_error("failed to join flush thread"))??;
+                .map_err(|_err| OperationError::service_error("failed to join flush thread"))?;
+            flush_result.map_err(|err| {
+                OperationError::service_error(format!("last background flush failed: {err}"))
+            })?;
         }
         Ok(lock)
     }
