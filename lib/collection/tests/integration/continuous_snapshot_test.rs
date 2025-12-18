@@ -32,7 +32,7 @@ use crate::common::{
     dummy_request_shard_transfer,
 };
 
-// RUST_LOG=trace cargo nextest run --all continuous --nocapture
+// RUST_LOG=trace cargo nextest run --workspace continuous --nocapture
 #[tokio::test(flavor = "multi_thread")]
 async fn test_continuous_snapshot() {
     // Initialize logger for tests
