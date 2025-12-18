@@ -388,6 +388,18 @@ pub enum UpdateStatus {
     ClockRejected,
 }
 
+impl UpdateStatus {
+    /// Returns priority of the update status
+    pub fn priority(&self) -> i32 {
+        match self {
+            UpdateStatus::Acknowledged => 0,
+            UpdateStatus::Completed => 1,
+            UpdateStatus::WaitTimeout => 2,
+            UpdateStatus::ClockRejected => 3,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
