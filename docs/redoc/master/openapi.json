@@ -12588,12 +12588,12 @@
           "payloads_size_bytes",
           "ram_usage_bytes",
           "segment_type",
-          "segment_uuid",
+          "uuid",
           "vector_data",
           "vectors_size_bytes"
         ],
         "properties": {
-          "segment_uuid": {
+          "uuid": {
             "type": "string"
           },
           "segment_type": {
