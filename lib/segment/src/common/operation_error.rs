@@ -112,12 +112,6 @@ impl OperationError {
         }
     }
 
-    pub fn cancelled(description: impl Into<String>) -> Self {
-        Self::Cancelled {
-            description: description.into(),
-        }
-    }
-
     pub fn vector_name_not_exists(vector_name: impl Into<String>) -> Self {
         Self::VectorNameNotExists {
             received_name: vector_name.into(),

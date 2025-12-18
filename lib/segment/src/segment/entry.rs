@@ -706,9 +706,7 @@ impl SegmentEntry for Segment {
         let flush_op = move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is removed, skip flush
-                return Err(OperationError::cancelled(
-                    "Aborted flushing on a dropped segment",
-                ));
+                return Ok(());
             };
 
             // Flush mapping first to prevent having orphan internal ids.
