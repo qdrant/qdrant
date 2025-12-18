@@ -77,14 +77,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                // Already dropped, skip flush
-                return Ok(());
-            };
-
-            let (Some(bitslice), Some(pending_updates_arc)) =
-                (bitslice.upgrade(), pending_updates_arc.upgrade())
-            else {
+            let (Some(is_alive_flush_guard), Some(bitslice), Some(pending_updates_arc)) = (
+                is_alive_flush_lock.lock_if_alive(),
+                bitslice.upgrade(),
+                pending_updates_arc.upgrade(),
+            ) else {
                 log::debug!(
                     "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
                 );

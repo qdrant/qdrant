@@ -7,7 +7,6 @@ use memory::mmap_type::MmapSlice;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 
 use crate::common::Flusher;
-use crate::common::operation_error::OperationError;
 
 /// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
