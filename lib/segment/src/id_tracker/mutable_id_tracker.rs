@@ -836,19 +836,18 @@ fn reconcile_persisted_mapping_changes(
     changes: &Vec<MappingChange>,
 ) {
     let mut pending = pending.lock();
-    let mut delete_up_to = 0;
-    for (pending, persisted) in pending.iter().zip(changes) {
-        if pending != persisted {
-            // This should not happen, since flushers are supposed to be requested->executed
-            // one at a time, but if it does, it should be fine.
-            //
-            // The only consequence is to persist some operations again.
-            break;
-        }
-        delete_up_to += 1;
-    }
 
-    *pending = pending.split_off(delete_up_to);
+    // Count how many entries are equal in both lists
+    // With concurrent flushers it is possible that the beginning of the lists doesn't match. Since
+    // each event is idempotent it is not a problem, and we can store everything again in the next
+    // iteration.
+    let count = pending
+        .iter()
+        .zip(changes)
+        .take_while(|(pending, persisted)| pending == persisted)
+        .count();
+
+    pending.drain(0..count);
 }
 
 #[cfg(test)]
