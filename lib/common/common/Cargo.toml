@@ -31,7 +31,6 @@ tar = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 validator = { workspace = true }
-lazy_static = "1.5.0"
 memmap2 = { workspace = true }
 semver = { workspace = true }
 schemars = { workspace = true }
