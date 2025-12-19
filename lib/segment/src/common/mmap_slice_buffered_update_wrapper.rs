@@ -86,6 +86,7 @@ where
             }
             mmap_slice_write.flusher()()?;
 
+            // Keep the guard till here to prevent concurrent drop/flushes
             // We don't touch files from here on and can drop the alive guard
             drop(is_alive_guard);
 
