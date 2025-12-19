@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::hash::Hash;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -11,6 +12,7 @@ use common::defaults::APP_USER_AGENT;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
+use reqwest::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
@@ -191,6 +193,7 @@ impl InferenceService {
         let InferenceParams {
             token: inference_token,
             timeout,
+            ext_api_keys,
         } = inference_params;
 
         let token = inference_token.0.or_else(|| self.config.token.clone());
@@ -214,7 +217,20 @@ impl InferenceService {
             request
         };
 
-        let response = request.json(&request_body).send().await;
+        let mut request = request.json(&request_body);
+        if let Some(api_keys) = ext_api_keys {
+            let headers = api_keys
+                .into_iter()
+                .map(|(k, v)| {
+                    let k = HeaderName::from_str(k.as_api_key()).expect("invalid header key");
+                    let v = HeaderValue::from_str(&v).expect("invalid header value");
+                    (k, v)
+                })
+                .collect();
+            request = request.headers(headers);
+        }
+
+        let response = request.send().await;
 
         let (response_body, status, retry_after) = match response {
             Ok(response) => {

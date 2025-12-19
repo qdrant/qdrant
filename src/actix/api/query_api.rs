@@ -15,6 +15,7 @@ use super::CollectionPath;
 use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter};
+use crate::common::inference::ext_api_keys::ApiKeys;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_rest::{
     CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
@@ -25,6 +26,7 @@ use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/query")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -32,6 +34,7 @@ async fn query_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    ApiKeys(api_keys): ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequest {
@@ -54,7 +57,8 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout());
+    let inference_params =
+        InferenceParams::new(inference_token, params.timeout()).with_ext_api_keys(api_keys);
 
     let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =

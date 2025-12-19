@@ -17,6 +17,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_with_inference_usage,
 };
+use crate::common::inference::ext_api_keys::ApiKeys;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::token::InferenceToken;
 use crate::common::strict_mode::*;
@@ -30,6 +31,7 @@ struct FieldPath {
 }
 
 #[put("/collections/{name}/points")]
+#[allow(clippy::too_many_arguments)]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -37,6 +39,7 @@ async fn upsert_points(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    ApiKeys(api_keys): ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -49,7 +52,8 @@ async fn upsert_points(
     );
 
     let timing = Instant::now();
-    let inference_params = InferenceParams::new(inference_token, params.timeout);
+    let inference_params =
+        InferenceParams::new(inference_token, params.timeout).with_ext_api_keys(api_keys);
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -110,6 +114,7 @@ async fn delete_points(
 }
 
 #[put("/collections/{name}/points/vectors")]
+#[allow(clippy::too_many_arguments)]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -117,6 +122,7 @@ async fn update_vectors(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    ApiKeys(api_keys): ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -129,7 +135,8 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout);
+    let inference_params =
+        InferenceParams::new(inference_token, params.timeout).with_ext_api_keys(api_keys);
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
