@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::common::inference::{ext_api_keys::Provider, token::InferenceToken};
+use crate::common::inference::ext_api_keys::Provider;
+use crate::common::inference::token::InferenceToken;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct InferenceParams {
