@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -29,6 +29,7 @@ from consensus_tests.utils import (
     get_collection_cluster_info,
     start_cluster,
     kill_all_processes,
+    processes,  # global list of PeerProcess with .pid
 )
 from consensus_tests.assertions import assert_http_ok
 
@@ -183,22 +184,88 @@ def cleanup_replica(uris: List[str], shard_id: int = 0):
         pass
 
 
-def drop_caches():
+def get_cached_mb() -> int:
+    """Get current page cache size in MB from /proc/meminfo."""
     try:
-        subprocess.run(["sudo", "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"],
-                       check=True, capture_output=True)
-        print("  Dropped caches")
-        return True
+        with open('/proc/meminfo') as f:
+            for line in f:
+                if line.startswith('Cached:'):
+                    return int(line.split()[1]) // 1024  # KB -> MB
     except:
-        print("  Warning: couldn't drop caches")
+        pass
+    return -1
+
+
+def check_file_in_cache(path: Path) -> Optional[float]:
+    """Check what % of a file is in page cache using fincore."""
+    try:
+        r = subprocess.run(["fincore", "--bytes", "--noheadings", str(path)],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            parts = r.stdout.strip().split()
+            res_bytes, size_bytes = int(parts[0]), int(parts[2])
+            if size_bytes > 0:
+                return (res_bytes / size_bytes) * 100
+    except:
+        pass
+    return None
+
+
+def check_data_in_cache(data_dir: Path) -> Optional[float]:
+    """Check what % of collection data files are in page cache."""
+    total_size = 0
+    cached_size = 0
+    try:
+        if not data_dir.exists():
+            return None
+        for f in data_dir.rglob("*"):
+            if f.is_file() and (f.suffix in ['.mmap', '.dat', '.bin', '.mappings', '.versions', '']
+                                or f.name.startswith('open-')):
+                size = f.stat().st_size
+                if size == 0:
+                    continue
+                total_size += size
+                pct = check_file_in_cache(f)
+                if pct is not None:
+                    cached_size += size * pct / 100
+        if total_size > 0:
+            return (cached_size / total_size) * 100
+    except:
+        pass
+    return None
+
+
+def drop_caches(data_dir: Path = None, verbose: bool = True) -> bool:
+    """Drop OS page caches. Optionally verify with fincore."""
+    before = get_cached_mb()
+    before_pct = check_data_in_cache(data_dir) if data_dir else None
+
+    try:
+        subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
+                       check=True, capture_output=True)
+    except:
+        if verbose:
+            print("  Warning: couldn't drop caches (needs sudo)")
         return False
+
+    after = get_cached_mb()
+    after_pct = check_data_in_cache(data_dir) if data_dir else None
+
+    if verbose:
+        msg = f"  Dropped caches: {before}MB -> {after}MB"
+        if before_pct is not None and after_pct is not None:
+            msg += f", data: {before_pct:.0f}% -> {after_pct:.0f}% cached"
+        print(msg)
+
+    return True
 
 
 def warm_cache(data_dir: Path):
     if not data_dir.exists():
         return
     for f in data_dir.rglob("*"):
-        if f.is_file() and f.suffix in ['.dat', '.bin', '']:
+        if f.is_file() and (f.suffix in ['.mmap', '.dat', '.bin', '.mappings', '.versions', '']
+                            or f.name.startswith('open-')):
             try:
                 with open(f, 'rb') as fh:
                     while fh.read(1024 * 1024):
@@ -206,6 +273,57 @@ def warm_cache(data_dir: Path):
             except:
                 pass
     print("  Warmed cache")
+
+
+# --- I/O Throttling (cgroups v2) ---
+
+CGROUP = "qdrant_bench"
+
+
+def get_block_device(path: Path) -> Optional[str]:
+    """Get major:minor for block device containing path."""
+    try:
+        st = os.stat(path)
+        dev = os.major(st.st_dev), os.minor(st.st_dev)
+        return f"{dev[0]}:{dev[1]}"
+    except:
+        return None
+
+
+def set_io_throttle(iops: int, data_dir: Path) -> bool:
+    """Create cgroup with IOPS limit, move qdrant processes into it."""
+    dev = get_block_device(data_dir)
+    if not dev:
+        print(f"  Warning: can't detect block device")
+        return False
+
+    cg = Path(f"/sys/fs/cgroup/{CGROUP}")
+    pids = [p.pid for p in processes]
+
+    try:
+        subprocess.run(["sudo", "mkdir", "-p", str(cg)], check=True)
+        subprocess.run(["sudo", "sh", "-c", f"echo '+io' > /sys/fs/cgroup/cgroup.subtree_control"], check=True)
+        subprocess.run(["sudo", "sh", "-c", f"echo '{dev} riops={iops} wiops={iops}' > {cg}/io.max"], check=True)
+        for pid in pids:
+            subprocess.run(["sudo", "sh", "-c", f"echo {pid} > {cg}/cgroup.procs"], check=True)
+        print(f"  Throttle: {iops} IOPS on {dev}, pids={pids}")
+        return True
+    except Exception as e:
+        print(f"  Warning: cgroup setup failed: {e}")
+        return False
+
+
+def clear_io_throttle() -> bool:
+    """Remove throttle, move processes back to root cgroup."""
+    cg = Path(f"/sys/fs/cgroup/{CGROUP}")
+    try:
+        for p in processes:
+            subprocess.run(["sudo", "sh", "-c", f"echo {p.pid} > /sys/fs/cgroup/cgroup.procs"], check=False)
+        subprocess.run(["sudo", "rmdir", str(cg)], check=False)
+        print(f"  Throttle cleared")
+        return True
+    except:
+        return False
 
 
 # --- Experiments ---
@@ -252,7 +370,7 @@ def run_disk_latency(uris: List[str], dirs: List[Path], points: int, dims: int, 
             if cache_state == 'warm' and dirs:
                 warm_cache(dirs[0] / "storage" / "collections")
             elif cache_state == 'cold':
-                drop_caches()
+                drop_caches(dirs[0] / "storage" / "collections" if dirs else None)
             time.sleep(1)
 
             m = run_transfer(uris)
@@ -298,14 +416,75 @@ def run_vector_size(uris: List[str], dirs: List[Path], points: int, runs: int) -
     return Result("vector_size", {'points': points}, all_runs)
 
 
+def run_io_throttle(uris: List[str], dirs: List[Path], points: int, dims: int, runs: int, iops: int) -> Result:
+    print(f"\n{'='*50}\nI/O THROTTLE: {iops} IOPS limit\n{'='*50}")
+
+    create_collection(uris[0], dims)
+    upsert_points(uris[0], points, dims)
+    time.sleep(2)
+
+    results = []
+
+    # Baseline (no throttle, warm cache)
+    print(f"\n--- NO THROTTLE (warm) ---")
+    baseline = Result("no_throttle", {'throttle': False, 'points': points})
+    for i in range(runs):
+        print(f"\nRun {i+1}/{runs}:")
+        cleanup_replica(uris)
+        warm_cache(dirs[0] / "storage" / "collections")
+        time.sleep(1)
+        m = run_transfer(uris)
+        m.num_points = points
+        m.vector_dims = dims
+        baseline.runs.append(m)
+    results.append(baseline)
+
+    # Throttled (cold cache to force disk reads)
+    print(f"\n--- THROTTLED {iops} IOPS (cold) ---")
+    throttled = Result(f"throttled_{iops}", {'throttle': True, 'iops': iops, 'points': points})
+
+    if not set_io_throttle(iops, dirs[0]):
+        print("  Skipping throttle test (cgroup setup failed)")
+    else:
+        try:
+            for i in range(runs):
+                print(f"\nRun {i+1}/{runs}:")
+                cleanup_replica(uris)
+                drop_caches(dirs[0] / "storage" / "collections")
+                time.sleep(1)
+                m = run_transfer(uris)
+                m.num_points = points
+                m.vector_dims = dims
+                throttled.runs.append(m)
+        finally:
+            clear_io_throttle()
+
+    results.append(throttled)
+
+    # Summary
+    base_s = baseline.stats()
+    print(f"\n{'='*50}\nSUMMARY")
+    print(f"No throttle: {base_s['throughput_mean']:,.0f} pts/s")
+    if throttled.runs:
+        thr_s = throttled.stats()
+        print(f"Throttled:   {thr_s['throughput_mean']:,.0f} pts/s")
+        if thr_s['throughput_mean'] > 0:
+            ratio = base_s['throughput_mean'] / thr_s['throughput_mean']
+            print(f"Slowdown:    {ratio:.2f}x")
+
+    return Result("io_throttle", {'iops': iops, 'points': points},
+                  [m for r in results for m in r.runs])
+
+
 # --- Main ---
 
 def main():
     parser = argparse.ArgumentParser(description="Streaming Transfer Benchmark")
-    parser.add_argument('experiment', choices=['baseline', 'disk-latency', 'vector-size', 'all'])
+    parser.add_argument('experiment', choices=['baseline', 'disk-latency', 'vector-size', 'io-throttle', 'all'])
     parser.add_argument('--points', '-p', type=int, default=100_000)
     parser.add_argument('--dims', '-d', type=int, default=768)
     parser.add_argument('--runs', '-r', type=int, default=3)
+    parser.add_argument('--iops', type=int, default=500, help="IOPS limit for io-throttle (default: 500)")
     parser.add_argument('--output', '-o', type=Path, default=Path("benchmark_results"))
     args = parser.parse_args()
 
@@ -337,6 +516,10 @@ def main():
         if args.experiment in ['vector-size', 'all']:
             r = run_vector_size(uris, dirs, args.points, args.runs)
             results.append(('vector-size', r))
+
+        if args.experiment in ['io-throttle', 'all']:
+            r = run_io_throttle(uris, dirs, args.points, args.dims, args.runs, args.iops)
+            results.append(('io-throttle', r))
 
         for name, r in results:
             f = args.output / f"{name}_{ts}.json"
