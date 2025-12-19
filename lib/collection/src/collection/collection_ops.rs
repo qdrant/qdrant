@@ -1,9 +1,8 @@
 use std::cmp::{self, Reverse};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryStreamExt as _, future};
-use lazy_static::lazy_static;
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
@@ -17,15 +16,14 @@ use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
 
-lazy_static! {
-    /// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
-    /// regardless of the shard id. In order to keep consensus consistent, we can only
-    /// enable new fixed logic once cluster fully switched to this version.
-    /// Otherwise, some node might follow old logic and some - new logic.
-    ///
-    /// See: <https://github.com/qdrant/qdrant/pull/7792>
-    pub(super) static ref ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: Version = Version::parse("1.16.3-dev").unwrap();
-}
+/// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
+/// regardless of the shard id. In order to keep consensus consistent, we can only
+/// enable new fixed logic once cluster fully switched to this version.
+/// Otherwise, some node might follow old logic and some - new logic.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/7792>
+pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
 impl Collection {
     /// Updates collection params:
