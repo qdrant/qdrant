@@ -23,15 +23,6 @@ pub struct DatabaseColumnScheduledDeleteWrapper {
     deleted_pending_persistence: Arc<RwLock<AHashSet<Vec<u8>>>>,
 }
 
-impl Clone for DatabaseColumnScheduledDeleteWrapper {
-    fn clone(&self) -> Self {
-        Self {
-            db: self.db.clone(),
-            deleted_pending_persistence: self.deleted_pending_persistence.clone(),
-        }
-    }
-}
-
 impl DatabaseColumnScheduledDeleteWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
