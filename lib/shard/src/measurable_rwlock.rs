@@ -25,9 +25,12 @@ pub struct MeasurableRwLockMetrics {
     pub upgrade_wait_time_us_counter: atomic::AtomicU64,
     pub try_read_for_time_us_counter: atomic::AtomicU64,
 
-    /// lock time
+    /// read lock time
     pub read_lock_time: atomic::AtomicU64,
+    /// write lock time
     pub write_lock_time: atomic::AtomicU64,
+    /// actually is a write time operation, but accounted separately
+    pub upgrade_lock_time: atomic::AtomicU64,
 
     /// Total operation time.
     pub total_time_us_counter: atomic::AtomicU64,
@@ -178,6 +181,7 @@ fn get_current_measurable_rwlock_metrics() -> Option<&'static MeasurableRwLockMe
 #[derive(Debug)]
 struct Measurer {
     start_instant: Instant,
+    correction: u64,
     store: &'static atomic::AtomicU64,
 }
 
@@ -185,6 +189,7 @@ impl Measurer {
     fn start(store: &'static atomic::AtomicU64) -> Self {
         Self {
             start_instant: Instant::now(),
+            correction: 0,
             store,
         }
     }
@@ -192,8 +197,9 @@ impl Measurer {
 
 impl Drop for Measurer {
     fn drop(&mut self) {
+        let elapsed = self.start_instant.elapsed().as_micros() as u64;
         self.store.fetch_add(
-            self.start_instant.elapsed().as_micros() as _,
+            elapsed.saturating_sub(self.correction),
             atomic::Ordering::Relaxed,
         );
     }
@@ -372,25 +378,29 @@ impl<'rwlock, T: ?Sized + 'rwlock> MeasurableRwLockUpgradableReadGuard<'rwlock, 
     where
         F: FnOnce(&mut T) -> Ret,
     {
-        let mut pre_duration = 0u64;
+        let mut upgrade_wait_time = 0u64;
         let mut start = Instant::now();
-        let result = self.inner.with_upgraded(|t| {
-            pre_duration += start.elapsed().as_micros() as u64;
+        let metrics = get_current_measurable_rwlock_metrics().expect("Metrics uninitialized");
 
-            let metrics = get_current_measurable_rwlock_metrics().expect("Metrics uninitialized");
-            let _lock_measurer = Measurer::start(&metrics.write_lock_time);
+        let result = self.inner.with_upgraded(|t| {
+            upgrade_wait_time += start.elapsed().as_micros() as u64;
+
+            let _lock_measurer = Measurer::start(&metrics.upgrade_lock_time);
 
             let result = f(t);
             start = Instant::now();
             result
         });
-        // It include upgrade time and downgrade time without f(...) execution time.
-        let elapsed = start.elapsed();
-        self.upgrade_wait_us_counter.fetch_add(
-            elapsed.as_micros() as u64 + pre_duration,
-            atomic::Ordering::Relaxed,
-        );
+        // It include upgrade time and f(...) execution time.
+        let total_elapsed = start.elapsed();
+
+        // Adjust read lock measurer to not count upgrade time.
+        self.lock_measurer.correction += total_elapsed.as_micros() as u64;
+
+        self.upgrade_wait_us_counter
+            .fetch_add(upgrade_wait_time, atomic::Ordering::Relaxed);
         self.upgrade_counter.fetch_add(1, atomic::Ordering::Relaxed);
+
         result
     }
 }
