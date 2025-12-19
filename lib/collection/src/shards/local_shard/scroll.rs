@@ -148,11 +148,14 @@ impl LocalShard {
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
-        let segments = self.segments.clone();
-
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
-
+        let segments = self.segments.clone();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "internal_scroll_by_id"));
+            };
+            segments_guard.split_segments()
+        };
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
@@ -235,7 +238,15 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout,
+                    "internal_scroll_by_field",
+                ));
+            };
+            segments_guard.split_segments()
+        };
 
         let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
@@ -333,7 +344,12 @@ impl LocalShard {
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "scroll_randomly"));
+            };
+            segments_guard.split_segments()
+        };
 
         let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();

@@ -258,6 +258,7 @@ impl ShardOperation for LocalShard {
                     request.filter.as_ref(),
                     search_runtime_handle,
                     hw_measurement_acc,
+                    Some(timeout),
                 ),
             )
             .await

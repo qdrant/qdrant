@@ -214,7 +214,12 @@ impl ShardOperation for ProxyShard {
                 } else {
                     let runtime_handle = self.wrapped_shard.search_runtime.clone();
                     let points = local_shard
-                        .read_filtered(Some(filter), &runtime_handle, hw_measurement_acc.clone())
+                        .read_filtered(
+                            Some(filter),
+                            &runtime_handle,
+                            hw_measurement_acc.clone(),
+                            None, // no timeout on update path
+                        )
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
