@@ -14,7 +14,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
+    OptimizerThresholds, OptimizerType, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 
@@ -49,6 +49,7 @@ impl VacuumOptimizer {
         hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
+        telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -58,9 +59,9 @@ impl VacuumOptimizer {
             collection_temp_dir,
             collection_params,
             hnsw_config,
-            quantization_config,
             hnsw_global_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            quantization_config,
+            telemetry_durations_aggregator,
         }
     }
 
@@ -166,8 +167,8 @@ impl VacuumOptimizer {
 }
 
 impl SegmentOptimizer for VacuumOptimizer {
-    fn name(&self) -> &str {
-        "vacuum"
+    fn optimizer_type(&self) -> OptimizerType {
+        OptimizerType::Vacuum
     }
 
     fn segments_path(&self) -> &Path {
@@ -208,7 +209,7 @@ impl SegmentOptimizer for VacuumOptimizer {
             .collect()
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
+    fn get_telemetry_counter(&self) -> &Arc<Mutex<OperationDurationsAggregator>> {
         &self.telemetry_durations_aggregator
     }
 }
@@ -319,6 +320,8 @@ mod tests {
 
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
             50,
@@ -336,6 +339,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         let suggested_to_optimize =
@@ -477,6 +481,7 @@ mod tests {
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
         let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -488,6 +493,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -499,6 +505,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         // Use indexing optimizer to build index for vacuum index test

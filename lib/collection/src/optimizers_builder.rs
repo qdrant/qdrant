@@ -1,9 +1,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use ahash::HashMap;
 use fs_err as fs;
+use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
@@ -12,7 +15,9 @@ use validator::Validate;
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, OptimizerType,
+};
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
@@ -21,6 +26,9 @@ const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
 pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
 const SEGMENTS_PATH: &str = "segments";
 const TEMP_SEGMENTS_PATH: &str = "temp_segments";
+
+/// A reference-counted collection of multiple optimizers.
+pub type OptimizerHolder = Arc<Vec<Arc<Optimizer>>>;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
 #[anonymize(false)]
@@ -162,7 +170,10 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
-) -> Arc<Vec<Arc<Optimizer>>> {
+    mut old_telemetry_counter: Option<
+        HashMap<OptimizerType, Arc<Mutex<OperationDurationsAggregator>>>,
+    >,
+) -> OptimizerHolder {
     let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
@@ -178,6 +189,10 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            old_telemetry_counter
+                .as_mut()
+                .and_then(|i| i.remove(&OptimizerType::Merge))
+                .unwrap_or_else(OperationDurationsAggregator::new),
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
@@ -188,6 +203,10 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            old_telemetry_counter
+                .as_mut()
+                .and_then(|i| i.remove(&OptimizerType::Indexing))
+                .unwrap_or_else(OperationDurationsAggregator::new),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -199,6 +218,10 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            old_telemetry_counter
+                .as_mut()
+                .and_then(|i| i.remove(&OptimizerType::Vacuum))
+                .unwrap_or_else(OperationDurationsAggregator::new),
         )),
         Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
@@ -208,6 +231,10 @@ pub fn build_optimizers(
             *hnsw_config,
             hnsw_global_config.clone(),
             quantization_config.clone(),
+            old_telemetry_counter
+                .as_mut()
+                .and_then(|i| i.remove(&OptimizerType::ConfigMismatch))
+                .unwrap_or_else(OperationDurationsAggregator::new),
         )),
     ])
 }

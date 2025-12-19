@@ -73,11 +73,13 @@ use crate::operations::types::{
     CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
     check_sparse_compatible_with_segment_config,
 };
-use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
+use crate::optimizers_builder::{
+    OptimizerHolder, OptimizersConfig, build_optimizers, clear_temp_segments,
+};
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
-use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_handler::{UpdateHandler, UpdateSignal};
 use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
@@ -108,7 +110,7 @@ pub struct LocalShard {
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
-    pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    pub(super) optimizers: OptimizerHolder,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     pub(super) total_optimized_points: Arc<AtomicUsize>,
     pub(super) search_runtime: Handle,
@@ -194,7 +196,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
-        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers: OptimizerHolder,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
@@ -420,6 +422,7 @@ impl LocalShard {
             &collection_config_read.hnsw_config,
             &shared_storage_config.hnsw_global_config,
             &collection_config_read.quantization_config,
+            None,
         );
 
         drop(collection_config_read); // release `shared_config` from borrow checker
@@ -595,6 +598,7 @@ impl LocalShard {
             &config.hnsw_config,
             &shared_storage_config.hnsw_global_config,
             &config.quantization_config,
+            None,
         );
 
         drop(config); // release `shared_config` from borrow checker

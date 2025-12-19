@@ -9,6 +9,7 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentType, VectorName,
 };
 
+use super::segment_optimizer::OptimizerType;
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -33,6 +34,7 @@ pub struct ConfigMismatchOptimizer {
 }
 
 impl ConfigMismatchOptimizer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
@@ -41,6 +43,7 @@ impl ConfigMismatchOptimizer {
         hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
+        telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
     ) -> Self {
         ConfigMismatchOptimizer {
             thresholds_config,
@@ -50,7 +53,7 @@ impl ConfigMismatchOptimizer {
             hnsw_config,
             hnsw_global_config,
             quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            telemetry_durations_aggregator,
         }
     }
 
@@ -207,8 +210,8 @@ impl ConfigMismatchOptimizer {
 }
 
 impl SegmentOptimizer for ConfigMismatchOptimizer {
-    fn name(&self) -> &str {
-        "config mismatch"
+    fn optimizer_type(&self) -> OptimizerType {
+        OptimizerType::ConfigMismatch
     }
 
     fn segments_path(&self) -> &Path {
@@ -247,7 +250,7 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         self.worst_segment(segments, excluded_ids)
     }
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
+    fn get_telemetry_counter(&self) -> &Arc<Mutex<OperationDurationsAggregator>> {
         &self.telemetry_durations_aggregator
     }
 }
@@ -320,6 +323,8 @@ mod tests {
         let segment_id = holder.add_new(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         let hnsw_config = HnswConfig {
             m: 16,
             ef_construct: 100,
@@ -340,6 +345,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -349,6 +355,7 @@ mod tests {
             hnsw_config,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
@@ -499,6 +506,8 @@ mod tests {
         let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
         let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
@@ -509,6 +518,7 @@ mod tests {
             hnsw_config_collection,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -518,6 +528,7 @@ mod tests {
             hnsw_config_collection,
             HnswGlobalConfig::default(),
             Default::default(),
+            dummy_telemetry_collector.clone(),
         );
 
         // Use indexing optimizer to build index for HNSW mismatch test
@@ -674,6 +685,8 @@ mod tests {
                 },
             });
 
+        let dummy_telemetry_collector = OperationDurationsAggregator::new();
+
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
@@ -684,6 +697,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Some(quantization_config_collection.clone()),
+            dummy_telemetry_collector.clone(),
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -693,6 +707,7 @@ mod tests {
             Default::default(),
             HnswGlobalConfig::default(),
             Some(quantization_config_collection),
+            dummy_telemetry_collector.clone(),
         );
 
         let permit_cpu_count = num_rayon_threads(0);

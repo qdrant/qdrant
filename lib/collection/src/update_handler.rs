@@ -21,6 +21,7 @@ use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::CollectionResult;
+use crate::optimizers_builder::OptimizerHolder;
 use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
@@ -74,7 +75,7 @@ pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     /// List of used optimizers
-    pub optimizers: Arc<Vec<Arc<Optimizer>>>,
+    pub optimizers: OptimizerHolder,
     /// Log of optimizer statuses
     optimizers_log: Arc<Mutex<TrackerLog>>,
     /// Total number of optimized points since last start
@@ -129,7 +130,7 @@ impl UpdateHandler {
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizers: OptimizerHolder,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: ResourceBudget,

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use itertools::Itertools;
 use schemars::JsonSchema;
@@ -16,7 +17,7 @@ use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferIn
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::telemetry::ReplicaSetTelemetry;
+use crate::shards::telemetry::{LocalShardTelemetry, ReplicaSetTelemetry};
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionTelemetry {
@@ -63,11 +64,15 @@ pub struct CollectionsAggregatedTelemetry {
 }
 
 impl CollectionTelemetry {
-    pub fn count_vectors(&self) -> usize {
+    pub fn local_shard_iter(&self) -> impl Iterator<Item = &LocalShardTelemetry> {
         self.shards
             .iter()
             .flatten()
             .filter_map(|shard| shard.local.as_ref())
+    }
+
+    pub fn count_vectors(&self) -> usize {
+        self.local_shard_iter()
             .map(|x| x.num_vectors.unwrap_or(0))
             .sum()
     }
@@ -87,19 +92,13 @@ impl CollectionTelemetry {
     }
 
     pub fn count_points(&self) -> usize {
-        self.shards
-            .iter()
-            .flatten()
-            .filter_map(|shard| shard.local.as_ref())
+        self.local_shard_iter()
             .map(|local_shard| local_shard.num_points.unwrap_or(0))
             .sum()
     }
 
     pub fn count_points_per_vector(&self) -> TinyMap<VectorNameBuf, usize> {
-        self.shards
-            .iter()
-            .flatten()
-            .filter_map(|shard| shard.local.as_ref())
+        self.local_shard_iter()
             .map(|local_shard| {
                 local_shard
                     .num_vectors_by_name
@@ -178,6 +177,19 @@ impl CollectionTelemetry {
             .flatten()
             .filter(|i| i.replicate_states.values().any(|state| !state.is_active()))
             .count()
+    }
+
+    pub fn optimization_time_spent(&self) -> Duration {
+        self.local_shard_iter()
+            .map(|i| {
+                Duration::from_micros(
+                    i.optimizations
+                        .optimizations
+                        .total_duration_micros
+                        .unwrap_or_default(),
+                )
+            })
+            .sum()
     }
 }
 

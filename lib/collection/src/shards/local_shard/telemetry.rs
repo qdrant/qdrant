@@ -86,6 +86,16 @@ impl LocalShard {
             .get_size_stats(timeout.saturating_sub(start.elapsed()))
             .await?;
 
+        let mut optimizations = OptimizerTelemetry {
+            status,
+            optimizations,
+            log: None,
+        };
+
+        if detail.level >= DetailsLevel::Level4 {
+            optimizations.log = Some(self.optimizers_log.lock().to_telemetry());
+        }
+
         Ok(LocalShardTelemetry {
             variant_name: None,
             status: None,
@@ -100,12 +110,7 @@ impl LocalShard {
             } else {
                 Some(segments)
             },
-            optimizations: OptimizerTelemetry {
-                status,
-                optimizations,
-                log: (detail.level >= DetailsLevel::Level4)
-                    .then(|| self.optimizers_log.lock().to_telemetry()),
-            },
+            optimizations,
             async_scorer: Some(get_async_scorer()),
             indexed_only_excluded_vectors: (!index_only_excluded_vectors.is_empty())
                 .then_some(index_only_excluded_vectors),

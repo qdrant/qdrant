@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ahash::HashMap;
 use tokio::sync::mpsc;
 
 use crate::operations::types::CollectionResult;
@@ -43,6 +44,14 @@ impl LocalShard {
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
+
+        // Collect the old optimizers' telemetry collectors back keep their values.
+        let previous_telemetry_counters = update_handler
+            .optimizers
+            .iter()
+            .map(|opt| (opt.optimizer_type(), opt.get_telemetry_counter().clone()))
+            .collect::<HashMap<_, _>>();
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
@@ -50,6 +59,7 @@ impl LocalShard {
             &config.hnsw_config,
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
+            Some(previous_telemetry_counters),
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;

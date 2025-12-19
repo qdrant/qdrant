@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
@@ -44,6 +45,25 @@ pub struct OptimizerThresholds {
     pub indexing_threshold_kb: usize,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub enum OptimizerType {
+    ConfigMismatch,
+    Indexing,
+    Merge,
+    Vacuum,
+}
+
+impl OptimizerType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            OptimizerType::ConfigMismatch => "config mismatch",
+            OptimizerType::Indexing => "indexing",
+            OptimizerType::Merge => "merge",
+            OptimizerType::Vacuum => "vacuum",
+        }
+    }
+}
+
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
 ///
 /// It provides functions which allow to re-build specified segments into a new, better one.
@@ -54,7 +74,11 @@ pub struct OptimizerThresholds {
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
     /// Get name describing this optimizer
-    fn name(&self) -> &str;
+    fn name(&self) -> &str {
+        self.optimizer_type().name()
+    }
+
+    fn optimizer_type(&self) -> OptimizerType;
 
     /// Get the path of the segments directory
     fn segments_path(&self) -> &Path;
@@ -84,7 +108,7 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
+    fn get_telemetry_counter(&self) -> &Arc<Mutex<OperationDurationsAggregator>>;
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
