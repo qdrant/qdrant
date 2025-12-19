@@ -101,10 +101,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
-
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
             drop(is_alive_flush_guard);
+
+            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
 
             Ok(())
         })
