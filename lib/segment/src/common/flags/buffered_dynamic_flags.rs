@@ -51,26 +51,29 @@ impl BufferedDynamicFlags {
     }
 
     pub fn flusher(&self) -> Flusher {
-        // take pending changes
-        let (updates, required_len) = {
-            let mut buffer_guard = self.buffer.write();
-            let updates = std::mem::take(&mut *buffer_guard);
-            let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
+        let updates = {
+            let buffer_guard = self.buffer.read();
+            if buffer_guard.is_empty() {
                 return Box::new(|| Ok(()));
-            };
-            (updates, required_len)
+            }
+            buffer_guard.clone()
+        };
+
+        let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
+            return Box::new(|| Ok(()));
         };
 
         // Weak reference to detect when the storage has been deleted
         let flags_arc = Arc::downgrade(&self.storage);
+        let buffer = Arc::downgrade(&self.buffer);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
-                return Ok(());
-            };
-
-            let Some(flags_arc) = flags_arc.upgrade() else {
+            let (Some(is_alive_flush_guard), Some(flags_arc), Some(buffer_arc)) = (
+                is_alive_flush_lock.lock_if_alive(),
+                flags_arc.upgrade(),
+                buffer.upgrade(),
+            ) else {
                 log::debug!("skipping flushing on deleted storage");
                 return Ok(());
             };
@@ -83,11 +86,13 @@ impl BufferedDynamicFlags {
                 flags_guard.set_len(required_len)?;
             }
 
-            for (index, value) in updates {
+            for (&index, &value) in &updates {
                 flags_guard.set(index as usize, value);
             }
 
             flags_guard.flusher()()?;
+
+            reconcile_persisted_buffer(&buffer_arc, updates);
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
@@ -95,6 +100,17 @@ impl BufferedDynamicFlags {
             Ok(())
         })
     }
+}
+
+/// Removes from `buffer` all results that are flushed.
+/// If values in `pending_updates` are changed, do not remove them.
+fn reconcile_persisted_buffer(
+    buffer: &RwLock<AHashMap<u32, bool>>,
+    persisted: AHashMap<u32, bool>,
+) {
+    buffer
+        .write()
+        .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
 #[cfg(test)]

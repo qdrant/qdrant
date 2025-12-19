@@ -1,4 +1,3 @@
-use std::mem;
 use std::sync::Arc;
 
 use ahash::AHashSet;
@@ -70,14 +69,36 @@ impl DatabaseColumnScheduledDeleteWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        let ids_to_delete = self.deleted_pending_persistence.lock().clone();
         let wrapper = self.db.clone();
+
+        let deleted_pending_persistence = Arc::downgrade(&self.deleted_pending_persistence);
+
         Box::new(move || {
-            for id in ids_to_delete {
+            let Some(deleted_pending_persistence_arc) = deleted_pending_persistence.upgrade()
+            else {
+                return Ok(());
+            };
+
+            for id in &ids_to_delete {
                 wrapper.remove(id)?;
             }
-            wrapper.flusher()()
+            wrapper.flusher()()?;
+
+            Self::reconcile_persisted_deletes(ids_to_delete, &deleted_pending_persistence_arc);
+
+            Ok(())
         })
+    }
+
+    /// Removes from `deleted_pending_persistence` all results that are flushed.
+    fn reconcile_persisted_deletes(
+        persisted: AHashSet<Vec<u8>>,
+        pending_operations: &Mutex<AHashSet<Vec<u8>>>,
+    ) {
+        pending_operations
+            .lock()
+            .retain(|pending| !persisted.contains(pending));
     }
 
     pub fn lock_db(&self) -> LockedDatabaseColumnScheduledDeleteWrapper<'_> {

@@ -59,7 +59,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updates(
+    fn reconcile_persisted_updates(
         flushed: PendingOperations,
         pending_operations: Arc<Mutex<PendingOperations>>,
     ) {
@@ -91,7 +91,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
             }
             wrapper.flusher()()?;
 
-            Self::clear_flushed_updates(
+            Self::reconcile_persisted_updates(
                 PendingOperations { deleted, inserted },
                 pending_operations_arc,
             );
