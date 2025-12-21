@@ -109,8 +109,8 @@ impl ShardOperation for LocalShard {
             };
 
             if let Some(t) = timeout {
-                return match tokio::time::timeout(t.saturating_sub(start.elapsed()), receiver).await
-                {
+                let time_left = t.saturating_sub(start.elapsed());
+                return match tokio::time::timeout(time_left, receiver).await {
                     Ok(res) => {
                         let _ = res??;
                         Ok(success)

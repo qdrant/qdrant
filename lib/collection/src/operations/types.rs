@@ -412,6 +412,15 @@ impl UpdateStatus {
             UpdateStatus::ClockRejected => 3,
         }
     }
+
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            UpdateStatus::WaitTimeout => true,
+            UpdateStatus::Acknowledged => false,
+            UpdateStatus::Completed => false,
+            UpdateStatus::ClockRejected => false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
