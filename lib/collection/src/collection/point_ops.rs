@@ -153,6 +153,7 @@ impl Collection {
     ) -> CollectionResult<UpdateResult> {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
+        let start_time = std::time::Instant::now();
 
         let results = self
             .update_runtime
@@ -246,8 +247,12 @@ impl Collection {
                 first_err
             }
         } else {
-            let results = results.into_iter().flatten().collect::<Vec<_>>();
+            // If client-side timeout is specified, we can return `WaitTimeout` status as-is.
+            // Otherwise, we fall back to timeout error.
 
+            let is_user_timeout = timeout.is_some();
+
+            let results: Vec<_> = results.into_iter().flatten().collect();
             // Aggregate status: WaitTimeout > .. > ClockRejected
             let status = results
                 .iter()
@@ -255,12 +260,31 @@ impl Collection {
                 .max_by_key(|s| s.priority())
                 .unwrap_or(UpdateStatus::Acknowledged);
 
-            let mut result = results.into_iter().max_by_key(|r| r.operation_id);
-            if let Some(ref mut res) = result {
-                res.status = status;
+            if !is_user_timeout && status.is_timeout() {
+                // if user didn't specify timeout, but one of the shards timed out,
+                // we need to return timeout error
+
+                let total_timeout_shards = results
+                    .iter()
+                    .filter(|result| result.status.is_timeout())
+                    .count();
+
+                let elapsed_sec = start_time.elapsed().as_secs_f32();
+
+                return Err(CollectionError::Timeout {
+                    description: format!(
+                        "Update operation timed out in {elapsed_sec:.2} seconds on {total_timeout_shards} out of {result_len} shards."
+                    ),
+                });
             }
 
-            Ok(result.unwrap())
+            let max_operation_id = results.into_iter().map(|r| r.operation_id).max().unwrap(); // We checked that results is not empty above
+
+            Ok(UpdateResult {
+                operation_id: max_operation_id,
+                status,
+                clock_tag: None, // clock_tag is not used in the user response
+            })
         }
     }
 
