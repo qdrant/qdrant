@@ -519,7 +519,12 @@ impl RemoteShard {
 
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
-        let timeout = timeout.map(|t| t.as_secs());
+
+        let default_timeout = self.channel_service.request_timeout();
+
+        // We want to know if operation wrote into WAL before re break connection on client side
+        // So, we always want to propagate explicit timeout to the remote side
+        let timeout = Some(timeout.unwrap_or(default_timeout).as_secs());
 
         let point_operation_response = match operation.operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
