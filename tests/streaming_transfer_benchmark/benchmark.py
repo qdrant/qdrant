@@ -10,6 +10,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -60,14 +61,20 @@ class Metrics:
         bytes_tx = self.num_points * self.vector_dims * 4
         return (bytes_tx / 1024 / 1024) / self.duration if self.duration > 0 else 0
 
+    # Optional metadata for experiment-specific info
+    extra: Dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> Dict:
-        return {
+        d = {
             'num_points': self.num_points,
             'vector_dims': self.vector_dims,
             'duration_s': round(self.duration, 3),
             'throughput_pts_s': round(self.throughput, 1),
             'mbps': round(self.mbps, 2),
         }
+        if self.extra:
+            d.update(self.extra)
+        return d
 
 
 @dataclass
@@ -326,6 +333,54 @@ def clear_io_throttle() -> bool:
         return False
 
 
+# --- Background Writer ---
+
+class BackgroundWriter:
+    """Performs concurrent upserts at a target rate during transfer."""
+
+    def __init__(self, uri: str, dims: int, rate: int):
+        self.uri = uri
+        self.dims = dims
+        self.rate = rate  # ops/sec
+        self.running = False
+        self.thread = None
+        self.ops_done = 0
+        self.errors = 0
+
+    def _worker(self):
+        interval = 1.0 / self.rate if self.rate > 0 else 1.0
+        point_id = 10_000_000  # Start high to avoid collision
+        while self.running:
+            start = time.time()
+            try:
+                point = {"id": point_id, "vector": [random.random() for _ in range(self.dims)]}
+                r = requests.put(f"{self.uri}/collections/{COLLECTION}/points?wait=true",
+                                 json={"points": [point]}, timeout=5)
+                if r.ok:
+                    self.ops_done += 1
+                else:
+                    self.errors += 1
+            except:
+                self.errors += 1
+            point_id += 1
+            elapsed = time.time() - start
+            if elapsed < interval:
+                time.sleep(interval - elapsed)
+
+    def start(self):
+        self.running = True
+        self.ops_done = 0
+        self.errors = 0
+        self.thread = threading.Thread(target=self._worker, daemon=True)
+        self.thread.start()
+
+    def stop(self) -> Dict:
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=2)
+        return {'ops': self.ops_done, 'errors': self.errors}
+
+
 # --- Experiments ---
 
 def run_baseline(uris: List[str], dirs: List[Path], points: int, dims: int, runs: int) -> Result:
@@ -476,15 +531,85 @@ def run_io_throttle(uris: List[str], dirs: List[Path], points: int, dims: int, r
                   [m for r in results for m in r.runs])
 
 
+def run_lock_contention(uris: List[str], dirs: List[Path], points: int, dims: int, runs: int,
+                        write_rates: List[int] = None) -> Result:
+    """Test transfer throughput with concurrent writes at different rates."""
+    if write_rates is None:
+        write_rates = [0, 10, 50, 100, 200]
+
+    print(f"\n{'='*50}\nLOCK CONTENTION: concurrent writes during transfer\n{'='*50}")
+
+    create_collection(uris[0], dims)
+    upsert_points(uris[0], points, dims)
+    time.sleep(2)
+
+    all_results = []
+
+    for rate in write_rates:
+        print(f"\n--- {rate} writes/sec ---")
+        result = Result(f"write_rate_{rate}", {'write_rate': rate, 'points': points})
+
+        for i in range(runs):
+            print(f"\nRun {i+1}/{runs}:")
+            cleanup_replica(uris)
+            time.sleep(1)
+
+            writer = None
+            if rate > 0:
+                writer = BackgroundWriter(uris[0], dims, rate)
+                writer.start()
+
+            m = run_transfer(uris)
+            m.num_points = points
+            m.vector_dims = dims
+            m.extra['write_rate'] = rate
+
+            if writer:
+                stats = writer.stop()
+                m.extra['concurrent_writes'] = stats['ops']
+                m.extra['concurrent_errors'] = stats['errors']
+                print(f"    Concurrent writes: {stats['ops']} done, {stats['errors']} errors")
+
+            result.runs.append(m)
+
+        s = result.stats()
+        print(f"  Avg: {s['throughput_mean']:,.0f} pts/s")
+        all_results.append(result)
+
+    # Summary
+    print(f"\n{'='*50}\nSUMMARY")
+    print(f"{'Write Rate':<15} {'Throughput':<15} {'vs Baseline':<15}")
+    print("-" * 45)
+
+    baseline_tp = all_results[0].stats()['throughput_mean'] if all_results else 0
+    for r in all_results:
+        s = r.stats()
+        rate = r.params.get('write_rate', 0)
+        tp = s['throughput_mean']
+        if baseline_tp > 0:
+            pct = ((tp - baseline_tp) / baseline_tp) * 100
+            print(f"{rate:<15} {tp:>10,.0f} pts/s  {pct:>+6.1f}%")
+        else:
+            print(f"{rate:<15} {tp:>10,.0f} pts/s")
+
+    return Result("lock_contention", {'points': points, 'write_rates': write_rates},
+                  [m for r in all_results for m in r.runs])
+
+
 # --- Main ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Streaming Transfer Benchmark")
-    parser.add_argument('experiment', choices=['baseline', 'disk-latency', 'vector-size', 'io-throttle', 'all'])
+    parser = argparse.ArgumentParser(
+        description="Streaming Transfer Benchmark",
+        epilog="For dm-delay disk latency tests, use dm_delay_benchmark.py instead."
+    )
+    parser.add_argument('experiment', choices=['baseline', 'disk-latency', 'vector-size', 'io-throttle', 'lock-contention', 'all'])
     parser.add_argument('--points', '-p', type=int, default=100_000)
     parser.add_argument('--dims', '-d', type=int, default=768)
     parser.add_argument('--runs', '-r', type=int, default=3)
     parser.add_argument('--iops', type=int, default=500, help="IOPS limit for io-throttle (default: 500)")
+    parser.add_argument('--write-rates', type=str, default="0,10,50,100,200",
+                        help="Comma-separated write rates for lock-contention (default: 0,10,50,100,200)")
     parser.add_argument('--output', '-o', type=Path, default=Path("benchmark_results"))
     args = parser.parse_args()
 
@@ -496,14 +621,13 @@ def main():
     print(f"Experiment: {args.experiment}, Points: {args.points:,}, Dims: {args.dims}, Runs: {args.runs}")
     print(f"{'='*50}")
 
+    results = []
     tmp = Path(tempfile.mkdtemp(prefix="qdrant_bench_"))
 
     try:
         print(f"\nStarting cluster in {tmp}")
         uris, dirs, _ = start_cluster(tmp, num_peers=2, port_seed=None)
         print(f"  Peer 0: {uris[0]}\n  Peer 1: {uris[1]}")
-
-        results = []
 
         if args.experiment in ['baseline', 'all']:
             r = run_baseline(uris, dirs, args.points, args.dims, args.runs)
@@ -521,14 +645,20 @@ def main():
             r = run_io_throttle(uris, dirs, args.points, args.dims, args.runs, args.iops)
             results.append(('io-throttle', r))
 
-        for name, r in results:
-            f = args.output / f"{name}_{ts}.json"
-            f.write_text(r.to_json())
-            print(f"\nSaved: {f}")
+        if args.experiment in ['lock-contention', 'all']:
+            write_rates = [int(x) for x in args.write_rates.split(',')]
+            r = run_lock_contention(uris, dirs, args.points, args.dims, args.runs, write_rates)
+            results.append(('lock-contention', r))
 
     finally:
         print("\nStopping cluster...")
         kill_all_processes()
+
+    # Save results
+    for name, r in results:
+        f = args.output / f"{name}_{ts}.json"
+        f.write_text(r.to_json())
+        print(f"\nSaved: {f}")
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use async_trait::async_trait;
@@ -144,7 +144,17 @@ impl ForwardProxyShard {
         runtime_handle: &Handle,
     ) -> CollectionResult<(Option<PointIdType>, usize)> {
         debug_assert!(batch_size > 0);
+
+        // Measure lock wait time for transfer batch
+        let lock_start = Instant::now();
         let _update_lock = self.update_lock.lock().await;
+        let lock_wait = lock_start.elapsed();
+        // Always log for debugging (use info level for visibility)
+        log::info!(
+            "transfer_batch lock wait: {}us (shard {})",
+            lock_wait.as_micros(),
+            self.shard_id
+        );
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
@@ -414,7 +424,16 @@ impl ShardOperation for ForwardProxyShard {
         // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
         // safe.
 
+        // Measure lock wait time for update operations (concurrent writes during transfer)
+        let lock_start = Instant::now();
         let _update_lock = self.update_lock.lock().await;
+        let lock_wait = lock_start.elapsed();
+        // Always log for debugging (use info level for visibility)
+        log::info!(
+            "forward_proxy update lock wait: {}us (shard {})",
+            lock_wait.as_micros(),
+            self.shard_id
+        );
 
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
