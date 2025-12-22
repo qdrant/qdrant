@@ -86,9 +86,11 @@ where
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_changes(&pending_updates_arc, updates);
-
+            // Keep the guard till here to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
             drop(is_alive_guard);
+
+            Self::reconcile_persisted_changes(&pending_updates_arc, updates);
 
             Ok(())
         })
