@@ -14,7 +14,7 @@ from .utils import (
     start_cluster,
     start_peer,
     wait_collection_exists_and_active_on_all_peers,
-    wait_for_peer_online,
+    wait_for_peer_online, get_uri,
 )
 
 COLLECTION = "test_collection"
@@ -30,7 +30,7 @@ def get_shard_states(url: str) -> dict[int, str]:
 
 def kill_peer(url: str) -> bool:
     for p in processes:
-        if f"http://127.0.0.1:{p.http_port}" == url:
+        if get_uri(p.http_port) == url:
             p.kill()
             processes.remove(p)
             return True
@@ -40,19 +40,19 @@ def kill_peer(url: str) -> bool:
 class PartialMonitor(threading.Thread):
     """Monitor for Partial state and kill target peer when detected."""
 
-    def __init__(self, peer_urls: list[str], target_url: str):
+    def __init__(self, target_url: str):
         super().__init__(daemon=True)
-        self.peer_urls = peer_urls
         self.target_url = target_url
         self.killed = False
         self._stop_event = threading.Event()
 
     def run(self):
         while not self._stop_event.is_set():
-            for url in self.peer_urls:
-                if "Partial" in get_shard_states(url).values():
-                    self.killed = kill_peer(self.target_url)
-                    return
+            if "Partial" in get_shard_states(self.target_url).values():
+                self.killed = kill_peer(self.target_url)
+                return
+            else:
+                time.sleep(0.05)
 
     def stop(self):
         self._stop_event.set()
@@ -77,43 +77,33 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
     snapshot_url = f"{peer_urls[0]}/collections/{COLLECTION}/snapshots/{r.json()['result']['name']}"
 
     # Kill target peer
-    target_port = 23200
-    target_dir = Path(peer_dirs[2])
-    kill_peer(peer_urls[2])
-    time.sleep(2)
+    recovery_url = peer_urls[2]
+    recovery_dir = Path(peer_dirs[2])
+    recovery_port = processes[2].http_port
 
-    # Restart and trigger recovery
-    new_url = start_peer(target_dir, "peer_recovery.log", bootstrap, port=target_port, extra_env=env)
-    monitor = PartialMonitor(peer_urls[:2] + [new_url], new_url)
+    monitor = PartialMonitor(recovery_url)
     monitor.start()
 
-    wait_for_peer_online(new_url)
-    requests.put(f"{new_url}/collections/{COLLECTION}/snapshots/recover?wait=false", json={"location": snapshot_url})
+    requests.put(f"{recovery_url}/collections/{COLLECTION}/snapshots/recover?wait=false", json={"location": snapshot_url})
 
     # Wait for Partial detection
     monitor.join(timeout=10)
     monitor.stop()
 
     if not monitor.killed:
-        kill_peer(new_url)
+        kill_peer(recovery_url)
         pytest.fail("Partial state not detected")
 
-    time.sleep(2)
-
     # Restart again
-    restarted = start_peer(target_dir, "peer_restarted.log", bootstrap, port=target_port, extra_env=env)
-    try:
-        wait_for_peer_online(restarted)
-    except Exception:
-        pass
+    restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, port=recovery_port, extra_env=env)
+    wait_for_peer_online(restarted)
 
     # Main assertion: wait for all Active
-    all_peers = peer_urls[:2] + [restarted]
-    for _ in range(30):
-        if all(all(s == "Active" for s in get_shard_states(u).values()) for u in all_peers if get_shard_states(u)):
+    for _ in range(10):
+        if all(all(s == "Active" for s in get_shard_states(u).values()) for u in peer_urls if get_shard_states(u)):
             return
         time.sleep(0.5)
 
-    for url in all_peers:
+    for url in peer_urls:
         print(f"Final state {url}: {get_shard_states(url)}")
     pytest.fail("Not all shards became Active")
