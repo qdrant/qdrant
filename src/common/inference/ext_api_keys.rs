@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use actix_web::{FromRequest, http::header::HeaderMap};
+use actix_web::FromRequest;
+use actix_web::http::header::HeaderMap;
 use futures::future::{Ready, ready};
 
 const PROVIDERS: [Provider; 4] = [
