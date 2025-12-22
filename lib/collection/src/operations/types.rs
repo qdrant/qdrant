@@ -377,6 +377,7 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
+/// `WaitTimeout` - Request is waiting for timeout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
