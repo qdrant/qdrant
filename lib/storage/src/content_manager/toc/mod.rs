@@ -33,6 +33,7 @@ use common::cpu::get_num_cpus;
 use dashmap::DashMap;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
+use io::safe_delete::safe_delete_in_tmp;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
@@ -636,11 +637,13 @@ impl TableOfContent {
                     "Removing invalid collection path {path} from storage",
                     path = path.display(),
                 );
-                tokio_fs::remove_dir_all(&path).await.map_err(|err| {
-                    StorageError::service_error(format!(
-                        "Can't clear directory for collection {collection_name}. Error: {err}"
-                    ))
-                })?;
+
+                let path = path.clone();
+                let deleted_dir = self.storage_config.storage_path.join(".deleted");
+                tokio::task::spawn_blocking(move || {
+                    safe_delete_in_tmp(&path, &deleted_dir)?.close()
+                })
+                .await??;
             }
         }
 

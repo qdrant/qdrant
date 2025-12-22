@@ -39,6 +39,7 @@ use fs_err::tokio as tokio_fs;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
+use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
@@ -355,10 +356,9 @@ impl LocalShard {
                     let mut segment = match segment {
                         LoadSegmentOutcome::Loaded(segment) => segment,
                         LoadSegmentOutcome::Skipped => {
-                            fs::remove_dir_all(&segment_path).map_err(|err| {
+                            safe_delete_with_suffix(&segment_path).map_err(|err| {
                                 CollectionError::service_error(format!(
-                                    "failed to remove leftover segment {}: {err}",
-                                    segment_path.display(),
+                                    "failed to remove leftover segment: {err}",
                                 ))
                             })?;
                             return Ok(LoadSegmentOutcome::Skipped);

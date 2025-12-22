@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
-use fs_err as fs;
+use io::safe_delete::safe_delete_with_suffix;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -769,15 +769,8 @@ impl SegmentEntry for Segment {
     fn drop_data(self) -> OperationResult<()> {
         let segment_path = self.segment_path.clone();
         drop(self);
-        let mut deleted_path = segment_path.clone();
-        deleted_path.set_extension("deleted");
-        fs::rename(&segment_path, &deleted_path)?;
-        fs::remove_dir_all(&deleted_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Can't remove segment data at {}, error: {}",
-                deleted_path.to_str().unwrap_or_default(),
-                err
-            ))
+        safe_delete_with_suffix(&segment_path).map_err(|err| {
+            OperationError::service_error(format!("Failed to remove segment: {err}"))
         })
     }
 

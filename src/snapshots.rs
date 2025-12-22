@@ -5,6 +5,7 @@ use collection::collection::Collection;
 use collection::shards::shard::PeerId;
 use fs_err as fs;
 use fs_err::File;
+use io::safe_delete::safe_delete_in_tmp;
 use log::info;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use storage::content_manager::alias_mapping::AliasPersistence;
@@ -73,7 +74,8 @@ pub fn recover_snapshots(
         }
         // Remove collection_path directory if exists
         if collection_path.exists()
-            && let Err(err) = fs::remove_dir_all(&collection_path)
+            && let Err(err) = safe_delete_in_tmp(&collection_path, &storage_dir.join(".deleted"))
+                .and_then(|to_delete| to_delete.close())
         {
             panic!("Failed to remove collection {collection_name}: {err}");
         }

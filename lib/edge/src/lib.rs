@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
+use io::safe_delete::safe_delete_with_suffix;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
@@ -104,7 +105,7 @@ impl Shard {
             let mut segment = match segment {
                 LoadSegmentOutcome::Loaded(segment) => segment,
                 LoadSegmentOutcome::Skipped => {
-                    fs::remove_dir_all(&segment_path).map_err(|err| {
+                    safe_delete_with_suffix(&segment_path).map_err(|err| {
                         OperationError::service_error(format!(
                             "failed to remove leftover segment: {err}",
                         ))
