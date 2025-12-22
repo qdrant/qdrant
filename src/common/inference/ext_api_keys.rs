@@ -1,8 +1,15 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use actix_web::FromRequest;
+use actix_web::{FromRequest, http::header::HeaderMap};
 use futures::future::{Ready, ready};
+
+const PROVIDERS: [Provider; 4] = [
+    Provider::OpenAI,
+    Provider::JinaAI,
+    Provider::Cohere,
+    Provider::OpenRouter,
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Provider {
@@ -27,16 +34,45 @@ impl Provider {
 pub struct ApiKeys(pub Option<HashMap<Provider, String>>);
 
 impl ApiKeys {
-    pub fn into_inner(&self) -> HashMap<Provider, String> {
-        self.0.clone().unwrap_or_default()
+    pub fn into_inner(self) -> HashMap<Provider, String> {
+        self.0.unwrap_or_default()
     }
 
     pub fn get(&self, p: Provider) -> Option<&str> {
-        if self.0.as_ref().is_none() {
-            return None;
+        self.0.as_ref()?.get(&p).map(String::as_str)
+    }
+
+    fn from_fn<F>(f: F) -> Self
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let mut map = HashMap::<Provider, String>::new();
+
+        for p in PROVIDERS {
+            if let Some(v) = f(p.as_api_key()) {
+                map.insert(p, v);
+            }
         }
-        let map = self.0.as_ref().unwrap();
-        map.get(&p).map(|s| s.as_str())
+
+        Self((!map.is_empty()).then_some(map))
+    }
+
+    pub fn from_http_headers(headers: &HeaderMap) -> Self {
+        Self::from_fn(|key| {
+            headers
+                .get(key)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_owned())
+        })
+    }
+
+    pub fn from_grpc_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
+        Self::from_fn(|key| {
+            metadata
+                .get(key)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_owned())
+        })
     }
 }
 
@@ -48,73 +84,10 @@ impl FromRequest for ApiKeys {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let headers = req.headers();
-        let mut map = HashMap::<Provider, String>::new();
-
-        for (k, v) in headers {
-            if k.as_str() == Provider::OpenAI.as_api_key()
-                && let Some(v) = v.to_str().ok()
-            {
-                map.insert(Provider::OpenAI, v.to_string());
-            }
-
-            if k.as_str() == Provider::JinaAI.as_api_key()
-                && let Some(v) = v.to_str().ok()
-            {
-                map.insert(Provider::JinaAI, v.to_string());
-            }
-
-            if k.as_str() == Provider::Cohere.as_api_key()
-                && let Some(v) = v.to_str().ok()
-            {
-                map.insert(Provider::Cohere, v.to_string());
-            }
-
-            if k.as_str() == Provider::OpenRouter.as_api_key()
-                && let Some(v) = v.to_str().ok()
-            {
-                map.insert(Provider::OpenRouter, v.to_string());
-            }
-        }
-
-        ready(Ok(ApiKeys(Some(map))))
+        ready(Ok(ApiKeys::from_http_headers(req.headers())))
     }
 }
 
-pub fn extract_api_key(metadata: tonic::metadata::MetadataMap) -> ApiKeys {
-    let headers = metadata.into_headers();
-    let mut map = HashMap::<Provider, String>::new();
-
-    for (k, v) in headers {
-        if k.is_none() {
-            continue;
-        }
-
-        let k = k.unwrap();
-        if k.as_str() == Provider::OpenAI.as_api_key()
-            && let Some(v) = v.to_str().ok()
-        {
-            map.insert(Provider::OpenAI, v.to_string());
-        }
-
-        if k.as_str() == Provider::JinaAI.as_api_key()
-            && let Some(v) = v.to_str().ok()
-        {
-            map.insert(Provider::JinaAI, v.to_string());
-        }
-
-        if k.as_str() == Provider::Cohere.as_api_key()
-            && let Some(v) = v.to_str().ok()
-        {
-            map.insert(Provider::Cohere, v.to_string());
-        }
-
-        if k.as_str() == Provider::OpenRouter.as_api_key()
-            && let Some(v) = v.to_str().ok()
-        {
-            map.insert(Provider::OpenRouter, v.to_string());
-        }
-    }
-
-    ApiKeys(Some(map))
+pub fn extract_api_key(metadata: &tonic::metadata::MetadataMap) -> ApiKeys {
+    ApiKeys::from_grpc_metadata(metadata)
 }
