@@ -12505,7 +12505,7 @@ pub struct ShardTransferTelemetry {
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
     /// Target shard ID if different than source shard ID.
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[prost(uint32, optional, tag = "2")]
     pub to_shard_id: ::core::option::Option<u32>,
     /// From peer id
