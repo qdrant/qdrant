@@ -92,10 +92,11 @@ impl BufferedDynamicFlags {
 
             flags_guard.flusher()()?;
 
-            reconcile_persisted_buffer(&buffer_arc, updates);
-
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            // Keep the guard till here to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
             drop(is_alive_flush_guard);
+
+            reconcile_persisted_buffer(&buffer_arc, updates);
 
             Ok(())
         })
