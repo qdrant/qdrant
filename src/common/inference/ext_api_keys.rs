@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::HashMap, convert::Infallible};
 
 use actix_web::FromRequest;
 use futures::future::{Ready, ready};
@@ -22,12 +22,20 @@ impl Provider {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct ApiKeys(pub std::collections::HashMap<Provider, String>);
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct ApiKeys(pub Option<HashMap<Provider, String>>);
 
 impl ApiKeys {
+    pub fn into_inner(&self) -> HashMap<Provider, String> {
+        self.0.clone().unwrap_or_default()
+    }
+
     pub fn get(&self, p: Provider) -> Option<&str> {
-        self.0.get(&p).map(|s| s.as_str())
+        if self.0.as_ref().is_none() {
+            return None;
+        }
+        let map = self.0.as_ref().unwrap();
+        map.get(&p).map(|s| s.as_str())
     }
 }
 
@@ -40,7 +48,7 @@ impl FromRequest for ApiKeys {
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
         let headers = req.headers();
-        let mut map = std::collections::HashMap::<Provider, String>::new();
+        let mut map = HashMap::<Provider, String>::new();
 
         for (k, v) in headers {
             if k.as_str() == Provider::OpenAI.as_api_key()
@@ -68,6 +76,13 @@ impl FromRequest for ApiKeys {
             }
         }
 
-        ready(Ok(ApiKeys(map)))
+        ready(Ok(ApiKeys(Some(map))))
     }
+}
+
+pub fn extract_api_key<R>(req: &tonic::Request<R>) -> ApiKeys {
+    req.extensions()
+        .get::<ApiKeys>()
+        .cloned()
+        .unwrap_or(ApiKeys(None))
 }

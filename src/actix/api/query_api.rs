@@ -34,7 +34,7 @@ async fn query_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    ApiKeys(api_keys): ApiKeys,
+    api_keys: ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequest {

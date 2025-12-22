@@ -39,7 +39,7 @@ async fn upsert_points(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    ApiKeys(api_keys): ApiKeys,
+    api_keys: ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -122,7 +122,7 @@ async fn update_vectors(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    ApiKeys(api_keys): ApiKeys,
+    api_keys: ApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();

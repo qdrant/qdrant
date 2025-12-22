@@ -1,13 +1,11 @@
-use std::collections::HashMap;
-
-use crate::common::inference::ext_api_keys::Provider;
+use crate::common::inference::ext_api_keys::ApiKeys;
 use crate::common::inference::token::InferenceToken;
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct InferenceParams {
     pub token: InferenceToken,
     pub timeout: Option<std::time::Duration>,
-    pub ext_api_keys: Option<HashMap<Provider, String>>,
+    pub ext_api_keys: Option<ApiKeys>,
 }
 
 impl InferenceParams {
@@ -19,7 +17,7 @@ impl InferenceParams {
         }
     }
 
-    pub fn with_ext_api_keys(mut self, ext_api_keys: HashMap<Provider, String>) -> Self {
+    pub fn with_ext_api_keys(mut self, ext_api_keys: ApiKeys) -> Self {
         self.ext_api_keys = Some(ext_api_keys);
         self
     }

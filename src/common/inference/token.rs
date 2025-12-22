@@ -3,7 +3,7 @@ use std::future::{Ready, ready};
 
 use actix_web::{FromRequest, HttpMessage};
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct InferenceToken(pub Option<String>);
 
 impl InferenceToken {
