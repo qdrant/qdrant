@@ -552,33 +552,24 @@ impl TableOfContent {
                     .iter()
                     .any(|(_peer_id, &replica_state)| replica_state.can_be_source_of_truth());
 
-                if has_other_source_of_truth {
-                    log::info!(
-                        "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as Dead",
-                        collection = collection.name(),
-                    );
-                    Self::send_set_replica_state_proposal_op(
-                        proposal_sender,
-                        collection.name().to_string(),
-                        this_peer_id,
-                        shard_id,
-                        ReplicaState::Dead,
-                        Some(ReplicaState::Partial),
-                    )?;
+                let target_state = if has_other_source_of_truth {
+                    ReplicaState::Dead
                 } else {
-                    log::info!(
-                        "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as Active",
-                        collection = collection.name(),
-                    );
-                    Self::send_set_replica_state_proposal_op(
-                        proposal_sender,
-                        collection.name().to_string(),
-                        this_peer_id,
-                        shard_id,
-                        ReplicaState::Active,
-                        Some(ReplicaState::Partial),
-                    )?;
-                }
+                    ReplicaState::Active
+                };
+
+                log::info!(
+                    "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as {target_state:?}",
+                    collection = collection.name(),
+                );
+                Self::send_set_replica_state_proposal_op(
+                    proposal_sender,
+                    collection.name().to_string(),
+                    this_peer_id,
+                    shard_id,
+                    target_state,
+                    Some(ReplicaState::Partial),
+                )?;
             }
         }
         Ok(())
