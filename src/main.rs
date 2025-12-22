@@ -458,7 +458,7 @@ fn main() -> anyhow::Result<()> {
 
         let toc_arc_clone = toc_arc.clone();
         let consensus_state_clone = consensus_state.clone();
-        let _cancel_transfer_handle = runtime_handle.spawn(async move {
+        let _state_cleanup_handle = runtime_handle.spawn(async move {
             consensus_state_clone.is_leader_established.await_ready();
             match toc_arc_clone
                 .cancel_related_transfers("Source or target peer restarted")
@@ -469,6 +469,13 @@ fn main() -> anyhow::Result<()> {
                 }
                 Err(err) => {
                     log::error!("Can't cancel related transfers: {err}");
+                }
+            }
+
+            match toc_arc_clone.cleanup_partial_replica_states().await {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("Can't cleanup resharding state: {err}");
                 }
             }
         });

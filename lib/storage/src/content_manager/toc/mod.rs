@@ -507,6 +507,83 @@ impl TableOfContent {
         Ok(())
     }
 
+    /// Cleanup [`ReplicaState::Partial`] state from collection, if there are no associated shard transfers.
+    ///
+    /// Patrial state can be left behind service restarted during snapshot recovery.
+    /// In this case shard state should be resolved in one of the following ways:
+    ///
+    /// 1. If there are other source-of-truth replicas (e.g. `Active`), then `Partial` replica should be marked as `Dead`.
+    /// 2. If there are no other source-of-truth replicas, then `Partial ` replica should be marked as `Active`.
+    pub async fn cleanup_partial_replica_states(&self) -> Result<(), StorageError> {
+        let this_peer_id = self.this_peer_id();
+        let collections = self.collections.read().await;
+
+        let Some(proposal_sender) = &self.consensus_proposal_sender else {
+            log::error!("Skipping cleanup of Partial replica states in single-node mode");
+            return Ok(());
+        };
+
+        for collection in collections.values() {
+            let state = collection.state().await;
+            for (shard_id, shard_info) in state.shards {
+                let Some(&local_replica_state) = shard_info.replicas.get(&this_peer_id) else {
+                    continue;
+                };
+
+                if !local_replica_state.is_partial_or_recovery()
+                    || local_replica_state.can_be_source_of_truth()
+                {
+                    // Only handle those partial states, that can't be source of truth.
+                    continue;
+                }
+
+                let has_inbound_transfers = state
+                    .transfers
+                    .iter()
+                    .any(|transfer| transfer.is_target(this_peer_id, shard_id));
+
+                if has_inbound_transfers {
+                    // State resolution will be handled by the transfer completion or abortion.
+                    continue;
+                }
+
+                let has_other_source_of_truth = shard_info
+                    .replicas
+                    .iter()
+                    .any(|(_peer_id, &replica_state)| replica_state.can_be_source_of_truth());
+
+                if has_other_source_of_truth {
+                    log::info!(
+                        "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as Dead",
+                        collection = collection.name(),
+                    );
+                    Self::send_set_replica_state_proposal_op(
+                        proposal_sender,
+                        collection.name().to_string(),
+                        this_peer_id,
+                        shard_id,
+                        ReplicaState::Dead,
+                        Some(ReplicaState::Partial),
+                    )?;
+                } else {
+                    log::info!(
+                        "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as Active",
+                        collection = collection.name(),
+                    );
+                    Self::send_set_replica_state_proposal_op(
+                        proposal_sender,
+                        collection.name().to_string(),
+                        this_peer_id,
+                        shard_id,
+                        ReplicaState::Active,
+                        Some(ReplicaState::Partial),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn change_peer_state_callback(
         proposal_sender: Option<OperationSender>,
         collection_name: String,
