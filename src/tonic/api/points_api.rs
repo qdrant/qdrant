@@ -71,7 +71,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let api_keys = extract_api_key(&request);
+        let api_keys = extract_api_key(request.metadata().clone());
+        tracing::info!("Extracted API keys: {:?}", request);
         let inference_params =
             InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
 
@@ -142,7 +143,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let api_keys = extract_api_key(&request);
+        let api_keys = extract_api_key(request.metadata().clone());
         let inference_params =
             InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
 
@@ -287,7 +288,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let api_keys = extract_api_key(&request);
+        let api_keys = extract_api_key(request.metadata().clone());
         let inference_params =
             InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
 
@@ -603,7 +604,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let api_keys = extract_api_key(&request);
+        let api_keys = extract_api_key(request.metadata().clone());
         let inference_params =
             InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
         let collection_name = request.get_ref().collection_name.clone();
@@ -630,7 +631,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let api_keys = extract_api_key(&request);
+        let api_keys = extract_api_key(request.metadata().clone());
         let inference_params =
             InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
 

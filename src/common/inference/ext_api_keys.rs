@@ -81,9 +81,40 @@ impl FromRequest for ApiKeys {
     }
 }
 
-pub fn extract_api_key<R>(req: &tonic::Request<R>) -> ApiKeys {
-    req.extensions()
-        .get::<ApiKeys>()
-        .cloned()
-        .unwrap_or(ApiKeys(None))
+pub fn extract_api_key(metadata: tonic::metadata::MetadataMap) -> ApiKeys {
+    let headers = metadata.into_headers();
+    let mut map = HashMap::<Provider, String>::new();
+
+    for (k, v) in headers {
+        if k.is_none() {
+            continue;
+        }
+
+        let k = k.unwrap();
+        if k.as_str() == Provider::OpenAI.as_api_key()
+            && let Some(v) = v.to_str().ok()
+        {
+            map.insert(Provider::OpenAI, v.to_string());
+        }
+
+        if k.as_str() == Provider::JinaAI.as_api_key()
+            && let Some(v) = v.to_str().ok()
+        {
+            map.insert(Provider::JinaAI, v.to_string());
+        }
+
+        if k.as_str() == Provider::Cohere.as_api_key()
+            && let Some(v) = v.to_str().ok()
+        {
+            map.insert(Provider::Cohere, v.to_string());
+        }
+
+        if k.as_str() == Provider::OpenRouter.as_api_key()
+            && let Some(v) = v.to_str().ok()
+        {
+            map.insert(Provider::OpenRouter, v.to_string());
+        }
+    }
+
+    ApiKeys(Some(map))
 }
