@@ -60,6 +60,9 @@ To experience the full power of Qdrant locally, run the container with this comm
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
+> [!CAUTION]
+> Starts an insecure deployment open to all network interfaces without authentication. Refer to our [security](https://qdrant.tech/documentation/guides/security/) guide for more details.
+
 Now you can connect to this with any client, including Python:
 
 ```python
