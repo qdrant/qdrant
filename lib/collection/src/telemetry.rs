@@ -204,11 +204,14 @@ mod internal_conversions {
                 from: value.from,
                 to: value.to,
                 sync: value.sync,
-                method: Some(ShardTransferMethod::from(
-                    grpc::ShardTransferMethod::try_from(value.method).map_err(|err| {
+                method: value
+                    .method
+                    .map(grpc::ShardTransferMethod::try_from)
+                    .transpose()
+                    .map_err(|err| {
                         Status::invalid_argument(format!("cannot decode ShardTransferMethod {err}"))
-                    })?,
-                )),
+                    })?
+                    .map(ShardTransferMethod::from),
                 comment: (!value.comment.is_empty()).then_some(value.comment),
             })
         }
@@ -250,7 +253,9 @@ mod internal_conversions {
                 from: value.from,
                 to: value.to,
                 sync: value.sync,
-                method: grpc::ShardTransferMethod::from(value.method.unwrap_or_default()) as i32,
+                method: value
+                    .method
+                    .map(|method| grpc::ShardTransferMethod::from(method) as i32),
                 comment: value.comment.unwrap_or_default(),
             }
         }
@@ -358,44 +363,32 @@ mod internal_conversions {
                 shard_clean_tasks,
             } = value;
 
-            let transfers: Option<Vec<ShardTransferInfo>> = if transfers.is_empty() {
-                None
-            } else {
-                Some(
-                    transfers
-                        .into_iter()
-                        .map(ShardTransferInfo::try_from)
-                        .collect::<Result<_, _>>()?,
-                )
-            };
+            let transfers: Option<Vec<ShardTransferInfo>> = (!transfers.is_empty()).then_some(
+                transfers
+                    .into_iter()
+                    .map(ShardTransferInfo::try_from)
+                    .collect::<Result<_, _>>()?,
+            );
 
-            let resharding: Option<Vec<ReshardingInfo>> = if resharding.is_empty() {
-                None
-            } else {
-                Some(
-                    resharding
-                        .into_iter()
-                        .map(ReshardingInfo::try_from)
-                        .collect::<Result<_, _>>()?,
-                )
-            };
+            let resharding: Option<Vec<ReshardingInfo>> = (!resharding.is_empty()).then_some(
+                resharding
+                    .into_iter()
+                    .map(ReshardingInfo::try_from)
+                    .collect::<Result<_, _>>()?,
+            );
 
             let shard_clean_tasks: Option<HashMap<ShardId, ShardCleanStatusTelemetry>> =
-                if shard_clean_tasks.is_empty() {
-                    None
-                } else {
-                    Some(
-                        shard_clean_tasks
-                            .into_iter()
-                            .map(|(shard_id, telemetry)| {
-                                Ok::<_, Status>((
-                                    shard_id,
-                                    ShardCleanStatusTelemetry::try_from(telemetry)?,
-                                ))
-                            })
-                            .collect::<Result<_, _>>()?,
-                    )
-                };
+                (!shard_clean_tasks.is_empty()).then_some(
+                    shard_clean_tasks
+                        .into_iter()
+                        .map(|(shard_id, telemetry)| {
+                            Ok::<_, Status>((
+                                shard_id,
+                                ShardCleanStatusTelemetry::try_from(telemetry)?,
+                            ))
+                        })
+                        .collect::<Result<_, _>>()?,
+                );
 
             Ok(CollectionTelemetry {
                 id,

@@ -60,7 +60,7 @@ message ShardTransferTelemetry {
   // If `false` transfer is a moving of a shard from one peer to another.
   bool sync = 5;
   // Method of transferring points
-  ShardTransferMethod method = 6;
+  optional ShardTransferMethod method = 6;
   // Freeform string. Typically reports progress
   string comment = 7;
 }

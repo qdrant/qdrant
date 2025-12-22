@@ -12519,8 +12519,8 @@ pub struct ShardTransferTelemetry {
     #[prost(bool, tag = "5")]
     pub sync: bool,
     /// Method of transferring points
-    #[prost(enumeration = "ShardTransferMethod", tag = "6")]
-    pub method: i32,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "6")]
+    pub method: ::core::option::Option<i32>,
     /// Freeform string. Typically reports progress
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
