@@ -45,7 +45,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{BatchedVectorReader, PointData};
 use crate::segment_constructor::{
-    VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
+    LoadSegmentOutcome, VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType,
@@ -706,13 +706,13 @@ impl SegmentBuilder {
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
-        let loaded_segment = load_segment(&destination_path, stopped)?.ok_or_else(|| {
-            OperationError::service_error(format!(
+        match load_segment(&destination_path, stopped)? {
+            LoadSegmentOutcome::Loaded(loaded_segment) => Ok(loaded_segment),
+            LoadSegmentOutcome::Skipped => Err(OperationError::service_error(format!(
                 "Segment loading error: {}",
-                destination_path.display()
-            ))
-        })?;
-        Ok(loaded_segment)
+                destination_path.display(),
+            ))),
+        }
     }
 
     fn update_quantization(

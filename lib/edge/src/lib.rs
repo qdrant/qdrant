@@ -15,7 +15,7 @@ use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
-use segment::segment_constructor::load_segment;
+use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
@@ -101,14 +101,17 @@ impl Shard {
                 ))
             })?;
 
-            let Some(mut segment) = segment else {
-                fs::remove_dir_all(&segment_path).map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to remove leftover segment: {err}",
-                    ))
-                })?;
+            let mut segment = match segment {
+                LoadSegmentOutcome::Loaded(segment) => segment,
+                LoadSegmentOutcome::Skipped => {
+                    fs::remove_dir_all(&segment_path).map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to remove leftover segment: {err}",
+                        ))
+                    })?;
 
-                continue;
+                    continue;
+                }
             };
 
             if let Some(config) = &config {

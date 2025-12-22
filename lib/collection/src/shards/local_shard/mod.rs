@@ -43,7 +43,7 @@ use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment_constructor::{build_segment, load_segment};
+use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
@@ -352,15 +352,17 @@ impl LocalShard {
                 let handle = tokio::task::spawn_blocking(move || {
                     let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
-                    let Some(mut segment) = segment else {
-                        fs::remove_dir_all(&segment_path).map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "failed to remove leftover segment {}: {err}",
-                                segment_path.display(),
-                            ))
-                        })?;
-
-                        return Ok(None);
+                    let mut segment = match segment {
+                        LoadSegmentOutcome::Loaded(segment) => segment,
+                        LoadSegmentOutcome::Skipped => {
+                            fs::remove_dir_all(&segment_path).map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "failed to remove leftover segment {}: {err}",
+                                    segment_path.display(),
+                                ))
+                            })?;
+                            return Ok(LoadSegmentOutcome::Skipped);
+                        }
                     };
 
                     segment.check_consistency_and_repair()?;
@@ -371,7 +373,7 @@ impl LocalShard {
                         )?;
                     }
 
-                    CollectionResult::Ok(Some(segment))
+                    CollectionResult::Ok(LoadSegmentOutcome::Loaded(segment))
                 });
                 AbortOnDropHandle::new(handle)
             })
@@ -380,10 +382,9 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
 
         while let Some(result) = segment_stream.next().await {
-            let segment = result??;
-
-            let Some(segment) = segment else {
-                continue;
+            let segment = match result?? {
+                LoadSegmentOutcome::Loaded(segment) => segment,
+                LoadSegmentOutcome::Skipped => continue,
             };
 
             collection_config_read

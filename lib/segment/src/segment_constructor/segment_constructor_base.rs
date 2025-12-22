@@ -688,7 +688,23 @@ fn create_segment_id_tracker(
     )))
 }
 
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
+/// Outcome of [`load_segment()`].
+#[expect(clippy::large_enum_variant, reason = "Self::Skipped is rarely used")]
+pub enum LoadSegmentOutcome {
+    Loaded(Segment),
+    Skipped,
+}
+
+impl LoadSegmentOutcome {
+    pub fn unwrap(self) -> Segment {
+        match self {
+            LoadSegmentOutcome::Loaded(segment) => segment,
+            LoadSegmentOutcome::Skipped => panic!("Called unwrap on Skipped segment"),
+        }
+    }
+}
+
+pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSegmentOutcome> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -696,8 +712,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         .unwrap_or(false)
     {
         log::warn!("Segment is marked as deleted, skipping: {}", path.display());
-        // Skip deleted segments
-        return Ok(None);
+        return Ok(LoadSegmentOutcome::Skipped);
     }
 
     let Some(stored_version) = SegmentVersion::load(path)? else {
@@ -707,7 +722,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
             "Segment version file not found, skipping: {}",
             path.display()
         );
-        return Ok(None);
+        return Ok(LoadSegmentOutcome::Skipped);
     };
 
     let app_version = SegmentVersion::current();
@@ -764,7 +779,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         }
     }
 
-    Ok(Some(segment))
+    Ok(LoadSegmentOutcome::Loaded(segment))
 }
 
 pub fn new_segment_path(segments_path: &Path) -> PathBuf {
