@@ -175,7 +175,7 @@ impl ShardReplicaSet {
             .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, None, ordering, hw_measurement_acc)
+            self.forward_update(leader_peer, operation, wait, timeout, ordering, hw_measurement_acc)
                 .await
                 .map_err(|err| {
                     if err.is_transient() {
