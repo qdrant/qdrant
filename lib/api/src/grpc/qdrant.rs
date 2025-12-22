@@ -6092,8 +6092,7 @@ pub struct RelevanceFeedbackInput {
 pub struct FeedbackItem {
     /// The id or vector from the original model
     #[prost(message, optional, tag = "1")]
-    #[validate(nested)]
-    pub vector: ::core::option::Option<VectorInput>,
+    pub example: ::core::option::Option<VectorInput>,
     /// Score for this vector as determined by the feedback provider
     #[prost(float, tag = "2")]
     pub score: f32,

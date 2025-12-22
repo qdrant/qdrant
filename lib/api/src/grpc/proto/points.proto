@@ -818,7 +818,7 @@ message RelevanceFeedbackInput {
 }
 
 message FeedbackItem {
-  VectorInput vector = 1; // The id or vector from the original model
+  VectorInput example = 1; // The id or vector from the original model
   float score = 2; // Score for this vector as determined by the feedback provider
 }
 
@@ -991,8 +991,6 @@ message Query {
     NearestInputWithMmr nearest_with_mmr = 9;
     // Parameterized reciprocal rank fusion
     Rrf rrf = 10;
-    // Search with feedback from some oracle.
-    FeedbackInput feedback = 11;
     // Search with feedback from some oracle.
     RelevanceFeedbackInput relevance_feedback = 11;
   }

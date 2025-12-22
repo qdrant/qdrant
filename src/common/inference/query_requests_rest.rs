@@ -285,7 +285,7 @@ fn convert_query_with_inferred(
                 .into_iter()
                 .map(|item| {
                     Ok(FeedbackItem {
-                        vector: convert_vector_input_with_inferred(item.vector, inferred)?,
+                        vector: convert_vector_input_with_inferred(item.example, inferred)?,
                         score: item.score.into(),
                     })
                 })

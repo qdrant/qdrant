@@ -107,7 +107,7 @@ fn collect_feedback_input(
     }
 
     for item in feedback {
-        if let Some(vector) = &item.vector {
+        if let Some(vector) = &item.example {
             collect_vector_input(vector, batch)?;
         }
     }

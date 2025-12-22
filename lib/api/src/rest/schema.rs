@@ -889,7 +889,7 @@ pub struct RelevanceFeedbackInput {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct FeedbackItem {
     #[validate(nested)]
-    pub vector: VectorInput,
+    pub example: VectorInput,
     pub score: f32,
 }
 

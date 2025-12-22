@@ -326,15 +326,15 @@ fn convert_query_with_inferred(
             let feedback = feedback
                 .into_iter()
                 .map(|item| {
-                    let vector = convert_vector_input_with_inferred(
-                        item.vector.ok_or_else(|| {
-                            Status::invalid_argument("feedback vector is missing")
+                    let example = convert_vector_input_with_inferred(
+                        item.example.ok_or_else(|| {
+                            Status::invalid_argument("feedback example is missing")
                         })?,
                         inferred,
                     )?;
 
                     Ok(FeedbackItem {
-                        vector,
+                        vector: example,
                         score: item.score.into(),
                     })
                 })

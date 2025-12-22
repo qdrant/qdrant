@@ -20,7 +20,7 @@ def test_validations(collection_name):
             "query": {
                 "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
-                    "feedback": [ {"vector": 10000, "score": 0.85} ],
+                    "feedback": [ {"example": 10000, "score": 0.85} ],
                     "strategy": {
                         "naive": {
                             "a": 0.12,
@@ -66,7 +66,7 @@ def test_validations(collection_name):
             "query": {
                 "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
-                    "feedback": [ {"vector": 1, "score": 0.85} ],
+                    "feedback": [ {"example": 1, "score": 0.85} ],
                     "strategy": {
                         "naive": {
                             "a": 0.12,
@@ -91,7 +91,7 @@ def test_feedback_pair_requirement(collection_name):
             "query": {
                 "relevance_feedback": {
                     "target": [0.1, 0.2, 0.3, 0.4],
-                    "feedback": [ {"vector": [0.42, 0.42, 0.42, 0.42], "score": 0.85} ],
+                    "feedback": [ {"example": [0.42, 0.42, 0.42, 0.42], "score": 0.85} ],
                     "strategy": {
                         "naive": {
                             "a": 1.0,   # identity value for score boosting

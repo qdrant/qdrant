@@ -89,7 +89,7 @@ fn collect_recommend_input(recommend: &RecommendInput, batch: &mut BatchAccum) {
 fn collect_feedback_input(feedback: &RelevanceFeedbackInput, batch: &mut BatchAccum) {
     collect_vector_input(&feedback.target, batch);
     for item in &feedback.feedback {
-        collect_vector_input(&item.vector, batch);
+        collect_vector_input(&item.example, batch);
     }
 }
 

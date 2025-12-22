@@ -15974,11 +15974,11 @@
       "FeedbackItem": {
         "type": "object",
         "required": [
-          "score",
-          "vector"
+          "example",
+          "score"
         ],
         "properties": {
-          "vector": {
+          "example": {
             "$ref": "#/components/schemas/VectorInput"
           },
           "score": {
