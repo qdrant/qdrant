@@ -1,4 +1,5 @@
-use std::{collections::HashMap, convert::Infallible};
+use std::collections::HashMap;
+use std::convert::Infallible;
 
 use actix_web::FromRequest;
 use futures::future::{Ready, ready};
