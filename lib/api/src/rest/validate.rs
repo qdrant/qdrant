@@ -286,9 +286,9 @@ impl Validate for Expression {
 
 /// Struct level validation for `FeedbackInput`
 pub fn validate_relevance_feedback_input(
-    feedback_input: &RelevanceFeedbackInput,
+    relevance_feedback_input: &RelevanceFeedbackInput,
 ) -> Result<(), ValidationError> {
-    if feedback_input.feedback.is_empty() {
+    if relevance_feedback_input.feedback.is_empty() {
         let mut err = ValidationError::new("feedback");
         err.message = Some(Cow::from("feedback elements must be non-empty"));
         return Err(err);

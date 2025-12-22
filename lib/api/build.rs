@@ -303,7 +303,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RelevanceFeedbackInput.feedback", ""),
             ("RelevanceFeedbackInput.strategy", ""),
             ("FeedbackStrategy.variant", ""),
-            ("FeedbackItem.vector", ""),
+            ("FeedbackItem.example", ""),
             ("NaiveFeedbackStrategy.b", "range(min = 0.0)"),
             ("Formula.expression", ""),
             ("Expression.variant", ""),

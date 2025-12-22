@@ -335,7 +335,7 @@ fn convert_query_with_inferred(
 
                     Ok(FeedbackItem {
                         vector: example,
-                        score: item.score.into(),
+                        score: OrderedFloat(item.score),
                     })
                 })
                 .collect::<Result<Vec<_>, Status>>()?;

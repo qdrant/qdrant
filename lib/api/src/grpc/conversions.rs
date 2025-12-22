@@ -2943,10 +2943,10 @@ impl TryFrom<raw_query::RawFeedbackItem>
     fn try_from(value: raw_query::RawFeedbackItem) -> Result<Self, Self::Error> {
         let raw_query::RawFeedbackItem { vector, score } = value;
         Ok(Self {
-            vector: vector
-                .ok_or_else(|| Status::invalid_argument("No vector provided"))?
-                .try_into()?,
-            score: score.into(),
+            vector: segment_vectors::VectorInternal::try_from(
+                vector.ok_or_else(|| Status::invalid_argument("No vector provided"))?,
+            )?,
+            score: OrderedFloat(score),
         })
     }
 }
