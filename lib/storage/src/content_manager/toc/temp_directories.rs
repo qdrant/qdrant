@@ -31,16 +31,16 @@ const FILE_UPLOAD_SUBDIR_NAME: &str = "upload";
 ///
 /// Subdirectories are required for simpler cleanup on the start of the process.
 impl TableOfContent {
-    pub fn temp_path(&self) -> Option<&str> {
+    pub fn temp_path(&self) -> Option<&Path> {
         self.storage_config.temp_path.as_deref()
     }
 
     fn get_snapshots_temp_path(&self) -> PathBuf {
-        Path::new(self.snapshots_path()).join(TEMP_SUBDIR_NAME)
+        self.snapshots_path().join(TEMP_SUBDIR_NAME)
     }
 
     fn get_storage_temp_path(&self) -> PathBuf {
-        Path::new(self.storage_path()).join(TEMP_SUBDIR_NAME)
+        self.storage_path().join(TEMP_SUBDIR_NAME)
     }
 
     fn get_optional_temp_path(&self) -> Option<PathBuf> {

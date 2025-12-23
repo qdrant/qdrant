@@ -27,13 +27,8 @@ fn test_alias_operation() {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let config = StorageConfig {
-        storage_path: storage_dir.path().to_str().unwrap().to_string(),
-        snapshots_path: storage_dir
-            .path()
-            .join("snapshots")
-            .to_str()
-            .unwrap()
-            .to_string(),
+        storage_path: storage_dir.path().to_path_buf(),
+        snapshots_path: storage_dir.path().join("snapshots"),
         snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,

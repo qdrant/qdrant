@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::LazyLock;
 
 use collection::collection_state;
@@ -225,8 +224,7 @@ impl TableOfContent {
             // Move collection to ".deleted" folder to prevent accidental reuse
             // the original collection path will be moved atomically within this
             // directory.
-            let removed_collections_path =
-                Path::new(&self.storage_config.storage_path).join(".deleted");
+            let removed_collections_path = self.storage_config.storage_path.join(".deleted");
             tokio_fs::create_dir_all(&removed_collections_path).await?;
 
             let deleted_path = Builder::new()

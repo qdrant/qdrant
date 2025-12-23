@@ -101,11 +101,10 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
+        let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
         fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
-            let temp_path = Path::new(path);
-            fs::create_dir_all(temp_path).expect("Can't create temporary files directory");
+            fs::create_dir_all(path).expect("Can't create temporary files directory");
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
@@ -131,9 +130,8 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
             let collection_snapshots_path =
-                Self::collection_snapshots_path(&snapshots_path, &collection_name);
+                Self::collection_snapshots_path(&storage_config.snapshots_path, &collection_name);
 
             log::info!("Loading collection: {collection_name}");
             let collection = general_runtime.block_on(Collection::load(
@@ -173,7 +171,7 @@ impl TableOfContent {
             telemetry.init_snapshot_telemetry(collection_name);
         }
 
-        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
+        let alias_path = storage_config.storage_path.join(ALIASES_PATH);
         let alias_persistence = AliasPersistence::open(&alias_path)
             .expect("Can't open database by the provided config");
 
@@ -218,7 +216,7 @@ impl TableOfContent {
         self.consensus_proposal_sender.is_some()
     }
 
-    pub fn storage_path(&self) -> &str {
+    pub fn storage_path(&self) -> &Path {
         &self.storage_config.storage_path
     }
 
@@ -656,7 +654,8 @@ impl TableOfContent {
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
-        Path::new(&self.storage_config.storage_path)
+        self.storage_config
+            .storage_path
             .join(COLLECTIONS_DIR)
             .join(collection_name)
     }
