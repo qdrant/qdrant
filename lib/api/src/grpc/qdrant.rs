@@ -12449,18 +12449,18 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryRequest {
-    /// The peer id to ask for telemetry
-    #[prost(uint64, tag = "1")]
-    pub peer_id: u64,
+pub struct GetTelemetryRequest {
     /// The level of detail needed
-    #[prost(uint32, tag = "2")]
+    #[prost(uint32, tag = "1")]
     pub details_level: u32,
+    /// Timeout in secs for the request
+    #[prost(uint64, tag = "2")]
+    pub timeout: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryResponse {
+pub struct GetTelemetryResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<PeerTelemetry>,
     #[prost(double, tag = "2")]
@@ -12913,12 +12913,12 @@ pub mod qdrant_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Get telemetry from a peer
-        pub async fn get_peer_telemetry(
+        /// Get telemetry
+        pub async fn get_telemetry(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetPeerTelemetryRequest>,
+            request: impl tonic::IntoRequest<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         > {
             self.inner
@@ -12932,11 +12932,11 @@ pub mod qdrant_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.QdrantInternal/GetPeerTelemetry",
+                "/qdrant.QdrantInternal/GetTelemetry",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetPeerTelemetry"));
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetTelemetry"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -12964,12 +12964,12 @@ pub mod qdrant_internal_server {
             tonic::Response<super::WaitOnConsensusCommitResponse>,
             tonic::Status,
         >;
-        /// Get telemetry from a peer
-        async fn get_peer_telemetry(
+        /// Get telemetry
+        async fn get_telemetry(
             &self,
-            request: tonic::Request<super::GetPeerTelemetryRequest>,
+            request: tonic::Request<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         >;
     }
@@ -13149,26 +13149,25 @@ pub mod qdrant_internal_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.QdrantInternal/GetPeerTelemetry" => {
+                "/qdrant.QdrantInternal/GetTelemetry" => {
                     #[allow(non_camel_case_types)]
-                    struct GetPeerTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
+                    struct GetTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
                     impl<
                         T: QdrantInternal,
-                    > tonic::server::UnaryService<super::GetPeerTelemetryRequest>
-                    for GetPeerTelemetrySvc<T> {
-                        type Response = super::GetPeerTelemetryResponse;
+                    > tonic::server::UnaryService<super::GetTelemetryRequest>
+                    for GetTelemetrySvc<T> {
+                        type Response = super::GetTelemetryResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetPeerTelemetryRequest>,
+                            request: tonic::Request<super::GetTelemetryRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as QdrantInternal>::get_peer_telemetry(&inner, request)
-                                    .await
+                                <T as QdrantInternal>::get_telemetry(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -13180,7 +13179,7 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetPeerTelemetrySvc(inner);
+                        let method = GetTelemetrySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
