@@ -1,5 +1,3 @@
-#![expect(dead_code)]
-
 use ahash::{HashMap, HashMapExt};
 use collection::operations::types::{ReshardingInfo, ShardTransferInfo};
 use schemars::JsonSchema;
