@@ -183,7 +183,7 @@ impl ForwardProxyShard {
                 OperationWithClockTag::from(insert_points_operation),
                 wait,
                 HwMeasurementAcc::disposable(), // Internal operation
-            ) // TODO: Assign clock tag!? 🤔
+            )
             .await?;
 
         Ok((next_page_offset, count))
