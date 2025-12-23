@@ -53,6 +53,7 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -302,7 +303,7 @@ pub struct ShardTransferInfo {
 
     /// Target shard ID if different than source shard ID
     ///
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub to_shard_id: Option<ShardId>,
@@ -345,6 +346,11 @@ pub struct ReshardingInfo {
     pub peer_id: PeerId,
 
     pub shard_key: Option<ShardKey>,
+
+    /// Only included in peer telemetry
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub stage: ReshardingStage,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

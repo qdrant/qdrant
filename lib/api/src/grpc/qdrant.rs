@@ -12461,6 +12461,15 @@ pub struct GetPeerTelemetryRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPeerTelemetryResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<PeerTelemetry>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerTelemetry {
     /// Mapping from collection name to its telemetry
     #[prost(map = "string, message", tag = "3")]
     pub collections: ::std::collections::HashMap<
@@ -12496,7 +12505,7 @@ pub struct ShardTransferTelemetry {
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
     /// Target shard ID if different than source shard ID.
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[prost(uint32, optional, tag = "2")]
     pub to_shard_id: ::core::option::Option<u32>,
     /// From peer id
@@ -12510,8 +12519,8 @@ pub struct ShardTransferTelemetry {
     #[prost(bool, tag = "5")]
     pub sync: bool,
     /// Method of transferring points
-    #[prost(enumeration = "ShardTransferMethod", tag = "6")]
-    pub method: i32,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "6")]
+    pub method: ::core::option::Option<i32>,
     /// Freeform string. Typically reports progress
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
@@ -12593,6 +12602,8 @@ pub mod shard_clean_status_telemetry {
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
+    #[prost(map = "uint64, message", tag = "3")]
+    pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12606,12 +12617,12 @@ pub struct ClusterStatusTelemetry {
     pub commit: u64,
     #[prost(uint64, tag = "4")]
     pub pending_operations: u64,
-    #[prost(enumeration = "StateRole", tag = "5")]
-    pub role: i32,
+    #[prost(enumeration = "StateRole", optional, tag = "5")]
+    pub role: ::core::option::Option<i32>,
     #[prost(bool, tag = "6")]
     pub is_voter: bool,
-    #[prost(uint64, tag = "7")]
-    pub peer_id: u64,
+    #[prost(uint64, optional, tag = "7")]
+    pub peer_id: ::core::option::Option<u64>,
     #[prost(message, optional, tag = "8")]
     pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
 }
@@ -12655,6 +12666,13 @@ pub mod consensus_thread_status {
         #[prost(message, tag = "3")]
         StoppedWithErr(StoppedWithErr),
     }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerInfo {
+    #[prost(string, tag = "1")]
+    pub uri: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
