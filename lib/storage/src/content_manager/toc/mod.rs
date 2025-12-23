@@ -19,7 +19,7 @@ use std::sync::Arc;
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{
-    CollectionConfigInternal, default_replication_factor, default_shard_number,
+    CollectionConfigInternal, ShardingMethod, default_replication_factor, default_shard_number,
 };
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
@@ -525,6 +525,12 @@ impl TableOfContent {
 
         for collection in collections.values() {
             let state = collection.state().await;
+
+            let is_custom_sharding = match state.config.params.sharding_method.unwrap_or_default() {
+                ShardingMethod::Auto => false,
+                ShardingMethod::Custom => true,
+            };
+
             for (shard_id, shard_info) in state.shards {
                 let Some(&local_replica_state) = shard_info.replicas.get(&this_peer_id) else {
                     continue;
@@ -553,23 +559,29 @@ impl TableOfContent {
                     .any(|(_peer_id, &replica_state)| replica_state.can_be_source_of_truth());
 
                 let target_state = if has_other_source_of_truth {
-                    ReplicaState::Dead
+                    Some(ReplicaState::Dead)
+                } else if is_custom_sharding {
+                    // This is a tiered multitenancy case, we didn't finish promotion,
+                    // but it is fine to leave Partial state here.
+                    None
                 } else {
-                    ReplicaState::Active
+                    Some(ReplicaState::Active)
                 };
 
-                log::info!(
-                    "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as {target_state:?}",
-                    collection = collection.name(),
-                );
-                Self::send_set_replica_state_proposal_op(
-                    proposal_sender,
-                    collection.name().to_string(),
-                    this_peer_id,
-                    shard_id,
-                    target_state,
-                    Some(ReplicaState::Partial),
-                )?;
+                if let Some(target_state) = target_state {
+                    log::info!(
+                        "Cleaning up Partial replica state for collection {collection} shard {shard_id} on peer {this_peer_id}: marking as {target_state:?}",
+                        collection = collection.name(),
+                    );
+                    Self::send_set_replica_state_proposal_op(
+                        proposal_sender,
+                        collection.name().to_string(),
+                        this_peer_id,
+                        shard_id,
+                        target_state,
+                        Some(ReplicaState::Partial),
+                    )?;
+                }
             }
         }
         Ok(())
