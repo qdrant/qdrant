@@ -96,14 +96,6 @@ def test_snapshot_restore_kill_during_partial(tmp_path: Path, every_test):
 
     # Restart again
     restarted = start_peer(recovery_dir, "peer_restarted.log", bootstrap, port=recovery_port, extra_env=env)
+
+    # This checks `/readyz` which is supposed to return 200, as there will be no automatic recovery
     wait_for_peer_online(restarted)
-
-    # Main assertion: wait for all Active
-    for _ in range(10):
-        if all(all(s == "Active" for s in get_shard_states(u).values()) for u in peer_urls if get_shard_states(u)):
-            return
-        time.sleep(0.5)
-
-    for url in peer_urls:
-        print(f"Final state {url}: {get_shard_states(url)}")
-    pytest.fail("Not all shards became Active")

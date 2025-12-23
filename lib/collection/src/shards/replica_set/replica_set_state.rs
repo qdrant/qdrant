@@ -1,10 +1,15 @@
-use std::collections::HashMap;
-
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use crate::shards::shard::PeerId;
+
+/// Service version, starting from which `ManualRecovery` state is supported.
+pub static MANUAL_RECOVERY_SHARD_STATE_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.16.4-dev").expect("valid version string"));
 
 /// Represents a replica set state
 #[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]

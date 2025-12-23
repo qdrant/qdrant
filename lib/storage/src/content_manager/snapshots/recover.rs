@@ -1,16 +1,3 @@
-use collection::collection::Collection;
-use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
-use collection::common::sha_256::{hash_file, hashes_equal};
-use collection::config::CollectionConfigInternal;
-use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
-use collection::operations::verification::new_unchecked_verification_pass;
-use collection::shards::check_shard_path;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::replica_set::snapshots::RecoveryType;
-use collection::shards::shard::{PeerId, ShardId};
-use common::save_on_disk::SaveOnDisk;
-use fs_err::tokio as tokio_fs;
-
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
 };
@@ -18,6 +5,20 @@ use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::{StorageError, TableOfContent};
+use collection::collection::Collection;
+use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
+use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::config::CollectionConfigInternal;
+use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::operations::verification::new_unchecked_verification_pass;
+use collection::shards::check_shard_path;
+use collection::shards::replica_set::replica_set_state::{
+    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
+};
+use collection::shards::replica_set::snapshots::RecoveryType;
+use collection::shards::shard::{PeerId, ShardId};
+use common::save_on_disk::SaveOnDisk;
+use fs_err::tokio as tokio_fs;
 
 pub async fn activate_shard(
     toc: &TableOfContent,
@@ -224,18 +225,28 @@ async fn _do_recover_from_snapshot(
         )));
     }
 
+    let is_manual_recovery_state_supported = toc
+        .get_channel_service()
+        .all_peers_at_version(&MANUAL_RECOVERY_SHARD_STATE_VERSION);
+
+    let recovery_state = if is_manual_recovery_state_supported {
+        ReplicaState::ManualRecovery
+    } else {
+        ReplicaState::Partial
+    };
+
     // Deactivate collection local shards during recovery
     for (shard_id, shard_info) in &state.shards {
         let local_shard_state = shard_info.replicas.get(&this_peer_id);
         match local_shard_state {
             None => {} // Shard is not on this node, skip
             Some(state) => {
-                if state != &ReplicaState::Partial {
+                if state != &recovery_state {
                     toc.send_set_replica_state_proposal(
                         collection_pass.to_string(),
                         this_peer_id,
                         *shard_id,
-                        ReplicaState::Partial,
+                        recovery_state,
                         None,
                     )?;
                 }
