@@ -16339,6 +16339,147 @@
             }
           }
         }
+      },
+      "DistributedTelemetryData": {
+        "type": "object",
+        "required": [
+          "collections"
+        ],
+        "properties": {
+          "collections": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedCollectionTelemetry"
+            }
+          },
+          "cluster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedClusterTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedCollectionTelemetry": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "description": "Collection name",
+            "type": "string"
+          },
+          "reshardings": {
+            "description": "Ongoing resharding operations",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReshardingInfo"
+            },
+            "nullable": true
+          },
+          "shard_transfers": {
+            "description": "Ongoing shard transfers",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DistributedClusterTelemetry": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "peers"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "number_of_peers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "peers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedPeerInfo"
+            }
+          }
+        }
+      },
+      "DistributedPeerInfo": {
+        "type": "object",
+        "required": [
+          "responsive",
+          "uri"
+        ],
+        "properties": {
+          "uri": {
+            "description": "URI of the peer",
+            "type": "string"
+          },
+          "responsive": {
+            "description": "Whether this peer responded for this request",
+            "type": "boolean"
+          },
+          "role": {
+            "description": "Consensus role for the peer",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "is_voter": {
+            "description": "Whether it can participate in leader elections",
+            "type": "boolean",
+            "nullable": true
+          },
+          "term": {
+            "description": "Election term",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "commit": {
+            "description": "Latest accepted commit",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_pending_operations": {
+            "description": "Number of operations pending for being applied",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "consensus_thread_status": {
+            "description": "Status of consensus thread",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsensusThreadStatus"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
       }
     }
   }
