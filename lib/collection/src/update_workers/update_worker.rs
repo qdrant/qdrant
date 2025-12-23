@@ -29,6 +29,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        prevent_unoptimized_threshold: Option<usize>,
         mut optimization_finished_receiver: watch::Receiver<()>,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -47,7 +48,7 @@ impl UpdateWorkers {
                     let update_tracker_clone = update_tracker.clone();
 
                     let operation_result = Self::wait_for_optimization(
-                        Some(5000 * 256 * 4), // ToDo: make configurable
+                        prevent_unoptimized_threshold,
                         &segments_clone,
                         &mut optimization_finished_receiver,
                     )
@@ -149,7 +150,7 @@ impl UpdateWorkers {
                     largest_unoptimized_segment_size_opt.unwrap_or(0);
 
                 // True, if we can proceed with updates
-                largest_unoptimized_segment_size < optimization_threshold
+                largest_unoptimized_segment_size <= optimization_threshold
             })
             .await
             .map_err(CollectionError::from)?;

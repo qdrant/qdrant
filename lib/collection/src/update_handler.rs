@@ -106,6 +106,12 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
+
+    /// If specified, this threshold configures a max size of unoptimized segment
+    /// which can still be updated. If there are unoptimized segments larger than this threshold,
+    /// updates will be blocked until those segments are optimized.
+    prevent_unoptimized_threshold: Option<usize>,
+
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
@@ -138,6 +144,7 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
+        prevent_unoptimized_threshold: Option<usize>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
@@ -162,6 +169,7 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            prevent_unoptimized_threshold,
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
@@ -201,6 +209,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
             update_receiver,
@@ -209,6 +218,7 @@ impl UpdateHandler {
             segments,
             scroll_read_lock,
             update_tracker,
+            self.prevent_unoptimized_threshold,
             optimization_finished_receiver,
         )));
 

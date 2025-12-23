@@ -243,6 +243,12 @@ impl LocalShard {
         let scroll_read_lock = Arc::new(tokio::sync::RwLock::new(()));
         let update_tracker = UpdateTracker::default();
 
+        let prevent_unoptimized_threshold = config
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default()
+            .then(|| config.optimizer_config.get_indexing_threshold_kb());
+
         let mut update_handler = UpdateHandler::new(
             collection_name.clone(),
             shared_storage_config.clone(),
@@ -256,6 +262,7 @@ impl LocalShard {
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
+            prevent_unoptimized_threshold,
             clocks.clone(),
             shard_path.into(),
             scroll_read_lock.clone(),

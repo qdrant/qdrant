@@ -23,6 +23,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
     max_optimization_threads: Some(2),
+    prevent_unoptimized: None,
 };
 
 pub fn create_collection_config_with_dim(dim: usize) -> CollectionConfigInternal {
