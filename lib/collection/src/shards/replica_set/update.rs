@@ -735,6 +735,7 @@ mod tests {
         indexing_threshold: Some(50_000),
         flush_interval_sec: 30,
         max_optimization_threads: Some(2),
+        prevent_unoptimized: None,
     };
 
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {

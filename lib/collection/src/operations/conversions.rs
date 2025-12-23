@@ -338,6 +338,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             flush_interval_sec,
             deprecated_max_optimization_threads,
             max_optimization_threads,
+            prevent_unoptimized,
         } = value;
         Ok(Self {
             deleted_threshold,
@@ -354,6 +355,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
                 .or(max_optimization_threads
                     .map(TryFrom::try_from)
                     .transpose()?),
+            prevent_unoptimized,
         })
     }
 }
@@ -410,6 +412,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = optimizer_config;
 
         let HnswConfig {
@@ -513,6 +516,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     flush_interval_sec: Some(flush_interval_sec),
                     deprecated_max_optimization_threads: max_optimization_threads.map(|x| x as u64),
                     max_optimization_threads: Some(From::from(max_optimization_threads)),
+                    prevent_unoptimized,
                 }),
                 wal_config: wal_config.map(|wal_config| {
                     let WalConfig {
@@ -596,6 +600,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec,
             deprecated_max_optimization_threads,
             max_optimization_threads,
+            prevent_unoptimized,
         } = optimizer_config;
 
         let converted_max_optimization_threads: Option<usize> =
@@ -617,6 +622,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             indexing_threshold: indexing_threshold.map(|x| x as usize),
             flush_interval_sec: flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: converted_max_optimization_threads,
+            prevent_unoptimized,
         })
     }
 }

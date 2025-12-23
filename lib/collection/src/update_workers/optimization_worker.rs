@@ -15,8 +15,8 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::LockedSegmentHolder;
-use tokio::sync::Mutex as TokioMutex;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
@@ -55,6 +55,7 @@ impl UpdateWorkers {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        optimization_finished_sender: watch::Sender<()>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -179,6 +180,7 @@ impl UpdateWorkers {
                 total_optimized_points.clone(),
                 &optimizer_resource_budget,
                 sender.clone(),
+                optimization_finished_sender.clone(),
                 limit,
             )
             .await;
@@ -226,6 +228,7 @@ impl UpdateWorkers {
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: &ResourceBudget,
         sender: Sender<OptimizerSignal>,
+        optimization_finished_sender: watch::Sender<()>,
         limit: usize,
     ) {
         let mut new_handles = Self::launch_optimization(
@@ -235,6 +238,10 @@ impl UpdateWorkers {
             optimizer_resource_budget,
             segments.clone(),
             move || {
+                // Notify other components that optimization is finished
+                // We do not care if there are no receivers or if they are lagging behind
+                let _ = optimization_finished_sender.send(());
+
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
                 // If receiver is already dead - we do not care.
