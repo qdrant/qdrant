@@ -61,7 +61,7 @@ docker run -p 6333:6333 qdrant/qdrant
 ```
 
 > [!CAUTION]
-> Starts an insecure deployment without authentication open to all network interfaces. Refer to our [security](https://qdrant.tech/documentation/guides/security/) guide for more details.
+> Starts an insecure deployment without authentication open to all network interfaces. Refer to [secure your instance](https://qdrant.tech/documentation/guides/security/#secure-your-instance) for more details.
 
 Now you can connect to this with any client, including Python:
 
