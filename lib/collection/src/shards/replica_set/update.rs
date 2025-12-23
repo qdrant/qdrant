@@ -98,7 +98,7 @@ impl ShardReplicaSet {
                 return Ok(None);
             }
 
-            ReplicaState::Dead => {
+            ReplicaState::Dead | ReplicaState::ManualRecovery => {
                 return Ok(None);
             }
         };
@@ -597,7 +597,9 @@ impl ShardReplicaSet {
 
             // Ignore errors entirely for dead and listener replicas
             match peer_state {
-                ReplicaState::Dead | ReplicaState::Listener => continue,
+                ReplicaState::Dead | ReplicaState::Listener | ReplicaState::ManualRecovery => {
+                    continue;
+                }
                 ReplicaState::Active
                 | ReplicaState::Initializing
                 | ReplicaState::Partial

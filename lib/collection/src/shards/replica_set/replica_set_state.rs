@@ -118,6 +118,12 @@ pub enum ReplicaState {
     ReshardingScaleDown,
     // Active for readers, Partial for writers
     ActiveRead,
+    // State for manually creation/recovery of a shard.
+    // Usually when snapshot is uploaded.
+    // This state is equivalent to `Partial`, except:
+    // - it can't receive updates
+    // - it is not treated as broken on startup
+    ManualRecovery,
 }
 
 impl ReplicaState {
@@ -130,6 +136,7 @@ impl ReplicaState {
 
             ReplicaState::Dead
             | ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::Initializing
             | ReplicaState::Listener
             | ReplicaState::PartialSnapshot
@@ -148,6 +155,7 @@ impl ReplicaState {
             // False from here on
             ReplicaState::Dead => false,
             ReplicaState::Partial => false,
+            ReplicaState::ManualRecovery => false,
             ReplicaState::Initializing => false,
             ReplicaState::Listener => false,
             ReplicaState::PartialSnapshot => false,
@@ -166,6 +174,7 @@ impl ReplicaState {
             ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
             ReplicaState::Dead => false,
             ReplicaState::ActiveRead => true,
+            ReplicaState::ManualRecovery => false,
         }
     }
 
@@ -181,6 +190,7 @@ impl ReplicaState {
             ReplicaState::ReshardingScaleDown => true, // Acts like Active, until resharding is committed
             // false from here on
             ReplicaState::Partial => false,
+            ReplicaState::ManualRecovery => false,
             ReplicaState::Initializing => false,
             ReplicaState::Listener => false,
             ReplicaState::PartialSnapshot => false,
@@ -196,6 +206,7 @@ impl ReplicaState {
             ReplicaState::Active
             | ReplicaState::Listener
             | ReplicaState::Resharding
+            | ReplicaState::ManualRecovery
             | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Dead
@@ -215,6 +226,7 @@ impl ReplicaState {
     pub fn is_partial_or_recovery(self) -> bool {
         match self {
             ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Resharding
@@ -234,6 +246,7 @@ impl ReplicaState {
             ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Active
