@@ -143,8 +143,10 @@ impl ForwardProxyShard {
         merge_points: bool,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Option<PointIdType>, usize)> {
-        debug_assert!(batch_size > 0);
-        let _update_lock = self.update_lock.lock().await;
+        if batch_size == 0 {
+            debug_assert!(false, "batch size must be greater than zero");
+            return Ok((offset, 0));
+        }
 
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
