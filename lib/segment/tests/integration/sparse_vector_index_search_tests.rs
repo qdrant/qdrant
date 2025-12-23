@@ -629,7 +629,7 @@ fn sparse_vector_index_persistence_test() {
 
     assert_eq!(search_result.len(), top);
 
-    let path = segment.current_path.clone();
+    let path = segment.segment_path.clone();
     drop(segment);
 
     // persistence using rebuild of inverted index

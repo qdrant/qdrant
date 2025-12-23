@@ -72,8 +72,8 @@ pub struct Segment {
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     pub is_alive_flush_lock: IsAliveLock,
-    /// Path of the storage root
-    pub current_path: PathBuf,
+    /// Path to the segment directory
+    pub segment_path: PathBuf,
     pub version_tracker: VersionTracker,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

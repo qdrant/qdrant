@@ -682,7 +682,7 @@ pub trait SegmentOptimizer {
         // If this ends up not being saved due to a crash, the segment will not be used
         match &extra_cow_segment_opt {
             Some(LockedSegment::Original(segment)) => {
-                let segment_path = &segment.read().current_path;
+                let segment_path = &segment.read().segment_path;
                 SegmentVersion::save(segment_path)?;
             }
             Some(LockedSegment::Proxy(_)) => unreachable!(),

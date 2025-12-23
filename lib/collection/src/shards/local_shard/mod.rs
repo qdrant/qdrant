@@ -769,7 +769,7 @@ impl LocalShard {
                     if let Err(err) = segment_guard.check_data_consistency() {
                         log::error!(
                             "Segment {:?} is inconsistent: {}",
-                            segment_guard.current_path,
+                            segment_guard.segment_path,
                             err
                         );
                         return Err(err.into());

@@ -201,7 +201,7 @@ fn ordered_deletion_test() {
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
-        segment.current_path.clone()
+        segment.segment_path.clone()
     };
 
     let segment = load_segment(&path, &AtomicBool::new(false))
@@ -235,7 +235,7 @@ fn skip_deleted_segment() {
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
-        segment.current_path.clone()
+        segment.segment_path.clone()
     };
 
     let new_path = path.with_extension("deleted");

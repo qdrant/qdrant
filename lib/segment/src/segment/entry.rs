@@ -648,7 +648,7 @@ impl SegmentEntry for Segment {
             .filter_map(|v| v.quantized_vectors.borrow().as_ref().map(|q| q.flusher()))
             .collect();
         let state = self.get_state();
-        let current_path = self.current_path.clone();
+        let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
@@ -750,7 +750,7 @@ impl SegmentEntry for Segment {
                 return Ok(());
             }
 
-            Self::save_state(&state, &current_path).map_err(|err| {
+            Self::save_state(&state, &segment_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to flush segment state: {err}"))
             })?;
 
@@ -767,11 +767,11 @@ impl SegmentEntry for Segment {
     }
 
     fn drop_data(self) -> OperationResult<()> {
-        let current_path = self.current_path.clone();
+        let segment_path = self.segment_path.clone();
         drop(self);
-        let mut deleted_path = current_path.clone();
+        let mut deleted_path = segment_path.clone();
         deleted_path.set_extension("deleted");
-        fs::rename(&current_path, &deleted_path)?;
+        fs::rename(&segment_path, &deleted_path)?;
         fs::remove_dir_all(&deleted_path).map_err(|err| {
             OperationError::service_error(format!(
                 "Can't remove segment data at {}, error: {}",
@@ -782,7 +782,7 @@ impl SegmentEntry for Segment {
     }
 
     fn data_path(&self) -> PathBuf {
-        self.current_path.clone()
+        self.segment_path.clone()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {

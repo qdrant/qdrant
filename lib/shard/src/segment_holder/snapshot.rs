@@ -84,7 +84,7 @@ impl SegmentHolder {
         // If this ends up not being saved due to a crash, the segment will not be used
         match &tmp_segment {
             LockedSegment::Original(segment) => {
-                let segment_path = &segment.read().current_path;
+                let segment_path = &segment.read().segment_path;
                 SegmentVersion::save(segment_path)?;
             }
             LockedSegment::Proxy(_) => unreachable!(),

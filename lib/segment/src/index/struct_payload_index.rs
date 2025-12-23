@@ -1230,7 +1230,7 @@ mod tests {
                 )
                 .unwrap();
 
-            segment.current_path.clone()
+            segment.segment_path.clone()
         };
 
         let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {

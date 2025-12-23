@@ -615,7 +615,7 @@ fn create_segment(
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         is_alive_flush_lock: IsAliveLock::new(),
-        current_path: segment_path.to_owned(),
+        segment_path: segment_path.to_owned(),
         version_tracker: Default::default(),
         id_tracker,
         vector_data,
