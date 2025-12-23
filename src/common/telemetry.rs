@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::grpc;
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};
+use itertools::Itertools;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -13,11 +16,14 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
+use tonic::Status;
 use uuid::Uuid;
 
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
-use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
+use crate::common::telemetry_ops::collections_telemetry::{
+    CollectionTelemetryEnum, CollectionsTelemetry,
+};
 use crate::common::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
@@ -41,8 +47,9 @@ pub struct TelemetryCollector {
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct TelemetryData {
     #[anonymize(false)]
-    id: String,
-    pub(crate) app: AppBuildTelemetry,
+    pub(crate) id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) app: Option<AppBuildTelemetry>,
     pub(crate) collections: CollectionsTelemetry,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cluster: Option<ClusterTelemetry>,
@@ -119,7 +126,11 @@ impl TelemetryCollector {
         Ok(TelemetryData {
             id: self.process_id.to_string(),
             collections: collections_telemetry,
-            app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
+            app: Some(AppBuildTelemetry::collect(
+                detail,
+                &self.app_telemetry_collector,
+                &self.settings,
+            )),
             cluster: ClusterTelemetry::collect(access, detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 access,
@@ -132,6 +143,81 @@ impl TelemetryCollector {
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
+        })
+    }
+}
+
+impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
+    type Error = Status;
+
+    fn try_from(value: grpc::PeerTelemetry) -> Result<Self, Self::Error> {
+        let grpc::PeerTelemetry {
+            collections,
+            cluster,
+        } = value;
+
+        let collections = collections
+            .into_values()
+            .map(|collection| {
+                Ok(CollectionTelemetryEnum::Full(Box::new(
+                    CollectionTelemetry::try_from(collection)?,
+                )))
+            })
+            .try_collect::<_, Vec<_>, Status>()?;
+
+        let cluster = cluster.map(ClusterTelemetry::try_from).transpose()?;
+
+        Ok(TelemetryData {
+            id: "".to_string(),
+            app: None,
+            collections: CollectionsTelemetry {
+                number_of_collections: collections.len(),
+                max_collections: None,
+                collections: Some(collections),
+                snapshots: None,
+            },
+            cluster,
+            requests: None,
+            memory: None,
+            hardware: None,
+        })
+    }
+}
+
+impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
+    type Error = Status;
+
+    fn try_from(telemetry_data: TelemetryData) -> Result<Self, Self::Error> {
+        let TelemetryData {
+            id: _,
+            app: _,
+            collections,
+            cluster,
+            requests: _,
+            memory: _,
+            hardware: _,
+        } = telemetry_data;
+
+        let collections = collections
+            .collections
+            .into_iter()
+            .flatten()
+            .map(|telemetry_enum| {
+                match telemetry_enum {
+                    CollectionTelemetryEnum::Full(collection_telemetry) => {
+                        let telemetry = grpc::CollectionTelemetry::from(*collection_telemetry);
+                        let collection_name = telemetry.id.clone();
+                        Ok((collection_name, telemetry))
+                    }
+                    // This only happens when details_level is < 2, which we explicitly fail
+                    CollectionTelemetryEnum::Aggregated(_) => Err(Status::invalid_argument("Expected CollectionTelemetryEnum::Full variant, got CollectionTelemetryEnum::Aggregated")),
+                }
+            })
+            .try_collect()?;
+
+        Ok(grpc::PeerTelemetry {
+            collections,
+            cluster: cluster.map(grpc::ClusterTelemetry::from),
         })
     }
 }

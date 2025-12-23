@@ -35,7 +35,7 @@ pub struct ShardTransfer {
     pub shard_id: ShardId,
     /// Target shard ID if different than source shard ID
     ///
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
