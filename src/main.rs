@@ -401,7 +401,8 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc, health_checker) = if is_distributed_deployment {
+    let (telemetry_collector, tonic_telemetry_collector, dispatcher_arc, health_checker);
+    if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
@@ -418,12 +419,14 @@ fn main() -> anyhow::Result<()> {
         let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
         toc_arc.with_toc_dispatcher(toc_dispatcher);
 
-        let dispatcher_arc = Arc::new(dispatcher);
+        dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector =
+        let telemetry =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+        tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+
+        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
 
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
@@ -431,13 +434,13 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let health_checker = Arc::new(common::health::HealthChecker::spawn(
+        health_checker = Some(Arc::new(common::health::HealthChecker::spawn(
             toc_arc.clone(),
             consensus_state.clone(),
             &runtime_handle,
             // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
             consensus_state.is_new_deployment() && bootstrap.is_some(),
-        ));
+        )));
 
         let handle = Consensus::run(
             &slog_logger,
@@ -447,7 +450,8 @@ fn main() -> anyhow::Result<()> {
             settings.clone(),
             channel_service,
             propose_receiver,
-            tonic_telemetry_collector,
+            telemetry_collector.clone(),
+            tonic_telemetry_collector.clone(),
             toc_arc.clone(),
             runtime_handle.clone(),
             args.reinit,
@@ -499,26 +503,22 @@ fn main() -> anyhow::Result<()> {
                 collections_to_recover_in_consensus,
             ));
         }
-
-        (telemetry_collector, dispatcher_arc, Some(health_checker))
     } else {
         log::info!("Distributed mode disabled");
-        let dispatcher_arc = Arc::new(dispatcher);
+        dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector =
+        let telemetry =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        (telemetry_collector, dispatcher_arc, None)
-    };
 
-    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+        tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
+        health_checker = None;
+    };
 
     //
     // Telemetry reporting
     //
-
-    let reporting_id = telemetry_collector.reporting_id();
-    let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
     if reporting_enabled {
         log::info!("Telemetry reporting enabled, id: {reporting_id}");
