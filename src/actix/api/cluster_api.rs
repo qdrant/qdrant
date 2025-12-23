@@ -2,7 +2,11 @@ use std::future::Future;
 
 use actix_web::{HttpResponse, delete, get, post, put, web};
 use actix_web_validator::Query;
+use api::grpc::GetTelemetryRequest;
+use api::grpc::transport_channel_pool::DEFAULT_GRPC_TIMEOUT;
 use collection::operations::verification::new_unchecked_verification_pass;
+use futures::stream::FuturesUnordered;
+use futures::{StreamExt, TryFutureExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::consensus_ops::ConsensusOperations;
@@ -13,6 +17,12 @@ use validator::Validate;
 
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers;
+use crate::common::telemetry::TelemetryData;
+use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
+
+/// For now, we only handle details_level >= 2
+/// TODO(cluster telemetry): Handle lower levels
+const MIN_CLUSTER_TELEMETRY_DETAILS_LEVEL: u32 = 2;
 
 #[derive(Debug, Deserialize, Validate)]
 struct QueryParams {
@@ -27,6 +37,13 @@ struct QueryParams {
 pub struct MetadataParams {
     #[serde(default)]
     pub wait: bool,
+}
+
+#[derive(Deserialize, JsonSchema, Validate)]
+pub struct ClusterTelemetryParams {
+    details_level: Option<u32>,
+    #[validate(range(min = 1))]
+    timeout: Option<u64>,
 }
 
 #[get("/cluster")]
@@ -177,11 +194,85 @@ async fn delete_cluster_metadata_key(
     .await
 }
 
+#[get("/cluster/telemetry")]
+async fn get_cluster_telemetry(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+    params: Query<ClusterTelemetryParams>,
+) -> HttpResponse {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
+    helpers::time(async move {
+        access.check_global_access(AccessRequirements::new())?;
+
+        let toc = dispatcher.toc(&access, &pass);
+        let channel_service = toc.get_channel_service();
+
+        let details_level = params
+            .details_level
+            .unwrap_or_default()
+            .max(MIN_CLUSTER_TELEMETRY_DETAILS_LEVEL);
+        let timeout = params.timeout.unwrap_or(DEFAULT_GRPC_TIMEOUT.as_secs());
+
+        let all_peers: Vec<_> = channel_service
+            .id_to_address
+            .read()
+            .keys()
+            .copied()
+            .collect();
+
+        let mut futures = all_peers
+            .into_iter()
+            .map(|peer_id| {
+                channel_service
+                    .with_qdrant_client(peer_id, |mut client| async move {
+                        let request = GetTelemetryRequest {
+                            details_level,
+                            timeout,
+                        };
+
+                        client.get_telemetry(request).await
+                    })
+                    .map_err(move |err| (peer_id, err))
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        let mut telemetries = Vec::with_capacity(futures.len());
+        let mut missing_peers = Vec::new();
+
+        while let Some(result) = futures.next().await {
+            match result {
+                Ok(response) => {
+                    let telemetry =
+                        TelemetryData::try_from(response.into_inner().result.ok_or_else(|| {
+                            StorageError::service_error(
+                                "GetTelemetryResponse is missing `result` field",
+                            )
+                        })?)
+                        .map_err(|err| StorageError::service_error(err.to_string()))?;
+                    telemetries.push(telemetry);
+                }
+                Err((peer_id, err)) => {
+                    log::error!("Internal telemetry service failed for peer {peer_id}: {err:#?}");
+                    missing_peers.push(peer_id);
+                }
+            };
+        }
+
+        let distributed_telemetry =
+            DistributedTelemetryData::resolve_telemetries(telemetries, missing_peers)?;
+
+        Ok(distributed_telemetry)
+    })
+    .await
+}
+
 // Configure services
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
     cfg.service(cluster_status)
         .service(remove_peer)
         .service(recover_current_peer)
+        .service(get_cluster_telemetry)
         .service(get_cluster_metadata_keys)
         .service(get_cluster_metadata_key)
         .service(update_cluster_metadata_key)
