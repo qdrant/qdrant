@@ -112,10 +112,10 @@ message ShardCleanStatusTelemetry {
 
 message ClusterTelemetry {
   ClusterStatusTelemetry status = 1;
-  reserved 2;                      // config
-  map<uint64, PeerInfo> peers = 3; // peers
-  reserved 4;                      // peer_metadata
-  reserved 5;                      // metadata
+  reserved 2; // config
+  map<uint64, PeerInfo> peers = 3;
+  reserved 4; // peer_metadata
+  reserved 5; // metadata
 }
 
 message ClusterStatusTelemetry {

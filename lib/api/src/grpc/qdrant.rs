@@ -12602,7 +12602,6 @@ pub mod shard_clean_status_telemetry {
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
-    /// peers
     #[prost(map = "uint64, message", tag = "3")]
     pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }

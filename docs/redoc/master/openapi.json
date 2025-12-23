@@ -11670,7 +11670,7 @@
             "minimum": 0
           },
           "to_shard_id": {
-            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardStreamRecords` transfer method.",
+            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardingStreamRecords` transfer method.",
             "type": "integer",
             "format": "uint32",
             "minimum": 0,

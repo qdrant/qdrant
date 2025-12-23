@@ -273,7 +273,7 @@ impl TryFrom<grpc::AliasOperations> for AliasOperations {
             Some(grpc::alias_operations::Action::CreateAlias(create)) => Ok(create.into()),
             Some(grpc::alias_operations::Action::DeleteAlias(delete)) => Ok(delete.into()),
             Some(grpc::alias_operations::Action::RenameAlias(rename)) => Ok(rename.into()),
-            _ => Err(Status::invalid_argument("Malformed AliasOperation type")),
+            None => Err(Status::invalid_argument("Malformed AliasOperation type")),
         }
     }
 }
