@@ -289,7 +289,11 @@ impl TransportChannelPool {
     ) -> Result<T, RequestError<Status>> {
         let mut retries_left = retries;
         let mut attempt = 0;
-        let max_timeout = timeout.unwrap_or_else(|| self.grpc_timeout + self.connection_timeout);
+
+        // Actual timeout must be slightly larger than request timeout, so that in case
+        // of timeout even, we have a headroom to properly handle and report it.
+        let max_timeout =
+            timeout.unwrap_or_else(|| self.request_timeout() + self.connection_timeout);
 
         loop {
             let request_result: Result<T, _> = self.make_request(uri, &f, max_timeout).await;
@@ -399,5 +403,10 @@ impl TransportChannelPool {
     ) -> Result<T, RequestError<Status>> {
         self.with_channel_timeout(uri, f, None, DEFAULT_RETRIES)
             .await
+    }
+
+    /// Default time to wait for a request to complete.
+    pub fn request_timeout(&self) -> Duration {
+        self.grpc_timeout
     }
 }

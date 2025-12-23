@@ -194,6 +194,7 @@ impl ShardOperation for ProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
@@ -246,7 +247,7 @@ impl ShardOperation for ProxyShard {
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
             local_shard
-                .update(operation, wait, hw_measurement_acc)
+                .update(operation, wait, timeout, hw_measurement_acc)
                 .await
         }
     }

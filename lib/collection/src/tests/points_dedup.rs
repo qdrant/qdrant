@@ -138,7 +138,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true, HwMeasurementAcc::new(), false)
+            .update_local(op, true, None, HwMeasurementAcc::new(), false)
             .await
             .expect("failed to insert points");
     }

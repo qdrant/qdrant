@@ -111,7 +111,13 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     ));
     let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
         .await
         .unwrap();
 
