@@ -153,10 +153,7 @@ impl ForwardProxyShard {
                 self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
                     .await?
             }
-            None => {
-                self.read_batch(offset, batch_size, self.filter.as_deref(), runtime_handle)
-                    .await?
-            }
+            None => self.read_batch(offset, batch_size, runtime_handle).await?,
         };
 
         // Only wait on last batch
@@ -205,7 +202,6 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        filter: Option<&Filter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
         let limit = batch_size + 1;
@@ -217,7 +213,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &WithVector::Bool(true),
-                filter,
+                self.filter.as_deref(),
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
