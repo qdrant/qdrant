@@ -1,4 +1,3 @@
-use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,7 +38,7 @@ pub struct UpdateParams {
     #[serde(default)]
     pub ordering: WriteOrdering,
     #[serde(default)]
-    pub timeout: Option<NonZeroU64>,
+    pub timeout: Option<Duration>,
 }
 
 impl UpdateParams {
@@ -51,19 +50,14 @@ impl UpdateParams {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
-            timeout: timeout.and_then(NonZeroU64::new),
+            timeout: timeout.map(Duration::from_secs),
         };
 
         Ok(params)
     }
 
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout
-            .map(|timeout| Duration::from_secs(timeout.get()))
-    }
-
     pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
-        self.timeout.map(|timeout| timeout.get() as usize)
+        self.timeout.map(|timeout| timeout.as_secs() as usize)
     }
 }
 
@@ -886,7 +880,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, params.timeout())
+        .submit_collection_meta_op(consensus_op, access, params.timeout)
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -961,7 +955,7 @@ pub async fn do_delete_index(
             consensus_op,
             access,
             // Use per-request timeout from params if provided
-            params.timeout(),
+            params.timeout,
         )
         .await?;
 
@@ -1058,7 +1052,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
-        params.timeout(),
+        params.timeout,
         ordering,
         shard_selector,
         access,
