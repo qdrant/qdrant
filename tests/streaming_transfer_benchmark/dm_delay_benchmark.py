@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -207,7 +208,9 @@ def run_single_config(
         return None
 
     cluster_dir = delayed_path / f"cluster_{read_ms}_{write_ms}"
-    cluster_dir.mkdir(parents=True, exist_ok=True)
+    if cluster_dir.exists():
+        shutil.rmtree(cluster_dir)
+    cluster_dir.mkdir(parents=True)
 
     try:
         print(f"  Starting cluster on delayed storage...")
@@ -269,6 +272,7 @@ def run_dm_delay(
     if latencies is None:
         latencies = [
             (0, 0),      # Baseline (no delay)
+            # (1, 1),      # Cloud Qdrant
             (5, 5),      # Light SSD
             (10, 10),    # Typical SSD
             (20, 20),    # Slow SSD / EBS gp3
