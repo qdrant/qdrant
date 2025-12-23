@@ -158,6 +158,14 @@ pub struct OptimizersConfigDiff {
     /// If "auto" - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
     pub max_optimization_threads: Option<MaxOptimizationThreads>,
+
+    /// If this option is set, service will try to prevent creation of large unoptimized segments.
+    /// When enabled, updates may be delayed if there are unoptimized segments larger than indexing threshold.
+    /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+    /// Using this option may lead to increased delay between submitting an update and its application.
+    /// Default is disabled.
+    #[serde(default)]
+    pub prevent_unoptimized: Option<bool>,
 }
 
 impl std::hash::Hash for OptimizersConfigDiff {
@@ -172,6 +180,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = self;
 
         deleted_threshold.map(f64::to_le_bytes).hash(state);
@@ -182,6 +191,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
         indexing_threshold.hash(state);
         flush_interval_sec.hash(state);
         max_optimization_threads.hash(state);
+        prevent_unoptimized.hash(state);
     }
 }
 
@@ -198,6 +208,7 @@ impl PartialEq for OptimizersConfigDiff {
             && self.indexing_threshold == other.indexing_threshold
             && self.flush_interval_sec == other.flush_interval_sec
             && self.max_optimization_threads == other.max_optimization_threads
+            && self.prevent_unoptimized == other.prevent_unoptimized
     }
 }
 
@@ -262,6 +273,7 @@ impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = diff;
 
         OptimizersConfig {
@@ -275,6 +287,7 @@ impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec: flush_interval_sec.unwrap_or(self.flush_interval_sec),
             max_optimization_threads: max_optimization_threads
                 .map_or(self.max_optimization_threads, From::from),
+            prevent_unoptimized: prevent_unoptimized.or(self.prevent_unoptimized),
         }
     }
 }
@@ -450,6 +463,7 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = config;
 
         Self {
@@ -462,6 +476,7 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec: Some(flush_interval_sec),
             max_optimization_threads: max_optimization_threads.map(MaxOptimizationThreads::Threads),
+            prevent_unoptimized,
         }
     }
 }
@@ -549,6 +564,7 @@ mod tests {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(1),
+            prevent_unoptimized: None,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
@@ -573,6 +589,7 @@ mod tests {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(1),
+            prevent_unoptimized: None,
         };
 
         let update: OptimizersConfigDiff = serde_json::from_str(json_diff).unwrap();
