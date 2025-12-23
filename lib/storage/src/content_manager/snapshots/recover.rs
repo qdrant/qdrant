@@ -273,6 +273,22 @@ async fn _do_recover_from_snapshot(
             continue;
         }
 
+        // Staging delay: Allow observing Partial state before activation
+        #[cfg(feature = "staging")]
+        {
+            let delay_secs: f64 = std::env::var("QDRANT__STAGING__SNAPSHOT_RECOVERY_DELAY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            if delay_secs > 0.0 {
+                log::debug!(
+                    "Staging: Delaying shard {shard_id} activation for {delay_secs}s (shard is in Partial state)"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                log::debug!("Staging: Delay complete, proceeding with activation");
+            }
+        }
+
         // If this is the only replica, we can activate it
         // If not - de-sync is possible, so we need to run synchronization
         let other_active_replicas: Vec<_> = shard_info
