@@ -1,10 +1,3 @@
-use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
-};
-use crate::content_manager::snapshots::download::download_snapshot;
-use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
-use crate::{StorageError, TableOfContent};
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
 use collection::common::sha_256::{hash_file, hashes_equal};
@@ -19,6 +12,14 @@ use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
+
+use crate::content_manager::collection_meta_ops::{
+    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
+};
+use crate::content_manager::snapshots::download::download_snapshot;
+use crate::dispatcher::Dispatcher;
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
     toc: &TableOfContent,
