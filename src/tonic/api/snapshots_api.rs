@@ -24,6 +24,7 @@ use crate::common;
 use crate::common::collections::{do_create_snapshot, do_list_snapshots};
 use crate::common::http_client::HttpClient;
 use crate::tonic::auth::extract_access;
+use crate::common::telemetry_ops::request_context::set_collection_context;
 
 pub struct SnapshotsService {
     dispatcher: Arc<Dispatcher>,
@@ -42,6 +43,7 @@ impl Snapshots for SnapshotsService {
         mut request: Request<CreateSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
         let access = extract_access(&mut request);
         let collection_name = request.into_inner().collection_name;
         let timing = Instant::now();
@@ -68,7 +70,8 @@ impl Snapshots for SnapshotsService {
         mut request: Request<ListSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         validate(request.get_ref())?;
-
+        set_collection_context(&request.get_ref().collection_name);
+        
         let timing = Instant::now();
         let access = extract_access(&mut request);
         let ListSnapshotsRequest { collection_name } = request.into_inner();
@@ -94,6 +97,7 @@ impl Snapshots for SnapshotsService {
         mut request: Request<DeleteSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         validate(request.get_ref())?;
+        set_collection_context(&request.get_ref().collection_name);
 
         let timing = Instant::now();
         let access = extract_access(&mut request);
@@ -186,6 +190,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         mut request: Request<CreateShardSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let access = extract_access(&mut request);
+        set_collection_context(&request.get_ref().collection_name);
         let request = request.into_inner();
         validate_and_log(&request);
 
@@ -210,6 +215,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         mut request: Request<ListShardSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let access = extract_access(&mut request);
+        set_collection_context(&request.get_ref().collection_name);
         let request = request.into_inner();
         validate_and_log(&request);
 
@@ -234,6 +240,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         mut request: Request<DeleteShardSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let access = extract_access(&mut request);
+        set_collection_context(&request.get_ref().collection_name);
         let request = request.into_inner();
         validate_and_log(&request);
 
@@ -258,6 +265,7 @@ impl ShardSnapshots for ShardSnapshotsService {
         mut request: Request<RecoverShardSnapshotRequest>,
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
         let access = extract_access(&mut request);
+        set_collection_context(&request.get_ref().collection_name);
         let request = request.into_inner();
         validate_and_log(&request);
 

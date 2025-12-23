@@ -37,6 +37,7 @@ use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
+use crate::common::telemetry_ops::request_context::set_collection_context;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -455,6 +456,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<UpsertPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().upsert_points {
+            set_collection_context(&r.collection_name);
+        }
 
         let inference_token = extract_token(&request);
         let inference_params = InferenceParams::new(inference_token.clone(), None);
@@ -468,6 +472,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<DeletePointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().delete_points {
+            set_collection_context(&r.collection_name);
+        }
 
         self.delete_internal(request.into_inner()).await
     }
@@ -477,6 +484,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<UpdateVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().update_vectors {
+            set_collection_context(&r.collection_name);
+        }
 
         let inference_token = extract_token(&request);
         let inference_params = InferenceParams::new(inference_token.clone(), None);
@@ -490,6 +500,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<DeleteVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().delete_vectors {
+            set_collection_context(&r.collection_name);
+        }
 
         self.delete_vectors_internal(request.into_inner()).await
     }
@@ -499,6 +512,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().set_payload_points {
+            set_collection_context(&r.collection_name);
+        }
 
         self.set_payload_internal(request.into_inner()).await
     }
@@ -508,6 +524,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().set_payload_points {
+            set_collection_context(&r.collection_name);
+        }
 
         self.overwrite_payload_internal(request.into_inner()).await
     }
@@ -517,6 +536,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<DeletePayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().delete_payload_points {
+            set_collection_context(&r.collection_name);
+        }
 
         self.delete_payload_internal(request.into_inner()).await
     }
@@ -526,6 +548,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<ClearPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().clear_payload_points {
+            set_collection_context(&r.collection_name);
+        }
 
         self.clear_payload_internal(request.into_inner()).await
     }
@@ -535,6 +560,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<CreateFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().create_field_index_collection {
+            set_collection_context(&r.collection_name);
+        }
 
         self.create_field_index_internal(request.into_inner()).await
     }
@@ -544,6 +572,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<DeleteFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().delete_field_index_collection {
+            set_collection_context(&r.collection_name);
+        }
 
         self.delete_field_index_internal(request.into_inner()).await
     }
@@ -638,6 +669,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<CoreSearchBatchPointsInternal>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
 
         let CoreSearchBatchPointsInternal {
             collection_name,
@@ -676,6 +708,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<RecommendPointsInternal>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().recommend_points {
+            set_collection_context(&r.collection_name);
+        }
 
         let RecommendPointsInternal {
             recommend_points,
@@ -707,6 +742,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<ScrollPointsInternal>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().scroll_points {
+            set_collection_context(&r.collection_name);
+        }
 
         let ScrollPointsInternal {
             scroll_points,
@@ -737,6 +775,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<GetPointsInternal>,
     ) -> Result<Response<GetResponse>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().get_points {
+            set_collection_context(&r.collection_name);
+        }
 
         let GetPointsInternal {
             get_points,
@@ -767,6 +808,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<CountPointsInternal>,
     ) -> Result<Response<CountResponse>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().count_points {
+            set_collection_context(&r.collection_name);
+        }
 
         let CountPointsInternal {
             count_points,
@@ -794,6 +838,9 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        if let Some(r) = &request.get_ref().sync_points {
+            set_collection_context(&r.collection_name);
+        }
         let inference_token = extract_token(&request);
 
         // Internal operation, we don't expect timeout here
@@ -808,6 +855,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<QueryBatchPointsInternal>,
     ) -> Result<Response<QueryBatchResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
 
         let QueryBatchPointsInternal {
             collection_name,
@@ -837,6 +885,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<FacetCountsInternal>,
     ) -> Result<Response<FacetResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        set_collection_context(&request.get_ref().collection_name);
 
         let request_inner = request.into_inner();
         let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
