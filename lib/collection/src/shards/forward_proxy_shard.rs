@@ -198,7 +198,7 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn read_batch(
+    pub(crate) async fn read_batch(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
@@ -248,7 +248,7 @@ impl ForwardProxyShard {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn read_batch_with_hashring(
+    pub(crate) async fn read_batch_with_hashring(
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,

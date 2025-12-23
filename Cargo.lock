@@ -1180,6 +1180,7 @@ dependencies = [
  "api",
  "approx",
  "arc-swap",
+ "async-stream",
  "async-trait",
  "atomicwrites",
  "bytemuck",

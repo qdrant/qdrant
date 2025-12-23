@@ -1,16 +1,25 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use futures::{Stream, StreamExt};
 use parking_lot::Mutex;
+use segment::types::PointIdType;
 use semver::Version;
+use shard::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
+};
+use shard::operations::{CollectionUpdateOperations, OperationWithClockTag};
 
 use super::transfer_tasks_pool::TransferTaskProgress;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::shard::ShardId;
+use crate::shards::shard::{Shard, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_trait::ShardOperation;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
@@ -112,39 +121,8 @@ pub(super) async fn transfer_stream_records(
         cutoff = replica_set.shard_recovery_point().await?;
     }
 
-    // Transfer contents batch by batch
-    log::trace!("Transferring points to shard {shard_id} by streaming records");
-
-    let mut offset = None;
-
-    loop {
-        let shard_holder = shard_holder.read().await;
-
-        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-            // Forward proxy gone?!
-            // That would be a programming error.
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} is not found"
-            )));
-        };
-
-        let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
-            .await?;
-
-        offset = new_offset;
-        progress.lock().add(count);
-
-        #[cfg(feature = "staging")]
-        if let Some(delay) = staging_delay {
-            tokio::time::sleep(delay).await;
-        }
-
-        // If this is the last batch, finalize
-        if offset.is_none() {
-            break;
-        }
-    }
+    // Transfer all data in batches
+    transfer_batches(shard_holder, progress, shard_id, merge_points, None).await?;
 
     // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
     if sync_intermediate_state {
@@ -183,4 +161,140 @@ pub(super) async fn transfer_stream_records(
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
     Ok(())
+}
+
+async fn transfer_batches(
+    shard_holder: Arc<LockedShardHolder>,
+    progress: Arc<Mutex<TransferTaskProgress>>,
+    shard_id: ShardId,
+    merge_points: bool,
+    hashring_filter: Option<&HashRingRouter>,
+) -> CollectionResult<()> {
+    // Transfer contents batch by batch
+    log::trace!("Transferring points to shard {shard_id} by streaming records");
+
+    let mut stream = stream_scroll_chunks(shard_holder.clone(), shard_id, hashring_filter);
+
+    while let Some(stream_item) = stream.next().await {
+        let Chunk {
+            from: from_id,
+            to: to_id,
+            points,
+        } = stream_item?;
+
+        // Only wait on last batch
+        let wait = to_id.is_none();
+        let count = points.len();
+
+        // Use sync API to leverage potentially existing points
+        // Normally use SyncPoints, to completely replace everything in the target shard
+        // For resharding we need to merge points from multiple transfers, requiring a different operation
+        // Same when there is a filter, as we are only transferring a subset of points
+        let point_operation = if !merge_points {
+            PointOperations::SyncPoints(PointSyncOperation {
+                from_id,
+                to_id,
+                points,
+            })
+        } else {
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+        };
+        let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
+
+        let shard_holder = shard_holder.read().await;
+
+        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+            // Forward proxy gone?!
+            // That would be a programming error.
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} is not found"
+            )));
+        };
+
+        let local = replica_set.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Cannot transfer batch from shard {shard_id} because it is not proxified"
+            )));
+        };
+
+        proxy
+            .remote_shard
+            .update(
+                OperationWithClockTag::from(insert_points_operation),
+                wait,
+                HwMeasurementAcc::disposable(), // Internal operation
+            )
+            .await?;
+
+        progress.lock().add(count);
+    }
+
+    Ok(())
+}
+
+struct Chunk {
+    from: Option<PointIdType>,
+    to: Option<PointIdType>,
+    points: Vec<PointStructPersisted>,
+}
+
+/// Create an async stream yielding chunks of points from the shard
+///
+/// This stream is special in the sense that it doesn't hold any shard holder or replica set locks
+/// in between yields. Each iteration acquires the locks anew.
+fn stream_scroll_chunks<'a>(
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+    hashring_filter: Option<&'a HashRingRouter>,
+) -> impl Stream<Item = CollectionResult<Chunk>> + 'a {
+    async_stream::try_stream! {
+        let mut offset: Option<PointIdType> = None;
+
+        loop {
+            let (points, next_offset) = {
+            let shard_holder = shard_holder.read().await;
+
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+                // Forward proxy gone?!
+                // That would be a programming error.
+                break Err(CollectionError::service_error(format!(
+                    "Shard {shard_id} is not found",
+                )));
+            };
+
+            let local = replica_set.local.read().await;
+
+            let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+                break Err(CollectionError::service_error(format!("Cannot transfer batch from shard {shard_id} because it is not proxified")));
+            };
+
+            match hashring_filter {
+                Some(hashring_filter) => {
+                    proxy.read_batch_with_hashring(offset, TRANSFER_BATCH_SIZE, hashring_filter, &replica_set.search_runtime)
+                        .await?
+                }
+                None => {
+                    proxy.read_batch(offset, TRANSFER_BATCH_SIZE, &replica_set.search_runtime)
+                        .await?
+                }
+            }
+            };
+
+            yield Chunk { from: offset, to: next_offset, points: points };
+
+            offset = next_offset;
+
+            #[cfg(feature = "staging")]
+            if let Some(delay) = staging_delay {
+                tokio::time::sleep(delay).await;
+            }
+
+            // If this is the last batch, finalize
+            if offset.is_none() {
+                return;
+            }
+        }?
+    }.boxed()
 }

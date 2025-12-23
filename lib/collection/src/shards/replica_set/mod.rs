@@ -91,7 +91,7 @@ use crate::shards::shard_config::ShardConfig;
 /// Perform updates on all replicas and report error if there is at least one failure.
 ///
 pub struct ShardReplicaSet {
-    local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
+    pub(crate) local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
     replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
@@ -111,7 +111,7 @@ pub struct ShardReplicaSet {
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
-    search_runtime: Handle,
+    pub(crate) search_runtime: Handle,
     optimizer_resource_budget: ResourceBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,

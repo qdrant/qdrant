@@ -361,7 +361,7 @@ impl ShardReplicaSet {
         let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
             return Err(CollectionError::service_error(format!(
                 "Cannot transfer batch from shard {} because it is not proxified",
-                self.shard_id
+                self.shard_id,
             )));
         };
 
