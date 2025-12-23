@@ -1,6 +1,6 @@
 #![expect(dead_code)]
 
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use collection::operations::types::{ReshardingInfo, ShardTransferInfo};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -76,13 +76,11 @@ pub struct DistributedPeerInfo {
 
 impl DistributedTelemetryData {
     pub fn resolve_telemetries(
-        mut telemetries: Vec<TelemetryData>,
+        telemetries: Vec<TelemetryData>,
         missing_peers: Vec<PeerId>,
     ) -> StorageResult<Self> {
         // Use the telemetry from node with highest term/commit
-        sort_telemetries_by_term_and_commit(&mut telemetries);
-        let base_telemetry = telemetries
-            .first()
+        let base_telemetry = newest_telemetry(&telemetries)
             .ok_or_else(|| StorageError::service_error("Could not get telemetry from cluster"))?;
 
         // Create a map of peer_id -> TelemetryData for quick lookup
@@ -115,8 +113,8 @@ fn aggregate_collections(
     telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
     base_telemetry: &TelemetryData,
 ) -> Option<HashMap<String, DistributedCollectionTelemetry>> {
-    let mut collections = HashMap::default();
     let base_collections = base_telemetry.collections.collections.as_ref()?;
+    let mut collections = HashMap::with_capacity(base_collections.len());
     let base_peer_id = base_telemetry.cluster.as_ref()?.status.as_ref()?.peer_id?;
 
     for collection_enum in base_collections {
@@ -167,10 +165,23 @@ fn aggregate_shard_transfers(
             })
     };
 
-    let get_transfer_from_source = |from, to, shard_id| {
-        get_transfers(from)?
-            .iter()
-            .find(|t| t.from == from && t.to == to && t.shard_id == shard_id)
+    let get_transfer_from_source = |base_transfer: &ShardTransferInfo| {
+        let ShardTransferInfo {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync: _,
+            method: _,
+            comment: _,
+        } = base_transfer;
+
+        get_transfers(*from)?.iter().find(|t| {
+            t.from == *from
+                && t.to == *to
+                && t.shard_id == *shard_id
+                && t.to_shard_id == *to_shard_id
+        })
     };
 
     let Some(base_transfers) = get_transfers(base_peer_id) else {
@@ -182,7 +193,7 @@ fn aggregate_shard_transfers(
     base_transfers
         .iter()
         .map(|base_transfer| {
-            get_transfer_from_source(base_transfer.from, base_transfer.to, base_transfer.shard_id)
+            get_transfer_from_source(base_transfer)
                 .cloned()
                 .unwrap_or_else(|| base_transfer.clone())
         })
