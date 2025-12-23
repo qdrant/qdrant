@@ -1,5 +1,4 @@
 #![expect(dead_code)]
-use std::cmp::Reverse;
 
 use ahash::HashMap;
 use collection::operations::types::{ReshardingInfo, ShardTransferInfo};
@@ -285,6 +284,8 @@ fn aggregate_peers_info(
 
     // Add any failed peers that aren't in the all_peers list
     for peer_id in missing_peers {
+        debug_assert!(false, "all missing peers should have been listed already");
+
         if distributed_peers_info.contains_key(&peer_id) {
             continue;
         }
@@ -315,18 +316,19 @@ fn aggregate_peers_info(
     Some(distributed_peers_info)
 }
 
-fn sort_telemetries_by_term_and_commit(telemetries: &mut [TelemetryData]) {
-    telemetries.sort_by_cached_key(|telemetry| {
-        let sort_key = telemetry
+/// Return the telemetry with the highest term/commit
+///
+/// Picks item in the following order (`Option<(term, commit)>`):
+/// - `Some((1, 0))`
+/// - `Some((0, 1))`
+/// - `Some((0, 0))`
+/// - `None`
+fn newest_telemetry(telemetries: &[TelemetryData]) -> Option<&TelemetryData> {
+    telemetries.iter().max_by_key(|telemetry| {
+        telemetry
             .cluster
             .as_ref()
             .and_then(|cluster| cluster.status.as_ref())
-            .map(|status| (status.term, status.commit));
-
-        /*
-        Option<(term, commit)> will sort [None, Some((0, 0)), Some((0, 1)), Some((1, 0))]
-        so we apply reverse to have the highest term/commit first
-        */
-        Reverse(sort_key)
-    });
+            .map(|status| (status.term, status.commit))
+    })
 }
