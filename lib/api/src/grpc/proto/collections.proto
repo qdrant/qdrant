@@ -505,6 +505,8 @@ message UpdateCollection {
   // Arbitrary JSON-like metadata for the collection, will be merged with
   // already stored metadata
   map<string, Value> metadata = 10;
+  // New WAL parameters for the collection
+  optional WalConfigDiff wal_config = 11;
 }
 
 message DeleteCollection {
