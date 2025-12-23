@@ -48,7 +48,8 @@ class PartialMonitor(threading.Thread):
 
     def run(self):
         while not self._stop_event.is_set():
-            if "Partial" in get_shard_states(self.target_url).values():
+            states = set(get_shard_states(self.target_url).values())
+            if "Partial" in states or "ManualRecovery" in states:
                 self.killed = kill_peer(self.target_url)
                 return
             else:
