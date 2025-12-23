@@ -287,10 +287,19 @@ impl UpdateWorkers {
                     break;
                 }
 
+                let nonoptimal_segment_uuids = {
+                    let segments = segments.read();
+                    nonoptimal_segment_ids
+                        .iter()
+                        .filter_map(|id| segments.get(*id))
+                        .map(|segment| segment.get().read().segment_uuid())
+                        .collect::<Vec<_>>()
+                };
+
                 log::debug!(
                     "Optimizer '{}' running on segments: {:?}",
                     optimizer.name(),
-                    &nonoptimal_segment_ids
+                    &nonoptimal_segment_uuids
                 );
 
                 // Determine how many Resources we prefer for optimization task, acquire permit for it
@@ -334,7 +343,11 @@ impl UpdateWorkers {
                 let resource_budget = optimizer_resource_budget.clone();
 
                 // Track optimizer status
-                let (tracker, progress) = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                let (tracker, progress) = Tracker::start(
+                    optimizer.as_ref().name(),
+                    nsi.clone(),
+                    nonoptimal_segment_uuids,
+                );
                 let tracker_handle = tracker.handle();
 
                 let handle = spawn_stoppable(move |stopped| {
