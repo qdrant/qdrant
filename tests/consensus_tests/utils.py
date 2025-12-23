@@ -143,7 +143,7 @@ def init_pytest_log_folder() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> str:
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False, memory_limit: str = None) -> str:
     if extra_env is None:
         extra_env = {}
     p2p_port = get_port() if port is None else port + 0
@@ -174,16 +174,17 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     if reinit:
         args.append("--reinit")
 
-    # Wrap with systemd-run to throttle CPU to investigate issues
-    # wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
-    # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
+    # Wrap with systemd-run to limit memory (forces page cache eviction)
+    if memory_limit:
+        args = ["systemd-run", "--user", "--scope", "-p", f"MemoryMax={memory_limit}", "--"] + args
+
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port)
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> Tuple[str, str]:
+def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False, uris_in_env=False, memory_limit: str = None) -> Tuple[str, str]:
     if extra_env is None:
         extra_env = {}
 
@@ -214,15 +215,16 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     if reinit:
         args.append("--reinit")
 
-    # Wrap with systemd-run to throttle CPU to investigate issues
-    # wrapped_cmd = ["systemd-run", "--user", "--scope", "-p", "CPUQuota=20%", "--"] + args
-    # proc = Popen(wrapped_cmd, env=env, cwd=peer_dir, stdout=log_file)
+    # Wrap with systemd-run to limit memory (forces page cache eviction)
+    if memory_limit:
+        args = ["systemd-run", "--user", "--scope", "-p", f"MemoryMax={memory_limit}", "--"] + args
+
     proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix=""):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False, log_file_prefix="", memory_limit: str = None):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -231,7 +233,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
 
     # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], f"{log_file_prefix}peer_0_0.log", port=port_seed,
-                                                          extra_env=extra_env, uris_in_env=uris_in_env)
+                                                          extra_env=extra_env, uris_in_env=uris_in_env, memory_limit=memory_limit)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -242,7 +244,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     for i in range(1, len(peer_dirs)):
         if port_seed is not None:
             port = port_seed + i * 100
-        peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env, memory_limit=memory_limit))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)

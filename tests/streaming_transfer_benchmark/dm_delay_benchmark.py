@@ -182,7 +182,8 @@ def run_single_config(
     write_ms: int,
     points: int,
     dims: int,
-    runs: int
+    runs: int,
+    memory_limit: str = None
 ) -> Optional[Result]:
     """
     Run benchmark for a single latency configuration.
@@ -214,7 +215,7 @@ def run_single_config(
 
     try:
         print(f"  Starting cluster on delayed storage...")
-        uris, dirs, _ = start_cluster(cluster_dir, num_peers=2, port_seed=None)
+        uris, dirs, _ = start_cluster(cluster_dir, num_peers=2, port_seed=None, memory_limit=memory_limit)
         print(f"    Peer 0: {uris[0]}")
         print(f"    Peer 1: {uris[1]}")
 
@@ -258,7 +259,8 @@ def run_dm_delay(
     points: int,
     dims: int,
     runs: int,
-    latencies: List[Tuple[int, int]] = None
+    latencies: List[Tuple[int, int]] = None,
+    memory_limit: str = None
 ) -> Result:
     """
     Test transfer throughput with various disk latencies using dm-delay.
@@ -268,11 +270,13 @@ def run_dm_delay(
         dims: Vector dimensions
         runs: Number of runs per latency configuration
         latencies: List of (read_delay_ms, write_delay_ms) tuples
+        memory_limit: Memory limit for each Qdrant peer (e.g., '512M', '1G')
+                      Forces page cache eviction for realistic disk I/O
     """
     if latencies is None:
         latencies = [
             (0, 0),      # Baseline (no delay)
-            # (1, 1),      # Cloud Qdrant
+            (1, 1),      # Cloud Qdrant
             (5, 5),      # Light SSD
             (10, 10),    # Typical SSD
             (20, 20),    # Slow SSD / EBS gp3
@@ -298,7 +302,7 @@ def run_dm_delay(
     all_results = []
     try:
         for read_ms, write_ms in latencies:
-            result = run_single_config(dm, read_ms, write_ms, points, dims, runs)
+            result = run_single_config(dm, read_ms, write_ms, points, dims, runs, memory_limit)
             if result:
                 all_results.append(result)
     except KeyboardInterrupt:
@@ -377,6 +381,9 @@ Prerequisites:
                         help="Comma-separated read:write latency pairs (e.g., '0:0,10:10,20:20')")
     parser.add_argument('--output', '-o', type=Path, default=Path("benchmark_results"),
                         help="Output directory for results (default: benchmark_results)")
+    parser.add_argument('--memory-limit', '-m', type=str, default=None,
+                        help="Memory limit per Qdrant peer (e.g., '512M', '1G'). "
+                             "Forces page cache eviction for realistic disk I/O")
     args = parser.parse_args()
 
     # Parse latencies
@@ -388,7 +395,7 @@ Prerequisites:
             latencies.append((int(read_ms), int(write_ms)))
 
     # Run benchmark
-    result = run_dm_delay(args.points, args.dims, args.runs, latencies)
+    result = run_dm_delay(args.points, args.dims, args.runs, latencies, args.memory_limit)
 
     # Save results
     args.output.mkdir(parents=True, exist_ok=True)
