@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::sync::Arc;
 
 use actix_web::{HttpResponse, delete, get, post, put, web};
 use actix_web_validator::Query;
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::AccessRequirements;
+use storage::rbac::{Access, AccessRequirements};
 use validator::Validate;
 
 use crate::actix::auth::ActixAccess;
@@ -27,6 +28,39 @@ struct QueryParams {
 pub struct MetadataParams {
     #[serde(default)]
     pub wait: bool,
+}
+
+// Actix specific code
+async fn do_remove_peer(
+    dispatcher: Arc<Dispatcher>,
+    peer_id: u64,
+    params: QueryParams,
+    access: Access,
+) -> Result<bool, StorageError> {
+    access.check_global_access(AccessRequirements::new().manage())?;
+
+    let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
+
+    let has_shards = toc.peer_has_shards(peer_id).await;
+    if !params.force && has_shards {
+        return Err(StorageError::BadRequest {
+            description: format!("Cannot remove peer {peer_id} as there are shards on it"),
+        });
+    }
+
+    match dispatcher.consensus_state() {
+        Some(consensus_state) => {
+            consensus_state
+                .propose_consensus_op_with_await(
+                    ConsensusOperations::RemovePeer(peer_id),
+                    params.timeout.map(std::time::Duration::from_secs),
+                )
+                .await
+        }
+        None => Err(StorageError::BadRequest {
+            description: "Distributed mode disabled.".to_string(),
+        }),
+    }
 }
 
 #[get("/cluster")]
@@ -56,43 +90,21 @@ fn recover_current_peer(
 }
 
 #[delete("/cluster/peer/{peer_id}")]
-fn remove_peer(
+async fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
     ActixAccess(access): ActixAccess,
-) -> impl Future<Output = HttpResponse> {
+) -> HttpResponse {
     // Not a collection level request.
-    let pass = new_unchecked_verification_pass();
 
-    helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
-
-        let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc(&access, &pass);
-        let peer_id = peer_id.into_inner();
-
-        let has_shards = toc.peer_has_shards(peer_id).await;
-        if !params.force && has_shards {
-            return Err(StorageError::BadRequest {
-                description: format!("Cannot remove peer {peer_id} as there are shards on it"),
-            });
-        }
-
-        match dispatcher.consensus_state() {
-            Some(consensus_state) => {
-                consensus_state
-                    .propose_consensus_op_with_await(
-                        ConsensusOperations::RemovePeer(peer_id),
-                        params.timeout.map(std::time::Duration::from_secs),
-                    )
-                    .await
-            }
-            None => Err(StorageError::BadRequest {
-                description: "Distributed mode disabled.".to_string(),
-            }),
-        }
-    })
+    helpers::time(do_remove_peer(
+        dispatcher.into_inner(),
+        peer_id.into_inner(),
+        params,
+        access,
+    ))
+    .await
 }
 
 #[get("/cluster/metadata/keys")]
