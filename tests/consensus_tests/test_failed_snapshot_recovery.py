@@ -43,6 +43,43 @@ def fail_to_recover_snapshot(peer_api_uri, snapshot_url):
     assert r.status_code == 500
     assert "Failed to read segment state" in r.json()["status"]["error"]
 
+
+def recover_shard(peer_api_uri, collection_name):
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    # Example shape of collection_cluster_info:
+    # {
+    #   'peer_id': 3037030300099572,
+    #   'shard_count': 1,
+    #   'local_shards': [
+    #       {'shard_id': 0, 'points_count': 0, 'state': 'ManualRecovery'}
+    #    ],
+    #    'remote_shards': [
+    #       {'shard_id': 0, 'peer_id': 8298468227836786, 'state': 'Active'},
+    #       {'shard_id': 0, 'peer_id': 4374571234977199, 'state': 'Active'}
+    #    ]
+    # }
+
+    # Find peer id where status is not Active in local_shards
+    local_shards = collection_cluster_info["local_shards"]
+    dead_shard_info = next(shard for shard in local_shards if shard["state"] != "Active")
+    shard_id = dead_shard_info["shard_id"]
+    to_peer_id = collection_cluster_info["peer_id"]
+
+    # Find a peer id from remote_shards to replicate from, shard_id should be the same
+    remote_shards = collection_cluster_info["remote_shards"]
+    from_peer_id = next(shard["peer_id"] for shard in remote_shards if shard["shard_id"] == shard_id)
+
+    r = requests.post(
+        f"{peer_api_uri}/collections/{collection_name}/cluster",
+        json={
+            "replicate_shard": {
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "shard_id": shard_id
+            }
+        })
+    assert r.status_code == 200
+
 def first_segment_name(peer_storage: str, collection_name: str) -> str:
     # get first segment name from storage
     shard_path = f"{peer_storage}/storage/collections/{collection_name}/0/segments"
@@ -163,9 +200,9 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
         # Sometimes restart is fast and flag is deleted immediately because we initiate a transfer
         assert flag_exists
 
-    # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
-    upsert_random_points(peer_api_uris[-1], 1, offset=10000)
-    n_points += 1
+    # Initiate transfer from another peer to recover the shard.
+    # This part checks that dummy shard can be recovered with shard transfer.
+    recover_shard(peer_api_uris[-1], collection_name=COLLECTION_NAME)
 
     # Assert storage does not contain initialized flag when transfer is started
     print("Checking that the shard initializing flag was removed after recovery")

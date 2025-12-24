@@ -2445,6 +2445,13 @@ pub enum ReplicaState {
     ReshardingScaleDown = 8,
     /// Active for readers, Partial for writers
     ActiveRead = 9,
+    /// State for manually creation/recovery of a shard.
+    /// Usually when snapshot is uploaded.
+    /// This state is equivalent to `Partial`, except:
+    ///
+    /// * it can't receive updates
+    /// * it is not treated as broken on startup
+    ManualRecovery = 10,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2463,6 +2470,7 @@ impl ReplicaState {
             ReplicaState::Resharding => "Resharding",
             ReplicaState::ReshardingScaleDown => "ReshardingScaleDown",
             ReplicaState::ActiveRead => "ActiveRead",
+            ReplicaState::ManualRecovery => "ManualRecovery",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2478,6 +2486,7 @@ impl ReplicaState {
             "Resharding" => Some(Self::Resharding),
             "ReshardingScaleDown" => Some(Self::ReshardingScaleDown),
             "ActiveRead" => Some(Self::ActiveRead),
+            "ManualRecovery" => Some(Self::ManualRecovery),
             _ => None,
         }
     }

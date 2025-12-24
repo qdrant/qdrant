@@ -863,6 +863,7 @@ impl ShardReplicaSet {
 
                     ReplicaState::Dead
                     | ReplicaState::Partial
+                    | ReplicaState::ManualRecovery
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
                     | ReplicaState::Recovery

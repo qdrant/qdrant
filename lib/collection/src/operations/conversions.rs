@@ -1114,6 +1114,7 @@ impl From<api::grpc::qdrant::ReplicaState> for ReplicaState {
             api::grpc::qdrant::ReplicaState::Resharding => Self::Resharding,
             api::grpc::qdrant::ReplicaState::ReshardingScaleDown => Self::ReshardingScaleDown,
             api::grpc::qdrant::ReplicaState::ActiveRead => Self::ActiveRead,
+            api::grpc::qdrant::ReplicaState::ManualRecovery => Self::ManualRecovery,
         }
     }
 }
@@ -1131,6 +1132,7 @@ impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
             ReplicaState::Resharding => Self::Resharding,
             ReplicaState::ReshardingScaleDown => Self::ReshardingScaleDown,
             ReplicaState::ActiveRead => Self::ActiveRead,
+            ReplicaState::ManualRecovery => Self::ManualRecovery,
         }
     }
 }
