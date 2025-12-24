@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::io;
 use std::path::Path;
 
+use ::io::safe_delete::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err as fs;
@@ -217,6 +218,7 @@ impl ShardReplicaSet {
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
         let flag_file = tokio_fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
+        sync_parent_dir_async(&shard_flag).await?;
 
         // Check `cancel` token one last time before starting non-cancellable section
         if cancel.is_cancelled() {
@@ -293,14 +295,16 @@ impl ShardReplicaSet {
                     let Some(snapshot_manifest) = snapshot_manifest.get(segment_id) else {
                         log::debug!("Removing outdated segment {}", segment_path.display());
 
-                        tokio_fs::remove_dir_all(&segment_path)
-                            .await
-                            .map_err(|err| {
-                                CollectionError::service_error(format!(
-                                    "failed to remove outdated segment {}: {err}",
-                                    segment_path.display(),
-                                ))
-                            })?;
+                        tokio::task::spawn_blocking({
+                            let segment_path = segment_path.clone();
+                            move || safe_delete_with_suffix(&segment_path)
+                        })
+                        .await?
+                        .map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to remove outdated segment: {err}",
+                            ))
+                        })?;
 
                         continue;
                     };

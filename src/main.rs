@@ -11,7 +11,6 @@ mod tonic;
 mod tracing;
 
 use std::io::Error;
-use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -231,21 +230,21 @@ fn main() -> anyhow::Result<()> {
                 Ok(true) => {
                     log::warn!(
                         "There is a potential issue with the filesystem for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = true;
                 }
                 Ok(false) => {
                     log::error!(
                         "Filesystem check failed for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = false;
                 }
                 Err(e) => {
                     log::error!(
                         "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = false;
                 }
@@ -254,7 +253,7 @@ fn main() -> anyhow::Result<()> {
         memory::checkfs::FsCheckResult::Bad(details) => {
             log::error!(
                 "Filesystem check failed for storage path {}. Details: {details}",
-                settings.storage.storage_path,
+                settings.storage.storage_path.display(),
             );
             mmaps_working = false;
         }
@@ -407,7 +406,7 @@ fn main() -> anyhow::Result<()> {
             persistent_consensus_state,
             toc_arc.clone(),
             propose_operation_sender.unwrap(),
-            Path::new(storage_path),
+            storage_path,
         )
         .expect("initialize consensus manager")
         .into();
