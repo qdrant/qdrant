@@ -1,9 +1,38 @@
-#if !defined PC_VER
-#include <arm_neon.h>
+// Platform-specific includes for ARM NEON
+#if defined(_MSC_VER)
+    // MSVC on Windows ARM64
+    #include <arm64_neon.h>
+    // MSVC doesn't define __ARM_FEATURE_FP16_VECTOR_ARITHMETIC,
+    // but supports FP16 intrinsics on ARM64. We enable it manually.
+    #define QDRANT_FP16_NEON_ENABLED 1
+    // MSVC uses _Float16 instead of float16_t in some contexts
+    // arm64_neon.h should provide float16_t, but we ensure compatibility
+#elif !defined(PC_VER)
+    // GCC/Clang on Unix-like systems
+    #include <arm_neon.h>
+    #ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+        #include <arm_fp16.h>
+        #define QDRANT_FP16_NEON_ENABLED 1
+    #endif
 #endif
 
-#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
-#include <arm_fp16.h>
+#ifdef QDRANT_FP16_NEON_ENABLED
+
+// For MSVC, we need to handle the vabsh_f16 intrinsic which may not be available
+#if defined(_MSC_VER)
+    // MSVC may not have vabsh_f16, provide a fallback using fabsf
+    #include <math.h>
+    static inline float16_t qdrant_abs_f16(float16_t x) {
+        // Convert to float, take abs, convert back
+        // This is a scalar fallback for the remainder loop
+        float f = (float)x;
+        return (float16_t)fabsf(f);
+    }
+    #define VABSH_F16(x) qdrant_abs_f16(x)
+#else
+    #define VABSH_F16(x) vabsh_f16(x)
+#endif
+
 float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, uint32_t blockSize)
 {
     float32_t dotProduct = 0.0f;
@@ -127,11 +156,12 @@ float32_t manhattanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
 
     manhattanDistance = vaddvq_f32(sum);
     for (i=0; i < (blockSize % 32); i++) {
-        manhattanDistance += (float32_t)(vabsh_f16(*pSrcA - *pSrcB));
+        manhattanDistance += (float32_t)(VABSH_F16(*pSrcA - *pSrcB));
         pSrcA += 1;
         pSrcB += 1;
     }
 
     return manhattanDistance;
 }
-#endif
+
+#endif /* QDRANT_FP16_NEON_ENABLED */
