@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::io;
 use std::sync::Mutex;
 
 use anyhow::Context as _;
@@ -83,10 +82,7 @@ where
         .with_context(|| format!("failed to open log file {log_file}"))?;
 
     let layer = fmt::Layer::default()
-        .with_writer(Mutex::new(io::BufWriter::with_capacity(
-            config.buffer_size_bytes.unwrap_or(8192),
-            writer,
-        )))
+        .with_writer(Mutex::new(writer))
         .with_span_events(config::SpanEvent::unwrap_or_default_config(
             &config.span_events,
         ))
