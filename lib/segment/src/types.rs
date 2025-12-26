@@ -2585,11 +2585,33 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<OrderedFloat<FloatPayloadType>>),
     DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> Deserialize<'de> for RangeInterface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First, deserialize into a generic JSON Value to inspect the data
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Try to deserialize as Float range first (numeric values)
+        if let Ok(float_range) =
+            serde_json::from_value::<Range<OrderedFloat<FloatPayloadType>>>(value.clone())
+        {
+            return Ok(RangeInterface::Float(float_range));
+        }
+
+        // If Float failed, try DateTime range and propagate the specific error
+        serde_json::from_value::<Range<DateTimePayloadType>>(value)
+            .map(RangeInterface::DateTime)
+            .map_err(|e| serde::de::Error::custom(e.to_string()))
+    }
 }
 
 impl Hash for RangeInterface {
@@ -3960,6 +3982,65 @@ mod tests {
                 dt2.timestamp()
             );
         });
+    }
+
+    #[test]
+    fn test_range_interface_datetime_error_message() {
+        // Test that invalid datetime format produces a descriptive error message
+        // instead of a generic "data did not match any variant of untagged enum" error
+        let invalid_datetime_range = r#"{"gt": "2014-01-01T00:00:00"}"#;
+
+        let result = serde_json::from_str::<RangeInterface>(invalid_datetime_range);
+        assert!(result.is_err());
+
+        let error_message = result.unwrap_err().to_string();
+        // The error should mention the datetime format issue, not a generic untagged enum error
+        assert!(
+            error_message.contains("is not in a supported date/time format")
+                || error_message.contains("RFC 3339"),
+            "Error message should mention datetime format. Got: {}",
+            error_message
+        );
+        // The error should NOT be the generic untagged enum error
+        assert!(
+            !error_message.contains("did not match any variant of untagged enum"),
+            "Error should not be a generic untagged enum error. Got: {}",
+            error_message
+        );
+    }
+
+    #[test]
+    fn test_range_interface_valid_datetime() {
+        // Test that valid datetime formats still work correctly
+        let valid_datetime_range = r#"{"gt": "2014-01-01T00:00:00Z"}"#;
+
+        let result = serde_json::from_str::<RangeInterface>(valid_datetime_range);
+        assert!(
+            result.is_ok(),
+            "Valid datetime range should parse successfully"
+        );
+
+        if let RangeInterface::DateTime(range) = result.unwrap() {
+            assert!(range.gt.is_some());
+        } else {
+            panic!("Expected DateTime variant");
+        }
+    }
+
+    #[test]
+    fn test_range_interface_float() {
+        // Test that float ranges still work correctly
+        let float_range = r#"{"gt": 10.5, "lt": 20.0}"#;
+
+        let result = serde_json::from_str::<RangeInterface>(float_range);
+        assert!(result.is_ok(), "Float range should parse successfully");
+
+        if let RangeInterface::Float(range) = result.unwrap() {
+            assert!(range.gt.is_some());
+            assert!(range.lt.is_some());
+        } else {
+            panic!("Expected Float variant");
+        }
     }
 
     #[test]
