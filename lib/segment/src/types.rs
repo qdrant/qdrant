@@ -86,8 +86,10 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
     where
         D: Deserializer<'de>,
     {
-        let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
+        // Use String to support both borrowed and owned string deserialization
+        // This is needed when deserializing from serde_json::Value (owned data)
+        let str_datetime = String::deserialize(deserializer)?;
+        let parse_result = DateTimePayloadType::from_str(&str_datetime).ok();
         match parse_result {
             Some(datetime) => Ok(datetime),
             None => Err(serde::de::Error::custom(format!(
@@ -3988,7 +3990,8 @@ mod tests {
     fn test_range_interface_datetime_error_message() {
         // Test that invalid datetime format produces a descriptive error message
         // instead of a generic "data did not match any variant of untagged enum" error
-        let invalid_datetime_range = r#"{"gt": "2014-01-01T00:00:00"}"#;
+        // Using RFC 2822 format which is NOT supported
+        let invalid_datetime_range = r#"{"gt": "Thu, 01 Jan 2015 01:00:00 +0100"}"#;
 
         let result = serde_json::from_str::<RangeInterface>(invalid_datetime_range);
         assert!(result.is_err());
@@ -4012,18 +4015,35 @@ mod tests {
     #[test]
     fn test_range_interface_valid_datetime() {
         // Test that valid datetime formats still work correctly
+        // With Z suffix (RFC 3339)
         let valid_datetime_range = r#"{"gt": "2014-01-01T00:00:00Z"}"#;
 
         let result = serde_json::from_str::<RangeInterface>(valid_datetime_range);
         assert!(
             result.is_ok(),
-            "Valid datetime range should parse successfully"
+            "Valid datetime range with Z should parse successfully"
         );
 
         if let RangeInterface::DateTime(range) = result.unwrap() {
             assert!(range.gt.is_some());
         } else {
             panic!("Expected DateTime variant");
+        }
+
+        // Without Z suffix
+        let valid_datetime_no_z = r#"{"gt": "2014-01-01T00:00:00"}"#;
+
+        let result = serde_json::from_str::<RangeInterface>(valid_datetime_no_z);
+        assert!(
+            result.is_ok(),
+            "Valid datetime range without Z should parse successfully. Got: {:?}",
+            result
+        );
+
+        if let RangeInterface::DateTime(range) = result.unwrap() {
+            assert!(range.gt.is_some());
+        } else {
+            panic!("Expected DateTime variant for no-Z format");
         }
     }
 
