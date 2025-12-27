@@ -653,6 +653,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
+            timer.set_success(true);
             return Ok(0);
         }
 
