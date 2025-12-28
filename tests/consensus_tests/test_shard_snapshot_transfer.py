@@ -122,10 +122,16 @@ def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
         "api-key": alt_api_key,
     }
 
-    shard_snapshot_transfer_with_api_key(tmp_path, env, headers)
-    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers)
-    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers_alt)
+    tmp_dir_1 = tmp_path / "api_key_instance_1"
+    tmp_dir_1.mkdir(parents=True, exist_ok=True)
+    tmp_dir_2 = tmp_path / "api_key_instance_2"
+    tmp_dir_2.mkdir(parents=True, exist_ok=True)
+    tmp_dir_3 = tmp_path / "api_key_instance_3"
+    tmp_dir_3.mkdir(parents=True, exist_ok=True)
 
+    shard_snapshot_transfer_with_api_key(tmp_dir_1, env, headers)
+    shard_snapshot_transfer_with_api_key(tmp_dir_2, alt_env, headers)
+    shard_snapshot_transfer_with_api_key(tmp_dir_3, alt_env, headers_alt)
 
 
 def shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path, env, headers):
