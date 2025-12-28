@@ -101,15 +101,24 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
 # transfer.
 #
 # Test that data on the both sides is consistent
-def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
-
-
+def test_shard_snapshot_transfer_with_api_key_1(tmp_path: pathlib.Path):
     # Configure a random API key
     api_key = str(uuid.uuid4())
     alt_api_key = str(uuid.uuid4())
     env={
         "QDRANT__SERVICE__API_KEY": api_key,
     }
+
+    headers={
+        "api-key": api_key,
+    }
+    shard_snapshot_transfer_with_api_key(tmp_path, env, headers)
+
+
+def test_shard_snapshot_transfer_with_api_key_2(tmp_path: pathlib.Path):
+    # Configure a random API key
+    api_key = str(uuid.uuid4())
+    alt_api_key = str(uuid.uuid4())
     alt_env = {
         "QDRANT__SERVICE__API_KEY": api_key,
         "QDRANT__SERVICE__ALT_API_KEY": alt_api_key,
@@ -118,21 +127,22 @@ def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
     headers={
         "api-key": api_key,
     }
+
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers)
+
+def test_shard_snapshot_transfer_with_api_key_3(tmp_path: pathlib.Path):
+    # Configure a random API key
+    api_key = str(uuid.uuid4())
+    alt_api_key = str(uuid.uuid4())
+    alt_env = {
+        "QDRANT__SERVICE__API_KEY": api_key,
+        "QDRANT__SERVICE__ALT_API_KEY": alt_api_key,
+    }
+
     headers_alt={
         "api-key": alt_api_key,
     }
-
-    tmp_dir_1 = tmp_path / "api_key_instance_1"
-    tmp_dir_1.mkdir(parents=True, exist_ok=True)
-    tmp_dir_2 = tmp_path / "api_key_instance_2"
-    tmp_dir_2.mkdir(parents=True, exist_ok=True)
-    tmp_dir_3 = tmp_path / "api_key_instance_3"
-    tmp_dir_3.mkdir(parents=True, exist_ok=True)
-
-    shard_snapshot_transfer_with_api_key(tmp_dir_1, env, headers)
-    shard_snapshot_transfer_with_api_key(tmp_dir_2, alt_env, headers)
-    shard_snapshot_transfer_with_api_key(tmp_dir_3, alt_env, headers_alt)
-
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers_alt)
 
 def shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path, env, headers):
     assert_project_root()
