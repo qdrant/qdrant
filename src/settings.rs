@@ -320,10 +320,17 @@ impl Settings {
                 .unwrap_or_default()
                 .is_empty();
 
-        let any_api_key_is_short = self.service.api_key.clone().unwrap_or_default().len()
-            < JWT_RECOMMENDED_SECRET_LENGTH
-            || self.service.alt_api_key.clone().unwrap_or_default().len()
-                < JWT_RECOMMENDED_SECRET_LENGTH;
+        let min_length = [
+            self.service.api_key.as_ref(),
+            self.service.alt_api_key.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|key| key.len())
+        .min()
+        .unwrap_or_default();
+
+        let any_api_key_is_short = min_length < JWT_RECOMMENDED_SECRET_LENGTH;
 
         // Log if JWT RBAC is enabled but no API key is set
         if self.service.jwt_rbac.unwrap_or_default() {
