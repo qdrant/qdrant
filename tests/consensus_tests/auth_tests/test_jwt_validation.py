@@ -62,7 +62,7 @@ def test_value_exists_claim():
     value_exists_claim_check(SECRET)
     value_exists_claim_check(ALT_SECRET)
 
-s
+
 def value_exists_claim_check(secret):
     validation_collection = "jwt_validation_collection"
 
