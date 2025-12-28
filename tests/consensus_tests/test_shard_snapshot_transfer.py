@@ -104,7 +104,6 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
 def test_shard_snapshot_transfer_with_api_key_1(tmp_path: pathlib.Path):
     # Configure a random API key
     api_key = str(uuid.uuid4())
-    alt_api_key = str(uuid.uuid4())
     env={
         "QDRANT__SERVICE__API_KEY": api_key,
     }
