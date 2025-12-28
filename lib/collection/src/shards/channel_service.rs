@@ -27,17 +27,25 @@ pub struct ChannelService {
     pub current_rest_port: u16,
     /// Instance wide API key if configured, must be used with care.
     pub api_key: Option<String>,
+
+    /// Alternative API key, works the same as `api_key`. Intended for rolling key updates.
+    pub alt_api_key: Option<String>,
 }
 
 impl ChannelService {
     /// Construct a new channel service with the given REST port.
-    pub fn new(current_rest_port: u16, api_key: Option<String>) -> Self {
+    pub fn new(
+        current_rest_port: u16,
+        api_key: Option<String>,
+        alt_api_key: Option<String>,
+    ) -> Self {
         Self {
             id_to_address: Default::default(),
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
             api_key,
+            alt_api_key,
         }
     }
 
@@ -222,6 +230,7 @@ impl Default for ChannelService {
             channel_pool: Default::default(),
             current_rest_port: 6333,
             api_key: None,
+            alt_api_key: None,
         }
     }
 }

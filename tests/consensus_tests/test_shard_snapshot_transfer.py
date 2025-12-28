@@ -102,16 +102,34 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
 #
 # Test that data on the both sides is consistent
 def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
-    assert_project_root()
+
 
     # Configure a random API key
     api_key = str(uuid.uuid4())
+    alt_api_key = str(uuid.uuid4())
     env={
         "QDRANT__SERVICE__API_KEY": api_key,
     }
+    alt_env = {
+        "QDRANT__SERVICE__API_KEY": api_key,
+        "QDRANT__SERVICE__ALT_API_KEY": alt_api_key,
+    }
+
     headers={
         "api-key": api_key,
     }
+    headers_alt={
+        "api-key": alt_api_key,
+    }
+
+    shard_snapshot_transfer_with_api_key(tmp_path, env, headers)
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers)
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers_alt)
+
+
+
+def shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path, env, headers):
+    assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000, extra_env=env, headers=headers)

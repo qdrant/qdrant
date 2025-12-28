@@ -236,6 +236,13 @@ pub(super) async fn transfer_snapshot(
 
     // Recover shard snapshot on remote
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
+
+    // Since we are providing access to local instance, any of the API keys can be used
+    let local_api_key = channel_service
+        .api_key
+        .as_deref()
+        .or(channel_service.alt_api_key.as_deref());
+
     remote_shard
         .recover_shard_snapshot_from_url(
             collection_id,
@@ -243,7 +250,7 @@ pub(super) async fn transfer_snapshot(
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
-            channel_service.api_key.as_deref(),
+            local_api_key,
         )
         .await
         .map_err(|err| {
