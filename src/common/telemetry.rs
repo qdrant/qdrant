@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::HashSet;
 use api::grpc;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::telemetry::CollectionTelemetry;
@@ -85,6 +86,7 @@ impl TelemetryCollector {
         &self,
         access: &Access,
         detail: TelemetryDetail,
+        only_collections: Option<HashSet<String>>,
         timeout: Option<Duration>,
     ) -> StorageResult<TelemetryData> {
         let timeout = timeout.unwrap_or(DEFAULT_TELEMETRY_TIMEOUT);
@@ -105,6 +107,7 @@ impl TelemetryCollector {
                     CollectionsTelemetry::collect(
                         detail,
                         &access_collection,
+                        only_collections,
                         &toc,
                         timeout,
                         &is_stopped,
