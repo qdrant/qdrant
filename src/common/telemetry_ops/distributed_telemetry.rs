@@ -54,6 +54,9 @@ pub struct DistributedPeerInfo {
 
 #[derive(Serialize, JsonSchema)]
 pub struct DistributedPeerDetails {
+    /// Qdrant version
+    version: String,
+
     /// Consensus role for the peer
     role: Option<StateRole>,
 
@@ -285,6 +288,11 @@ fn aggregate_peers_info(
             continue;
         };
 
+        let Some(version) = peer_telemetry.app.as_ref().map(|t| t.version.clone()) else {
+                debug_assert!(false, "internal service should include cluster status telemetry");
+                continue;
+        };
+
         let Some(status) = peer_telemetry.cluster.as_ref()
             .and_then(|c| c.status.as_ref()) else {
                 debug_assert!(false, "internal service should include cluster status telemetry");
@@ -297,6 +305,7 @@ fn aggregate_peers_info(
                 uri: peer_info.uri.clone(),
                 responsive,
                 details: Some(DistributedPeerDetails {
+                    version,
                     role: status.role,
                     is_voter: status.is_voter,
                     term: status.term,
