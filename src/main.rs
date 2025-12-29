@@ -558,6 +558,7 @@ fn main() -> anyhow::Result<()> {
 
     {
         let dispatcher_arc = dispatcher_arc.clone();
+        let telemetry_collector = telemetry_collector.clone();
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -570,6 +571,29 @@ fn main() -> anyhow::Result<()> {
                         health_checker,
                         settings,
                         logger_handle,
+                    ),
+                )
+            })
+            .unwrap();
+        handles.push(handle);
+    }
+
+    //
+    // Extra `/metrics` server
+    //
+
+    if let Some(metrics_port) = settings.service.metrics_port {
+        let telemetry_collector = telemetry_collector.clone();
+        let settings = settings.clone();
+        let handle = thread::Builder::new()
+            .name("metrics".to_string())
+            .spawn(move || {
+                log_err_if_any(
+                    "Metrics",
+                    actix::metrics_service::init_metrics(
+                        metrics_port,
+                        telemetry_collector,
+                        settings,
                     ),
                 )
             })

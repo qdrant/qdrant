@@ -26,6 +26,13 @@ pub struct ServiceConfig {
     pub host: String,
     pub http_port: u16,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
+
+    /// If specified, qdrant will serve a separate service for `/metrics` on this port.
+    /// Separate port is not protected by API keys and dedicated for internal monitoring systems.
+    /// This port should not be exposed to untrusted networks.
+    #[serde(default)]
+    pub metrics_port: Option<u16>,
+
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
     #[serde(default = "default_cors")]
