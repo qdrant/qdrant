@@ -423,8 +423,8 @@ impl RemoteShard {
                     }
                 }
                 #[cfg(feature = "staging")]
-                CollectionUpdateOperations::TestDelay(_) => {
-                    // Staging test delay operations should not be forwarded to remote shards
+                CollectionUpdateOperations::StagingOperation(_) => {
+                    // Staging operations should not be forwarded to remote shards
                     continue;
                 }
             };
@@ -757,14 +757,19 @@ impl RemoteShard {
                 }
             },
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(op) => {
+            CollectionUpdateOperations::StagingOperation(staging_op) => {
                 // TODO: Add gRPC support to forward staging operations to remote shards
-                // For now, staging test delay operations only execute on local shards
-                let delay = std::time::Duration::from_secs_f64(op.duration.into_inner());
-                log::debug!(
-                    "TestDelay: skipping remote shard {} (duration: {delay:?})",
-                    self.id
-                );
+                // For now, staging operations only execute on local shards
+                match staging_op {
+                    shard::operations::staging::StagingOperations::Delay(delay_op) => {
+                        let delay =
+                            std::time::Duration::from_secs_f64(delay_op.duration_sec.into_inner());
+                        log::debug!(
+                            "StagingOperation::Delay: skipping remote shard {} (duration: {delay:?})",
+                            self.id
+                        );
+                    }
+                }
                 timer.set_success(true);
                 return Ok(UpdateResult {
                     operation_id: None,

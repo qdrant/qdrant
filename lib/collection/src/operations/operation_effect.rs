@@ -41,7 +41,7 @@ impl EstimateOperationEffectArea for CollectionUpdateOperations {
             }
             CollectionUpdateOperations::FieldIndexOperation(_) => OperationEffectArea::Empty,
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(_) => OperationEffectArea::Empty,
+            CollectionUpdateOperations::StagingOperation(_) => OperationEffectArea::Empty,
         }
     }
 }

@@ -592,7 +592,7 @@ impl OperationsByMode {
                 vec![operation]
             }
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(_) => {
+            CollectionUpdateOperations::StagingOperation(_) => {
                 vec![operation]
             }
         };

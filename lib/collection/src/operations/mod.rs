@@ -54,7 +54,7 @@ impl SplitByShard for CollectionUpdateOperations {
                 OperationToShard::to_all(operation)
             }
             #[cfg(feature = "staging")]
-            operation @ CollectionUpdateOperations::TestDelay(_) => {
+            operation @ CollectionUpdateOperations::StagingOperation(_) => {
                 OperationToShard::to_all(operation)
             }
         }

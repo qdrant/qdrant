@@ -20,9 +20,9 @@ pub enum CollectionUpdateOperations {
     VectorOperation(vector_ops::VectorOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
-    /// Introduce artificial delay for testing purposes (staging only)
+    /// Staging-only operations for testing and debugging purposes
     #[cfg(feature = "staging")]
-    TestDelay(staging::TestDelayOperation),
+    StagingOperation(staging::StagingOperations),
 }
 
 impl CollectionUpdateOperations {
@@ -47,7 +47,7 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(op) => op.point_ids(),
             Self::FieldIndexOperation(_) => None,
             #[cfg(feature = "staging")]
-            Self::TestDelay(_) => None,
+            Self::StagingOperation(_) => None,
         }
     }
 
@@ -68,7 +68,7 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(_) => None,
             Self::FieldIndexOperation(_) => None,
             #[cfg(feature = "staging")]
-            Self::TestDelay(_) => None,
+            Self::StagingOperation(_) => None,
         }
     }
 
@@ -82,7 +82,7 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
             #[cfg(feature = "staging")]
-            Self::TestDelay(_) => (),
+            Self::StagingOperation(_) => (),
         }
     }
 }

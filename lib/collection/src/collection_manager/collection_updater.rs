@@ -69,12 +69,8 @@ impl CollectionUpdater {
                     process_field_index_operation(segments, op_num, &index_operation, hw_counter)
                 }
                 #[cfg(feature = "staging")]
-                CollectionUpdateOperations::TestDelay(test_delay_operation) => {
-                    shard::update::process_test_delay_operation(
-                        segments,
-                        op_num,
-                        test_delay_operation,
-                    )
+                CollectionUpdateOperations::StagingOperation(staging_operation) => {
+                    shard::update::process_staging_operation(segments, op_num, staging_operation)
                 }
             }
         });

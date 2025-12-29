@@ -60,12 +60,16 @@ pub fn process_point_operation(
 }
 
 #[cfg(feature = "staging")]
-pub fn process_test_delay_operation(
+pub fn process_staging_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
-    operation: crate::operations::staging::TestDelayOperation,
+    operation: crate::operations::staging::StagingOperations,
 ) -> OperationResult<usize> {
-    operation.execute();
+    match operation {
+        crate::operations::staging::StagingOperations::Delay(delay_op) => {
+            delay_op.execute();
+        }
+    }
 
     // This operation doesn't directly affect segment/point versions, so we bump it here
     segments.read().bump_max_segment_version_overwrite(op_num);

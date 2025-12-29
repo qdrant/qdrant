@@ -299,7 +299,7 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 extras: true,
             },
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(_) => AccessRequirements {
+            CollectionUpdateOperations::StagingOperation(_) => AccessRequirements {
                 write: true,
                 manage: false,
                 extras: false,
@@ -653,9 +653,11 @@ mod tests_ops {
                 check_collection_update_operations_field_index()
             }
             #[cfg(feature = "staging")]
-            CollectionUpdateOperationsDiscriminants::TestDelay => {
-                use shard::operations::staging::TestDelayOperation;
-                let op = CollectionUpdateOperations::TestDelay(TestDelayOperation::new(1.0));
+            CollectionUpdateOperationsDiscriminants::StagingOperation => {
+                use shard::operations::staging::{StagingOperations, TestDelayOperation};
+                let op = CollectionUpdateOperations::StagingOperation(StagingOperations::Delay(
+                    TestDelayOperation::new(1.0),
+                ));
                 assert_requires_whole_write_access(&op);
             }
         });

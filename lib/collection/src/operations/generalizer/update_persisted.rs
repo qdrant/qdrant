@@ -41,8 +41,8 @@ impl Generalizer for CollectionUpdateOperations {
                 CollectionUpdateOperations::FieldIndexOperation(field_operation.remove_details())
             }
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(op) => {
-                CollectionUpdateOperations::TestDelay(op.clone())
+            CollectionUpdateOperations::StagingOperation(op) => {
+                CollectionUpdateOperations::StagingOperation(op.clone())
             }
         }
     }

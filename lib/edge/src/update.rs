@@ -43,11 +43,11 @@ impl Shard {
                 )
             }
             #[cfg(feature = "staging")]
-            CollectionUpdateOperations::TestDelay(test_delay_operation) => {
-                shard::update::process_test_delay_operation(
+            CollectionUpdateOperations::StagingOperation(staging_operation) => {
+                shard::update::process_staging_operation(
                     &self.segments,
                     operation_id,
-                    test_delay_operation,
+                    staging_operation,
                 )
             }
         };
