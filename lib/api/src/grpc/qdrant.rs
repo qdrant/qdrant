@@ -12453,9 +12453,19 @@ pub struct GetTelemetryRequest {
     /// The level of detail needed
     #[prost(uint32, tag = "1")]
     pub details_level: u32,
+    /// If present, select these collections
+    #[prost(message, optional, tag = "2")]
+    pub collections_selector: ::core::option::Option<CollectionsSelector>,
     /// Timeout in secs for the request
-    #[prost(uint64, tag = "2")]
+    #[prost(uint64, tag = "3")]
     pub timeout: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionsSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub only_collections: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
