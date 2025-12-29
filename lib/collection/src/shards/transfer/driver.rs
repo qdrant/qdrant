@@ -17,7 +17,7 @@ use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
 use crate::shards::{CollectionId, await_consensus_sync};
 
 const RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -35,7 +35,7 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
     progress: Arc<Mutex<TransferTaskProgress>>,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     channel_service: ChannelService,
@@ -193,7 +193,7 @@ pub async fn revert_proxy_shard_to_local(
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_transfer_task<T, F>(
-    shards_holder: Arc<LockedShardHolder>,
+    shards_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     transfer: ShardTransfer,
     consensus: Box<dyn ShardTransferConsensus>,
