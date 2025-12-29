@@ -25,7 +25,7 @@ message GetTelemetryResponse {
 
 message PeerTelemetry {
   reserved 1; // id
-  reserved 2; // app
+  AppTelemetry app = 2; // app
   // Mapping from collection name to its telemetry
   map<string, CollectionTelemetry> collections = 3;
   // Telemetry about the cluster and peers
@@ -35,6 +35,14 @@ message PeerTelemetry {
   reserved 7; // hardware
 }
 
+message AppTelemetry {
+    // Name of service
+    string name = 1;
+    // Qdrant version
+    string version = 2;
+    // Last startup timestamp in seconds
+    int64 startup = 3;
+}
 message CollectionTelemetry {
   // Name of the collection
   string id = 1;

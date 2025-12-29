@@ -12480,6 +12480,9 @@ pub struct GetTelemetryResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PeerTelemetry {
+    /// app
+    #[prost(message, optional, tag = "2")]
+    pub app: ::core::option::Option<AppTelemetry>,
     /// Mapping from collection name to its telemetry
     #[prost(map = "string, message", tag = "3")]
     pub collections: ::std::collections::HashMap<
@@ -12489,6 +12492,20 @@ pub struct PeerTelemetry {
     /// Telemetry about the cluster and peers
     #[prost(message, optional, tag = "4")]
     pub cluster: ::core::option::Option<ClusterTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AppTelemetry {
+    /// Name of service
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Qdrant version
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// Last startup timestamp in seconds
+    #[prost(int64, tag = "3")]
+    pub startup: i64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -271,6 +271,7 @@ fn aggregate_cluster_telemetry(
         peers,
     })
 }
+
 fn aggregate_peers_info(
     missing_peers: Vec<u64>,
     base_cluster: &ClusterTelemetry,
@@ -278,33 +279,33 @@ fn aggregate_peers_info(
 ) -> Option<HashMap<u64, DistributedPeerInfo>> {
     let all_peers = base_cluster.peers.as_ref()?;
 
-    let mut distributed_peers_info = HashMap::default();
-    for (peer_id, peer_info) in all_peers {
-        let responsive =
-            telemetry_by_peer.contains_key(peer_id) && !missing_peers.contains(peer_id);
+    let mut distributed_peers_info: HashMap<_, _> = all_peers
+        .iter()
+        .map(|(peer_id, peer_info)| {
+            let uri = peer_info.uri.clone();
 
-        let Some(peer_telemetry) = telemetry_by_peer.get(peer_id) else {
-            debug_assert!(missing_peers.contains(peer_id), "{peer_id} should be part of missing peers");
-            continue;
-        };
+            let responsive =
+                telemetry_by_peer.contains_key(peer_id) && !missing_peers.contains(peer_id);
 
-        let Some(version) = peer_telemetry.app.as_ref().map(|t| t.version.clone()) else {
-                debug_assert!(false, "internal service should include cluster status telemetry");
-                continue;
-        };
+            let details = telemetry_by_peer.get(peer_id).and_then(|peer_telemetry| {
+                let Some(version) = peer_telemetry.app.as_ref().map(|t| t.version.clone()) else {
+                    debug_assert!(false, "internal service should include app version");
+                    return None;
+                };
 
-        let Some(status) = peer_telemetry.cluster.as_ref()
-            .and_then(|c| c.status.as_ref()) else {
-                debug_assert!(false, "internal service should include cluster status telemetry");
-                continue;
-            };
+                let Some(status) = peer_telemetry
+                    .cluster
+                    .as_ref()
+                    .and_then(|c| c.status.as_ref())
+                else {
+                    debug_assert!(
+                        false,
+                        "internal service should include cluster status telemetry"
+                    );
+                    return None;
+                };
 
-        distributed_peers_info.insert(
-            *peer_id,
-            DistributedPeerInfo {
-                uri: peer_info.uri.clone(),
-                responsive,
-                details: Some(DistributedPeerDetails {
+                Some(DistributedPeerDetails {
                     version,
                     role: status.role,
                     is_voter: status.is_voter,
@@ -312,17 +313,26 @@ fn aggregate_peers_info(
                     commit: status.commit,
                     num_pending_operations: status.pending_operations as u64,
                     consensus_thread_status: status.consensus_thread_status.clone(),
-                }),
-            },
-        );
-    }
+                })
+            });
+
+            (
+                *peer_id,
+                DistributedPeerInfo {
+                    uri,
+                    responsive,
+                    details,
+                },
+            )
+        })
+        .collect();
 
     // Add any failed peers that aren't in the all_peers list
     for peer_id in missing_peers {
-        debug_assert!(false, "all missing peers should have been listed already");
-
         if distributed_peers_info.contains_key(&peer_id) {
             continue;
+        } else {
+            debug_assert!(false, "all missing peers should have been listed already");
         }
 
         let Some(info) = base_cluster
