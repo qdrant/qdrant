@@ -31,7 +31,7 @@ pub fn init_metrics(
 
         server = if settings.service.enable_tls {
             log::info!(
-                "TLS enabled for REST API (TTL: {})",
+                "TLS enabled for metrics API (TTL: {})",
                 settings
                     .tls
                     .as_ref()
@@ -44,7 +44,7 @@ pub fn init_metrics(
                 .map_err(io::Error::other)?;
             server.bind_rustls_0_23(bind_addr, config)?
         } else {
-            log::info!("TLS disabled for REST API");
+            log::info!("TLS disabled for metrics API");
 
             server.bind(bind_addr)?
         };
