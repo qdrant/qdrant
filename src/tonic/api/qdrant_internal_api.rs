@@ -94,7 +94,7 @@ impl QdrantInternal for QdrantInternalService {
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector
-            .prepare_data(&access, detail, Some(timeout))
+            .prepare_data(&access, detail, None, Some(timeout))
             .await?;
 
         let response = GetTelemetryResponse {

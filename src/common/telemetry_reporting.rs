@@ -43,7 +43,7 @@ impl TelemetryReporter {
             .telemetry
             .lock()
             .await
-            .prepare_data(&FULL_ACCESS, DETAIL, None)
+            .prepare_data(&FULL_ACCESS, DETAIL, None, None)
             .await?
             .anonymize();
         let data = serde_json::to_string(&data)?;
