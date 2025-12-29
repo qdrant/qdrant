@@ -331,9 +331,8 @@ fn aggregate_peers_info(
     for peer_id in missing_peers {
         if distributed_peers_info.contains_key(&peer_id) {
             continue;
-        } else {
-            debug_assert!(false, "all missing peers should have been listed already");
         }
+        debug_assert!(false, "all missing peers should have been listed already");
 
         let Some(info) = base_cluster
             .peers
