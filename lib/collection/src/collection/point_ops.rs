@@ -260,7 +260,7 @@ impl Collection {
                 .max_by_key(|s| s.priority())
                 .unwrap_or(UpdateStatus::Acknowledged);
 
-            if !is_user_timeout && status.is_timeout() {
+            if !is_user_timeout && results.iter().any(|res| res.status.is_timeout()) {
                 // if user didn't specify timeout, but one of the shards timed out,
                 // we need to return timeout error
 
