@@ -16,6 +16,7 @@ use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
+use serde_with::DurationSeconds;
 use shard::operations::payload_ops::*;
 use shard::operations::*;
 use storage::content_manager::collection_meta_ops::*;
@@ -31,13 +32,14 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
 
+#[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct UpdateParams {
     #[serde(default)]
     pub wait: bool,
     #[serde(default)]
     pub ordering: WriteOrdering,
-    #[serde(default)]
+    #[serde_as(as = "Option<DurationSeconds<String>>")]
     pub timeout: Option<Duration>,
 }
 
