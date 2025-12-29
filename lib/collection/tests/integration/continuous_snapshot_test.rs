@@ -120,6 +120,7 @@ async fn test_continuous_snapshot() {
                     .update_from_client_simple(
                         delete_points,
                         true,
+                        None,
                         WriteOrdering::default(),
                         hw_counter,
                     )
@@ -141,6 +142,7 @@ async fn test_continuous_snapshot() {
                         .update_from_client_simple(
                             insert_points,
                             true,
+                            None,
                             WriteOrdering::default(),
                             hw_counter,
                         )
@@ -186,6 +188,7 @@ async fn test_continuous_snapshot() {
                         .update_from_client_simple(
                             set_payload,
                             true,
+                            None,
                             WriteOrdering::default(),
                             hw_counter,
                         )

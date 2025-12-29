@@ -336,6 +336,7 @@ async fn clean_task(
             .update_local(
                 delete_operation,
                 last_batch,
+                None,
                 HwMeasurementAcc::disposable(),
                 false,
             )

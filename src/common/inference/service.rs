@@ -208,7 +208,6 @@ impl InferenceService {
         };
 
         let request = self.client.post(url);
-
         let request = if let Some(timeout) = timeout {
             request.timeout(timeout)
         } else {

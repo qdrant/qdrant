@@ -211,6 +211,10 @@ impl ChannelService {
             })?;
         Ok(url)
     }
+
+    pub fn request_timeout(&self) -> Duration {
+        self.channel_pool.request_timeout()
+    }
 }
 
 #[cfg(test)]
