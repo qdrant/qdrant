@@ -48,29 +48,29 @@ pub struct DistributedPeerInfo {
     /// Whether this peer responded for this request
     responsive: bool,
 
+    /// If responsive, these details should be available
+    details: Option<DistributedPeerDetails>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DistributedPeerDetails {
     /// Consensus role for the peer
-    #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<StateRole>,
 
     /// Whether it can participate in leader elections
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_voter: Option<bool>,
+    is_voter: bool,
 
     /// Election term
-    #[serde(skip_serializing_if = "Option::is_none")]
-    term: Option<u64>,
+    term: u64,
 
     /// Latest accepted commit
-    #[serde(skip_serializing_if = "Option::is_none")]
-    commit: Option<u64>,
+    commit: u64,
 
     /// Number of operations pending for being applied
-    #[serde(skip_serializing_if = "Option::is_none")]
-    num_pending_operations: Option<u64>,
+    num_pending_operations: u64,
 
     /// Status of consensus thread
-    #[serde(skip_serializing_if = "Option::is_none")]
-    consensus_thread_status: Option<ConsensusThreadStatus>,
+    consensus_thread_status: ConsensusThreadStatus,
 }
 
 impl DistributedTelemetryData {
@@ -280,22 +280,30 @@ fn aggregate_peers_info(
         let responsive =
             telemetry_by_peer.contains_key(peer_id) && !missing_peers.contains(peer_id);
 
-        let peer_telemetry = telemetry_by_peer.get(peer_id);
-        let status = peer_telemetry
-            .and_then(|t| t.cluster.as_ref())
-            .and_then(|c| c.status.as_ref());
+        let Some(peer_telemetry) = telemetry_by_peer.get(peer_id) else {
+            debug_assert!(missing_peers.contains(peer_id), "{peer_id} should be part of missing peers");
+            continue;
+        };
+
+        let Some(status) = peer_telemetry.cluster.as_ref()
+            .and_then(|c| c.status.as_ref()) else {
+                debug_assert!(false, "internal service should include cluster status telemetry");
+                continue;
+            };
 
         distributed_peers_info.insert(
             *peer_id,
             DistributedPeerInfo {
                 uri: peer_info.uri.clone(),
                 responsive,
-                role: status.as_ref().and_then(|s| s.role),
-                is_voter: status.as_ref().map(|s| s.is_voter),
-                term: status.as_ref().map(|s| s.term),
-                commit: status.as_ref().map(|s| s.commit),
-                num_pending_operations: status.as_ref().map(|s| s.pending_operations as u64),
-                consensus_thread_status: status.map(|s| s.consensus_thread_status.clone()),
+                details: Some(DistributedPeerDetails {
+                    role: status.role,
+                    is_voter: status.is_voter,
+                    term: status.term,
+                    commit: status.commit,
+                    num_pending_operations: status.pending_operations as u64,
+                    consensus_thread_status: status.consensus_thread_status.clone(),
+                }),
             },
         );
     }
@@ -321,12 +329,7 @@ fn aggregate_peers_info(
             DistributedPeerInfo {
                 uri: info.uri.clone(),
                 responsive: false,
-                role: None,
-                is_voter: None,
-                term: None,
-                commit: None,
-                num_pending_operations: None,
-                consensus_thread_status: None,
+                details: None,
             },
         );
     }
