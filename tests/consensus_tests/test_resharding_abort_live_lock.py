@@ -7,7 +7,7 @@ from .utils import *
 
 def test_resharding_abort_live_lock(tmp_path: pathlib.Path):
     # Bootstrap resharding cluster
-    peer_uris, peer_ids = bootstrap_resharding(tmp_path, direction="down")
+    peer_uris, _ = bootstrap_resharding(tmp_path, direction="down")
 
     # Trigger resharding transfers to last peer, to put replicas into `ReshardingScaleDown` state
     info = get_collection_cluster_info(peer_uris[-1], "test_collection")
