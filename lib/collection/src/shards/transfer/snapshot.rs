@@ -15,7 +15,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::SharedShardHolder;
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -156,7 +156,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_snapshot(
     transfer_config: ShardTransfer,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,

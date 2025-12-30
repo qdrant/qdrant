@@ -10,7 +10,7 @@ use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::SharedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
@@ -32,7 +32,7 @@ const STATE_ACTIVE_READ_MIN_VERSION: Version = Version::new(1, 16, 0);
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_stream_records(
     transfer_config: ShardTransfer,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
