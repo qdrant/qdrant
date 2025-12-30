@@ -5,7 +5,7 @@ from .test_resharding import all_replicas, bootstrap_resharding, migrate_points
 from .utils import *
 
 
-def test_resharding_abourt_live_lock(tmp_path: pathlib.Path):
+def test_resharding_abort_live_lock(tmp_path: pathlib.Path):
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, direction="down")
 
