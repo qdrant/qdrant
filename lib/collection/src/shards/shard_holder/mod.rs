@@ -1,5 +1,6 @@
 mod resharding;
 pub(crate) mod shard_mapping;
+pub mod shared_shard_holder;
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
@@ -28,6 +29,7 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
+pub use self::shared_shard_holder::*;
 use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
@@ -73,8 +75,6 @@ pub struct ShardHolder {
     shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
     sharding_method: ShardingMethod,
 }
-
-pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub async fn trigger_optimizers(&self) {

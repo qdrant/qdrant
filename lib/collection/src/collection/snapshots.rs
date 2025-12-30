@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 
 use common::tar_ext::BuilderExt;
 use common::tempfile_ext::MaybeTempPath;
@@ -286,8 +285,8 @@ impl Collection {
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
-            Arc::clone(&self.shards_holder).read_owned().await,
-            |x| x.get_shard(shard_id),
+            self.shards_holder.clone().read_owned().await,
+            |shard_holder| shard_holder.get_shard(shard_id),
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
