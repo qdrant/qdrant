@@ -213,6 +213,7 @@ impl KeyTaskGroup {
                 mode,
             };
             ready_to_run_tasks.push(RevQueuePair::new(task_id, (task_info, task)));
+            // TODO TODO TODO notify_one
         }
     }
 }
@@ -273,5 +274,123 @@ fn thread_worker<Id: Eq + Hash + Clone>(
             let mut guard = tasks.lock();
             guard.complete_task(&task_info);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shared_shared() {
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_exclusive_exclusive() {
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_shared_exclusive() {
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_exclusive_shared() {
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+        
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_shared_exclusive_shared() {
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        // thread B
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+
+        // thread B
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_none());
     }
 }
