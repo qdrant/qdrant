@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - dev
+      - master
   repository_dispatch:
     types: [benchmark-trigger-image-build]
 
@@ -21,8 +22,8 @@ jobs:
             ghcr-password: ${{ secrets.GITHUB_TOKEN }}
             dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
             push-to-ghcr: true
-            # Only push 'dev' branch to Docker Hub
-            push-to-dockerhub: ${{ github.ref_name == 'dev' }}
+            # Only push 'dev' and 'master' branch to Docker Hub
+            push-to-dockerhub: ${{ github.ref_name == 'dev' || github.ref_name == 'master' }}
             # Enable `staging` feature for all branches except master (tags are excluded by ref_type check)
             staging-build: ${{ github.ref_type == 'branch' && github.ref_name != 'master' }}
 
