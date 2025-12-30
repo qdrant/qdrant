@@ -30,6 +30,7 @@ pub enum GroupMode {
 pub struct Pool<Id> {
     _threads: Vec<JoinHandle<()>>,
     tasks: Arc<Mutex<PoolTasks<Id>>>,
+    wait_for_jobs_condvar: Arc<Condvar>,
     // TODO termination flag
 }
 
@@ -40,7 +41,7 @@ struct PoolTasks<GroupId> {
 }
 
 impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
-    fn submit(&mut self, group_id: GroupId, mode: OperationMode, task: Task) {
+    fn submit(&mut self, group_id: GroupId, mode: OperationMode, task: Task, condvar: &Condvar) {
         let task_id = self.next_available_priority;
         self.next_available_priority += 1;
 
@@ -52,7 +53,7 @@ impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
 
         let task_group = waiting_tasks.entry(group_id.clone()).or_default();
         task_group.waiting_tasks.push_back((mode, task_id, task));
-        task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks);
+        task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
     fn get_next_task(&mut self) -> Option<(TaskInfo<GroupId>, Task)> {
@@ -61,7 +62,7 @@ impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
             .map(|RevQueuePair(_task_id, (task_info, task))| (task_info, task))
     }
 
-    fn complete_task(&mut self, task: &TaskInfo<GroupId>) {
+    fn complete_task(&mut self, task: &TaskInfo<GroupId>, condvar: &Condvar) {
         let PoolTasks {
             stalled_tasks,
             ready_to_run_tasks,
@@ -76,6 +77,7 @@ impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
             &task.group_id,
             // refill ready to run tasks if possible
             ready_to_run_tasks,
+            condvar,
         );
         if group.is_empty() {
             // Includes both running, queued and waiting tasks.
@@ -180,6 +182,7 @@ impl KeyTaskGroup {
         complete_task_operation_mode: OperationMode,
         group_id: &GroupId,
         ready_to_run_tasks: &mut BinaryHeap<RevQueuePair<TaskId, (TaskInfo<GroupId>, Task)>>,
+        condvar: &Condvar,
     ) {
         match self.current_mode.as_mut() {
             Some(GroupMode::Shared(count)) => {
@@ -187,13 +190,13 @@ impl KeyTaskGroup {
                 *count = count.checked_sub(1).expect("shared task count underflow");
                 if *count == 0 {
                     self.current_mode = None;
-                    self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks);
+                    self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
                 }
             }
             Some(GroupMode::Exclusive) => {
                 assert_eq!(complete_task_operation_mode, OperationMode::Exclusive);
                 self.current_mode = None;
-                self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks);
+                self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
             }
             None => {
                 panic!("task_is_complete called when no tasks are running");
@@ -205,6 +208,7 @@ impl KeyTaskGroup {
         &mut self,
         group_id: &GroupId,
         ready_to_run_tasks: &mut BinaryHeap<RevQueuePair<TaskId, (TaskInfo<GroupId>, Task)>>,
+        condvar: &Condvar,
     ) {
         // the state is checked and updated by the try_get_next_runnable_task call
         while let Some((mode, task_id, task)) = self.try_get_next_runnable_task() {
@@ -213,7 +217,7 @@ impl KeyTaskGroup {
                 mode,
             };
             ready_to_run_tasks.push(RevQueuePair::new(task_id, (task_info, task)));
-            // TODO TODO TODO notify_one
+            condvar.notify_one();
         }
     }
 }
@@ -236,6 +240,7 @@ impl<Id: Clone + Hash + Eq + Send + 'static> Pool<Id> {
             .collect();
         Self {
             _threads: threads,
+            wait_for_jobs_condvar: wait_for_jobs,
             tasks,
         }
     }
@@ -244,7 +249,7 @@ impl<Id: Clone + Hash + Eq + Send + 'static> Pool<Id> {
 impl<Id: Clone + Eq + Hash> Pool<Id> {
     pub fn submit(&self, group_id: Id, mode: OperationMode, task: Task) {
         let mut guard = self.tasks.lock();
-        guard.submit(group_id, mode, task);
+        guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
     }
 }
 
@@ -272,7 +277,7 @@ fn thread_worker<Id: Eq + Hash + Clone>(
 
         {
             let mut guard = tasks.lock();
-            guard.complete_task(&task_info);
+            guard.complete_task(&task_info, wait_for_jobs.as_ref());
         }
     }
 }
@@ -283,15 +288,16 @@ mod tests {
 
     #[test]
     fn test_shared_shared() {
+        let condvar = Condvar::new();
         let mut pool_tasks = PoolTasks::default();
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
 
         // thread A
         let job1 = pool_tasks.get_next_task();
         assert!(job1.is_some());
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_some());
 
@@ -302,19 +308,20 @@ mod tests {
 
     #[test]
     fn test_exclusive_exclusive() {
+        let condvar = Condvar::new();
         let mut pool_tasks = PoolTasks::default();
 
-        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
 
         // thread A
         let job1 = pool_tasks.get_next_task();
         assert!(job1.is_some());
 
-        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0);
+        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());
@@ -326,19 +333,20 @@ mod tests {
 
     #[test]
     fn test_shared_exclusive() {
+        let condvar = Condvar::new();
         let mut pool_tasks = PoolTasks::default();
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
 
         // thread A
         let job1 = pool_tasks.get_next_task();
         assert!(job1.is_some());
 
-        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0);
+        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());
@@ -350,23 +358,24 @@ mod tests {
 
     #[test]
     fn test_exclusive_shared() {
+        let condvar = Condvar::new();
         let mut pool_tasks = PoolTasks::default();
 
-        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
 
         // thread A
         let job1 = pool_tasks.get_next_task();
         assert!(job1.is_some());
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0);
+        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());
-        
+
         // No more tasks.
         let job3 = pool_tasks.get_next_task();
         assert!(job3.is_none());
@@ -374,20 +383,21 @@ mod tests {
 
     #[test]
     fn test_shared_exclusive_shared() {
+        let condvar = Condvar::new();
         let mut pool_tasks = PoolTasks::default();
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
 
         // thread A
         let job1 = pool_tasks.get_next_task();
         assert!(job1.is_some());
 
-        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
         // thread B
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}));
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
 
         // thread B
         let job2_2 = pool_tasks.get_next_task();
