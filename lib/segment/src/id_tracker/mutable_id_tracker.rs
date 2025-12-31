@@ -406,6 +406,8 @@ fn store_mapping_changes(
         .open(mappings_path)?;
     let mut writer = BufWriter::new(file);
 
+    log::debug!("writing mapping changes to {mappings_path:?}: {changes:?}");
+
     write_mapping_changes(&mut writer, changes).map_err(|err| {
         OperationError::service_error(format!(
             "Failed to persist ID tracker point mappings ({}): {err}",
