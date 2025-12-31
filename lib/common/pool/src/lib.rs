@@ -3,6 +3,7 @@ use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::hash::Hash;
 use std::panic::{UnwindSafe, catch_unwind};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread::JoinHandle;
 
 use parking_lot::{Condvar, Mutex};
@@ -22,16 +23,75 @@ pub enum OperationMode {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum GroupMode {
+enum GroupState {
     Shared(usize), // number of scheduled or running shared tasks
     Exclusive,
 }
 
-pub struct Pool<Id> {
+pub struct Pool<GroupId> {
     _threads: Vec<JoinHandle<()>>,
-    tasks: Arc<Mutex<PoolTasks<Id>>>,
+    tasks: Arc<Mutex<PoolTasks<GroupId>>>,
     wait_for_jobs_condvar: Arc<Condvar>,
-    // TODO termination flag
+    terminate: Arc<AtomicBool>,
+}
+
+impl<GroupId> Drop for Pool<GroupId> {
+    fn drop(&mut self) {
+        self.terminate
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.wait_for_jobs_condvar.notify_all();
+
+        // TODO should we really wait for threads to finish?
+        for thread in self._threads.drain(..) {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl<GroupId> Pool<GroupId> {
+    pub fn terminate(&mut self) {
+        self.terminate
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.wait_for_jobs_condvar.notify_all();
+
+        for thread in self._threads.drain(..) {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
+    pub fn new(threads: usize) -> Self {
+        let wait_for_jobs = Arc::<Condvar>::default();
+        let tasks = Arc::<Mutex<PoolTasks<GroupId>>>::default();
+        let terminate = Arc::<AtomicBool>::default();
+        let threads = (0..threads)
+            .map(|i| {
+                let wait_for_jobs = wait_for_jobs.clone();
+                let tasks = tasks.clone();
+                let terminate = terminate.clone();
+                std::thread::Builder::new()
+                    .name(format!("qdant-pool-worker-{}", i + 1))
+                    .spawn(move || {
+                        thread_worker(wait_for_jobs, tasks, terminate);
+                    })
+                    .expect("failed to spawn thread")
+            })
+            .collect();
+        Self {
+            _threads: threads,
+            wait_for_jobs_condvar: wait_for_jobs,
+            tasks,
+            terminate,
+        }
+    }
+}
+
+impl<Id: Clone + Eq + Hash> Pool<Id> {
+    pub fn submit(&self, group_id: Id, mode: OperationMode, task: Task) {
+        let mut guard = self.tasks.lock();
+        guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
+    }
 }
 
 struct PoolTasks<GroupId> {
@@ -134,7 +194,7 @@ impl<K: Ord, V> Ord for RevQueuePair<K, V> {
 #[derive(Default)]
 struct KeyTaskGroup {
     // ready_to_run: current_mode != Some(Exclusive)
-    current_mode: Option<GroupMode>,
+    current_mode: Option<GroupState>,
     // it is implicitely ordered by the priority
     waiting_tasks: VecDeque<(OperationMode, TaskId, Task)>,
 }
@@ -142,8 +202,8 @@ struct KeyTaskGroup {
 impl KeyTaskGroup {
     fn is_empty(&self) -> bool {
         let has_running = match self.current_mode {
-            Some(GroupMode::Shared(count)) => count > 0, // TODO can it be 0 here?
-            Some(GroupMode::Exclusive) => true,
+            Some(GroupState::Shared(count)) => count > 0, // TODO can it be 0 here?
+            Some(GroupState::Exclusive) => true,
             None => false,
         };
         self.waiting_tasks.is_empty() && !has_running
@@ -156,15 +216,15 @@ impl KeyTaskGroup {
                     // no running tasks, can run anything
                     let (_, task_id, task) = self.waiting_tasks.pop_front().unwrap();
                     self.current_mode = Some(match mode {
-                        OperationMode::Shared => GroupMode::Shared(1),
-                        OperationMode::Exclusive => GroupMode::Exclusive,
+                        OperationMode::Shared => GroupState::Shared(1),
+                        OperationMode::Exclusive => GroupState::Exclusive,
                     });
                     Some((mode, task_id, task))
                 }
-                (Some(GroupMode::Shared(count)), OperationMode::Shared) => {
+                (Some(GroupState::Shared(count)), OperationMode::Shared) => {
                     // can run another shared task
                     let (_, task_id, task) = self.waiting_tasks.pop_front().unwrap();
-                    self.current_mode = Some(GroupMode::Shared(count + 1));
+                    self.current_mode = Some(GroupState::Shared(count + 1));
                     Some((mode, task_id, task))
                 }
                 _ => {
@@ -185,7 +245,7 @@ impl KeyTaskGroup {
         condvar: &Condvar,
     ) {
         match self.current_mode.as_mut() {
-            Some(GroupMode::Shared(count)) => {
+            Some(GroupState::Shared(count)) => {
                 assert_eq!(complete_task_operation_mode, OperationMode::Shared);
                 *count = count.checked_sub(1).expect("shared task count underflow");
                 if *count == 0 {
@@ -193,7 +253,7 @@ impl KeyTaskGroup {
                     self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
                 }
             }
-            Some(GroupMode::Exclusive) => {
+            Some(GroupState::Exclusive) => {
                 assert_eq!(complete_task_operation_mode, OperationMode::Exclusive);
                 self.current_mode = None;
                 self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
@@ -221,48 +281,27 @@ impl KeyTaskGroup {
         }
     }
 }
-
-impl<Id: Clone + Hash + Eq + Send + 'static> Pool<Id> {
-    pub fn new(threads: usize) -> Self {
-        let wait_for_jobs = Arc::<Condvar>::default();
-        let tasks = Arc::<Mutex<PoolTasks<Id>>>::default();
-        let threads = (0..threads)
-            .map(|i| {
-                let wait_for_jobs = wait_for_jobs.clone();
-                let tasks = tasks.clone();
-                std::thread::Builder::new()
-                    .name(format!("qdant-pool-worker-{}", i + 1))
-                    .spawn(move || {
-                        thread_worker(wait_for_jobs, tasks);
-                    })
-                    .expect("failed to spawn thread")
-            })
-            .collect();
-        Self {
-            _threads: threads,
-            wait_for_jobs_condvar: wait_for_jobs,
-            tasks,
-        }
-    }
-}
-
-impl<Id: Clone + Eq + Hash> Pool<Id> {
-    pub fn submit(&self, group_id: Id, mode: OperationMode, task: Task) {
-        let mut guard = self.tasks.lock();
-        guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
-    }
-}
-
-fn thread_worker<Id: Eq + Hash + Clone>(
+fn thread_worker<GroupId: Eq + Hash + Clone>(
     wait_for_jobs: Arc<Condvar>,
-    tasks: Arc<Mutex<PoolTasks<Id>>>,
+    tasks: Arc<Mutex<PoolTasks<GroupId>>>,
+    terminate: Arc<AtomicBool>,
 ) {
     // TODO restoring a thread if old one panics, or handling the panic.
+
+    // Loop over tasks.
     loop {
         let (task_info, task) = {
             let mut guard = tasks.lock();
+            // Loop over condvar wait attempts.
             loop {
-                // Loop over condvar wait attempts.
+                // Both Mutex::lock and Condvar::wait should impose a total ordering per se, so Relaxed ordering here is
+                // sufficient.
+                //
+                // TODO does it apply to `parking_lot` too? (At least it uses Aquire and Release internally.) If not,
+                // the thread may end up waiting for the condvar infinitely.
+                if terminate.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 if let Some(ready_to_run_task) = guard.get_next_task() {
                     break ready_to_run_task;
                 } else {
@@ -275,9 +314,14 @@ fn thread_worker<Id: Eq + Hash + Clone>(
         let _result = catch_unwind(task);
         // TODO report the panic if any, or refactor everything, let it panic and create a new thread.
 
+        if terminate.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+
         {
             let mut guard = tasks.lock();
             guard.complete_task(&task_info, wait_for_jobs.as_ref());
+            // TODO here lock is released just to be reacquired in the next iteration.
         }
     }
 }
