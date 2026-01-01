@@ -8,6 +8,9 @@ use std::thread::JoinHandle;
 
 use parking_lot::{Condvar, Mutex};
 
+#[cfg(feature = "tokio")]
+mod async_pool;
+
 // Defines ordering in which tasks are added.
 // Tasks which added first are executed first unless something blocks them.
 // Smaller task ID means higher priority.
@@ -85,10 +88,8 @@ impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
             terminate,
         }
     }
-}
 
-impl<Id: Clone + Eq + Hash> Pool<Id> {
-    pub fn submit(&self, group_id: Id, mode: OperationMode, task: Task) {
+    pub fn submit(&self, group_id: GroupId, mode: OperationMode, task: Task) {
         let mut guard = self.tasks.lock();
         guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
     }
