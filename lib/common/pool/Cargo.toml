@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 parking_lot.workspace = true
+tokio =  { workspace = true, optional = true }
+
+[features]
+default = ["tokio"]
 
 [lints]
 workspace = true
