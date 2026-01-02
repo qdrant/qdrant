@@ -10,6 +10,7 @@ use rand::{Rng, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,
+    WithPayloadInterface, WithVector,
 };
 use serde_json::{Map, Value};
 use shard::query::query_enum::QueryEnum;
@@ -25,6 +26,7 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
 };
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
@@ -103,7 +105,7 @@ async fn fixture() -> Collection {
         .create_payload_index(
             "num".parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to create payload index");
@@ -138,7 +140,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true, HwMeasurementAcc::new(), false)
+            .update_local(op, true, HwMeasurementAcc::disposable(), false)
             .await
             .expect("failed to insert points");
     }
@@ -172,7 +174,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -200,7 +202,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -215,6 +217,76 @@ async fn test_scroll_dedup() {
             record.order_value,
         );
         assert!(record.order_value.is_some());
+    }
+
+    // Scroll all points using query API
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: None,
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::disposable(),
+        )
+        .await
+        .expect("failed to scroll");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+
+    // Scroll all points with ordering using query API
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: Some(ScoringQuery::OrderBy(
+                    OrderByInterface::Key("num".parse().unwrap()).into(),
+                )),
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::disposable(),
+        )
+        .await
+        .expect("failed to scroll");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
     }
 }
 
@@ -235,7 +307,7 @@ async fn test_retrieve_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -254,7 +326,7 @@ async fn test_retrieve_dedup() {
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    // Search with search API
     let points = collection
         .search(
             CoreSearchRequest {
@@ -273,7 +345,7 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -286,16 +358,52 @@ async fn test_search_dedup() {
             "got point id {point_id} more than once, they should be deduplicated",
         );
     }
+
+    // Search with query API
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                    NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4]),
+                ))),
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::disposable(),
+        )
+        .await
+        .expect("failed to query");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
 }
 
-pub fn dummy_on_replica_failure() -> ChangePeerFromState {
+fn dummy_on_replica_failure() -> ChangePeerFromState {
     Arc::new(move |_peer_id, _shard_id, _from_state| {})
 }
 
-pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
+fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
-pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_transfer, _reason| {})
 }
