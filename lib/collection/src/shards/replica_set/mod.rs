@@ -694,6 +694,8 @@ impl ShardReplicaSet {
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
+        } else {
+            self.on_remote_state_updated(peer_id, state).await;
         }
 
         self.update_locally_disabled(peer_id);
@@ -764,6 +766,8 @@ impl ShardReplicaSet {
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
+        } else {
+            self.on_remote_state_updated(peer_id, state).await;
         }
 
         self.update_locally_disabled(peer_id);
@@ -783,9 +787,40 @@ impl ShardReplicaSet {
             } else {
                 local_shard.take_newest_clocks_snapshot().await?;
             }
+            // Reset WAL retention to normal whenever local shard changes state
+            local_shard.set_normal_wal_retention().await;
         }
 
         Ok(())
+    }
+
+    /// Called when a peer state is changed (except local peer).
+    ///
+    async fn on_remote_state_updated(&self, _peer_id: PeerId, _new_state: ReplicaState) {
+        let mut is_any_remote_dead = false;
+        let mut is_local_active = false;
+        let this_peer_id = self.this_peer_id();
+
+        for (peer_id, peer_state) in self.replica_state.read().peers().iter() {
+            if *peer_id == this_peer_id {
+                if peer_state.is_active() {
+                    is_local_active = true;
+                }
+            } else if peer_state.requires_recovery() {
+                is_any_remote_dead = true;
+            }
+        }
+
+        {
+            let local_opt = self.local.read().await;
+            if let Some(local_shard) = local_opt.as_ref() {
+                if is_local_active && is_any_remote_dead {
+                    local_shard.set_extended_wal_retention().await;
+                } else {
+                    local_shard.set_normal_wal_retention().await;
+                }
+            }
+        }
     }
 
     pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {

@@ -17,6 +17,7 @@ mod snapshot_tests;
 mod drop;
 #[cfg(feature = "testing")]
 pub mod testing;
+mod wal_ops;
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;

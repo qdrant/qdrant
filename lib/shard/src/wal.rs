@@ -26,6 +26,10 @@ pub struct SerdeWal<R> {
 
 const FIRST_INDEX_FILE: &str = "first-index";
 
+/// When increased retention is used, how many times more segments to retain.
+/// (this is used to extend recoverable history and allow WAL shard transfers)
+const INCREASED_RETENTION_FACTOR: usize = 10;
+
 impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn new(dir: &Path, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
@@ -209,6 +213,17 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
 
     pub fn segment_capacity(&self) -> usize {
         self.options.segment_capacity
+    }
+
+    pub fn set_extended_retention(&mut self) {
+        let normal_retention = self.options.retain_closed.get();
+        self.wal
+            .set_retention(normal_retention * INCREASED_RETENTION_FACTOR);
+    }
+
+    pub fn set_normal_retention(&mut self) {
+        let normal_retention = self.options.retain_closed.get();
+        self.wal.set_retention(normal_retention);
     }
 }
 

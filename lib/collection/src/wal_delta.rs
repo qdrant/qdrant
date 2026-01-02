@@ -170,6 +170,14 @@ impl RecoverableWal {
         }
         Ok(())
     }
+
+    pub async fn set_extended_retention(&self) {
+        self.wal.lock().await.set_extended_retention();
+    }
+
+    pub async fn set_normal_retention(&self) {
+        self.wal.lock().await.set_normal_retention();
+    }
 }
 
 /// Resolve the WAL delta for the given `recovery_point`
