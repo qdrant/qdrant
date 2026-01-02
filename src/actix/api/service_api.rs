@@ -223,3 +223,8 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
         .service(get_logger_config)
         .service(update_logger_config);
 }
+
+// Dedicated service for metrics
+pub fn config_metrics_api(cfg: &mut web::ServiceConfig) {
+    cfg.service(metrics);
+}
