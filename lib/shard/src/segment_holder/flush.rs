@@ -1,7 +1,9 @@
 use std::cmp::{max, min};
+use std::mem;
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
+use common::sort_utils::sort_permutation;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
@@ -19,7 +21,7 @@ impl SegmentHolder {
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
-        let lock_order: Vec<_> = self.segment_flush_ordering().collect();
+        let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function
         let segments = self.segment_locks(lock_order.iter().cloned())?;
@@ -49,7 +51,7 @@ impl SegmentHolder {
         //
         // WARNING: Ordering is very important here. Specifically:
         // - We MUST lock non-appendable first, then appendable.
-        // - We MUST flush appendable first, then non-appendable
+        // - We MUST flush according to the copy-on-write dependency graph.
         // Because of this, two rev(erse) calls are used below here.
         //
         // Locking must happen in this order because `apply_points_to_appendable` can take two
@@ -57,13 +59,8 @@ impl SegmentHolder {
         // up with a deadlock.
         let mut segment_reads: Vec<_> = segments
             .iter()
-            .rev()
             .map(|segment| Self::aloha_lock_segment_read(segment))
             .collect();
-        segment_reads.reverse();
-
-        // Re-sort segments for flush ordering also considering proxies, required to guarantee data consistency
-        segment_reads.sort_by_cached_key(|segment| segment.flush_ordering());
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
@@ -73,6 +70,10 @@ impl SegmentHolder {
         // This lock also prevents multiple parallel sync flushes
         // as it is exclusive
         let mut background_flush_lock = self.lock_flushing()?;
+
+        sort_permutation(&mut segment_reads, &lock_order, |segment_ids| {
+            self.sort_segment_ids_by_flush_dependency(segment_ids)
+        });
 
         // Capture all flushers first to improve data consistency
         let flushers: Vec<_> = segment_reads
@@ -101,18 +102,32 @@ impl SegmentHolder {
         Ok(self.get_max_persisted_version(segment_reads, lock_order))
     }
 
-    /// Defines naive flush ordering for segments.
-    ///
-    /// Flush appendable segments first, then non-appendable.
-    /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
-    /// is persisted, before marking records in non-appendable segments as removed.
-    fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
-        let appendable_segments = self.appendable_segments_ids();
+    fn non_appendable_then_appendable_segments_ids(&self) -> impl Iterator<Item = SegmentId> {
         let non_appendable_segments = self.non_appendable_segments_ids();
+        let appendable_segments = self.appendable_segments_ids();
 
-        appendable_segments
+        non_appendable_segments
             .into_iter()
-            .chain(non_appendable_segments)
+            .chain(appendable_segments)
+    }
+
+    fn sort_segment_ids_by_flush_dependency(&self, segment_ids: &[SegmentId]) -> Vec<SegmentId> {
+        let flush_topology = mem::take(&mut *self.flush_dependency.lock());
+        let mut iter = flush_topology.sort_elements(segment_ids);
+        let sorted_keys: Vec<_> = iter.by_ref().collect();
+
+        // Collect any remaining elements (circular dependencies)
+        let remaining = iter.into_unordered_vec();
+
+        debug_assert!(
+            remaining.is_empty(),
+            "circular dependencies detected in flush topology"
+        );
+
+        // Build combined order: sorted first, then unordered remainder
+        let mut final_order: Vec<_> = sorted_keys;
+        final_order.extend(remaining);
+        final_order
     }
 
     // Joins flush thread if exists

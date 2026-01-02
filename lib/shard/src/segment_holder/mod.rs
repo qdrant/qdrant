@@ -17,6 +17,7 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::save_on_disk::SaveOnDisk;
+use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -70,6 +71,10 @@ pub struct SegmentHolder {
     /// An example for this are operations that don't modify any points but could be expensive to recover from during WAL recovery.
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
+
+    /// Dependency map for flushing segments.
+    /// This structure defines which segments must be flushed before others.
+    flush_dependency: Arc<Mutex<TopoSort<SegmentId>>>,
 
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
@@ -501,14 +506,10 @@ impl SegmentHolder {
 
     /// Apply an operation `point_operation` to a set of points `ids`.
     ///
-    /// A point may exist in multiple segments, having multiple versions. Depending on the kind of
-    /// operation, it either needs to be applied to just the latest point version, or to all of
-    /// them. This is controllable by the `all_point_versions` flag.
-    /// See: <https://github.com/qdrant/qdrant/pull/5956>
-    ///
-    /// In case of operations that may do a copy-on-write, we must only apply the operation to the
-    /// latest point version. Otherwise our copy on write mechanism may repurpose old point data.
-    /// See: <https://github.com/qdrant/qdrant/pull/5528>
+    /// This operation additionally checks if there are older versions of the points we are
+    /// about to update, and deletes those older versions first.
+    /// Older points are obsolete and updating them would bump their version,
+    /// which could make the inconsistent with actual latest version of the point.
     ///
     /// In case of delete operations, we must apply them to all versions of a point. Otherwise
     /// future operations may revive deletions through older point versions.
@@ -675,7 +676,7 @@ impl SegmentHolder {
         let _applied_points_count = self.apply_points(
             ids,
             update_nonappendable,
-            |point_id, _idx, write_segment, &update_nonappendable| {
+            |point_id, idx, write_segment, &update_nonappendable| {
                 if let Some(point_version) = write_segment.point_version(point_id)
                     && point_version >= op_num
                 {
@@ -691,7 +692,15 @@ impl SegmentHolder {
                 } else {
                     self.aloha_random_write(
                         &appendable_segments,
-                        |_appendable_idx, appendable_write_segment| {
+                        |appendable_idx, appendable_write_segment| {
+                            // If we are moving point from one segment to another,
+                            // we must guarantee, that data in new segment will be persister before
+                            // deleting point from old segment.
+                            // Do ensure that, we add flush
+                            self.flush_dependency
+                                .lock()
+                                .add_dependency(idx, appendable_idx);
+
                             let mut all_vectors =
                                 write_segment.all_vectors(point_id, hw_counter)?;
                             let mut payload = write_segment.payload(point_id, hw_counter)?;
