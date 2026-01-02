@@ -814,6 +814,12 @@ enum ReplicaState {
   ReshardingScaleDown = 8;
   // Active for readers, Partial for writers
   ActiveRead = 9;
+  // State for manually creation/recovery of a shard.
+  // Usually when snapshot is uploaded.
+  // This state is equivalent to `Partial`, except:
+  // - it can't receive updates
+  // - it is not treated as broken on startup
+  ManualRecovery = 10;
 }
 
 message ShardKey {

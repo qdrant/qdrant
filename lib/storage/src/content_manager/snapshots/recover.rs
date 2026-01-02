@@ -5,7 +5,9 @@ use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::replica_set::replica_set_state::{
+    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
+};
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
@@ -224,18 +226,28 @@ async fn _do_recover_from_snapshot(
         )));
     }
 
+    let is_manual_recovery_state_supported = toc
+        .get_channel_service()
+        .all_peers_at_version(&MANUAL_RECOVERY_SHARD_STATE_VERSION);
+
+    let recovery_state = if is_manual_recovery_state_supported {
+        ReplicaState::ManualRecovery
+    } else {
+        ReplicaState::Partial
+    };
+
     // Deactivate collection local shards during recovery
     for (shard_id, shard_info) in &state.shards {
         let local_shard_state = shard_info.replicas.get(&this_peer_id);
         match local_shard_state {
             None => {} // Shard is not on this node, skip
             Some(state) => {
-                if state != &ReplicaState::Partial {
+                if state != &recovery_state {
                     toc.send_set_replica_state_proposal(
                         collection_pass.to_string(),
                         this_peer_id,
                         *shard_id,
-                        ReplicaState::Partial,
+                        recovery_state,
                         None,
                     )?;
                 }
@@ -271,6 +283,22 @@ async fn _do_recover_from_snapshot(
         if !recovered {
             log::debug!("Shard {shard_id} is not in snapshot");
             continue;
+        }
+
+        // Staging delay: Allow observing Partial state before activation
+        #[cfg(feature = "staging")]
+        {
+            let delay_secs: f64 = std::env::var("QDRANT__STAGING__SNAPSHOT_RECOVERY_DELAY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            if delay_secs > 0.0 {
+                log::debug!(
+                    "Staging: Delaying shard {shard_id} activation for {delay_secs}s (shard is in Partial state)"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                log::debug!("Staging: Delay complete, proceeding with activation");
+            }
         }
 
         // If this is the only replica, we can activate it
