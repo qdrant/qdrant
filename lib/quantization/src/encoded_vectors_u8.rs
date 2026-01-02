@@ -188,9 +188,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
         let (alpha, offset) = Self::find_alpha_offset_size_dim(orig_data.clone());
         let (alpha, offset) = if let Some(quantile) = quantile {
-            if let Some((min, max)) =
-                find_quantile_interval(orig_data.clone(), vector_parameters.dim, count, quantile)
-            {
+            if let Some((min, max)) = find_quantile_interval(
+                orig_data.clone(),
+                vector_parameters.dim,
+                count,
+                quantile,
+                stopped,
+            )? {
                 Self::alpha_offset_from_min_max(min, max)
             } else {
                 (alpha, offset)
