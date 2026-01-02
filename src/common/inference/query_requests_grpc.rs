@@ -4,8 +4,8 @@ use api::grpc::qdrant::query::Variant;
 use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest::{self, LookupLocation, RecommendStrategy};
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Mmr, NearestWithMmr,
-    Query, VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -13,7 +13,9 @@ use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::types::{Filter, PointIdType, SearchParams};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery,
+};
 use tonic::Status;
 
 use crate::common::inference::batch_processing_grpc::{
@@ -310,6 +312,43 @@ fn convert_query_with_inferred(
             };
 
             Query::Vector(VectorQuery::NearestWithMmr(NearestWithMmr { nearest, mmr }))
+        }
+        Variant::RelevanceFeedback(feedback) => {
+            let grpc::RelevanceFeedbackInput {
+                target,
+                feedback,
+                strategy,
+            } = feedback;
+
+            let target = target.ok_or_else(|| Status::invalid_argument("target is missing"))?;
+            let target = convert_vector_input_with_inferred(target, inferred)?;
+
+            let feedback = feedback
+                .into_iter()
+                .map(|item| {
+                    let example = convert_vector_input_with_inferred(
+                        item.example.ok_or_else(|| {
+                            Status::invalid_argument("feedback example is missing")
+                        })?,
+                        inferred,
+                    )?;
+
+                    Ok(FeedbackItem {
+                        vector: example,
+                        score: OrderedFloat(item.score),
+                    })
+                })
+                .collect::<Result<Vec<_>, Status>>()?;
+
+            let strategy =
+                strategy.ok_or_else(|| Status::invalid_argument("strategy is missing"))?;
+            let strategy = FeedbackStrategy::try_from(strategy)?;
+
+            Query::Vector(VectorQuery::Feedback(FeedbackInternal {
+                target,
+                feedback,
+                strategy,
+            }))
         }
     };
 
