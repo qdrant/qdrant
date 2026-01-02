@@ -16522,6 +16522,34 @@
             "description": "Whether this peer responded for this request",
             "type": "boolean"
           },
+          "details": {
+            "description": "If responsive, these details should be available",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedPeerDetails"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedPeerDetails": {
+        "type": "object",
+        "required": [
+          "commit",
+          "consensus_thread_status",
+          "is_voter",
+          "num_pending_operations",
+          "term",
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "description": "Qdrant version",
+            "type": "string"
+          },
           "role": {
             "description": "Consensus role for the peer",
             "anyOf": [
@@ -16535,40 +16563,28 @@
           },
           "is_voter": {
             "description": "Whether it can participate in leader elections",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "term": {
             "description": "Election term",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "commit": {
             "description": "Latest accepted commit",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "num_pending_operations": {
             "description": "Number of operations pending for being applied",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "consensus_thread_status": {
-            "description": "Status of consensus thread",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConsensusThreadStatus"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ConsensusThreadStatus"
           }
         }
       }
