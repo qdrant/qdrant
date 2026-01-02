@@ -295,7 +295,7 @@ EXPORT uint32_t impl_xor_popcnt_scalar8_neon_u8(
         uint8_t q6 = *(q_ptr++);
         uint8_t q7 = *(q_ptr++);
         uint8_t q8 = *(q_ptr++);
-        
+
         uint8_t x1 = v ^ q1;
         uint8_t x2 = v ^ q2;
         uint8_t x3 = v ^ q3;
@@ -406,7 +406,7 @@ EXPORT uint32_t impl_xor_popcnt_scalar4_neon_u8(
         uint8_t q2 = *(q_ptr++);
         uint8_t q3 = *(q_ptr++);
         uint8_t q4 = *(q_ptr++);
-        
+
         uint8_t x1 = v ^ q1;
         uint8_t x2 = v ^ q2;
         uint8_t x3 = v ^ q3;
@@ -462,4 +462,43 @@ EXPORT float impl_score_l1_neon(
     uint32_t sum = vget_lane_u32(sum64_high, 0);
 
     return (float) sum;
+}
+
+EXPORT float impl_score_dot_asymmetric_neon(
+    const uint8_t* query_ptr,
+    const uint8_t* vector_ptr,
+    uint32_t dim
+) {
+    int16x8_t sum1 = vdupq_n_i16(0);
+    int16x8_t sum2 = vdupq_n_i16(0);
+    int16x8_t sum3 = vdupq_n_i16(0);
+    int16x8_t sum4 = vdupq_n_i16(0);
+    int16x8_t sum5 = vdupq_n_i16(0);
+    int16x8_t sum6 = vdupq_n_i16(0);
+
+    const uint8_t* v_ptr = (const uint8_t*)vector_ptr;
+    const uint8_t* q_ptr = (const uint8_t*)query_ptr;
+
+    uint32_t vector_idx = 0;
+    for (uint32_t query_idx = 0; query_idx < (dim*3); i += 3) {
+        int8x16_t q0_0 = vld1q_u8(q_ptr);
+        int8x16_t q0_1 = vld1q_u8(q_ptr+16);
+
+        sum1 = vadd_i16(sum1, )
+
+
+        vector_idx += 32;
+    }
+
+    for (uint32_t _i = 0; _i < dim / 16; _i++) {
+        uint8x16_t q = vld1q_u8(query_ptr);
+        uint8x16_t v = vld1q_u8(vector_ptr);
+        query_ptr += 16;
+        vector_ptr += 16;
+        uint16x8_t mul_low = vmull_u8(vget_low_u8(q), vget_low_u8(v));
+        uint16x8_t mul_high = vmull_u8(vget_high_u8(q), vget_high_u8(v));
+        mul1 = vpadalq_u16(mul1, mul_low);
+        mul2 = vpadalq_u16(mul2, mul_high);
+    }
+    return (float)vaddvq_u32(vaddq_u32(mul1, mul2));
 }
