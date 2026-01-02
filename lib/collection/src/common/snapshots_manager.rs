@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
+use object_store::ObjectStoreExt;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
