@@ -1,15 +1,15 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
 /// A structure, that performs topological sorting over
 /// a set of dependencies between items of type T.
 #[derive(Clone)]
-pub struct TopoSort<T: Eq + std::hash::Hash + Copy> {
+pub struct TopoSort<T: Eq + std::hash::Hash + Copy, V> {
     /// Maps each node to its set of dependencies (nodes it depends on)
-    dependencies: HashMap<T, HashSet<T>>,
+    dependencies: HashMap<T, HashMap<T, V>>,
 }
 
-impl<T: Debug> Debug for TopoSort<T>
+impl<T: Debug, V: Debug> Debug for TopoSort<T, V>
 where
     T: Eq + std::hash::Hash + Copy,
 {
@@ -22,7 +22,7 @@ where
     }
 }
 
-impl<T: Eq + std::hash::Hash + Copy> Default for TopoSort<T> {
+impl<T: Eq + std::hash::Hash + Copy, V> Default for TopoSort<T, V> {
     fn default() -> Self {
         Self {
             dependencies: HashMap::new(),
@@ -30,7 +30,7 @@ impl<T: Eq + std::hash::Hash + Copy> Default for TopoSort<T> {
     }
 }
 
-impl<T: Eq + std::hash::Hash + Copy> TopoSort<T> {
+impl<T: Eq + std::hash::Hash + Copy, V> TopoSort<T, V> {
     /// Creates a new empty TopoSort.
     pub fn new() -> Self {
         Self::default()
@@ -38,15 +38,22 @@ impl<T: Eq + std::hash::Hash + Copy> TopoSort<T> {
 
     /// Adds a dependency: `element` depends on `depends_on`.
     /// This means `depends_on` must come before `element` in the sorted output.
-    pub fn add_dependency(&mut self, element: T, depends_on: T) {
+    ///
+    /// Additionally, stores a value associated with the dependency.
+    /// Overwrites any existing value for the same dependency.
+    pub fn add_dependency(&mut self, element: T, depends_on: T, value: V) {
         self.dependencies
             .entry(element)
             .or_default()
-            .insert(depends_on);
+            .insert(depends_on, value);
     }
 
-    pub fn clear(&mut self) {
-        self.dependencies.clear();
+    /// Removes dependencies for which the filter function returns false
+    pub fn retain(&mut self, filter: impl Fn(&T, &T, &V) -> bool) {
+        self.dependencies.retain(|element, deps| {
+            deps.retain(|depends_on, value| filter(element, depends_on, value));
+            !deps.is_empty()
+        });
     }
 
     /// This function takes a list of elements and returns them sorted according to the dependencies.
@@ -85,7 +92,7 @@ impl<T: Eq + std::hash::Hash + Copy> TopoSortIter<T> {
 }
 
 impl<T: Eq + std::hash::Hash + Copy> TopoSortIter<T> {
-    fn new(dependencies: &HashMap<T, HashSet<T>>, all_nodes: &[T]) -> Self {
+    fn new<V>(dependencies: &HashMap<T, HashMap<T, V>>, all_nodes: &[T]) -> Self {
         // Build in-degree count and reverse dependency index
         let mut in_degree: HashMap<T, usize> = HashMap::with_capacity(all_nodes.len());
         let mut dependents: HashMap<T, Vec<T>> = HashMap::with_capacity(all_nodes.len());
@@ -102,7 +109,7 @@ impl<T: Eq + std::hash::Hash + Copy> TopoSortIter<T> {
                 continue;
             }
             let mut number_of_deps = 0;
-            for dep in deps {
+            for dep in deps.keys() {
                 if !in_degree.contains_key(dep) {
                     // Ignore dependencies, which are not in the provided all_nodes list
                     continue;
@@ -156,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        let topo: TopoSort<i32> = TopoSort::new();
+        let topo: TopoSort<i32, ()> = TopoSort::new();
         let elements = [1, 2, 3, 4, 5];
         let result: Vec<_> = topo.sort_elements(&elements).collect();
         assert_eq!(result, elements);
@@ -166,7 +173,7 @@ mod tests {
     fn test_single_dependency() {
         let mut topo = TopoSort::new();
         let elements = [2, 1];
-        topo.add_dependency(2, 1); // 2 depends on 1, so 1 comes first
+        topo.add_dependency(2, 1, ()); // 2 depends on 1, so 1 comes first
         let result: Vec<_> = topo.sort_elements(&elements).collect();
         assert_eq!(result, vec![1, 2]);
     }
@@ -175,8 +182,8 @@ mod tests {
     fn test_chain() {
         let mut topo = TopoSort::new();
         let elements = [3, 2, 1];
-        topo.add_dependency(3, 2); // 3 depends on 2
-        topo.add_dependency(2, 1); // 2 depends on 1
+        topo.add_dependency(3, 2, ()); // 3 depends on 2
+        topo.add_dependency(2, 1, ()); // 2 depends on 1
         let result: Vec<_> = topo.sort_elements(&elements).collect();
         assert_eq!(result, vec![1, 2, 3]);
     }
@@ -186,10 +193,10 @@ mod tests {
         let mut topo = TopoSort::new();
 
         let elements = [4, 2, 3, 1];
-        topo.add_dependency(4, 2); // 4 depends on 2
-        topo.add_dependency(4, 3); // 4 depends on 3
-        topo.add_dependency(2, 1); // 2 depends on 1
-        topo.add_dependency(3, 1); // 3 depends on 1
+        topo.add_dependency(4, 2, ()); // 4 depends on 2
+        topo.add_dependency(4, 3, ()); // 4 depends on 3
+        topo.add_dependency(2, 1, ()); // 2 depends on 1
+        topo.add_dependency(3, 1, ()); // 3 depends on 1
         let result: Vec<_> = topo.sort_elements(&elements).collect();
 
         // 1 must come first, 4 must come last
@@ -209,13 +216,13 @@ mod tests {
         let elements = ['A', 'B', 'C', 'D'];
 
         let mut topo = TopoSort::new();
-        topo.add_dependency('B', 'A');
-        topo.add_dependency('C', 'A');
-        topo.add_dependency('D', 'A');
+        topo.add_dependency('B', 'A', ());
+        topo.add_dependency('C', 'A', ());
+        topo.add_dependency('D', 'A', ());
 
-        topo.add_dependency('C', 'B');
-        topo.add_dependency('D', 'C');
-        topo.add_dependency('B', 'D');
+        topo.add_dependency('C', 'B', ());
+        topo.add_dependency('D', 'C', ());
+        topo.add_dependency('B', 'D', ());
 
         let mut iter = topo.sort_elements(&elements);
         let first = iter.next().unwrap();
@@ -236,9 +243,9 @@ mod tests {
     fn test_missing_dependencies() {
         let mut topo = TopoSort::new();
         let elements = [3, 2, 1];
-        topo.add_dependency(3, 4); // This one is extra and should be ignored
-        topo.add_dependency(2, 1);
-        topo.add_dependency(3, 2);
+        topo.add_dependency(3, 4, ()); // This one is extra and should be ignored
+        topo.add_dependency(2, 1, ());
+        topo.add_dependency(3, 2, ());
         let result: Vec<_> = topo.sort_elements(&elements).collect();
         // 4 is missing, so 3 should be treated as having no dependencies
         assert_eq!(result, vec![1, 2, 3]);

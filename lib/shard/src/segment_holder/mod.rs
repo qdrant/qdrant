@@ -74,7 +74,9 @@ pub struct SegmentHolder {
 
     /// Dependency map for flushing segments.
     /// This structure defines which segments must be flushed before others.
-    flush_dependency: Arc<Mutex<TopoSort<SegmentId>>>,
+    /// Dependency graph also stores the maximum version of the operation, which created the dependency,
+    /// so we can clear all dependencies after flushing up to certain operation.
+    flush_dependency: Arc<Mutex<TopoSort<SegmentId, SeqNumberType>>>,
 
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
@@ -697,9 +699,11 @@ impl SegmentHolder {
                             // we must guarantee, that data in new segment will be persister before
                             // deleting point from old segment.
                             // Do ensure that, we add flush
-                            self.flush_dependency
-                                .lock()
-                                .add_dependency(idx, appendable_idx);
+                            self.flush_dependency.lock().add_dependency(
+                                idx,
+                                appendable_idx,
+                                op_num,
+                            );
 
                             let mut all_vectors =
                                 write_segment.all_vectors(point_id, hw_counter)?;
