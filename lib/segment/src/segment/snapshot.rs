@@ -31,7 +31,7 @@ impl SnapshotEntry for Segment {
         format: SnapshotFormat,
         manifest: Option<&SnapshotManifest>,
     ) -> OperationResult<()> {
-        let segment_id = self.segment_id()?;
+        let segment_id = self.segment_uuid();
 
         log::debug!("Taking snapshot of segment {segment_id}");
 
@@ -56,8 +56,8 @@ impl SnapshotEntry for Segment {
 
                 let mut empty_manifest = None;
                 let request_manifest = manifest
-                    .get(segment_id)
-                    .unwrap_or_else(|| empty_manifest.insert(SegmentManifest::empty(segment_id)));
+                    .get(&segment_id)
+                    .unwrap_or_else(|| empty_manifest.insert(SegmentManifest::empty(&segment_id)));
 
                 updated_files(request_manifest, &updated_manifest)
             }
@@ -101,28 +101,8 @@ impl SnapshotEntry for Segment {
 }
 
 impl Segment {
-    fn segment_id(&self) -> OperationResult<&str> {
-        let id = self
-            .current_path
-            .file_stem()
-            .and_then(|segment_dir| segment_dir.to_str())
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "failed to extract segment ID from segment path {}",
-                    self.current_path.display(),
-                ))
-            })?;
-
-        debug_assert!(
-            Uuid::try_parse(id).is_ok(),
-            "segment ID {id} is not a valid UUID",
-        );
-
-        Ok(id)
-    }
-
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        let segment_id = self.segment_id()?;
+        let segment_id = self.segment_uuid();
         let segment_version = self.version();
 
         let files = self
@@ -202,7 +182,7 @@ impl Segment {
         );
 
         Ok(SegmentManifest {
-            segment_id: segment_id.into(),
+            segment_id,
             segment_version,
             file_versions,
         })

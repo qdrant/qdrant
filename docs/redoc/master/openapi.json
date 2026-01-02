@@ -12515,10 +12515,14 @@
           "payloads_size_bytes",
           "ram_usage_bytes",
           "segment_type",
+          "uuid",
           "vector_data",
           "vectors_size_bytes"
         ],
         "properties": {
+          "uuid": {
+            "type": "string"
+          },
           "segment_type": {
             "$ref": "#/components/schemas/SegmentType"
           },
@@ -13104,6 +13108,7 @@
         "required": [
           "name",
           "segment_ids",
+          "segment_uuids",
           "start_at",
           "status"
         ],
@@ -13119,6 +13124,13 @@
               "type": "integer",
               "format": "uint",
               "minimum": 0
+            }
+          },
+          "segment_uuids": {
+            "description": "Segment UUIDs being optimized",
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "status": {
