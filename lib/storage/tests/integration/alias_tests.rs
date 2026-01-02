@@ -91,7 +91,7 @@ fn test_alias_operation() {
         update_runtime,
         general_runtime,
         ResourceBudget::default(),
-        ChannelService::new(6333, None),
+        ChannelService::new(6333, None, None),
         0,
         Some(propose_operation_sender),
     ));

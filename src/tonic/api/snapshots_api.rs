@@ -259,20 +259,30 @@ impl ShardSnapshots for ShardSnapshotsService {
     ) -> Result<Response<RecoverSnapshotResponse>, Status> {
         let access = extract_access(&mut request);
         let request = request.into_inner();
+
         validate_and_log(&request);
+
+        let RecoverShardSnapshotRequest {
+            collection_name,
+            shard_id,
+            snapshot_location,
+            snapshot_priority,
+            checksum,
+            api_key,
+        } = request;
 
         let timing = Instant::now();
 
         common::snapshots::recover_shard_snapshot(
             self.toc.clone(),
             access,
-            request.collection_name,
-            request.shard_id,
-            request.snapshot_location.try_into()?,
-            request.snapshot_priority.try_into()?,
-            request.checksum,
+            collection_name,
+            shard_id,
+            snapshot_location.try_into()?,
+            snapshot_priority.try_into()?,
+            checksum,
             self.http_client.clone(),
-            request.api_key,
+            api_key,
         )
         .await?;
 
