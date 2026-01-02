@@ -129,7 +129,7 @@ impl SegmentHolder {
 
         debug_assert!(
             remaining.is_empty(),
-            "circular dependencies detected in flush topology"
+            "circular dependencies detected in flush topology: {remaining:?}",
         );
         #[cfg(feature = "staging")]
         if !remaining.is_empty() {
