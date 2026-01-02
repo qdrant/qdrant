@@ -123,6 +123,13 @@ impl SegmentHolder {
             remaining.is_empty(),
             "circular dependencies detected in flush topology"
         );
+        #[cfg(feature = "staging")]
+        if !remaining.is_empty() {
+            log::warn!(
+                "circular dependencies detected in flush topology for segments: {:?}",
+                remaining
+            );
+        }
 
         // Build combined order: sorted first, then unordered remainder
         let mut final_order: Vec<_> = sorted_keys;
