@@ -16,6 +16,7 @@ use common::tar_ext::BuilderExt;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
+use io::safe_delete::sync_parent_dir_async;
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::{
     open_snapshot_archive, validate_snapshot_archive,
@@ -184,11 +185,12 @@ impl ShardHolder {
             // file to be left behind if the process is killed in the middle. We must avoid this so
             // we don't attempt to load this shard anymore on restart.
             let shard_config_path = ShardConfig::get_config_path(&shard_path);
-            if let Err(err) = tokio_fs::remove_file(shard_config_path).await {
+            if let Err(err) = tokio_fs::remove_file(&shard_config_path).await {
                 log::error!(
                     "Failed to remove shard config file before removing the rest of the files: {err}",
                 );
             }
+            sync_parent_dir_async(&shard_config_path).await?;
 
             tokio_fs::remove_dir_all(shard_path).await?;
         }

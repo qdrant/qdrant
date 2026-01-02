@@ -253,7 +253,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let original_segment_path = match segment {
-            LockedSegment::Original(s) => s.read().current_path.clone(),
+            LockedSegment::Original(s) => s.read().segment_path.clone(),
             LockedSegment::Proxy(_) => panic!("Not expected"),
         };
 

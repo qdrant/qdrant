@@ -1436,7 +1436,6 @@ fn is_heartbeat(message: &RaftMessage) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::Arc;
     use std::thread;
 
@@ -1465,7 +1464,7 @@ mod tests {
         // Given
         let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
         let mut settings = crate::Settings::new(None).expect("Can't read config.");
-        settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
+        settings.storage.storage_path = storage_dir.path().to_path_buf();
         tracing_subscriber::fmt::init();
         let search_runtime =
             crate::create_search_runtime(settings.storage.performance.max_search_threads)
@@ -1496,7 +1495,7 @@ mod tests {
             persistent_state,
             toc_arc.clone(),
             operation_sender,
-            Path::new(storage_path),
+            storage_path,
         )
         .expect("initialize consensus manager")
         .into();
