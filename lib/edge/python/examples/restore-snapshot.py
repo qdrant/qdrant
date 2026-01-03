@@ -43,3 +43,5 @@ points = shard.retrieve(point_ids=[1, 2, 3], with_vector=False, with_payload=Tru
 
 for point in points:
     print(point)
+
+print("Manifest of restored shard:", shard.snapshot_manifest())
