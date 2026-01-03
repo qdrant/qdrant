@@ -26,30 +26,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use self::clock_map::{ClockMap, RecoveryPoint};
-use self::disk_usage_watcher::DiskUsageWatcher;
-use super::update_tracker::UpdateTracker;
-use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder,
-};
-use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::common::file_utils::{move_dir, move_file};
-use crate::config::CollectionConfigInternal;
-use crate::operations::OperationWithClockTag;
-use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
-    check_sparse_compatible_with_segment_config,
-};
-use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
-use crate::shards::CollectionId;
-use crate::shards::shard::ShardId;
-use crate::shards::shard_config::ShardConfig;
-use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal_delta::RecoverableWal;
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -79,6 +55,31 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
 use tokio_util::task::AbortOnDropHandle;
+
+use self::clock_map::{ClockMap, RecoveryPoint};
+use self::disk_usage_watcher::DiskUsageWatcher;
+use super::update_tracker::UpdateTracker;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::collection_manager::collection_updater::CollectionUpdater;
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder,
+};
+use crate::collection_manager::optimizers::TrackerLog;
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::file_utils::{move_dir, move_file};
+use crate::config::CollectionConfigInternal;
+use crate::operations::OperationWithClockTag;
+use crate::operations::shared_storage_config::SharedStorageConfig;
+use crate::operations::types::{
+    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
+    check_sparse_compatible_with_segment_config,
+};
+use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
+use crate::shards::CollectionId;
+use crate::shards::shard::ShardId;
+use crate::shards::shard_config::ShardConfig;
+use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);

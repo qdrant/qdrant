@@ -1,14 +1,9 @@
-use fs_err as fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::files::segments_path;
-use crate::locked_segment::LockedSegment;
-use crate::payload_index_schema::PayloadIndexSchema;
-use crate::proxy_segment::ProxySegment;
-use crate::segment_holder::{SegmentHolder, SegmentId};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
+use fs_err as fs;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
@@ -17,6 +12,12 @@ use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::types::SegmentConfig;
+
+use crate::files::segments_path;
+use crate::locked_segment::LockedSegment;
+use crate::payload_index_schema::PayloadIndexSchema;
+use crate::proxy_segment::ProxySegment;
+use crate::segment_holder::{SegmentHolder, SegmentId};
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
