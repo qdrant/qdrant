@@ -48,6 +48,7 @@ use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segme
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
+use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, WAL_PATH};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;
@@ -83,14 +84,6 @@ use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
-
-const WAL_PATH: &str = "wal";
-
-const SEGMENTS_PATH: &str = "segments";
-
-const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
-
-const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 
 /// LocalShard
 ///
@@ -476,7 +469,7 @@ impl LocalShard {
     }
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(SEGMENTS_PATH)
+        shard::files::segments_path(shard_path)
     }
 
     #[allow(clippy::too_many_arguments)]

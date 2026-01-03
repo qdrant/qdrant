@@ -9,8 +9,8 @@ use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
-use segment::segment::Segment;
 use segment::types::{SegmentConfig, SnapshotFormat};
+use shard::files::{SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
@@ -19,7 +19,7 @@ use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::local_shard::{LocalShard, LocalShardClocks, SEGMENTS_PATH, WAL_PATH};
+use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 use crate::update_handler::UpdateSignal;
 use crate::wal_delta::LockedWal;
 
@@ -37,29 +37,7 @@ impl LocalShard {
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
         log::info!("Restoring shard snapshot {}", snapshot_path.display());
-        // Read dir first as the directory contents would change during restore
-        let entries = fs::read_dir(LocalShard::segments_path(snapshot_path))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Filter out hidden entries
-        let entries = entries.into_iter().filter(|entry| {
-            let is_hidden = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|s| s.starts_with('.'));
-            if is_hidden {
-                log::debug!(
-                    "Ignoring hidden segment in local shard during snapshot recovery: {}",
-                    entry.path().display(),
-                );
-            }
-            !is_hidden
-        });
-
-        for entry in entries {
-            Segment::restore_snapshot_in_place(&entry.path())?;
-        }
-
+        SegmentHolder::restore_unpacked_snapshot(snapshot_path)?;
         Ok(())
     }
 
