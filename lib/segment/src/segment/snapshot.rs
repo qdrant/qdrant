@@ -1,3 +1,14 @@
+use std::collections::{HashMap, HashSet};
+use std::io::{Seek, Write};
+use std::ops::Deref as _;
+use std::path::{Path, PathBuf};
+use std::{fmt, thread};
+
+use common::tar_ext;
+use fs_err as fs;
+use io::storage_version::VERSION_FILE;
+use uuid::Uuid;
+
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::manifest::{FileVersion, SegmentManifest};
 use crate::entry::SegmentEntry as _;
@@ -8,15 +19,6 @@ use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Seg
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
-use common::tar_ext;
-use fs_err as fs;
-use io::storage_version::VERSION_FILE;
-use std::collections::{HashMap, HashSet};
-use std::io::{Seek, Write};
-use std::ops::Deref as _;
-use std::path::{Path, PathBuf};
-use std::{fmt, thread};
-use uuid::Uuid;
 
 pub const ROCKS_DB_VIRT_FILE: &str = "::ROCKS_DB";
 pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "::PAYLOAD_INDEX_ROCKS_DB";

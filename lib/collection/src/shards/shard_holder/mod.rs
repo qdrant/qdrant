@@ -21,9 +21,9 @@ use itertools::Itertools;
 use segment::common::validate_snapshot_archive::{
     open_snapshot_archive, validate_snapshot_archive,
 };
-use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
+use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
@@ -31,7 +31,6 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
 pub use self::shared_shard_holder::*;
-use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;

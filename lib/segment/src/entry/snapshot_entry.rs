@@ -7,7 +7,6 @@ use crate::data_types::manifest::SegmentManifest;
 use crate::types::SnapshotFormat;
 
 pub trait SnapshotEntry {
-
     /// Segment identifier in the snapshot.
     fn segment_id(&self) -> OperationResult<String>;
 

@@ -1,6 +1,7 @@
-use crate::{PyError, PyShard};
 use edge::Shard;
 use segment::common::operation_error::OperationError;
+
+use crate::{PyError, PyShard};
 
 impl PyShard {
     pub fn get_shard(&self) -> Result<&Shard, PyError> {

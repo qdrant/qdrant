@@ -3,10 +3,6 @@ use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::local_shard::{LocalShard, LocalShardClocks};
-use crate::update_handler::UpdateSignal;
-use crate::wal_delta::LockedWal;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err as fs;
@@ -23,6 +19,11 @@ use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
 use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
+
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::local_shard::{LocalShard, LocalShardClocks};
+use crate::update_handler::UpdateSignal;
+use crate::wal_delta::LockedWal;
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {

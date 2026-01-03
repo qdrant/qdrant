@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use segment::common::operation_error::OperationResult;
-use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 
 use crate::Shard;
 
