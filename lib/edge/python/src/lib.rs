@@ -122,6 +122,11 @@ impl PyShard {
         edge::Shard::unpack_snapshot(&snapshot_path, &target_path)?;
         Ok(())
     }
+
+    pub fn snapshot_manifest(&self) -> Result<PyValue> {
+        let manifest = self.0.manifest()?;
+        Ok(PyValue::new(serde_json::to_value(&manifest).unwrap()))
+    }
 }
 
 pub type Result<T, E = PyError> = std::result::Result<T, E>;
