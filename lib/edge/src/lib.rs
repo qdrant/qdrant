@@ -3,6 +3,7 @@ pub mod retrieve;
 pub mod scroll;
 pub mod search;
 pub mod update;
+mod snapshots;
 
 use std::num::NonZero;
 use std::path::{Path, PathBuf};

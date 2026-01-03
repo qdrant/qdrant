@@ -114,6 +114,14 @@ impl PyShard {
         let points = PyRecord::wrap_vec(points);
         Ok(points)
     }
+
+    // ------- Snapshot related methods -------
+
+    #[staticmethod]
+    pub fn unpack_snapshot(snapshot_path: PathBuf, target_path: PathBuf) -> Result<()> {
+        edge::Shard::unpack_snapshot(&snapshot_path, &target_path)?;
+        Ok(())
+    }
 }
 
 pub type Result<T, E = PyError> = std::result::Result<T, E>;

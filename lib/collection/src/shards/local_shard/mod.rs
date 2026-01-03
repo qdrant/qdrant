@@ -26,35 +26,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arc_swap::ArcSwap;
-use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
-use common::rate_limiting::RateLimiter;
-use common::save_on_disk::SaveOnDisk;
-use common::{panic, tar_ext};
-use fs_err as fs;
-use fs_err::tokio as tokio_fs;
-use futures::StreamExt as _;
-use futures::stream::FuturesUnordered;
-use indicatif::{ProgressBar, ProgressStyle};
-use itertools::Itertools;
-use parking_lot::{Mutex as ParkingMutex, RwLock};
-use segment::entry::entry_point::SegmentEntry as _;
-use segment::index::field_index::CardinalityEstimation;
-use segment::segment_constructor::{build_segment, load_segment};
-use segment::types::{
-    Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
-};
-use shard::operations::CollectionUpdateOperations;
-use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
-use shard::wal::SerdeWal;
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
-use tokio_util::task::AbortOnDropHandle;
-
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
@@ -79,17 +50,38 @@ use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal_delta::RecoverableWal;
+use arc_swap::ArcSwap;
+use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
+use common::rate_limiting::RateLimiter;
+use common::save_on_disk::SaveOnDisk;
+use common::{panic, tar_ext};
+use fs_err as fs;
+use fs_err::tokio as tokio_fs;
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
+use indicatif::{ProgressBar, ProgressStyle};
+use itertools::Itertools;
+use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::entry::entry_point::SegmentEntry as _;
+use segment::index::field_index::CardinalityEstimation;
+use segment::segment_constructor::{build_segment, load_segment};
+use segment::types::{
+    Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
+};
+use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, WAL_PATH};
+use shard::operations::CollectionUpdateOperations;
+use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
+use shard::wal::SerdeWal;
+use tokio::runtime::Handle;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
+use tokio_util::task::AbortOnDropHandle;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
-
-const WAL_PATH: &str = "wal";
-
-const SEGMENTS_PATH: &str = "segments";
-
-const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
-
-const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 
 /// LocalShard
 ///
@@ -475,7 +467,7 @@ impl LocalShard {
     }
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(SEGMENTS_PATH)
+        shard::files::segments_path(shard_path)
     }
 
     #[allow(clippy::too_many_arguments)]
