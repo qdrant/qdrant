@@ -1,8 +1,10 @@
-use crate::PyShard;
-use segment::common::operation_error::{OperationError, OperationResult};
 use std::mem;
 use std::path::PathBuf;
+
+use segment::common::operation_error::{OperationError, OperationResult};
 use tempfile::Builder;
+
+use crate::PyShard;
 
 impl PyShard {
     pub fn _update_from_snapshot(

@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::segment_holder::snapshot_manifest::SnapshotManifest;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
@@ -17,6 +16,7 @@ use crate::files::segments_path;
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
+use crate::segment_holder::snapshot_manifest::SnapshotManifest;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 impl SegmentHolder {
