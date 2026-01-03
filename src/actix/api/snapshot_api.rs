@@ -19,7 +19,7 @@ use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use segment::common::BYTES_IN_MB;
-use segment::data_types::manifest::SnapshotManifest;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;

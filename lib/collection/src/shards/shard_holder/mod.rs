@@ -21,7 +21,7 @@ use itertools::Itertools;
 use segment::common::validate_snapshot_archive::{
     open_snapshot_archive, validate_snapshot_archive,
 };
-use segment::data_types::manifest::SnapshotManifest;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use shard_mapping::ShardKeyMapping;

@@ -2,6 +2,7 @@ mod flush;
 mod snapshot;
 #[cfg(test)]
 mod tests;
+pub mod snapshot_manifest;
 
 use std::cmp::{max, min};
 use std::collections::hash_map::Entry;

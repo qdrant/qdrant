@@ -6,11 +6,12 @@ use ::io::safe_delete::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
-use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
+use fs_err::{tokio as tokio_fs, File};
+use segment::data_types::manifest::SegmentManifest;
+use segment::segment::snapshot::SEGMENT_MANIFEST_FILE_NAME;
 use segment::types::SnapshotFormat;
-
-use super::{REPLICA_STATE_FILE, ShardReplicaSet};
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
+use super::{ShardReplicaSet, REPLICA_STATE_FILE};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
@@ -147,7 +148,7 @@ impl ShardReplicaSet {
             let added = snapshot_segments.insert(segment_id.to_string());
             debug_assert!(added);
 
-            let manifest_path = segment_path.join("segment_manifest.json");
+            let manifest_path = segment_path.join(SEGMENT_MANIFEST_FILE_NAME);
 
             if recovery_type.is_full() {
                 if manifest_path.exists() {

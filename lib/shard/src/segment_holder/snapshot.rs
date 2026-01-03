@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::segment_holder::snapshot_manifest::SnapshotManifest;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
@@ -8,7 +9,6 @@ use io::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::common::validate_snapshot_archive::open_snapshot_archive;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::types::SegmentConfig;
@@ -24,10 +24,8 @@ impl SegmentHolder {
         let mut manifest = SnapshotManifest::default();
 
         for (_, segment) in self.iter() {
-            segment
-                .get()
-                .read()
-                .collect_snapshot_manifest(&mut manifest)?;
+            let segment_manifest = segment.get().read().get_segment_manifest()?;
+            manifest.add(segment_manifest);
         }
 
         Ok(manifest)

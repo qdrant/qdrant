@@ -8,7 +8,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
-use segment::data_types::manifest::SnapshotManifest;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
 

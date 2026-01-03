@@ -2,8 +2,10 @@ pub mod config;
 pub mod query;
 pub mod repr;
 pub mod search;
+mod snapshots;
 pub mod types;
 pub mod update;
+mod utils;
 
 use std::path::PathBuf;
 
@@ -72,29 +74,29 @@ mod qdrant_edge {
 
 #[pyclass(name = "Shard")]
 #[derive(Debug)]
-pub struct PyShard(edge::Shard);
+pub struct PyShard(Option<edge::Shard>);
 
 #[pymethods]
 impl PyShard {
     #[new]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
         let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
-        Ok(Self(shard))
+        Ok(Self(Some(shard)))
     }
 
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
-        self.0.update(operation.into())?;
+        self.get_shard()?.update(operation.into())?;
         Ok(())
     }
 
     pub fn query(&self, query: PyQueryRequest) -> Result<Vec<PyScoredPoint>> {
-        let points = self.0.query(query.into())?;
+        let points = self.get_shard()?.query(query.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
-        let points = self.0.search(search.into())?;
+        let points = self.get_shard()?.search(search.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
@@ -106,7 +108,7 @@ impl PyShard {
         with_vector: Option<PyWithVector>,
     ) -> Result<Vec<PyRecord>> {
         let point_ids = PyPointId::peel_vec(point_ids);
-        let points = self.0.retrieve(
+        let points = self.get_shard()?.retrieve(
             &point_ids,
             with_payload.map(WithPayloadInterface::from),
             with_vector.map(WithVector::from),
@@ -124,8 +126,18 @@ impl PyShard {
     }
 
     pub fn snapshot_manifest(&self) -> Result<PyValue> {
-        let manifest = self.0.manifest()?;
+        let manifest = self.get_shard()?.manifest()?;
         Ok(PyValue::new(serde_json::to_value(&manifest).unwrap()))
+    }
+
+    #[pyo3(signature = (snapshot_path, tmp_dir=None))]
+    pub fn update_from_snapshot(
+        &mut self,
+        snapshot_path: PathBuf,
+        tmp_dir: Option<PathBuf>,
+    ) -> Result<()> {
+        self._update_from_snapshot(snapshot_path, tmp_dir)?;
+        Ok(())
     }
 }
 
