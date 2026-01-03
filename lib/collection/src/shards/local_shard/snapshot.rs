@@ -1,27 +1,28 @@
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
-
-use common::save_on_disk::SaveOnDisk;
-use common::tar_ext;
-use fs_err as fs;
-use parking_lot::RwLock;
-use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::manifest::SnapshotManifest;
-use segment::entry::SegmentEntry;
-use segment::types::{SegmentConfig, SnapshotFormat};
-use shard::files::{SEGMENTS_PATH, WAL_PATH};
-use shard::locked_segment::LockedSegment;
-use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
-use tokio::sync::oneshot;
-use tokio_util::task::AbortOnDropHandle;
-use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 use crate::update_handler::UpdateSignal;
 use crate::wal_delta::LockedWal;
+use common::save_on_disk::SaveOnDisk;
+use common::tar_ext;
+use fs_err as fs;
+use parking_lot::RwLock;
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::manifest::SegmentManifest;
+use segment::entry::SegmentEntry;
+use segment::types::{SegmentConfig, SnapshotFormat};
+use shard::files::{SEGMENTS_PATH, WAL_PATH};
+use shard::locked_segment::LockedSegment;
+use shard::payload_index_schema::PayloadIndexSchema;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
+use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use tokio::sync::oneshot;
+use tokio_util::task::AbortOnDropHandle;
+use wal::{Wal, WalOptions};
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -210,7 +211,19 @@ pub fn snapshot_all_segments(
         payload_index_schema,
         |segment| {
             let read_segment = segment.read();
-            read_segment.take_snapshot(temp_dir, tar, format, manifest)?;
+            let request_segment_manifest = if let Some(manifest) = manifest {
+                let segment_id = read_segment.segment_id()?;
+                Some(
+                    manifest
+                        .get(&segment_id)
+                        .map(Cow::Borrowed)
+                        .unwrap_or_else(|| Cow::Owned(SegmentManifest::empty(segment_id))),
+                )
+            } else {
+                None
+            };
+            let segment_manifest_ref = request_segment_manifest.as_ref().map(|m| m.as_ref());
+            read_segment.take_snapshot(temp_dir, tar, format, segment_manifest_ref)?;
             Ok(())
         },
         update_lock,

@@ -7,7 +7,7 @@ use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::data_types::manifest::SnapshotManifest;
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use segment::types::SnapshotFormat;
 use tokio::sync::OwnedRwLockReadGuard;
 
