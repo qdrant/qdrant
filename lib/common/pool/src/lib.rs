@@ -1,7 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::hash::Hash;
-use std::panic::{UnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread::JoinHandle;
@@ -13,17 +12,26 @@ use thread::thread_worker;
 mod async_pool;
 mod thread;
 
+#[cfg(feature = "tokio")]
+pub use async_pool::AsyncPool;
+
 // Defines ordering in which tasks are added.
 // Tasks which added first are executed first unless something blocks them.
 // Smaller task ID means higher priority.
 type TaskId = usize;
 
 // The UnwindSafe bound may be removed if we handle panics with recreating a new thread.
-pub type Task = Box<dyn FnOnce() + Send + UnwindSafe + 'static>;
+pub type Task = Box<dyn FnOnce() + Send + 'static>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OperationMode {
     Shared,
+    // TODO Actually, Exclusive mode doesn't exists; it is deffered with mode switch for particular group ID mid-flight.
+    // TODO design an API to
+    //      1. check if group is uncontended, and join it
+    //      2. if no uncontended group exists, join any with new priority (now or old?)
+    //
+    //      Also, it worth learning if case 1 every fires on contention (perhaps, on RW contention it is always 2).
     Exclusive,
 }
 
@@ -37,6 +45,7 @@ pub struct Pool<GroupId> {
     _threads: Vec<JoinHandle<()>>,
     tasks: Arc<Mutex<PoolTasks<GroupId>>>,
     wait_for_jobs_condvar: Arc<Condvar>,
+    // TODO make possible using an external termination flag
     terminate: Arc<AtomicBool>,
 }
 
@@ -95,11 +104,16 @@ impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
         let mut guard = self.tasks.lock();
         guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
     }
+
+    pub fn submit_uncontended(&self, task: Task) {
+        let mut guard = self.tasks.lock();
+        guard.submit_uncontended(task);
+    }
 }
 
 struct PoolTasks<GroupId> {
     next_available_priority: TaskId,
-    ready_to_run_tasks: BinaryHeap<RevQueuePair<TaskId, (TaskInfo<GroupId>, Task)>>,
+    ready_to_run_tasks: BinaryHeap<RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>>,
     stalled_tasks: HashMap<GroupId, KeyTaskGroup>,
 }
 
@@ -119,7 +133,15 @@ impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
         task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
-    fn get_next_task(&mut self) -> Option<(TaskInfo<GroupId>, Task)> {
+    fn submit_uncontended(&mut self, task: Task) {
+        let task_id = self.next_available_priority;
+        self.next_available_priority += 1;
+
+        self.ready_to_run_tasks
+            .push(RevQueuePair::new(task_id, (None, task)));
+    }
+
+    fn get_next_task(&mut self) -> Option<(Option<TaskInfo<GroupId>>, Task)> {
         self.ready_to_run_tasks
             .pop()
             .map(|RevQueuePair(_task_id, (task_info, task))| (task_info, task))
@@ -244,7 +266,9 @@ impl KeyTaskGroup {
         &mut self,
         complete_task_operation_mode: OperationMode,
         group_id: &GroupId,
-        ready_to_run_tasks: &mut BinaryHeap<RevQueuePair<TaskId, (TaskInfo<GroupId>, Task)>>,
+        ready_to_run_tasks: &mut BinaryHeap<
+            RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>,
+        >,
         condvar: &Condvar,
     ) {
         match self.current_mode.as_mut() {
@@ -270,7 +294,9 @@ impl KeyTaskGroup {
     fn refill_ready_to_run_tasks<GroupId: Clone>(
         &mut self,
         group_id: &GroupId,
-        ready_to_run_tasks: &mut BinaryHeap<RevQueuePair<TaskId, (TaskInfo<GroupId>, Task)>>,
+        ready_to_run_tasks: &mut BinaryHeap<
+            RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>,
+        >,
         condvar: &Condvar,
     ) {
         // the state is checked and updated by the try_get_next_runnable_task call
@@ -279,7 +305,7 @@ impl KeyTaskGroup {
                 group_id: group_id.clone(),
                 mode,
             };
-            ready_to_run_tasks.push(RevQueuePair::new(task_id, (task_info, task)));
+            ready_to_run_tasks.push(RevQueuePair::new(task_id, (Some(task_info), task)));
             condvar.notify_one();
         }
     }
@@ -324,7 +350,7 @@ mod tests {
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());
@@ -349,7 +375,7 @@ mod tests {
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());
@@ -374,7 +400,7 @@ mod tests {
         let job2 = pool_tasks.get_next_task();
         assert!(job2.is_none());
 
-        pool_tasks.complete_task(&job1.unwrap().0, &condvar);
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
 
         let job2_2 = pool_tasks.get_next_task();
         assert!(job2_2.is_some());

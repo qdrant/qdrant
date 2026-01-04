@@ -1,11 +1,10 @@
 use std::hash::Hash;
-use std::panic::catch_unwind;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::PoolTasks;
+use crate::{PoolTasks, TaskInfo};
 
 pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone>(
     wait_for_jobs: Arc<Condvar>,
@@ -37,17 +36,45 @@ pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone>(
             }
         };
 
-        let _result = catch_unwind(task);
+        // Even if the task panics, we want to mark it as completed and proceed.
+        // This is a very simple pool!
+        let _task_completion_guard = TaskCompletionGuard::new(&tasks, &wait_for_jobs, task_info);
+
+        let _result = task();
         // TODO report the panic if any, or refactor everything, let it panic and create a new thread.
 
         if terminate.load(std::sync::atomic::Ordering::Relaxed) {
+            // We might std::mem::forget(task_completion_guard), but leaving it as is is OK too.
             return;
         }
+    }
+}
 
-        {
-            let mut guard = tasks.lock();
-            guard.complete_task(&task_info, wait_for_jobs.as_ref());
-            // TODO here lock is released just to be reacquired in the next iteration.
+struct TaskCompletionGuard<'env, GroupId: Clone + Eq + Hash> {
+    task_pool: &'env Mutex<PoolTasks<GroupId>>,
+    wait_for_jobs: &'env Condvar,
+    task_info: Option<TaskInfo<GroupId>>,
+}
+
+impl<'env, GroupId: Clone + Eq + Hash> TaskCompletionGuard<'env, GroupId> {
+    fn new(
+        task_pool: &'env Mutex<PoolTasks<GroupId>>,
+        wait_for_jobs: &'env Condvar,
+        task_info: Option<TaskInfo<GroupId>>,
+    ) -> Self {
+        Self {
+            task_pool,
+            wait_for_jobs,
+            task_info,
+        }
+    }
+}
+
+impl<'env, GroupId: Clone + Eq + Hash> Drop for TaskCompletionGuard<'env, GroupId> {
+    fn drop(&mut self) {
+        if let Some(task_info) = &self.task_info {
+            let mut guard = self.task_pool.lock();
+            guard.complete_task(task_info, self.wait_for_jobs);
         }
     }
 }
