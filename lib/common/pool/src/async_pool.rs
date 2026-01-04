@@ -1,11 +1,16 @@
 use crate::{OperationMode, Pool};
-use std::{hash::Hash, panic::UnwindSafe};
+use std::hash::Hash;
+use std::panic::{UnwindSafe, catch_unwind};
 
 pub struct AsyncPool<GroupId> {
     inner: Pool<GroupId>,
 }
 
-pub struct AsyncPoolError;
+pub enum AsyncTaskError {
+    Panicked(Box<dyn std::any::Any + Send + 'static>),
+    // Can happen if the pool is terminated or dropped.
+    Canceled,
+}
 
 impl<GroupId> AsyncPool<GroupId>
 where
@@ -22,13 +27,17 @@ where
         group_id: GroupId,
         mode: OperationMode,
         task: impl FnOnce() -> R + Send + UnwindSafe + 'static,
-    ) -> Result<R, AsyncPoolError> {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let async_task = move || {
-            let result = task();
-            let _ = sender.send(result);
+    ) -> Result<R, AsyncTaskError> {
+        let (oneshot_sender, oneshot_receiver) = tokio::sync::oneshot::channel();
+        let oneshot_task = move || {
+            let result = catch_unwind(task);
+            let _ = oneshot_sender.send(result);
         };
-        self.inner.submit(group_id, mode, Box::new(async_task));
-        receiver.await.map_err(|_| AsyncPoolError)
+        self.inner.submit(group_id, mode, Box::new(oneshot_task));
+        match oneshot_receiver.await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(panic)) => Err(AsyncTaskError::Panicked(panic)),
+            Err(_) => Err(AsyncTaskError::Canceled),
+        }
     }
 }
