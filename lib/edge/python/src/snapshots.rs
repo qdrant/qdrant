@@ -59,14 +59,16 @@ impl PyShard {
             }
         };
 
-        let shard = Shard::recover_partial_snapshot(
+        drop(shard);
+
+        let new_shard = Shard::recover_partial_snapshot(
             &shard_path,
             &current_manifest,
             unpack_dir.path(),
             &snapshot_manifest,
         )?;
 
-        self.0 = Some(shard);
+        self.0 = Some(new_shard);
         Ok(())
     }
 }

@@ -112,8 +112,13 @@ impl SnapshotUtils {
         merge_directories.push((from_segments_path, to_segments_path));
         replace_directories.push((from_wal_path, to_wal_path));
 
-        move_files.push((from_newest_clocks_path, to_newest_clocks_path));
-        move_files.push((from_oldest_clocks_path, to_oldest_clocks_path));
+        if from_newest_clocks_path.exists() {
+            move_files.push((from_newest_clocks_path, to_newest_clocks_path));
+        }
+
+        if from_oldest_clocks_path.exists() {
+            move_files.push((from_oldest_clocks_path, to_oldest_clocks_path));
+        }
 
         SnapshotMergePlan {
             move_files,
