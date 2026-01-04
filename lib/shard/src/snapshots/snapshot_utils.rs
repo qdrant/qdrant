@@ -1,9 +1,11 @@
-use crate::files::segments_path;
+use std::path::Path;
+
 use fs_err as fs;
 use segment::common::operation_error::OperationResult;
 use segment::common::validate_snapshot_archive::open_snapshot_archive;
 use segment::segment::Segment;
-use std::path::Path;
+
+use crate::files::segments_path;
 
 pub struct SnapshotUtils;
 

@@ -14,12 +14,13 @@ use segment::types::{SegmentConfig, SnapshotFormat};
 use shard::files::{SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
+use shard::snapshots::snapshot_utils::SnapshotUtils;
 use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
-use shard::snapshots::snapshot_utils::SnapshotUtils;
+
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
 use crate::update_handler::UpdateSignal;

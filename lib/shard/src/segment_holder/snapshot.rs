@@ -13,8 +13,8 @@ use segment::types::SegmentConfig;
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
-use crate::snapshots::snapshot_manifest::SnapshotManifest;
 use crate::segment_holder::{SegmentHolder, SegmentId};
+use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
