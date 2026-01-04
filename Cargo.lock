@@ -3314,6 +3314,7 @@ dependencies = [
  "atomicwrites",
  "bincode 1.3.3",
  "fs-err",
+ "fs_extra",
  "semver",
  "serde",
  "serde_json",
