@@ -157,9 +157,6 @@ pub trait PayloadIndex {
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
 
-    #[cfg(feature = "rocksdb")]
-    fn take_database_snapshot(&self, path: &std::path::Path) -> OperationResult<()>;
-
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<(PayloadKeyType, PathBuf)> {

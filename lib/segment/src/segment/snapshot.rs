@@ -20,9 +20,6 @@ use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
-pub const ROCKS_DB_VIRT_FILE: &str = "::ROCKS_DB";
-pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "::PAYLOAD_INDEX_ROCKS_DB";
-
 /// File name, used to store segment manifest inside snapshots
 pub const SEGMENT_MANIFEST_FILE_NAME: &str = "segment_manifest.json";
 
@@ -192,13 +189,6 @@ impl Segment {
             let _ = file_versions.insert(path.to_path_buf(), version);
         }
 
-        // TODO: Version RocksDB!? 🤯
-        file_versions.insert(PathBuf::from(ROCKS_DB_VIRT_FILE), FileVersion::Unversioned);
-        file_versions.insert(
-            PathBuf::from(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE),
-            FileVersion::Unversioned,
-        );
-
         Ok(SegmentManifest {
             segment_id,
             segment_version,
@@ -254,39 +244,6 @@ pub fn snapshot_files(
 ) -> OperationResult<()> {
     // use temp_path for intermediary files
     let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
-
-    // TODO: Version RocksDB!? 🤯
-
-    #[cfg(feature = "rocksdb")]
-    if include_if(ROCKS_DB_VIRT_FILE.as_ref())
-        && let Some(db) = &segment.database
-    {
-        let db_backup_path = temp_path.join(super::DB_BACKUP_PATH);
-
-        let db = db.read();
-        crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to create RocksDB backup at {}: {err}",
-                db_backup_path.display()
-            ))
-        })?;
-    }
-
-    #[cfg(feature = "rocksdb")]
-    if include_if(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE.as_ref()) {
-        let payload_index_db_backup_path = temp_path.join(crate::segment::PAYLOAD_DB_BACKUP_PATH);
-
-        segment
-            .payload_index
-            .borrow()
-            .take_database_snapshot(&payload_index_db_backup_path)
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to create payload index RocksDB backup at {}: {err}",
-                    payload_index_db_backup_path.display()
-                ))
-            })?;
-    }
 
     if temp_path.exists() {
         tar.blocking_append_dir_all(&temp_path, Path::new(""))
