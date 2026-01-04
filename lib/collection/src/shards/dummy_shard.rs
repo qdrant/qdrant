@@ -14,7 +14,7 @@ use segment::types::{
 use shard::operations::CollectionUpdateOperations;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
-use shard::segment_holder::snapshot_manifest::SnapshotManifest;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;

@@ -8,7 +8,7 @@ use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::SnapshotFormat;
-use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;

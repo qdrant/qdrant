@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use edge::Shard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::files::{clear_data, move_data};
-use shard::segment_holder::snapshot_manifest::SnapshotManifest;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tempfile::Builder;
 
 use crate::PyShard;

@@ -10,7 +10,7 @@ use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use common::tempfile_ext::MaybeTempPath;
-use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;

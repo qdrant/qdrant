@@ -23,7 +23,7 @@ use segment::common::validate_snapshot_archive::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
-use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};

@@ -15,5 +15,6 @@ pub mod wal;
 pub mod common;
 #[cfg(feature = "testing")]
 pub mod fixtures;
+pub mod snapshots;
 
 pub type PeerId = u64;

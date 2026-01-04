@@ -5,7 +5,7 @@ use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::tokio as tokio_fs;
 use segment::types::SnapshotFormat;
-use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 
 use super::{REPLICA_STATE_FILE, ShardReplicaSet};
 use crate::operations::types::{CollectionError, CollectionResult};

@@ -17,7 +17,7 @@ use segment::types::{
 use semver::Version;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
-use shard::segment_holder::snapshot_manifest::SnapshotManifest;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 

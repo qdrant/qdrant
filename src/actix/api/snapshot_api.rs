@@ -19,7 +19,7 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use segment::common::BYTES_IN_MB;
 use serde::{Deserialize, Serialize};
-use shard::segment_holder::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{

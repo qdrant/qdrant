@@ -11,7 +11,7 @@ use collection::shards::replica_set::replica_set_state::{
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
-use shard::segment_holder::snapshot_manifest::RecoveryType;
+use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
