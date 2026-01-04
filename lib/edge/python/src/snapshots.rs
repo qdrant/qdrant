@@ -1,7 +1,10 @@
 use std::mem;
 use std::path::PathBuf;
 
+use edge::Shard;
 use segment::common::operation_error::{OperationError, OperationResult};
+use shard::files::{clear_data, move_data};
+use shard::segment_holder::snapshot_manifest::SnapshotManifest;
 use tempfile::Builder;
 
 use crate::PyShard;
@@ -24,13 +27,39 @@ impl PyShard {
         let unpack_dir = Builder::new().tempdir_in(tmp_dir)?;
         edge::Shard::unpack_snapshot(&snapshot_path, unpack_dir.path())?;
 
+        let snapshot_manifest = SnapshotManifest::load_from_snapshot(unpack_dir.path(), None)?;
+
+        // Assume full snapshot recovery in case of empty manifest
+        let full_recovery = snapshot_manifest.is_empty();
+
         let Some(shard) = mem::take(&mut self.0) else {
             return Err(OperationError::service_error("Shard is not initialized"));
         };
 
         let shard_path = shard.path().to_path_buf();
 
-        drop(shard);
+        if full_recovery {
+            drop(shard);
+            clear_data(&shard_path)?;
+            move_data(unpack_dir.path(), &shard_path)?;
+
+            let shard = Shard::load(&shard_path, None)?;
+
+            self.0 = Some(shard);
+
+            return Ok(());
+        }
+
+        let _current_manifest = match shard.snapshot_manifest() {
+            Ok(current_manifest) => current_manifest,
+            Err(err) => {
+                // Restore the shard before returning
+                self.0 = Some(shard);
+                return Err(err);
+            }
+
+            
+        };
 
         // Apply partial snapshot
         todo!()

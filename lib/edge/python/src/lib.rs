@@ -126,7 +126,7 @@ impl PyShard {
     }
 
     pub fn snapshot_manifest(&self) -> Result<PyValue> {
-        let manifest = self.get_shard()?.manifest()?;
+        let manifest = self.get_shard()?.snapshot_manifest()?;
         Ok(PyValue::new(serde_json::to_value(&manifest).unwrap()))
     }
 

@@ -11,7 +11,7 @@ impl Shard {
         SegmentHolder::unpack_snapshot(snapshot_path, target_path)
     }
 
-    pub fn manifest(&self) -> OperationResult<SnapshotManifest> {
+    pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
         self.segments.read().snapshot_manifest()
     }
 }
