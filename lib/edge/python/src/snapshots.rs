@@ -57,8 +57,6 @@ impl PyShard {
                 self.0 = Some(shard);
                 return Err(err);
             }
-
-            
         };
 
         // Apply partial snapshot
