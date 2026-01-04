@@ -7,6 +7,8 @@ use fs_extra::dir::CopyOptions;
 /// Move directory from one location to another
 ///
 /// Handles the case when the source and destination are on different filesystems.
+/// If destination directory exists, the contents of the source directory are moved
+/// into the destination directory, preserving existing files in the destination.
 pub fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> io::Result<()> {
     let from = from.into();
     let to = to.into();
@@ -65,4 +67,46 @@ fn cleanup_file(path: &Path) -> io::Result<()> {
         return Err(err);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn test_move_dir_preserves_existing_destination_files() {
+        let temp = tempdir().unwrap();
+
+        // Create source directory with a file
+        let source_dir = temp.path().join("source");
+        fs::create_dir(&source_dir).unwrap();
+        fs::write(source_dir.join("source_file.txt"), "source content").unwrap();
+
+        // Create destination directory with a different file
+        let dest_dir = temp.path().join("dest");
+        fs::create_dir(&dest_dir).unwrap();
+        fs::write(dest_dir.join("existing_file.txt"), "existing content").unwrap();
+
+        // Move source to destination
+        move_dir(&source_dir, &dest_dir).unwrap();
+
+        // Verify source file was moved
+        assert!(dest_dir.join("source_file.txt").exists());
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("source_file.txt")).unwrap(),
+            "source content"
+        );
+
+        // Verify existing destination file is preserved
+        assert!(dest_dir.join("existing_file.txt").exists());
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("existing_file.txt")).unwrap(),
+            "existing content"
+        );
+
+        // Verify source directory is removed
+        assert!(!source_dir.exists());
+    }
 }

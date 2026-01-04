@@ -50,7 +50,7 @@ impl PyShard {
             return Ok(());
         }
 
-        let _current_manifest = match shard.snapshot_manifest() {
+        let current_manifest = match shard.snapshot_manifest() {
             Ok(current_manifest) => current_manifest,
             Err(err) => {
                 // Restore the shard before returning
@@ -59,7 +59,14 @@ impl PyShard {
             }
         };
 
-        // Apply partial snapshot
-        todo!()
+        let shard = Shard::recover_partial_snapshot(
+            &shard_path,
+            &current_manifest,
+            unpack_dir.path(),
+            &snapshot_manifest,
+        )?;
+
+        self.0 = Some(shard);
+        Ok(())
     }
 }

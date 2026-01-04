@@ -8,6 +8,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 /// Move directory from one location to another
 ///
 /// Handles the case when the source and destination are on different filesystems.
+/// If destination directory exists, the contents of the source directory are moved
+/// into the destination directory, preserving existing files in the destination.
 ///
 /// # Cancel safety
 ///
