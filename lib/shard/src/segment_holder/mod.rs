@@ -1,5 +1,6 @@
 mod flush;
 mod snapshot;
+pub mod snapshot_manifest;
 #[cfg(test)]
 mod tests;
 

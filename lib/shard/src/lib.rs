@@ -1,3 +1,4 @@
+pub mod files;
 pub mod locked_segment;
 pub mod operation_rate_cost;
 pub mod operations;
