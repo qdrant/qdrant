@@ -50,7 +50,7 @@ criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 itertools = { workspace = true }
 rstest = { workspace = true }
-self_cell = "1.2.1"
+self_cell = "1.2.2"
 serde_json = { workspace = true }
 tango-bench = "0.6.0"
 
