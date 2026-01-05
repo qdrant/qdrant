@@ -92,7 +92,7 @@ pub(super) async fn transfer_stream_records(
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
-                    filter: None,
+                    filter,
                     exact: false,
                 }),
                 None, // no timeout
