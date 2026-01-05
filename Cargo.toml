@@ -212,7 +212,7 @@ bytemuck = { version = "1.24.0", features = [
 ] }
 bytes = "1.11.0"
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.53", features = ["derive", "env"] }
+clap = { version = "4.5.54", features = ["derive", "env"] }
 criterion = "0.8.1"
 data-encoding = "2.9.0"
 delegate = "0.13.5"
