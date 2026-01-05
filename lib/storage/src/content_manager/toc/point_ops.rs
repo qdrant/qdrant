@@ -4,6 +4,7 @@ use collection::collection::Collection;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
+use collection::config::ShardingMethod;
 use collection::grouping::GroupBy;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
@@ -550,8 +551,18 @@ impl TableOfContent {
             }
 
             ShardSelectorInternal::All => {
-                let shard_keys = collection.get_shard_keys().await;
+                let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
+
                 if shard_keys.is_empty() {
+                    if sharding_method == ShardingMethod::Custom {
+                        // There are no shards to execute this operation, so just acknowledge
+                        return Ok(UpdateResult {
+                            operation_id: None,
+                            status: UpdateStatus::Acknowledged,
+                            clock_tag: operation.clock_tag,
+                        });
+                    }
+
                     collection
                         .update_from_client(
                             operation.operation,

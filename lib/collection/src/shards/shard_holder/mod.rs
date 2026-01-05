@@ -74,7 +74,7 @@ pub struct ShardHolder {
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
-    sharding_method: ShardingMethod,
+    pub(crate) sharding_method: ShardingMethod,
 }
 
 impl ShardHolder {
