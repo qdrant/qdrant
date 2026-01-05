@@ -696,7 +696,7 @@ impl SegmentHolder {
                         &appendable_segments,
                         |appendable_idx, appendable_write_segment| {
                             // If we are moving point from one segment to another,
-                            // we must guarantee, that data in new segment will be persister before
+                            // we must guarantee, that data in new segment will be persisted before
                             // deleting point from old segment.
                             // Do ensure that, we add a flush dependency
                             self.flush_dependency.lock().add_dependency(
