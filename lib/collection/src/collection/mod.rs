@@ -357,7 +357,7 @@ impl Collection {
     pub async fn get_sharding_method_and_keys(&self) -> (ShardingMethod, Vec<ShardKey>) {
         let shards_holder = self.shards_holder.read().await;
 
-        let sharding_method = shards_holder.sharding_method;
+        let sharding_method = shards_holder.get_sharding_method().clone();
         let shard_keys = shards_holder
             .get_shard_key_to_ids_mapping()
             .keys()
