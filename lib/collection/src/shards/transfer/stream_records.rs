@@ -84,7 +84,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         replica_set
-            .proxify_local(remote_shard.clone(), None, filter)
+            .proxify_local(remote_shard.clone(), None, filter.clone())
             .await?;
 
         // Don't increment hardware usage for internal operations
