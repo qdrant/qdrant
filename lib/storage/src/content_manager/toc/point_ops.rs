@@ -555,7 +555,9 @@ impl TableOfContent {
 
                 if shard_keys.is_empty() {
                     if sharding_method == ShardingMethod::Custom {
-                        return Err(CollectionError::bad_input("No shard keys exist to apply operation in custom sharding"));
+                        return Err(CollectionError::bad_input(
+                            "No shard keys exist to apply operation in custom sharding",
+                        ));
                     }
 
                     collection
