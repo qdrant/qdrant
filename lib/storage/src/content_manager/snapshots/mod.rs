@@ -3,7 +3,6 @@ pub mod recover;
 
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -89,7 +88,7 @@ pub async fn do_list_full_snapshots(
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     access.check_global_access(AccessRequirements::new())?;
     let snapshots_manager = toc.get_snapshots_storage_manager()?;
-    let snapshots_path = Path::new(toc.snapshots_path());
+    let snapshots_path = toc.snapshots_path();
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
 
@@ -111,7 +110,7 @@ async fn _do_create_full_snapshot(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<SnapshotDescription, StorageError> {
-    let snapshot_dir = Path::new(toc.snapshots_path()).to_path_buf();
+    let snapshot_dir = toc.snapshots_path();
 
     let all_collections = toc.all_collections(&access).await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];

@@ -158,7 +158,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         .tempfile()
         .unwrap();
     let segment_id = segment
-        .current_path
+        .segment_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();

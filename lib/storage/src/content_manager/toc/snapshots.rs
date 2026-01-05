@@ -22,7 +22,7 @@ impl TableOfContent {
         })
     }
 
-    pub fn snapshots_path(&self) -> &str {
+    pub fn snapshots_path(&self) -> &Path {
         &self.storage_config.snapshots_path
     }
 
@@ -31,10 +31,7 @@ impl TableOfContent {
     }
 
     pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
-        Self::collection_snapshots_path(
-            Path::new(&self.storage_config.snapshots_path),
-            collection_name,
-        )
+        Self::collection_snapshots_path(&self.storage_config.snapshots_path, collection_name)
     }
 
     pub async fn create_snapshots_path(
