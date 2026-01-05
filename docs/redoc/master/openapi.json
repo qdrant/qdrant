@@ -16402,6 +16402,11 @@
             "format": "date-time",
             "nullable": true
           },
+          "status": {
+            "description": "Status of the step",
+            "type": "string",
+            "nullable": true
+          },
           "duration_sec": {
             "description": "For finished operations, how long they took, in seconds.",
             "type": "number",

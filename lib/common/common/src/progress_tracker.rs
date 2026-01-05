@@ -52,6 +52,10 @@ pub struct ProgressTree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
 
+    /// Status of the step
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+
     /// For finished operations, how long they took, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_sec: Option<f64>,
@@ -271,9 +275,10 @@ impl ProgressNode {
             }
             None => (None, None),
         };
-        let (started_at, finished_at, duration_sec) = match state {
-            ProgressState::Pending | ProgressState::Skipped => (None, None, None),
-            ProgressState::InProgress { started_at, .. } => (Some(*started_at), None, None),
+        let (started_at, finished_at, duration_sec, status) = match state {
+            ProgressState::Pending => (None, None, None, Some("pending".to_string())),
+            ProgressState::Skipped => (None, None, None, Some("skipped".to_string())),
+            ProgressState::InProgress { started_at, .. } => (Some(*started_at), None, None, None),
             ProgressState::Finished {
                 started_at,
                 finished_at,
@@ -282,12 +287,14 @@ impl ProgressNode {
                 Some(*started_at),
                 Some(*finished_at),
                 Some(duration.as_secs_f64()),
+                None,
             ),
         };
         ProgressTree {
             name,
             started_at,
             finished_at,
+            status,
             duration_sec,
             done,
             total,
