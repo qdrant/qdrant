@@ -10,7 +10,7 @@ use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::manifest::{FileVersion, SegmentManifest, SnapshotManifest};
+use crate::data_types::manifest::{FileVersion, SegmentManifest};
 use crate::entry::SegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
@@ -23,23 +23,47 @@ use crate::vector_storage::VectorStorage;
 pub const ROCKS_DB_VIRT_FILE: &str = "::ROCKS_DB";
 pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "::PAYLOAD_INDEX_ROCKS_DB";
 
+/// File name, used to store segment manifest inside snapshots
+pub const SEGMENT_MANIFEST_FILE_NAME: &str = "segment_manifest.json";
+
 impl SnapshotEntry for Segment {
+    fn segment_id(&self) -> OperationResult<String> {
+        let id = self
+            .segment_path
+            .file_stem()
+            .and_then(|segment_dir| segment_dir.to_str())
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "failed to extract segment ID from segment path {}",
+                    self.segment_path.display(),
+                ))
+            })?
+            .to_string();
+
+        debug_assert!(
+            Uuid::try_parse(&id).is_ok(),
+            "segment ID {id} is not a valid UUID",
+        );
+
+        Ok(id)
+    }
+
     fn take_snapshot(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<&SnapshotManifest>,
+        manifest: Option<&SegmentManifest>,
     ) -> OperationResult<()> {
         let segment_id = self.segment_id()?;
 
         log::debug!("Taking snapshot of segment {segment_id}");
 
-        let include_files = match manifest {
-            None => HashSet::new(),
+        let include_files_opt = match manifest {
+            None => None,
 
             Some(manifest) => {
-                let updated_manifest = self.get_segment_manifest()?;
+                let updated_manifest = self._get_segment_manifest()?;
 
                 let updated_manifest_json =
                     serde_json::to_vec(&updated_manifest).map_err(|err| {
@@ -51,23 +75,18 @@ impl SnapshotEntry for Segment {
                 let tar = tar.descend(Path::new(&segment_id))?;
                 tar.blocking_append_data(
                     &updated_manifest_json,
-                    Path::new("files/segment_manifest.json"),
+                    &Path::new("files").join(SEGMENT_MANIFEST_FILE_NAME),
                 )?;
 
-                let mut empty_manifest = None;
-                let request_manifest = manifest
-                    .get(segment_id)
-                    .unwrap_or_else(|| empty_manifest.insert(SegmentManifest::empty(segment_id)));
-
-                updated_files(request_manifest, &updated_manifest)
+                Some(updated_files(manifest, &updated_manifest))
             }
         };
 
         let include_if = |path: &Path| {
-            if manifest.is_none() {
-                true
-            } else {
+            if let Some(include_files) = &include_files_opt {
                 include_files.contains(path)
+            } else {
+                true
             }
         };
 
@@ -94,34 +113,13 @@ impl SnapshotEntry for Segment {
         Ok(())
     }
 
-    fn collect_snapshot_manifest(&self, manifest: &mut SnapshotManifest) -> OperationResult<()> {
-        manifest.add(self.get_segment_manifest()?);
-        Ok(())
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        self._get_segment_manifest()
     }
 }
 
 impl Segment {
-    fn segment_id(&self) -> OperationResult<&str> {
-        let id = self
-            .segment_path
-            .file_stem()
-            .and_then(|segment_dir| segment_dir.to_str())
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "failed to extract segment ID from segment path {}",
-                    self.segment_path.display(),
-                ))
-            })?;
-
-        debug_assert!(
-            Uuid::try_parse(id).is_ok(),
-            "segment ID {id} is not a valid UUID",
-        );
-
-        Ok(id)
-    }
-
-    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+    fn _get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
         let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
@@ -202,7 +200,7 @@ impl Segment {
         );
 
         Ok(SegmentManifest {
-            segment_id: segment_id.into(),
+            segment_id,
             segment_version,
             file_versions,
         })

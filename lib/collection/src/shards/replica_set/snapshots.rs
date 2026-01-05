@@ -1,14 +1,11 @@
-use std::collections::HashSet;
-use std::io;
 use std::path::Path;
 
 use ::io::safe_delete::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
-use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
-use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
+use fs_err::tokio as tokio_fs;
 use segment::types::SnapshotFormat;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 
 use super::{REPLICA_STATE_FILE, ShardReplicaSet};
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -18,22 +15,6 @@ use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum RecoveryType {
-    Full,
-    Partial,
-}
-
-impl RecoveryType {
-    pub fn is_full(self) -> bool {
-        matches!(self, Self::Full)
-    }
-
-    pub fn is_partial(self) -> bool {
-        matches!(self, Self::Partial)
-    }
-}
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -121,83 +102,8 @@ impl ShardReplicaSet {
             return Ok(false);
         }
 
-        let segments_path = LocalShard::segments_path(replica_path);
-
-        let mut snapshot_segments = HashSet::new();
-        let mut snapshot_manifest = SnapshotManifest::default();
-
-        for segment_entry in fs::read_dir(segments_path)? {
-            let segment_path = segment_entry?.path();
-
-            if !segment_path.is_dir() {
-                log::warn!(
-                    "segment path {} in extracted snapshot {} is not a directory",
-                    segment_path.display(),
-                    replica_path.display(),
-                );
-
-                continue;
-            }
-
-            let segment_id = segment_path
-                .file_name()
-                .and_then(|segment_id| segment_id.to_str())
-                .expect("segment path ends with a valid segment id");
-
-            let added = snapshot_segments.insert(segment_id.to_string());
-            debug_assert!(added);
-
-            let manifest_path = segment_path.join("segment_manifest.json");
-
-            if recovery_type.is_full() {
-                if manifest_path.exists() {
-                    return Err(CollectionError::bad_request(format!(
-                        "invalid shard snapshot: \
-                         segment {segment_id} contains segment manifest; \
-                         ensure you are not recovering partial snapshot on shard snapshot endpoint",
-                    )));
-                }
-
-                continue;
-            }
-
-            if !manifest_path.exists() {
-                return Err(CollectionError::bad_request(format!(
-                    "invalid partial snapshot: \
-                     segment {segment_id} does not contain segment manifest; \
-                     ensure you are not recovering shard snapshot on partial snapshot endpoint",
-                )));
-            }
-
-            let manifest = File::open(&manifest_path).map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to open segment {segment_id} manifest: {err}",
-                ))
-            })?;
-
-            let manifest = io::BufReader::new(manifest);
-
-            let manifest: SegmentManifest = serde_json::from_reader(manifest).map_err(|err| {
-                CollectionError::bad_request(format!(
-                    "failed to deserialize segment {segment_id} manifest: {err}",
-                ))
-            })?;
-
-            if segment_id != manifest.segment_id {
-                return Err(CollectionError::bad_request(format!(
-                    "invalid partial snapshot: \
-                     segment {segment_id} contains segment manifest with segment ID {}",
-                    manifest.segment_id,
-                )));
-            }
-
-            let added = snapshot_manifest.add(manifest);
-            debug_assert!(added);
-        }
-
-        snapshot_manifest.validate().map_err(|err| {
-            CollectionError::bad_request(format!("invalid partial snapshot: {err}"))
-        })?;
+        let snapshot_manifest =
+            SnapshotManifest::load_from_snapshot(replica_path, Some(recovery_type))?;
 
         // TODO:
         //   Check that shard snapshot is compatible with the collection
@@ -284,6 +190,7 @@ impl ShardReplicaSet {
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if let Some(local_manifest) = local_manifest {
+                // ToDo: Replace with `partial_snapshot_merge_plan` when rocksdb is removed
                 let segments_path = LocalShard::segments_path(&self.shard_path);
 
                 for (segment_id, local_manifest) in local_manifest.iter() {

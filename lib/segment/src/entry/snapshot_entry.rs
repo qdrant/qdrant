@@ -3,10 +3,13 @@ use std::path::Path;
 use common::tar_ext;
 
 use crate::common::operation_error::OperationResult;
-use crate::data_types::manifest::SnapshotManifest;
+use crate::data_types::manifest::SegmentManifest;
 use crate::types::SnapshotFormat;
 
 pub trait SnapshotEntry {
+    /// Segment identifier in the snapshot.
+    fn segment_id(&self) -> OperationResult<String>;
+
     /// Take a snapshot of the segment.
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
@@ -16,8 +19,8 @@ pub trait SnapshotEntry {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
-        manifest: Option<&SnapshotManifest>,
+        manifest: Option<&SegmentManifest>,
     ) -> OperationResult<()>;
 
-    fn collect_snapshot_manifest(&self, manifest: &mut SnapshotManifest) -> OperationResult<()>;
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest>;
 }
