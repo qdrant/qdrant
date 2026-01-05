@@ -555,12 +555,7 @@ impl TableOfContent {
 
                 if shard_keys.is_empty() {
                     if sharding_method == ShardingMethod::Custom {
-                        // There are no shards to execute this operation, so just acknowledge
-                        return Ok(UpdateResult {
-                            operation_id: None,
-                            status: UpdateStatus::Acknowledged,
-                            clock_tag: operation.clock_tag,
-                        });
+                        return Err(CollectionError::bad_input("No shard keys exist to apply operation in custom sharding"));
                     }
 
                     collection
