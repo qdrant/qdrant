@@ -103,13 +103,13 @@ impl SnapshotEntry for Segment {
 impl Segment {
     fn segment_id(&self) -> OperationResult<&str> {
         let id = self
-            .current_path
+            .segment_path
             .file_stem()
             .and_then(|segment_dir| segment_dir.to_str())
             .ok_or_else(|| {
                 OperationError::service_error(format!(
                     "failed to extract segment ID from segment path {}",
-                    self.current_path.display(),
+                    self.segment_path.display(),
                 ))
             })?;
 
@@ -184,13 +184,13 @@ impl Segment {
         for (path, version) in files {
             // All segment files should be contained within segment directory
             debug_assert!(
-                path.starts_with(&self.current_path),
+                path.starts_with(&self.segment_path),
                 "segment file {} is not contained within segment directory {}",
                 path.display(),
-                self.current_path.display(),
+                self.segment_path.display(),
             );
 
-            let path = strip_prefix(&path, &self.current_path)?;
+            let path = strip_prefix(&path, &self.segment_path)?;
             let _ = file_versions.insert(path.to_path_buf(), version);
         }
 
@@ -315,7 +315,7 @@ pub fn snapshot_files(
 
     for vector_data in segment.vector_data.values() {
         for file in vector_data.vector_index.borrow().files() {
-            let stripped_path = strip_prefix(&file, &segment.current_path)?;
+            let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
             if include_if(stripped_path) {
                 tar.blocking_append_file(&file, stripped_path)
@@ -324,7 +324,7 @@ pub fn snapshot_files(
         }
 
         for file in vector_data.vector_storage.borrow().files() {
-            let stripped_path = strip_prefix(&file, &segment.current_path)?;
+            let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
             if include_if(stripped_path) {
                 tar.blocking_append_file(&file, stripped_path)
@@ -334,7 +334,7 @@ pub fn snapshot_files(
 
         if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
             for file in quantized_vectors.files() {
-                let stripped_path = strip_prefix(&file, &segment.current_path)?;
+                let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
                 if include_if(stripped_path) {
                     tar.blocking_append_file(&file, stripped_path)
@@ -345,7 +345,7 @@ pub fn snapshot_files(
     }
 
     for file in segment.payload_index.borrow().files() {
-        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
         if include_if(stripped_path) {
             tar.blocking_append_file(&file, stripped_path)
@@ -354,7 +354,7 @@ pub fn snapshot_files(
     }
 
     for file in segment.payload_storage.borrow().files() {
-        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
         if include_if(stripped_path) {
             tar.blocking_append_file(&file, stripped_path)
@@ -363,7 +363,7 @@ pub fn snapshot_files(
     }
 
     for file in segment.id_tracker.borrow().files() {
-        let stripped_path = strip_prefix(&file, &segment.current_path)?;
+        let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
         if include_if(stripped_path) {
             tar.blocking_append_file(&file, stripped_path)
@@ -371,11 +371,11 @@ pub fn snapshot_files(
         }
     }
 
-    let segment_state_path = segment.current_path.join(SEGMENT_STATE_FILE);
+    let segment_state_path = segment.segment_path.join(SEGMENT_STATE_FILE);
     tar.blocking_append_file(&segment_state_path, Path::new(SEGMENT_STATE_FILE))
         .map_err(|err| failed_to_add("segment state file", &segment_state_path, err))?;
 
-    let version_file_path = segment.current_path.join(VERSION_FILE);
+    let version_file_path = segment.segment_path.join(VERSION_FILE);
     tar.blocking_append_file(&version_file_path, Path::new(VERSION_FILE))
         .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
 

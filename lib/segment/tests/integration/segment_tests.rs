@@ -12,8 +12,8 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
-use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
 use segment::types::{Condition, Distance, Filter, SearchParams, SegmentType, WithPayload};
 use tempfile::Builder;
 
@@ -201,7 +201,7 @@ fn ordered_deletion_test() {
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
-        segment.current_path.clone()
+        segment.segment_path.clone()
     };
 
     let segment = load_segment(&path, &AtomicBool::new(false))
@@ -235,7 +235,7 @@ fn skip_deleted_segment() {
         segment.delete_point(6, 5.into(), &hw_counter).unwrap();
         segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(false).unwrap();
-        segment.current_path.clone()
+        segment.segment_path.clone()
     };
 
     let new_path = path.with_extension("deleted");
@@ -243,7 +243,7 @@ fn skip_deleted_segment() {
 
     let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
 
-    assert!(segment.is_none());
+    assert!(matches!(segment, LoadSegmentOutcome::Skipped));
 }
 
 #[test]

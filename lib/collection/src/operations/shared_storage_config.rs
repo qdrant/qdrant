@@ -1,5 +1,6 @@
 use std::default;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use segment::types::HnswGlobalConfig;
@@ -31,7 +32,7 @@ pub struct SharedStorageConfig {
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
-    pub snapshots_path: String,
+    pub snapshots_path: PathBuf,
     pub snapshots_config: SnapshotsConfig,
     pub hnsw_global_config: HnswGlobalConfig,
     pub search_thread_count: usize,
@@ -50,7 +51,7 @@ impl Default for SharedStorageConfig {
             default_shard_transfer_method: None,
             incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
-            snapshots_path: DEFAULT_SNAPSHOTS_PATH.to_string(),
+            snapshots_path: PathBuf::from(DEFAULT_SNAPSHOTS_PATH),
             snapshots_config: default::Default::default(),
             hnsw_global_config: HnswGlobalConfig::default(),
             search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
@@ -71,7 +72,7 @@ impl SharedStorageConfig {
         default_shard_transfer_method: Option<ShardTransferMethod>,
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
-        snapshots_path: String,
+        snapshots_path: PathBuf,
         snapshots_config: SnapshotsConfig,
         hnsw_global_config: HnswGlobalConfig,
         search_thread_count: usize,

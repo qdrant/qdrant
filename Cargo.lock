@@ -1937,6 +1937,7 @@ dependencies = [
  "anyhow",
  "common",
  "fs-err",
+ "io",
  "itertools 0.14.0",
  "log",
  "ordered-float 5.1.0",
@@ -3317,6 +3318,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.17",
 ]
 
@@ -5195,6 +5197,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gpu",
+ "io",
  "issues",
  "itertools 0.14.0",
  "jsonwebtoken",
