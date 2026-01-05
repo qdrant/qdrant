@@ -82,7 +82,7 @@ itertools = { workspace = true }
 indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
-fs_extra = "1.3.0"
+fs_extra = { workspace = true }
 semver = { workspace = true }
 tempfile = { workspace = true }
 sha2 = { workspace = true }

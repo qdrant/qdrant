@@ -6,7 +6,6 @@ use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
 use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
@@ -15,16 +14,15 @@ use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::{SegmentHolder, SegmentId};
+use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
         let mut manifest = SnapshotManifest::default();
 
         for (_, segment) in self.iter() {
-            segment
-                .get()
-                .read()
-                .collect_snapshot_manifest(&mut manifest)?;
+            let segment_manifest = segment.get().read().get_segment_manifest()?;
+            manifest.add(segment_manifest);
         }
 
         Ok(manifest)

@@ -2,6 +2,7 @@ pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
+mod snapshots;
 pub mod update;
 
 use std::num::NonZero;
@@ -25,7 +26,7 @@ use wal::WalOptions;
 
 #[derive(Debug)]
 pub struct Shard {
-    _path: PathBuf,
+    path: PathBuf,
     config: SegmentConfig,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
@@ -165,7 +166,7 @@ impl Shard {
         }
 
         let shard = Self {
-            _path: path.into(),
+            path: path.into(),
             config: config.expect("config was provided or at least one segment was loaded"),
             wal: parking_lot::Mutex::new(wal),
             segments: Arc::new(parking_lot::RwLock::new(segments)),
@@ -176,6 +177,10 @@ impl Shard {
 
     pub fn config(&self) -> &SegmentConfig {
         &self.config
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 

@@ -21,6 +21,10 @@ impl PyValue {
     {
         unsafe { mem::transmute(map) }
     }
+
+    pub fn new(value: serde_json::Value) -> Self {
+        Self(value)
+    }
 }
 
 impl FromPyObject<'_, '_> for PyValue {

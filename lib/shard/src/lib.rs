@@ -1,3 +1,4 @@
+pub mod files;
 pub mod locked_segment;
 pub mod operation_rate_cost;
 pub mod operations;
@@ -14,5 +15,6 @@ pub mod wal;
 pub mod common;
 #[cfg(feature = "testing")]
 pub mod fixtures;
+pub mod snapshots;
 
 pub type PeerId = u64;
