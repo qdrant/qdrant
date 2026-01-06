@@ -853,7 +853,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
         pub storage_type: StorageTypeV5,
         /// Defines payload storage type
         #[serde(default)]
-        pub payload_storage_type: PayloadStorageType,
+        pub payload_storage_type: Option<PayloadStorageType>,
     }
 
     let path = segment_path.join(SEGMENT_STATE_FILE);
@@ -877,7 +877,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,
                 storage_type: state.config.storage_type,
-                payload_storage_type: state.config.payload_storage_type,
+                payload_storage_type: state.config.payload_storage_type.unwrap_or(PayloadStorageType::OnDisk),
                 quantization_config: None,
             };
 
