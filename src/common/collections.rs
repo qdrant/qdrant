@@ -25,7 +25,7 @@ use collection::shards::replica_set::replica_set_state;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{
-    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+    MultiSourceTransfer, ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart
 };
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
@@ -34,8 +34,7 @@ use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abo
 #[cfg(feature = "staging")]
 use storage::content_manager::collection_meta_ops::TestSlowDown;
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
-    SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
+    CollectionMetaOperations, CreateShardKey, DropShardKey, MultiSourceTransferShardOperation, ReshardingOperation, SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -394,17 +393,17 @@ pub async fn do_update_collection_cluster(
             // submit operation to consensus
             dispatcher
                 .submit_collection_meta_op(
-                    CollectionMetaOperations::TransferShard(
+                    CollectionMetaOperations::MultiSourceTransferShard(
                         collection_name,
-                        Start(ShardTransfer {
-                            shard_id: from_shard_id,
-                            to_shard_id: Some(to_shard_id),
-                            from: from_peer_id,
-                            to: to_peer_id,
-                            sync: true,
-                            method: Some(ShardTransferMethod::StreamRecords),
-                            filter,
-                        }),
+                        MultiSourceTransferShardOperation::Start(
+                            MultiSourceTransfer {
+                                from_peer_ids: vec![from_peer_id],
+                                from_shard_ids: vec![from_shard_id],
+                                to_peer_id,
+                                to_shard_id,
+                                filter,
+                            }
+                        ),
                     ),
                     access,
                     wait_timeout,

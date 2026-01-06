@@ -553,30 +553,38 @@ impl Collection {
         // And call the function to start a normal transfer
         // shard_holder.multi_source_transfers_state.;
 
-        let source_replicas = transfer
-            .from_peer_id
-            .iter()
-            .zip(transfer.from_shard_id.iter().cloned())
-            .map(|(&peer_id, shard_id)| (peer_id, shard_id))
+        let MultiSourceTransfer {
+            from_peer_ids,
+            from_shard_ids,
+            to_peer_id,
+            to_shard_id,
+            filter,
+        } = transfer;
+
+        let source_replicas = from_peer_ids
+            .into_iter()
+            .zip(from_shard_ids.into_iter())
             .collect::<Vec<_>>();
 
-        // todo: do multiple transfers at once
+        if source_replicas.len() != 1 {
+            // Will be supported in the future
+            return Err(CollectionError::bad_input(format!("Exactly 1 source replica is supported. Got {:?}", source_replicas.len())));
+        }
+
         // todo: save state for finished transfers to do more than one at a time
-        let first_source = source_replicas
+        let (from_peer_id, from_shard_id) = *source_replicas
             .first()
             .ok_or_else(|| CollectionError::bad_input("No source replicas provided"))?;
 
-        let (peer_id, shard_id) = first_source;
-
         self.start_shard_transfer(
             ShardTransfer {
-                shard_id: *shard_id,
-                to_shard_id: Some(transfer.to_shard_id),
-                from: *peer_id,
-                to: transfer.to_peer_id,
+                shard_id: from_shard_id,
+                to_shard_id: Some(to_shard_id),
+                from: from_peer_id,
+                to: to_peer_id,
                 method: Some(ShardTransferMethod::StreamRecords),
                 sync: true,
-                filter: None, // todo: Add filter
+                filter,
             },
             consensus,
             self.path.join("temp"),

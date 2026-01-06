@@ -110,11 +110,12 @@ pub struct MultiSourceTransferState {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultiSourceTransfer {
-    pub from_peer_id: Vec<PeerId>,
-    pub from_shard_id: Vec<ShardId>,
+    pub from_peer_ids: Vec<PeerId>,
+    pub from_shard_ids: Vec<ShardId>,
     pub to_peer_id: PeerId,
     pub to_shard_id: ShardId,
-    // todo: Add filter
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Filter>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
