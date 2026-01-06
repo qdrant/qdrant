@@ -186,7 +186,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
 // Internal telemetry service conversions
 mod internal_conversions {
     use api::grpc::conversions::{convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc};
-    use api::grpc::{qdrant as grpc};
+    use api::grpc::qdrant as grpc;
     use tonic::Status;
 
     use super::*;
