@@ -90,7 +90,7 @@ impl ShardHolder {
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
-        let multi_source_transfers_state: SaveOnDisk<Option<MultiSourceTransferState>> =
+        let multi_source_transfer_state: SaveOnDisk<Option<MultiSourceTransferState>> =
             SaveOnDisk::load_or_init_default(
                 collection_path.join(MULTI_SOURCE_TRANSFER_STATE_FILE),
             )?;
@@ -121,7 +121,7 @@ impl ShardHolder {
             shard_transfers,
             shard_transfer_changes,
             resharding_state,
-            multi_source_transfer_state: multi_source_transfers_state,
+            multi_source_transfer_state,
             rings,
             key_mapping,
             shard_id_to_key_mapping,
