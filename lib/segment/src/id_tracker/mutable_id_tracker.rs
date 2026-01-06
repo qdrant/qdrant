@@ -440,7 +440,7 @@ fn store_mapping_changes(mappings_path: &Path, changes: &[MappingChange]) -> Ope
         ))
     })?;
 
-    // Flush file contents to ensure all data is written to the OS.
+    // Flush file contents to ensure all data is written.
     file.flush().map_err(|err| {
         OperationError::service_error(format!(
             "Failed to flush ID tracker point mappings ({}): {err}",
