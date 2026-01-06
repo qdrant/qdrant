@@ -373,7 +373,7 @@ def test_no_shards_payload_index(tmp_path: pathlib.Path):
     """
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     # Create collection with custom sharding but don't create any shard keys
     create_collection_with_custom_sharding(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICAS)
