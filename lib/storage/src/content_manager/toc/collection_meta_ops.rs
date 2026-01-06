@@ -399,7 +399,7 @@ impl TableOfContent {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
-                            "Can't handle transfer, this is a single node deployment",
+                            "Can't handle multi-source transfer, this is a single node deployment",
                         ));
                     }
                 };
@@ -411,7 +411,7 @@ impl TableOfContent {
                         let operation =
                             ConsensusOperations::finish_multi_source_transfer(collection_id);
                         if let Err(error) = proposal_sender.send(operation) {
-                            log::error!("Can't report resharding progress to consensus: {error}");
+                            log::error!("Can't report multi-source transfer progress to consensus: {error}");
                         };
                     }
                 };
@@ -423,7 +423,7 @@ impl TableOfContent {
                         if let Err(error) = proposal_sender.send(
                             ConsensusOperations::finish_multi_source_transfer(collection_id),
                         ) {
-                            log::error!("Can't report resharding progress to consensus: {error}");
+                            log::error!("Can't report multi-source transfer progress to consensus: {error}");
                         };
                     }
                 };
