@@ -387,10 +387,15 @@ impl TableOfContent {
         operation: MultiSourceTransferShardOperation,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
+            return Err(StorageError::service_error(
+                "Can't handle resharding, this is a single node deployment",
+            ));
+        };
 
         match operation {
-            MultiSourceTransferShardOperation::Start(key) => {
-                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
+            MultiSourceTransferShardOperation::Start(transfer) => {
+                let consensus = match self.toc_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
@@ -399,12 +404,36 @@ impl TableOfContent {
                     }
                 };
 
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_multi_source_transfer(collection_id);
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    async move {
+                        // todo: Handle failure by aborting, not marking as finished
+                        if let Err(error) = proposal_sender.send(
+                            ConsensusOperations::finish_multi_source_transfer(collection_id),
+                        ) {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
+                };
+
                 collection
-                    .start_multi_source_transfer_shard(key, shard_consensus)
+                    .start_multi_source_transfer_shard(transfer, consensus, on_finish, on_failure)
                     .await?;
             }
-            MultiSourceTransferShardOperation::Finish(key) => {
-                collection.finish_multi_source_transfer_shard(key).await?;
+            MultiSourceTransferShardOperation::Finish => {
+                collection.finish_multi_source_transfer_shard().await?;
             }
         };
         Ok(())

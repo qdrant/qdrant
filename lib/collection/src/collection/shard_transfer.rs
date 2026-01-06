@@ -17,8 +17,8 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
 use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
-    MultiSourceTransfer, ShardTransfer, ShardTransferConsensus, ShardTransferKey,
-    ShardTransferMethod,
+    MultiSourceTransfer, MultiSourceTransferState, ShardTransfer, ShardTransferConsensus,
+    ShardTransferKey, ShardTransferMethod,
 };
 use crate::shards::{shard_initializing_flag_path, transfer};
 
@@ -547,11 +547,30 @@ impl Collection {
         &self,
         transfer: MultiSourceTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
+        on_finish: impl Future<Output = ()> + Send + 'static,
+        on_failure: impl Future<Output = ()> + Send + 'static,
     ) -> CollectionResult<()> {
-        // Set the state in the shard holder
-        // let mut shard_holder = self.shards_holder.write().await;
-        // And call the function to start a normal transfer
-        // shard_holder.multi_source_transfers_state.;
+        // Check if the transfer is already in progress
+        {
+            let shard_holder = self.shards_holder.read().await;
+            if shard_holder.multi_source_transfer_state.read().is_some() {
+                // todo: Allow more than one at a time?
+                return Err(CollectionError::bad_input(
+                    "Multi source transfer is already in progress",
+                ));
+            };
+        }
+
+        // Initialize the state in the shard holder
+        {
+            let shard_holder = self.shards_holder.write().await;
+            shard_holder.multi_source_transfer_state.write(|state| {
+                *state = Some(MultiSourceTransferState {
+                    transfer: transfer.clone(),
+                    completed_sources: vec![],
+                });
+            })?;
+        }
 
         let MultiSourceTransfer {
             from_peer_ids,
@@ -591,8 +610,8 @@ impl Collection {
             },
             consensus,
             self.path.join("temp"),
-            async {},
-            async {},
+            on_finish,
+            on_failure,
         )
         .await?;
 
@@ -601,7 +620,6 @@ impl Collection {
 
     pub async fn finish_multi_source_transfer_shard(
         &self,
-        _transfer: MultiSourceTransfer, // todo: stop only related transfers
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.write().await;
 

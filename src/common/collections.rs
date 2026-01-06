@@ -25,7 +25,7 @@ use collection::shards::replica_set::replica_set_state;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{
-    MultiSourceTransfer, ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+    MultiSourceTransfer, ShardTransfer, ShardTransferKey, ShardTransferRestart,
 };
 use itertools::Itertools;
 use rand::prelude::SliceRandom;

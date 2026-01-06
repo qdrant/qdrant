@@ -360,7 +360,7 @@ pub enum ShardTransferOperations {
 pub enum MultiSourceTransferShardOperation {
     Start(MultiSourceTransfer),
     // todo: Add Progress and Failure consensus operations
-    Finish(MultiSourceTransfer),
+    Finish,
 }
 
 /// Sets the state of shard replica

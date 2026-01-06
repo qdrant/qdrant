@@ -31,8 +31,8 @@ pub mod consensus_ops {
 
     use super::collection_meta_ops::ReshardingOperation;
     use crate::content_manager::collection_meta_ops::{
-        CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
-        UpdateCollectionOperation,
+        CollectionMetaOperations, MultiSourceTransferShardOperation, SetShardReplicaState,
+        ShardTransferOperations, UpdateCollection, UpdateCollectionOperation,
     };
 
     /// Operation that should pass consensus
@@ -101,6 +101,15 @@ pub mod consensus_ops {
                 collection_id,
                 ReshardingOperation::Finish(reshard_key),
             )))
+        }
+
+        pub fn finish_multi_source_transfer(collection_id: CollectionId) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(
+                CollectionMetaOperations::MultiSourceTransferShard(
+                    collection_id,
+                    MultiSourceTransferShardOperation::Finish,
+                ),
+            ))
         }
 
         pub fn set_replica_state(
