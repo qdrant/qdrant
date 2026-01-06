@@ -618,9 +618,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn finish_multi_source_transfer_shard(
-        &self,
-    ) -> CollectionResult<()> {
+    pub async fn finish_multi_source_transfer_shard(&self) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.write().await;
 
         // todo: Add state validation like resharding
