@@ -907,8 +907,17 @@ mod tests {
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let operation = rng.random_range(0..=5);
-            // TODO give different probability to each operation
+            let workload = rand::distr::weighted::WeightedIndex::new([
+                max_point_offset,         // put
+                max_point_offset / 100,   // delete
+                max_point_offset,         // get
+                max_point_offset / 500,   // flush
+                max_point_offset / 5_000, // clear
+                max_point_offset / 5_000, // iter
+            ])
+            .unwrap();
+
+            let operation = workload.sample(rng);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -946,15 +955,7 @@ mod tests {
     ) {
         use ahash::AHashMap;
 
-        // Windows struggles with this test on CI so we decrease the workload
-        #[cfg(target_os = "windows")]
-        let operation_count = 1_000;
-        #[cfg(target_os = "windows")]
-        let max_point_offset = 100u32;
-
-        #[cfg(not(target_os = "windows"))]
         let operation_count = 100_000;
-        #[cfg(not(target_os = "windows"))]
         let max_point_offset = 10_000u32;
 
         let _ = env_logger::builder().is_test(true).try_init();
