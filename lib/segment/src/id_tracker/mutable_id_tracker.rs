@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -108,6 +109,9 @@ pub struct MutableIdTracker {
     pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
 
     is_alive_lock: IsAliveLock,
+
+    /// Size of correctly persisted mappings in bytes
+    persisted_mappings_size: Arc<AtomicU64>,
 }
 
 impl MutableIdTracker {
@@ -134,12 +138,12 @@ impl MutableIdTracker {
             );
         }
 
-        let mappings = if has_mappings {
+        let (mappings, persisted_mappings_size) = if has_mappings {
             load_mappings(&mappings_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
             })?
         } else {
-            PointMappings::default()
+            (PointMappings::default(), 0)
         };
 
         let internal_to_version = if has_versions {
@@ -173,6 +177,7 @@ impl MutableIdTracker {
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
+            persisted_mappings_size: Arc::new(AtomicU64::new(persisted_mappings_size)),
         })
     }
 
@@ -303,6 +308,7 @@ impl IdTracker for MutableIdTracker {
 
         let is_alive_handle = self.is_alive_lock.handle();
         let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
+        let persisted_mappings_size = self.persisted_mappings_size.clone();
 
         Box::new(move || {
             let (Some(is_alive_guard), Some(pending_mappings_arc)) = (
@@ -312,7 +318,7 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             };
 
-            store_mapping_changes(&mappings_path, &changes)?;
+            store_mapping_changes(&mappings_path, &changes, persisted_mappings_size)?;
 
             reconcile_persisted_mapping_changes(&pending_mappings_arc, &changes);
 
@@ -398,12 +404,40 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 fn store_mapping_changes(
     mappings_path: &Path,
     changes: &Vec<MappingChange>,
+    persisted_mappings_size: Arc<AtomicU64>,
 ) -> OperationResult<()> {
     // Create or open file in append mode to write new changes to the end
-    let file = File::options()
+    let mut file = File::options()
         .create(true)
         .append(true)
         .open(mappings_path)?;
+
+    let file_len = file
+        .metadata()
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to get ID tracker mappings file size: {err}"
+            ))
+        })?
+        .len();
+
+    // Seek to the end of the persisted mappings.
+    // If previously call of `store_mapping_changes` failed,
+    // `persisted_mappings_size` may be less than actual file size.
+    let file_start_appending = persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
+    match file_len.cmp(&file_start_appending) {
+        std::cmp::Ordering::Equal => { /* all good, continue */ }
+        std::cmp::Ordering::Greater => {
+            // File is larger than persisted mappings size, seek to the end of persisted mappings
+            file.seek(io::SeekFrom::Start(file_start_appending))?;
+        }
+        std::cmp::Ordering::Less => {
+            return Err(OperationError::service_error(format!(
+                "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
+            )));
+        }
+    }
+
     let mut writer = BufWriter::new(file);
 
     write_mapping_changes(&mut writer, changes).map_err(|err| {
@@ -419,6 +453,15 @@ fn store_mapping_changes(
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
     })?;
+
+    // Update persisted mappings size.
+    let appended_file_size = file.metadata()?.len();
+    persisted_mappings_size.store(appended_file_size, std::sync::atomic::Ordering::Relaxed);
+
+    log::warn!(
+        "Persisted {} bytes of ID tracker mappings changes to disk: {file_start_appending}, {appended_file_size}",
+        appended_file_size - file_start_appending,
+    );
 
     Ok(())
 }
@@ -445,10 +488,11 @@ fn write_mapping_changes<W: Write>(
     Ok(())
 }
 
-/// Load point mappings from the given file
+/// Load point mappings from the given file.
+/// Returns loaded point mappings and the number of bytes read from the file.
 ///
 /// If the file ends with an incomplete entry, it is truncated from the file.
-fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
+fn load_mappings(mappings_path: &Path) -> OperationResult<(PointMappings, u64)> {
     let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
@@ -475,7 +519,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
         file.sync_all()?;
     }
 
-    Ok(mappings)
+    Ok((mappings, read_to))
 }
 
 /// Iterate over mapping changes from the given reader
@@ -1226,6 +1270,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1241,6 +1286,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1256,6 +1302,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1270,6 +1317,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
