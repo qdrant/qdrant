@@ -35,6 +35,7 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
@@ -204,7 +205,10 @@ pub struct CollectionInfo {
 }
 
 impl CollectionInfo {
-    pub fn empty(collection_config: CollectionConfigInternal) -> Self {
+    pub fn empty(
+        collection_config: CollectionConfigInternal,
+        payload_schema: PayloadIndexSchema,
+    ) -> Self {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
@@ -213,7 +217,11 @@ impl CollectionInfo {
             points_count: Some(0),
             segments_count: 0,
             config: CollectionConfig::from(collection_config),
-            payload_schema: HashMap::new(),
+            payload_schema: payload_schema
+                .schema
+                .into_iter()
+                .map(|(k, v)| (k, PayloadIndexInfo::new(v, 0)))
+                .collect(),
         }
     }
 }

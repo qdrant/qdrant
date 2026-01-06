@@ -4,6 +4,7 @@ use collection::collection::Collection;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
+use collection::config::ShardingMethod;
 use collection::grouping::GroupBy;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
@@ -550,17 +551,30 @@ impl TableOfContent {
             }
 
             ShardSelectorInternal::All => {
-                let shard_keys = collection.get_shard_keys().await;
+                let (sharding_method, shard_keys) = collection.get_sharding_method_and_keys().await;
+
                 if shard_keys.is_empty() {
-                    collection
-                        .update_from_client(
-                            operation.operation,
-                            wait,
-                            ordering,
-                            None,
-                            hw_measurement_acc.clone(),
-                        )
-                        .await?
+                    match sharding_method {
+                        ShardingMethod::Custom => {
+                            // No shards exist to apply the operation, but we acknowledge it
+                            return Ok(UpdateResult {
+                                operation_id: None,
+                                status: UpdateStatus::Acknowledged,
+                                clock_tag: operation.clock_tag,
+                            });
+                        }
+                        ShardingMethod::Auto => {
+                            collection
+                                .update_from_client(
+                                    operation.operation,
+                                    wait,
+                                    ordering,
+                                    None,
+                                    hw_measurement_acc.clone(),
+                                )
+                                .await?
+                        }
+                    }
                 } else {
                     Self::_update_shard_keys(
                         &collection,
