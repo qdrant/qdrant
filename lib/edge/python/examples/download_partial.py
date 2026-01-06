@@ -6,10 +6,8 @@ manifest = {
         "segment_id": "65ac6276-8cca-4f5c-b767-9722190cee8b",
         "segment_version": 0,
         "file_versions": {
-            "::PAYLOAD_INDEX_ROCKS_DB": None,
             "payload_storage/config.json": 0,
             "vector_storage/vectors/status.dat": None,
-            "::ROCKS_DB": None,
             "vector_storage/deleted/status.dat": None,
             "vector_storage/deleted/flags_a.dat": None,
             "payload_storage/gaps.dat": None,
@@ -28,7 +26,6 @@ manifest = {
             "vector_storage/deleted/status.dat": None,
             "vector_storage/vectors/status.dat": None,
             "vector_storage/deleted/flags_a.dat": None,
-            "::ROCKS_DB": None,
             "payload_storage/config.json": 254,
             "vector_storage/vectors/config.json": 254,
             "vector_index/graph.bin": 254,
@@ -38,7 +35,6 @@ manifest = {
             "mutable_id_tracker.mappings": None,
             "mutable_id_tracker.versions": None,
             "vector_storage/vectors/chunk_0.mmap": None,
-            "::PAYLOAD_INDEX_ROCKS_DB": None,
             "payload_storage/tracker.dat": None,
             "payload_storage/bitmask.dat": None,
             "payload_storage/page_0.dat": None
