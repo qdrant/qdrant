@@ -1329,17 +1329,11 @@ pub enum PayloadStorageType {
     InRamMmap,
 }
 
+#[cfg(any(test, feature = "testing"))]
 #[allow(clippy::derivable_impls)]
 impl Default for PayloadStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            PayloadStorageType::OnDisk
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            PayloadStorageType::Mmap
-        }
+        PayloadStorageType::Mmap
     }
 }
 
