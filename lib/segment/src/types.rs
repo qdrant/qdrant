@@ -1504,14 +1504,7 @@ pub enum VectorStorageType {
 #[allow(clippy::derivable_impls)]
 impl Default for VectorStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            VectorStorageType::Memory
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            VectorStorageType::InRamChunkedMmap
-        }
+        VectorStorageType::InRamChunkedMmap
     }
 }
 
