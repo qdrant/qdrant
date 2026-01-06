@@ -114,7 +114,6 @@ enum ProgressState {
         finished_at: DateTime<Utc>,
         duration: Duration,
     },
-    Skipped,
 }
 
 /// Create a new root progress tracker.
@@ -230,7 +229,7 @@ impl ProgressTracker {
         let mut root = self.root.lock();
         if let Some(node) = root.get_mut(&self.path) {
             match node.state {
-                ProgressState::Pending | ProgressState::Skipped => {
+                ProgressState::Pending => {
                     node.state = ProgressState::InProgress {
                         started_at: Utc::now(),
                         started_instant: Instant::now(),
@@ -272,7 +271,7 @@ impl ProgressNode {
             None => (None, None),
         };
         let (started_at, finished_at, duration_sec) = match state {
-            ProgressState::Pending | ProgressState::Skipped => (None, None, None),
+            ProgressState::Pending => (None, None, None),
             ProgressState::InProgress { started_at, .. } => (Some(*started_at), None, None),
             ProgressState::Finished {
                 started_at,
@@ -302,7 +301,14 @@ impl ProgressNode {
         let mut root = root.lock();
         if let Some(node) = root.get_mut(path) {
             match &node.state {
-                ProgressState::Pending => node.state = ProgressState::Skipped,
+                ProgressState::Pending => {
+                    let now = Utc::now();
+                    node.state = ProgressState::Finished {
+                        started_at: now,
+                        finished_at: now,
+                        duration: Duration::from_secs(0),
+                    };
+                }
                 ProgressState::InProgress {
                     started_at,
                     started_instant,
@@ -315,7 +321,6 @@ impl ProgressNode {
                     };
                 }
                 ProgressState::Finished { .. } => (),
-                ProgressState::Skipped => (),
             }
         } else {
             // Should never happen.
@@ -353,7 +358,7 @@ mod tests {
 
             p_foo_x_a.start();
             p_foo_x_b.start();
-            // c is not started; becomes skipped on drop
+            // c is not started explicitly, so it becomes finished on drop
 
             p_foo_x_a
                 .track_progress(Some(7))
@@ -379,7 +384,7 @@ mod tests {
                             x:finished {
                                 a:finished[5/7] {}
                                 b:finished {}
-                                c:skipped {}
+                                c:finished {}
                             }
                             y:in-progress {
                                 a:in-progress[3/?] {}
@@ -402,7 +407,6 @@ mod tests {
             ProgressState::Pending => output.push_str("pending"),
             ProgressState::InProgress { .. } => output.push_str("in-progress"),
             ProgressState::Finished { .. } => output.push_str("finished"),
-            ProgressState::Skipped => output.push_str("skipped"),
         }
         if let Some(progress) = &node.progress {
             write!(output, "[{}/", progress.current.load(Ordering::Relaxed)).unwrap();
