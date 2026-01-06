@@ -576,6 +576,7 @@ impl Collection {
                 to: transfer.to_peer_id,
                 method: Some(ShardTransferMethod::StreamRecords),
                 sync: true,
+                filter: None, // todo: Add filter
             },
             consensus,
             self.path.join("temp"),
