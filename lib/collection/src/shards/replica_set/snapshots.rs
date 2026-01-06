@@ -6,8 +6,10 @@ use common::tar_ext;
 use fs_err::tokio as tokio_fs;
 use segment::types::SnapshotFormat;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_utils::{SnapshotMergePlan, SnapshotUtils};
 
 use super::{REPLICA_STATE_FILE, ShardReplicaSet};
+use crate::common::file_utils::{move_dir, move_file};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
@@ -191,117 +193,77 @@ impl ShardReplicaSet {
         let restore = async {
             if let Some(local_manifest) = local_manifest {
                 // ToDo: Replace with `partial_snapshot_merge_plan` when rocksdb is removed
-                let segments_path = LocalShard::segments_path(&self.shard_path);
+                let merge_plan = SnapshotUtils::partial_snapshot_merge_plan(
+                    &self.shard_path,
+                    &local_manifest,
+                    replica_path,
+                    &snapshot_manifest,
+                );
 
-                for (segment_id, local_manifest) in local_manifest.iter() {
-                    let segment_path = segments_path.join(segment_id);
+                let SnapshotMergePlan {
+                    move_files,
+                    replace_directories,
+                    merge_directories,
+                    delete_files,
+                    delete_directories,
+                } = merge_plan;
 
-                    log::debug!("Cleaning up segment {}", segment_path.display());
-
-                    // Delete local segment, if it's not present in partial snapshot
-                    let Some(snapshot_manifest) = snapshot_manifest.get(segment_id) else {
-                        log::debug!("Removing outdated segment {}", segment_path.display());
-
-                        tokio::task::spawn_blocking({
-                            let segment_path = segment_path.clone();
-                            move || safe_delete_with_suffix(&segment_path)
-                        })
-                        .await?
-                        .map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "failed to remove outdated segment: {err}",
-                            ))
-                        })?;
-
+                // Clean up files and directories according to merge plan
+                for path in delete_files {
+                    if !path.exists() {
                         continue;
-                    };
-
-                    for (file, local_version) in local_manifest.file_versions() {
-                        let snapshot_version = snapshot_manifest.file_version(file);
-
-                        let is_removed = snapshot_version.is_none();
-
-                        let is_outdated = snapshot_version.is_none_or(|snapshot_version| {
-                            let is_outdated = local_version < snapshot_version;
-                            let is_zero = local_version == 0 && snapshot_version == 0;
-                            is_outdated || is_zero
-                        });
-
-                        #[cfg(feature = "rocksdb")]
-                        let (is_rocksdb, is_payload_index_rocksdb) = (
-                            file == Path::new(segment::segment::snapshot::ROCKS_DB_VIRT_FILE),
-                            file == Path::new(
-                                segment::segment::snapshot::PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE,
-                            ),
-                        );
-
-                        if is_removed {
-                            // If `file` is a regular file, delete it from disk, if it was
-                            // *removed* from the snapshot
-
-                            #[cfg(feature = "rocksdb")]
-                            let delete_regular_file = !is_rocksdb && !is_payload_index_rocksdb;
-                            #[cfg(not(feature = "rocksdb"))]
-                            let delete_regular_file = true;
-
-                            if delete_regular_file {
-                                let path = segment_path.join(file);
-
-                                log::debug!("Removing outdated segment file {}", path.display());
-
-                                tokio_fs::remove_file(&path).await.map_err(|err| {
-                                    CollectionError::service_error(format!(
-                                        "failed to remove outdated segment file {}: {err}",
-                                        path.display(),
-                                    ))
-                                })?;
-                            }
-                        } else if is_outdated {
-                            // If `file` is a RocksDB "virtual" file, remove RocksDB from disk,
-                            // if it was *updated* in or *removed* from the snapshot
-                            #[cfg(feature = "rocksdb")]
-                            {
-                                use segment::segment::destroy_rocksdb;
-                                use segment::segment_constructor::PAYLOAD_INDEX_PATH;
-
-                                if is_rocksdb {
-                                    log::debug!(
-                                        "Destroying outdated RocksDB at {}",
-                                        segment_path.display(),
-                                    );
-
-                                    destroy_rocksdb(&segment_path)?;
-                                } else if is_payload_index_rocksdb {
-                                    log::debug!(
-                                        "Destroying outdated payload index RocksDB at {}/{}",
-                                        segment_path.display(),
-                                        PAYLOAD_INDEX_PATH,
-                                    );
-
-                                    destroy_rocksdb(&segment_path.join(PAYLOAD_INDEX_PATH))?;
-                                }
-                            }
-                        }
                     }
+                    log::debug!("Deleting file {}", path.display());
+                    tokio_fs::remove_file(&path).await?;
                 }
 
-                let wal_path = LocalShard::wal_path(&self.shard_path);
-                if wal_path.is_dir() {
-                    log::debug!("Removing WAL {}", wal_path.display());
+                for path in delete_directories {
+                    if !path.exists() {
+                        continue;
+                    }
+                    log::debug!("Deleting directory {}", path.display());
+                    tokio::task::spawn_blocking({
+                        let path = path.clone();
+                        move || safe_delete_with_suffix(&path)
+                    })
+                    .await??;
+                }
 
-                    tokio_fs::remove_dir_all(&wal_path).await.map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to remove WAL {}: {err}",
-                            wal_path.display(),
-                        ))
-                    })?;
+                // Execute merge plan
+                for (from, to) in move_files {
+                    log::debug!("Moving file from {} to {}", from.display(), to.display());
+                    move_file(&from, &to).await?;
+                }
+
+                for (from, to) in replace_directories {
+                    log::debug!(
+                        "Replacing directory {} with {}",
+                        to.display(),
+                        from.display()
+                    );
+                    if to.exists() {
+                        tokio::task::spawn_blocking({
+                            let to = to.clone();
+                            move || safe_delete_with_suffix(&to)
+                        })
+                        .await??;
+                    }
+                    move_dir(from, to).await?;
+                }
+
+                for (from, to) in merge_directories {
+                    log::debug!(
+                        "Merging directory from {} to {}",
+                        from.display(),
+                        to.display()
+                    );
+                    move_dir(from, to).await?;
                 }
             } else {
                 // Remove shard data but not configuration files
                 LocalShard::clear(&self.shard_path).await?;
+                LocalShard::move_data(replica_path, &self.shard_path).await?;
             }
-
-            LocalShard::move_data(replica_path, &self.shard_path).await?;
 
             LocalShard::load(
                 self.shard_id,

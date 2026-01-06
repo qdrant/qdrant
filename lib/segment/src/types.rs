@@ -1329,17 +1329,11 @@ pub enum PayloadStorageType {
     InRamMmap,
 }
 
+#[cfg(any(test, feature = "testing"))]
 #[allow(clippy::derivable_impls)]
 impl Default for PayloadStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            PayloadStorageType::OnDisk
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            PayloadStorageType::Mmap
-        }
+        PayloadStorageType::Mmap
     }
 }
 
@@ -1356,7 +1350,7 @@ impl PayloadStorageType {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]
@@ -1504,14 +1498,7 @@ pub enum VectorStorageType {
 #[allow(clippy::derivable_impls)]
 impl Default for VectorStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            VectorStorageType::Memory
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            VectorStorageType::InRamChunkedMmap
-        }
+        VectorStorageType::InRamChunkedMmap
     }
 }
 

@@ -21,7 +21,7 @@ pub struct SegmentConfigV5 {
     pub storage_type: StorageTypeV5,
     /// Defines payload storage type
     #[serde(default)]
-    pub payload_storage_type: PayloadStorageType,
+    pub payload_storage_type: Option<PayloadStorageType>,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
@@ -62,10 +62,20 @@ impl From<SegmentConfigV5> for SegmentConfig {
             })
             .collect();
 
+        // ToDo: remove this whole thing once we drop rocksdb support
+
+        #[cfg(feature = "rocksdb")]
+        let default_storage_type = PayloadStorageType::OnDisk;
+
+        #[cfg(not(feature = "rocksdb"))]
+        let default_storage_type = PayloadStorageType::Mmap;
+
         SegmentConfig {
             vector_data,
             sparse_vector_data: Default::default(),
-            payload_storage_type: old_segment.payload_storage_type,
+            payload_storage_type: old_segment
+                .payload_storage_type
+                .unwrap_or(default_storage_type),
         }
     }
 }
@@ -191,7 +201,7 @@ mod tests {
                 inline_storage: None,
             }),
             storage_type: StorageTypeV5::InMemory,
-            payload_storage_type: PayloadStorageType::default(),
+            payload_storage_type: None,
             quantization_config: None,
         };
 
@@ -267,7 +277,7 @@ mod tests {
                 inline_storage: None,
             }),
             storage_type: StorageTypeV5::InMemory,
-            payload_storage_type: PayloadStorageType::default(),
+            payload_storage_type: None,
             quantization_config: Some(QuantizationConfig::Scalar(ScalarQuantization {
                 scalar: ScalarQuantizationConfig {
                     r#type: Default::default(),
