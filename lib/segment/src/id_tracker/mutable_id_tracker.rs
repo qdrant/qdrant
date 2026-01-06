@@ -458,11 +458,6 @@ fn store_mapping_changes(
     let appended_file_size = file.metadata()?.len();
     persisted_mappings_size.store(appended_file_size, std::sync::atomic::Ordering::Relaxed);
 
-    log::warn!(
-        "Persisted {} bytes of ID tracker mappings changes to disk: {file_start_appending}, {appended_file_size}",
-        appended_file_size - file_start_appending,
-    );
-
     Ok(())
 }
 
