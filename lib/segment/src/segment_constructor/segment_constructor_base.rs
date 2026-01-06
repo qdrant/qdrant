@@ -877,7 +877,10 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,
                 storage_type: state.config.storage_type,
-                payload_storage_type: state.config.payload_storage_type.unwrap_or(PayloadStorageType::OnDisk),
+                payload_storage_type: state
+                    .config
+                    .payload_storage_type
+                    .unwrap_or(PayloadStorageType::OnDisk),
                 quantization_config: None,
             };
 
