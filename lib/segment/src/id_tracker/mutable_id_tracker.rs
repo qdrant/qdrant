@@ -397,10 +397,7 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 }
 
 /// Store new mapping changes, appending them to the given file
-fn store_mapping_changes(
-    mappings_path: &Path,
-    changes: &Vec<MappingChange>,
-) -> OperationResult<()> {
+fn store_mapping_changes(mappings_path: &Path, changes: &[MappingChange]) -> OperationResult<()> {
     // Estimate required buffer size.
     let mut counting_write = CountingWrite::default();
     write_mapping_changes(&mut counting_write, changes).map_err(|err| {
@@ -469,7 +466,7 @@ fn store_mapping_changes(
 /// See [`read_entry`] and [`write_entry`] for more details.
 fn write_mapping_changes<W: Write>(
     mut writer: W,
-    changes: &Vec<MappingChange>,
+    changes: &[MappingChange],
 ) -> OperationResult<()> {
     for &change in changes {
         write_entry(&mut writer, change)?;
