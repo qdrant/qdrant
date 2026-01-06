@@ -89,7 +89,7 @@ ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = "1.2.1"
+self_cell = "1.2.2"
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 is_sorted = "0.1.1"
