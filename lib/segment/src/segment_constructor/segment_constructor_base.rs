@@ -873,6 +873,15 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 quantization_config: None,
                 on_disk: None,
             };
+
+            // ToDo: remove this whole thing once we drop rocksdb support
+
+            #[cfg(feature = "rocksdb")]
+            let default_storage_type = PayloadStorageType::OnDisk;
+
+            #[cfg(not(feature = "rocksdb"))]
+            let default_storage_type = PayloadStorageType::Mmap;
+
             let segment_config = SegmentConfigV5 {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,
@@ -880,7 +889,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 payload_storage_type: state
                     .config
                     .payload_storage_type
-                    .unwrap_or(PayloadStorageType::OnDisk),
+                    .unwrap_or(default_storage_type),
                 quantization_config: None,
             };
 
