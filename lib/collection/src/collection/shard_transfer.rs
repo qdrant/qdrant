@@ -568,7 +568,10 @@ impl Collection {
 
         if source_replicas.len() != 1 {
             // Will be supported in the future
-            return Err(CollectionError::bad_input(format!("Exactly 1 source replica is supported. Got {:?}", source_replicas.len())));
+            return Err(CollectionError::bad_input(format!(
+                "Exactly 1 source replica is supported. Got {:?}",
+                source_replicas.len()
+            )));
         }
 
         // todo: save state for finished transfers to do more than one at a time
