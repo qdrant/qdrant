@@ -527,7 +527,7 @@ impl ShardHolder {
                 sync,
                 method,
                 filter,
-            } = *shard_transfer;
+            } = shard_transfer.clone();
             let status = tasks_pool.get_task_status(&shard_transfer.key());
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
