@@ -153,6 +153,10 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
+    pub fn get_sharding_method(&self) -> ShardingMethod {
+        self.sharding_method
+    }
+
     /// Set the shard key mappings
     ///
     /// # Warning

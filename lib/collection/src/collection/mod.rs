@@ -36,7 +36,7 @@ use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
 };
 use crate::common::is_ready::IsReady;
-use crate::config::CollectionConfigInternal;
+use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
@@ -354,14 +354,17 @@ impl Collection {
         self.collection_config.read().await.uuid
     }
 
-    pub async fn get_shard_keys(&self) -> Vec<ShardKey> {
-        self.shards_holder
-            .read()
-            .await
+    pub async fn get_sharding_method_and_keys(&self) -> (ShardingMethod, Vec<ShardKey>) {
+        let shards_holder = self.shards_holder.read().await;
+
+        let sharding_method = shards_holder.get_sharding_method();
+        let shard_keys = shards_holder
             .get_shard_key_to_ids_mapping()
             .keys()
             .cloned()
-            .collect()
+            .collect();
+
+        (sharding_method, shard_keys)
     }
 
     /// Return a list of local shards, present on this peer

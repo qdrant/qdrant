@@ -327,7 +327,10 @@ impl Collection {
 
         let mut info = match requests.try_next().await? {
             Some(info) => info,
-            None => CollectionInfo::empty(self.collection_config.read().await.clone()),
+            None => CollectionInfo::empty(
+                self.collection_config.read().await.clone(),
+                self.payload_index_schema.read().clone(),
+            ),
         };
 
         while let Some(response) = requests.try_next().await? {
