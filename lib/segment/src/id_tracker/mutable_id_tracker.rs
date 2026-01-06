@@ -427,28 +427,38 @@ fn store_mapping_changes(mappings_path: &Path, changes: &[MappingChange]) -> Ope
     })?;
 
     // Create or open file in append mode to write new changes to the end.
-    let file = File::options()
+    let mut file = File::options()
         .create(true)
         .append(true)
         .open(mappings_path)?;
 
-    // Write all changes in one shot.
-    let mut file_writer = BufWriter::new(file);
-    file_writer.write_all(&writer).map_err(|err| {
+    // Write all collected changes to the file.
+    let bytes_written = file.write(&writer).map_err(|err| {
         OperationError::service_error(format!(
             "Failed to persist ID tracker point mappings ({}): {err}",
             mappings_path.display(),
         ))
     })?;
 
-    // Drop the buffer to free memory.
-    drop(writer);
+    // Flush file contents to ensure all data is written to the OS.
+    file.flush().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to flush ID tracker point mappings ({}): {err}",
+            mappings_path.display(),
+        ))
+    })?;
+
+    // Ensure all bytes were written.
+    if bytes_written != writer.len() {
+        return Err(OperationError::service_error(format!(
+            "Failed to persist all ID tracker point mappings ({}), only wrote {}/{} bytes",
+            mappings_path.display(),
+            bytes_written,
+            writer.len(),
+        )));
+    }
 
     // Explicitly fsync file contents to ensure durability.
-    // `BufWriter::into_inner` flushes the buffer as well.
-    let file = file_writer.into_inner().map_err(|err| {
-        OperationError::service_error(format!("Failed to flush ID tracker point mappings: {err}"))
-    })?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
     })?;
