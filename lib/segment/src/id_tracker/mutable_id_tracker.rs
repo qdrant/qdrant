@@ -3,6 +3,7 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ::io::counting_write::CountingWrite;
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::is_alive_lock::IsAliveLock;
@@ -16,6 +17,7 @@ use uuid::Uuid;
 use super::point_mappings::FileEndianess;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::vector_utils::TrySetCapacityExact;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
@@ -399,23 +401,57 @@ fn store_mapping_changes(
     mappings_path: &Path,
     changes: &Vec<MappingChange>,
 ) -> OperationResult<()> {
-    // Create or open file in append mode to write new changes to the end
+    // Estimate required buffer size.
+    let mut counting_write = CountingWrite::default();
+    write_mapping_changes(&mut counting_write, changes).map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to estimate ID tracker point mappings size ({}): {err}",
+            mappings_path.display(),
+        ))
+    })?;
+
+    // Create a buffer with exact required size.
+    let mut writer: Vec<u8> = Vec::default();
+    writer
+        .try_set_capacity_exact(counting_write.bytes_written() as usize)
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to allocate buffer for ID tracker point mappings ({}): {err}",
+                mappings_path.display(),
+            ))
+        })?;
+
+    // Collect all changes into a single buffer.
+    write_mapping_changes(&mut writer, changes).map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to collect ID tracker point mappings ({}): {err}",
+            mappings_path.display(),
+        ))
+    })?;
+
+    // Create or open file in append mode to write new changes to the end.
     let file = File::options()
         .create(true)
         .append(true)
         .open(mappings_path)?;
-    let mut writer = BufWriter::new(file);
 
-    write_mapping_changes(&mut writer, changes).map_err(|err| {
+    // Write all changes in one shot.
+    let mut file_writer = BufWriter::new(file);
+    file_writer.write_all(&writer).map_err(|err| {
         OperationError::service_error(format!(
             "Failed to persist ID tracker point mappings ({}): {err}",
             mappings_path.display(),
         ))
     })?;
 
-    // Explicitly fsync file contents to ensure durability
-    writer.flush()?;
-    let file = writer.into_inner().unwrap();
+    // Drop the buffer to free memory.
+    drop(writer);
+
+    // Explicitly fsync file contents to ensure durability.
+    // `BufWriter::into_inner` flushes the buffer as well.
+    let file = file_writer.into_inner().map_err(|err| {
+        OperationError::service_error(format!("Failed to flush ID tracker point mappings: {err}"))
+    })?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
     })?;
@@ -438,10 +474,6 @@ fn write_mapping_changes<W: Write>(
     for &change in changes {
         write_entry(&mut writer, change)?;
     }
-
-    // Explicitly flush writer to catch IO errors
-    writer.flush()?;
-
     Ok(())
 }
 
