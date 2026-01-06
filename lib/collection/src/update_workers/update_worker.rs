@@ -124,9 +124,9 @@ impl UpdateWorkers {
     }
 
     /// Checks that unoptimized segments are small enough, so that we can effectively
-    /// push moro updates.
+    /// push more updates.
     ///
-    /// If segments are smaller that the
+    /// Returns when all segments are smaller that the optimization_threshold.
     async fn wait_for_optimization(
         // Size of the unoptimized segment to be considered large enough for waiting.
         // If `None`, waiting is disabled.
