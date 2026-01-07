@@ -110,9 +110,8 @@ impl ShardOperation for LocalShard {
                 })
             }
             // Wait for timeout
-            (Some(receiver), Some(t)) => {
-                let deadline = Instant::now() + t;
-                match tokio::time::timeout_at(deadline, receiver).await {
+            (Some(receiver), Some(timeout)) => {
+                match tokio::time::timeout(timeout, receiver).await {
                     Ok(res) => {
                         res??;
                         Ok(UpdateResult {
