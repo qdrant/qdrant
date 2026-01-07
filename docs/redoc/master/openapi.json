@@ -11793,6 +11793,16 @@
               }
             ]
           },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "comment": {
             "description": "A human-readable report of the transfer progress. Available only on the source peer.",
             "type": "string",
