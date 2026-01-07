@@ -49,8 +49,7 @@ mod qdrant_edge {
     };
     #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyPayloadSelectorInterface, PyQuantizationSearchParams,
-        PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
@@ -64,7 +63,8 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::query::{
         PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
-        PyNaiveFeedbackCoefficients, PyQueryInterface, PyRecommendQuery,
+        PyNaiveFeedbackCoefficients, PyPayloadSelectorInterface, PyQueryInterface,
+        PyRecommendQuery,
     };
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
