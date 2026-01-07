@@ -1,4 +1,4 @@
-use api::rest::OrderByInterface;
+pub use api::rest::OrderByInterface;
 use schemars::JsonSchema;
 use segment::types::{Filter, PointIdType, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
