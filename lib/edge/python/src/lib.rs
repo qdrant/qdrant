@@ -1,6 +1,7 @@
 pub mod config;
 pub mod query;
 pub mod repr;
+pub mod scroll;
 pub mod search;
 pub mod snapshots;
 pub mod types;
@@ -17,6 +18,7 @@ use segment::types::*;
 
 use self::config::*;
 use self::query::*;
+use self::scroll::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -47,6 +49,8 @@ mod qdrant_edge {
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
     };
+    #[pymodule_export]
+    use super::scroll::PyScrollRequest;
     #[pymodule_export]
     use super::search::{
         PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,

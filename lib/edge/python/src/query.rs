@@ -12,6 +12,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
 use shard::query::*;
+use shard::scroll::OrderByInterface;
 
 use super::*;
 use crate::repr::*;
@@ -382,6 +383,18 @@ impl PyOrderBy {
             direction: _,
             start_from: _,
         } = self.0;
+    }
+}
+
+impl From<OrderByInterface> for PyOrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        Self(OrderBy::from(order_by))
+    }
+}
+
+impl From<PyOrderBy> for OrderByInterface {
+    fn from(order_by: PyOrderBy) -> Self {
+        OrderByInterface::Struct(OrderBy::from(order_by))
     }
 }
 
