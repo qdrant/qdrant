@@ -368,6 +368,27 @@ impl Shard {
         }
     }
 
+    pub async fn set_extended_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_extended_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_extended_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_extended_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_extended_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
+        }
+    }
+
+    /// WAL is keeping normal amount of data after truncation.
+    pub async fn set_normal_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_normal_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_normal_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_normal_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_normal_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
+        }
+    }
+
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
