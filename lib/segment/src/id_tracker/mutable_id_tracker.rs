@@ -447,16 +447,28 @@ fn store_mapping_changes(
         ))
     })?;
 
-    // Explicitly fsync file contents to ensure durability
     writer.flush()?;
-    let file = writer.into_inner().unwrap();
+    let mut file = writer.into_inner().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to flush ID tracker point mappings write buffer: {err}"
+        ))
+    })?;
+
+    // Get new persisted size as a position after writing all changes.
+    // Stream position is used here ho handle cases where the pending changes are shorter than non-persisted part.
+    let new_persisted_size = file.stream_position().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to get new persisted size of ID tracker mappings: {err}"
+        ))
+    })?;
+
+    // Explicitly fsync file contents to ensure durability
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
     })?;
 
     // Update persisted mappings size.
-    let appended_file_size = file.metadata()?.len();
-    persisted_mappings_size.store(appended_file_size, std::sync::atomic::Ordering::Relaxed);
+    persisted_mappings_size.store(new_persisted_size, std::sync::atomic::Ordering::Relaxed);
 
     Ok(())
 }
