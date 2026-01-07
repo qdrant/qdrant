@@ -1281,6 +1281,7 @@ dependencies = [
  "log",
  "memmap2",
  "memory",
+ "nix 0.30.1",
  "num-traits",
  "num_cpus",
  "ordered-float 5.1.0",
