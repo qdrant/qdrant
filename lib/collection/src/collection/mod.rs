@@ -24,6 +24,7 @@ use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
+use pool::AsyncPool;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
@@ -58,6 +59,8 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionsAggregatedTelemetry;
 
+pub type SegmentWorkerPool = AsyncPool<usize>;
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
@@ -84,8 +87,14 @@ pub struct Collection {
     updates_lock: Arc<RwLock<()>>,
     // Update runtime handle.
     update_runtime: Handle,
+    // Update runtime thread pool.
+    // TODO should be some stable segment id
+    update_pool: Arc<SegmentWorkerPool>,
     // Search runtime handle.
     search_runtime: Handle,
+    // Search runtime thread pool.
+    // TODO should be some stable segment id
+    search_pool: Arc<SegmentWorkerPool>,
     optimizer_resource_budget: ResourceBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
@@ -114,7 +123,9 @@ impl Collection {
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
+        search_pool: Arc<SegmentWorkerPool>,
         update_runtime: Option<Handle>,
+        update_pool: Arc<SegmentWorkerPool>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> CollectionResult<Self> {
@@ -155,7 +166,9 @@ impl Collection {
                 payload_index_schema.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
+                update_pool.clone(),
                 search_runtime.clone().unwrap_or_else(Handle::current),
+                search_pool.clone(),
                 optimizer_resource_budget.clone(),
                 None,
             )
@@ -195,7 +208,9 @@ impl Collection {
             is_initialized: Default::default(),
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
+            update_pool,
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_pool,
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
@@ -214,7 +229,9 @@ impl Collection {
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
+        search_pool: Arc<SegmentWorkerPool>,
         update_runtime: Option<Handle>,
+        update_pool: Arc<SegmentWorkerPool>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Self {
@@ -281,7 +298,9 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
+                update_pool.clone(),
                 search_runtime.clone().unwrap_or_else(Handle::current),
+                search_pool.clone(),
                 optimizer_resource_budget.clone(),
             )
             .await;
@@ -311,7 +330,9 @@ impl Collection {
             is_initialized: Default::default(),
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
+            update_pool,
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
+            search_pool,
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),

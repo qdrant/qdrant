@@ -34,6 +34,7 @@ pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::collection::SegmentWorkerPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshot_stream::SnapshotStream;
@@ -849,7 +850,9 @@ impl ShardHolder {
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
+        update_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
+        search_pool: Arc<SegmentWorkerPool>,
         optimizer_resource_budget: ResourceBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
@@ -901,7 +904,9 @@ impl ShardHolder {
                 abort_shard_transfer.clone(),
                 this_peer_id,
                 update_runtime.clone(),
+                update_pool.clone(),
                 search_runtime.clone(),
+                search_pool.clone(),
                 optimizer_resource_budget.clone(),
             )
             .await;

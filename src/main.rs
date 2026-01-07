@@ -22,6 +22,7 @@ use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
+use collection::collection::SegmentWorkerPool;
 use collection::profiling::interface::init_requests_profile_collector;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
@@ -312,6 +313,9 @@ fn main() -> anyhow::Result<()> {
         vec![]
     };
 
+    let worker_pool = Arc::new(SegmentWorkerPool::new(
+        settings.storage.performance.max_search_threads,
+    ));
     // Create and own search runtime out of the scope of async context to ensure correct
     // destruction of it
     let search_runtime = create_search_runtime(settings.storage.performance.max_search_threads)
@@ -376,7 +380,9 @@ fn main() -> anyhow::Result<()> {
     let toc = TableOfContent::new(
         &settings.storage,
         search_runtime,
+        worker_pool.clone(),
         update_runtime,
+        worker_pool,
         general_runtime,
         optimizer_resource_budget,
         channel_service.clone(),

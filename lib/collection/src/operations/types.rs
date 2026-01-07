@@ -19,6 +19,7 @@ use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
+use pool::AsyncTaskError;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::{CancelledError, OperationError};
@@ -1147,6 +1148,12 @@ impl From<OperationError> for CollectionError {
 impl From<CancelledError> for CollectionError {
     fn from(error: CancelledError) -> Self {
         OperationError::from(error).into()
+    }
+}
+
+impl From<AsyncTaskError> for CollectionError {
+    fn from(error: AsyncTaskError) -> Self {
+        Self::cancelled(error.to_string())
     }
 }
 

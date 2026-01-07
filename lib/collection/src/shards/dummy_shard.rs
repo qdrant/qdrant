@@ -19,6 +19,7 @@ use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 
+use crate::collection::SegmentWorkerPool;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
@@ -162,6 +163,7 @@ impl ShardOperation for DummyShard {
         &self,
         _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
+        _: &Arc<SegmentWorkerPool>,
         _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -194,6 +196,7 @@ impl ShardOperation for DummyShard {
         &self,
         _requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
+        _: &Arc<SegmentWorkerPool>,
         _timeout: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {

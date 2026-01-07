@@ -14,6 +14,26 @@ pub enum AsyncTaskError {
     Canceled,
 }
 
+use std::fmt;
+impl fmt::Debug for AsyncTaskError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Panicked(_any) => f.debug_tuple("Panicked").field(&"...").finish(),
+            Self::Canceled => write!(f, "Canceled"),
+        }
+    }
+}
+
+impl fmt::Display for AsyncTaskError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            AsyncTaskError::Panicked(_any) => "Pool task error: panicked",
+            AsyncTaskError::Canceled => "Pool task error: cancelled",
+        };
+        write!(f, "{msg}")
+    }
+}
+
 impl<GroupId> AsyncPool<GroupId>
 where
     GroupId: Clone + Hash + Eq + Send + 'static,

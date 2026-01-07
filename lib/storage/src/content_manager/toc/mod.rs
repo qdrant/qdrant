@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use api::rest::models::HardwareUsage;
-use collection::collection::{Collection, RequestShardTransfer};
+use collection::collection::{Collection, RequestShardTransfer, SegmentWorkerPool};
 use collection::config::{
     CollectionConfigInternal, default_replication_factor, default_shard_number,
 };
@@ -62,7 +62,9 @@ pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(crate) storage_config: Arc<StorageConfig>,
     search_runtime: Runtime,
+    search_pool: Arc<SegmentWorkerPool>,
     update_runtime: Runtime,
+    update_pool: Arc<SegmentWorkerPool>,
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
@@ -95,7 +97,9 @@ impl TableOfContent {
     pub fn new(
         storage_config: &StorageConfig,
         search_runtime: Runtime,
+        search_pool: Arc<SegmentWorkerPool>,
         update_runtime: Runtime,
+        update_pool: Arc<SegmentWorkerPool>,
         general_runtime: Runtime,
         optimizer_resource_budget: ResourceBudget,
         channel_service: ChannelService,
@@ -158,7 +162,9 @@ impl TableOfContent {
                     collection_name.clone(),
                 ),
                 Some(search_runtime.handle().clone()),
+                search_pool.clone(),
                 Some(update_runtime.handle().clone()),
+                update_pool.clone(),
                 optimizer_resource_budget.clone(),
                 storage_config.optimizers_overwrite.clone(),
             ));
@@ -197,7 +203,9 @@ impl TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
             search_runtime,
+            search_pool,
             update_runtime,
+            update_pool,
             general_runtime,
             optimizer_resource_budget,
             alias_persistence: RwLock::new(alias_persistence),
