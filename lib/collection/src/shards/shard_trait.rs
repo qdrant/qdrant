@@ -9,6 +9,7 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 
+use crate::collection::SegmentWorkerPool;
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::*;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
@@ -52,6 +53,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
@@ -78,6 +80,7 @@ pub trait ShardOperation {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;

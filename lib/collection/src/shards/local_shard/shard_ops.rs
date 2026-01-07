@@ -15,6 +15,7 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio::time::error::Elapsed;
 
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
@@ -221,6 +222,7 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -229,8 +231,14 @@ impl ShardOperation for LocalShard {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
-            .await
+        self.do_search(
+            request,
+            search_runtime_handle,
+            search_runtime_pool,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -321,6 +329,7 @@ impl ShardOperation for LocalShard {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -341,6 +350,7 @@ impl ShardOperation for LocalShard {
             .do_planned_query(
                 planned_query,
                 search_runtime_handle,
+                search_runtime_pool,
                 timeout,
                 hw_measurement_acc,
             )

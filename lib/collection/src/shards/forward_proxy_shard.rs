@@ -22,6 +22,7 @@ use tokio::sync::Mutex;
 
 use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::{
@@ -575,12 +576,19 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(
+                request,
+                search_runtime_handle,
+                search_runtime_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 
@@ -623,12 +631,19 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(
+                requests,
+                search_runtime_handle,
+                &search_runtime_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 

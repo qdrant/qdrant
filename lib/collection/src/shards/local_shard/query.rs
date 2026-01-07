@@ -16,6 +16,7 @@ use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 
 use super::LocalShard;
+use crate::collection::SegmentWorkerPool;
 use crate::collection::mmr::mmr_from_points_with_vector;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
@@ -60,6 +61,7 @@ impl LocalShard {
         &self,
         request: PlannedQuery,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -69,6 +71,7 @@ impl LocalShard {
                 searches: request.searches,
             }),
             search_runtime_handle,
+            search_runtime_pool,
             timeout,
             hw_counter_acc.clone(),
         );
@@ -92,6 +95,7 @@ impl LocalShard {
                 root_plan,
                 &prefetch_holder,
                 search_runtime_handle,
+                search_runtime_pool,
                 timeout,
                 hw_counter_acc.clone(),
             )
@@ -164,6 +168,7 @@ impl LocalShard {
         root_plan: RootPlan,
         prefetch_holder: &PrefetchResults,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -179,6 +184,7 @@ impl LocalShard {
                 merge_plan,
                 prefetch_holder,
                 search_runtime_handle,
+                search_runtime_pool,
                 timeout,
                 0,
                 hw_measurement_acc.clone(),
@@ -201,6 +207,7 @@ impl LocalShard {
         merge_plan: MergePlan,
         prefetch_holder: &'a PrefetchResults,
         search_runtime_handle: &'a Handle,
+        search_runtime_pool: &'a Arc<SegmentWorkerPool>,
         timeout: Duration,
         depth: usize,
         hw_counter_acc: HwMeasurementAcc,
@@ -230,6 +237,7 @@ impl LocalShard {
                                 *prefetch,
                                 prefetch_holder,
                                 search_runtime_handle,
+                                search_runtime_pool,
                                 timeout,
                                 depth + 1,
                                 hw_counter_acc.clone(),
@@ -256,6 +264,7 @@ impl LocalShard {
                             sources,
                             rescore_params,
                             search_runtime_handle,
+                            search_runtime_pool,
                             timeout,
                             hw_counter_acc,
                         )
@@ -285,6 +294,7 @@ impl LocalShard {
         sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
@@ -354,6 +364,7 @@ impl LocalShard {
                 self.do_search(
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
+                    search_runtime_pool,
                     timeout,
                     hw_counter_acc,
                 )

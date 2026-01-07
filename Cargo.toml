@@ -120,6 +120,7 @@ raft-proto = { version = "0.7.0", features = [
 ], default-features = false }
 
 common = { path = "lib/common/common" }
+pool = { path = "lib/common/pool" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }

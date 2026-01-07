@@ -9,6 +9,7 @@ use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 
 use super::LocalShard;
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -31,6 +32,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -61,6 +63,7 @@ impl LocalShard {
                 .do_search_impl(
                     core_request,
                     search_runtime_handle,
+                    search_runtime_pool,
                     timeout,
                     hw_counter_acc,
                     &is_stopped_guard,
@@ -80,6 +83,7 @@ impl LocalShard {
                 self.do_search_impl(
                     Arc::new(core_request),
                     search_runtime_handle,
+                    search_runtime_pool,
                     timeout,
                     hw_counter_acc.clone(),
                     &is_stopped_guard,
@@ -100,6 +104,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_runtime_pool: &Arc<SegmentWorkerPool>,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
@@ -132,7 +137,7 @@ impl LocalShard {
         let search_request = SegmentsSearcher::search(
             Arc::clone(&self.segments),
             Arc::clone(&core_request),
-            search_runtime_handle,
+            search_runtime_pool,
             true,
             query_context,
             timeout,

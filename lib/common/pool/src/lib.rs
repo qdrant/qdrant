@@ -13,7 +13,7 @@ mod async_pool;
 mod thread;
 
 #[cfg(feature = "tokio")]
-pub use async_pool::AsyncPool;
+pub use async_pool::{AsyncPool, AsyncTaskError};
 
 // Defines ordering in which tasks are added.
 // Tasks which added first are executed first unless something blocks them.
