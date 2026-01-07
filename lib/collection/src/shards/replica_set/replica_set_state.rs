@@ -234,6 +234,7 @@ impl ReplicaState {
             | ReplicaState::Listener
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
+            | ReplicaState::ManualRecovery
             | ReplicaState::Resharding
             | ReplicaState::ReshardingScaleDown
             | ReplicaState::ActiveRead => false,
