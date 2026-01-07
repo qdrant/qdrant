@@ -504,7 +504,7 @@ impl ShardOperation for ForwardProxyShard {
         // Strip the clock tag from the operation, because clock tags are incompatible between different shards.
         if self.shard_id != self.remote_shard.id {
             operation.clock_tag = None;
-        };
+        }
 
         let remote_result = self
             .remote_shard
