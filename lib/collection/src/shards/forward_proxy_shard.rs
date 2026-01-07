@@ -395,6 +395,14 @@ impl ForwardProxyShard {
             .estimate_cardinality(filter, hw_measurement_acc)
             .await
     }
+
+    pub async fn set_extended_wal_retention(&self) {
+        self.wrapped_shard.set_extended_wal_retention().await;
+    }
+
+    pub async fn set_normal_wal_retention(&self) {
+        self.wrapped_shard.set_normal_wal_retention().await;
+    }
 }
 
 #[async_trait]

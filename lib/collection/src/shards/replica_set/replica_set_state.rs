@@ -224,6 +224,23 @@ impl ReplicaState {
         }
     }
 
+    /// Check if the replica state requires automatic recovery to be scheduled.
+    pub fn requires_recovery(self) -> bool {
+        match self {
+            ReplicaState::Dead => true,
+            ReplicaState::Active
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Listener
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::ManualRecovery
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown
+            | ReplicaState::ActiveRead => false,
+        }
+    }
+
     /// Check whether the replica state is partial or partial-like.
     ///
     /// In other words: is the state related to shard transfers?
