@@ -7,6 +7,7 @@ pub mod payload_index_schema;
 pub mod proxy_segment;
 pub mod query;
 pub mod retrieve;
+pub mod scroll;
 pub mod search;
 pub mod search_result_aggregator;
 pub mod segment_holder;
