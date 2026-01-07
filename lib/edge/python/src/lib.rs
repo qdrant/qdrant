@@ -105,6 +105,12 @@ impl PyShard {
         Ok(points)
     }
 
+    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<Vec<PyRecord>> {
+        let points = self.get_shard()?.scroll(scroll.into())?;
+        let points = PyRecord::wrap_vec(points);
+        Ok(points)
+    }
+
     pub fn retrieve(
         &self,
         point_ids: Vec<PyPointId>,
