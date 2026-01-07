@@ -409,7 +409,7 @@ fn store_mapping_changes(
     // Create or open file in append mode to write new changes to the end
     let mut file = File::options()
         .create(true)
-        .append(true)
+        .write(true)
         .open(mappings_path)?;
 
     let file_len = file
@@ -421,21 +421,21 @@ fn store_mapping_changes(
         })?
         .len();
 
-    // Seek to the end of the persisted mappings.
+    // Seek to the end of the persisted part of the file.
     // If previously call of `store_mapping_changes` failed,
     // `persisted_mappings_size` may be less than actual file size.
     let file_start_appending = persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
-    match file_len.cmp(&file_start_appending) {
-        std::cmp::Ordering::Equal => { /* all good, continue */ }
-        std::cmp::Ordering::Greater => {
-            // File is larger than persisted mappings size, seek to the end of persisted mappings
-            file.seek(io::SeekFrom::Start(file_start_appending))?;
-        }
-        std::cmp::Ordering::Less => {
-            return Err(OperationError::service_error(format!(
-                "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
-            )));
-        }
+    if file_start_appending <= file_len {
+        file.seek(io::SeekFrom::Start(file_start_appending))
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to seek to the persisted position of ID tracker mappings: {err}"
+                ))
+            })?;
+    } else {
+        return Err(OperationError::service_error(format!(
+            "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
+        )));
     }
 
     let mut writer = BufWriter::new(file);
