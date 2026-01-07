@@ -9,6 +9,7 @@ use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;

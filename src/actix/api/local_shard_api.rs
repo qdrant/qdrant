@@ -4,14 +4,13 @@ use std::time::Duration;
 
 use actix_web::{Responder, post, web};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{
-    CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
-};
+use collection::operations::types::{CountRequestInternal, PointRequestInternal};
 use collection::operations::verification::{VerificationPass, new_unchecked_verification_pass};
 use collection::shards::shard::ShardId;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
+use shard::scroll::ScrollRequestInternal;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;

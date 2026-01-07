@@ -15,6 +15,7 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
@@ -29,7 +30,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
+    OptimizersStatus, PointRequestInternal, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{

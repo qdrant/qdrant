@@ -35,6 +35,7 @@ use segment::types::{
 };
 use semver::Version;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tonic::Status;
@@ -53,7 +54,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountRequestInternal,
-    CountResult, PointRequestInternal, ScrollRequestInternal, UpdateResult,
+    CountResult, PointRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
