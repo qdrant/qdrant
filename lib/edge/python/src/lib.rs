@@ -2,10 +2,10 @@ pub mod config;
 pub mod query;
 pub mod repr;
 pub mod search;
-mod snapshots;
+pub mod snapshots;
 pub mod types;
 pub mod update;
-mod utils;
+pub mod utils;
 
 use std::path::PathBuf;
 
