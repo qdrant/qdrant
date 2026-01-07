@@ -727,7 +727,7 @@ impl ShardReplicaSet {
             !successes
                 .iter()
                 .any(|(_, r)| r.status == UpdateStatus::ClockRejected),
-            "ClockRejected must be handled before merging successful results"
+            "ClockRejected must be handled before merging successful results",
         );
 
         // Aggregate status: WaitTimeout > .. > ClockRejected

@@ -405,6 +405,8 @@ pub enum UpdateStatus {
 
 impl UpdateStatus {
     /// Returns priority of the update status
+    ///
+    /// A higher value means the status is more significant
     pub fn priority(&self) -> i32 {
         match self {
             UpdateStatus::Acknowledged => 0,
