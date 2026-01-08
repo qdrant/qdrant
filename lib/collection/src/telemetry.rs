@@ -11,10 +11,13 @@ use uuid::Uuid;
 
 use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferInfo};
+use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardStatus, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
+use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::ShardId;
-use crate::shards::telemetry::ReplicaSetTelemetry;
+use crate::shards::telemetry::{
+    LocalShardTelemetry, PartialSnapshotTelemetry, ReplicaSetTelemetry,
+};
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionTelemetry {
@@ -192,6 +195,7 @@ mod internal_conversions {
     use super::*;
     use crate::operations::cluster_ops::ReshardingDirection;
     use crate::shards::resharding::ReshardingStage;
+    use crate::shards::telemetry::RemoteShardTelemetry;
     use crate::shards::transfer::ShardTransferMethod;
 
     impl TryFrom<grpc::ShardTransferTelemetry> for ShardTransferInfo {
@@ -358,10 +362,18 @@ mod internal_conversions {
         fn try_from(value: grpc::CollectionTelemetry) -> Result<Self, Self::Error> {
             let grpc::CollectionTelemetry {
                 id,
+                shards,
                 transfers,
                 resharding,
                 shard_clean_tasks,
             } = value;
+
+            let shards: Option<Vec<ReplicaSetTelemetry>> = (!shards.is_empty()).then_some(
+                shards
+                    .into_iter()
+                    .map(ReplicaSetTelemetry::try_from)
+                    .collect::<Result<_, _>>()?,
+            );
 
             let transfers: Option<Vec<ShardTransferInfo>> = (!transfers.is_empty()).then_some(
                 transfers
@@ -394,7 +406,7 @@ mod internal_conversions {
                 id,
                 init_time_ms: None, // Not provided in internal service
                 config: None,       // Not provided in internal service
-                shards: None,       // Not provided in internal service
+                shards,
                 transfers,
                 resharding,
                 shard_clean_tasks,
@@ -408,7 +420,7 @@ mod internal_conversions {
                 id,
                 init_time_ms: _,
                 config: _,
-                shards: _,
+                shards,
                 transfers,
                 resharding,
                 shard_clean_tasks,
@@ -416,6 +428,11 @@ mod internal_conversions {
 
             grpc::CollectionTelemetry {
                 id,
+                shards: shards
+                    .into_iter()
+                    .flatten()
+                    .map(grpc::ReplicaSetTelemetry::from)
+                    .collect(),
                 transfers: transfers
                     .into_iter()
                     .flatten()
@@ -433,6 +450,252 @@ mod internal_conversions {
                         (shard_id, grpc::ShardCleanStatusTelemetry::from(telemetry))
                     })
                     .collect(),
+            }
+        }
+    }
+
+    impl From<ReplicaSetTelemetry> for grpc::ReplicaSetTelemetry {
+        fn from(value: ReplicaSetTelemetry) -> Self {
+            use crate::shards::telemetry::ReplicaSetTelemetry;
+
+            let ReplicaSetTelemetry {
+                id,
+                key,
+                local,
+                remote,
+                replicate_states,
+                partial_snapshot,
+            } = value;
+
+            grpc::ReplicaSetTelemetry {
+                id,
+                key: key.map(convert_shard_key_to_grpc),
+                local: local.map(grpc::LocalShardTelemetry::from),
+                remote: remote
+                    .into_iter()
+                    .map(grpc::RemoteShardTelemetry::from)
+                    .collect(),
+                replica_states: replicate_states
+                    .into_iter()
+                    .map(|(k, v)| (k, grpc::ReplicaState::from(v) as i32))
+                    .collect(),
+                partial_snapshot: partial_snapshot.map(grpc::PartialSnapshotTelemetry::from),
+            }
+        }
+    }
+
+    impl From<LocalShardTelemetry> for grpc::LocalShardTelemetry {
+        fn from(value: LocalShardTelemetry) -> Self {
+            let LocalShardTelemetry {
+                variant_name: _, // not included in grpc
+                status,
+                total_optimized_points,
+                vectors_size_bytes,
+                payloads_size_bytes,
+                num_points,
+                num_vectors,
+                num_vectors_by_name,
+                segments: _,      // not included in grpc
+                optimizations: _, // not included in grpc
+                async_scorer: _,  // not included in grpc
+                indexed_only_excluded_vectors,
+            } = value;
+
+            grpc::LocalShardTelemetry {
+                status: status.map(|s| grpc::CollectionStatus::from(s) as i32),
+                total_optimized_points: total_optimized_points as u64,
+                vectors_size_bytes: vectors_size_bytes.map(|v| v as u64),
+                payloads_size_bytes: payloads_size_bytes.map(|v| v as u64),
+                num_points: num_points.map(|v| v as u64),
+                num_vectors: num_vectors.map(|v| v as u64),
+                num_vectors_by_name: num_vectors_by_name
+                    .clone()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(k, v)| (k, v as u64))
+                    .collect(),
+                indexed_only_excluded_vectors: indexed_only_excluded_vectors
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, v)| (k, v as u64))
+                    .collect(),
+            }
+        }
+    }
+
+    impl From<RemoteShardTelemetry> for grpc::RemoteShardTelemetry {
+        fn from(value: RemoteShardTelemetry) -> Self {
+            let RemoteShardTelemetry {
+                shard_id,
+                peer_id,
+                searches: _, // not included in grpc
+                updates: _,  // not included in grpc
+            } = value;
+            grpc::RemoteShardTelemetry { shard_id, peer_id }
+        }
+    }
+
+    impl From<PartialSnapshotTelemetry> for grpc::PartialSnapshotTelemetry {
+        fn from(value: PartialSnapshotTelemetry) -> Self {
+            let PartialSnapshotTelemetry {
+                ongoing_create_snapshot_requests,
+                is_recovering,
+                recovery_timestamp,
+            } = value;
+
+            grpc::PartialSnapshotTelemetry {
+                ongoing_create_snapshot_requests: ongoing_create_snapshot_requests as u64,
+                is_recovering,
+                recovery_timestamp,
+            }
+        }
+    }
+
+    impl From<ShardStatus> for grpc::CollectionStatus {
+        fn from(value: ShardStatus) -> Self {
+            use crate::operations::types::ShardStatus;
+
+            match value {
+                ShardStatus::Green => grpc::CollectionStatus::Green,
+                ShardStatus::Yellow => grpc::CollectionStatus::Yellow,
+                ShardStatus::Red => grpc::CollectionStatus::Red,
+                ShardStatus::Grey => grpc::CollectionStatus::Grey,
+            }
+        }
+    }
+
+    impl TryFrom<grpc::ReplicaSetTelemetry> for ReplicaSetTelemetry {
+        type Error = Status;
+
+        fn try_from(value: grpc::ReplicaSetTelemetry) -> Result<Self, Self::Error> {
+            use crate::shards::telemetry::ReplicaSetTelemetry;
+
+            let grpc::ReplicaSetTelemetry {
+                id,
+                key,
+                local,
+                remote,
+                replica_states,
+                partial_snapshot,
+            } = value;
+
+            let replicate_states = replica_states
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        ReplicaState::from(grpc::ReplicaState::try_from(v).map_err(|err| {
+                            Status::invalid_argument(format!(
+                                "Failed to decode ReplicaState: {err}"
+                            ))
+                        })?),
+                    ))
+                })
+                .collect::<Result<_, Status>>()?;
+
+            Ok(ReplicaSetTelemetry {
+                id,
+                key: key.and_then(|k| match k.key? {
+                    grpc::shard_key::Key::Keyword(s) => {
+                        Some(segment::types::ShardKey::Keyword(s.into()))
+                    }
+                    grpc::shard_key::Key::Number(n) => Some(segment::types::ShardKey::Number(n)),
+                }),
+                local: local.map(LocalShardTelemetry::from),
+                remote: remote.into_iter().map(RemoteShardTelemetry::from).collect(),
+                replicate_states,
+                partial_snapshot: partial_snapshot
+                    .map(PartialSnapshotTelemetry::try_from)
+                    .transpose()?,
+            })
+        }
+    }
+
+    impl From<grpc::LocalShardTelemetry> for LocalShardTelemetry {
+        fn from(value: grpc::LocalShardTelemetry) -> Self {
+            let grpc::LocalShardTelemetry {
+                status,
+                total_optimized_points,
+                vectors_size_bytes,
+                payloads_size_bytes,
+                num_points,
+                num_vectors,
+                num_vectors_by_name,
+                indexed_only_excluded_vectors,
+            } = value;
+
+            LocalShardTelemetry {
+                variant_name: None,
+                status: status
+                    .and_then(|s| grpc::CollectionStatus::try_from(s).ok())
+                    .and_then(|s| ShardStatus::try_from(s).ok()),
+                total_optimized_points: total_optimized_points as usize,
+                vectors_size_bytes: vectors_size_bytes.map(|v| v as usize),
+                payloads_size_bytes: payloads_size_bytes.map(|v| v as usize),
+                num_points: num_points.map(|v| v as usize),
+                num_vectors: num_vectors.map(|v| v as usize),
+                num_vectors_by_name: (!num_vectors_by_name.is_empty()).then(|| {
+                    num_vectors_by_name
+                        .into_iter()
+                        .map(|(k, v)| (k, v as usize))
+                        .collect()
+                }),
+                segments: None,      // Not included in grpc
+                async_scorer: None,  // Not included in grpc
+                optimizations: None, // Not included in grpc
+                indexed_only_excluded_vectors: (!indexed_only_excluded_vectors.is_empty()).then(
+                    || {
+                        indexed_only_excluded_vectors
+                            .into_iter()
+                            .map(|(k, v)| (k, v as usize))
+                            .collect()
+                    },
+                ),
+            }
+        }
+    }
+
+    impl From<grpc::RemoteShardTelemetry> for RemoteShardTelemetry {
+        fn from(value: grpc::RemoteShardTelemetry) -> Self {
+            let grpc::RemoteShardTelemetry { shard_id, peer_id } = value;
+
+            RemoteShardTelemetry {
+                shard_id,
+                peer_id,
+                searches: None, // not included in grpc
+                updates: None,  // not included in grpc
+            }
+        }
+    }
+
+    impl TryFrom<grpc::PartialSnapshotTelemetry> for PartialSnapshotTelemetry {
+        type Error = Status;
+
+        fn try_from(value: grpc::PartialSnapshotTelemetry) -> Result<Self, Self::Error> {
+            use crate::shards::telemetry::PartialSnapshotTelemetry;
+
+            Ok(PartialSnapshotTelemetry {
+                ongoing_create_snapshot_requests: value.ongoing_create_snapshot_requests as usize,
+                is_recovering: value.is_recovering,
+                recovery_timestamp: value.recovery_timestamp,
+            })
+        }
+    }
+
+    impl TryFrom<grpc::CollectionStatus> for ShardStatus {
+        type Error = Status;
+
+        fn try_from(value: grpc::CollectionStatus) -> Result<Self, Self::Error> {
+            use crate::operations::types::ShardStatus;
+
+            match value {
+                grpc::CollectionStatus::Green => Ok(ShardStatus::Green),
+                grpc::CollectionStatus::Yellow => Ok(ShardStatus::Yellow),
+                grpc::CollectionStatus::Red => Ok(ShardStatus::Red),
+                grpc::CollectionStatus::Grey => Ok(ShardStatus::Grey),
+                grpc::CollectionStatus::UnknownCollectionStatus => {
+                    Err(Status::invalid_argument("Unknown collection status"))
+                }
             }
         }
     }

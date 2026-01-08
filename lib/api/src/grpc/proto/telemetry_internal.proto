@@ -43,6 +43,7 @@ message AppTelemetry {
     // Last startup timestamp in seconds
     int64 startup = 3;
 }
+
 message CollectionTelemetry {
   // Name of the collection
   string id = 1;
@@ -50,9 +51,9 @@ message CollectionTelemetry {
   reserved 2;
   // config
   reserved 3;
-  // shards
-  reserved 4;
-  // Shard transfers in progress
+  // Shards information
+  repeated ReplicaSetTelemetry shards = 4;
+  // Shard (replica) transfers in progress
   repeated ShardTransferTelemetry transfers = 5;
   // Resharding(s) in progress
   repeated ReshardingTelemetry resharding = 6;
@@ -122,6 +123,69 @@ message ShardCleanStatusTelemetry {
   message Done {
     // Marker message
   }
+}
+
+message ReplicaSetTelemetry {
+  // Shard ID
+  uint32 id = 1;
+  // Optional shard key for custom sharding
+  optional ShardKey key = 2;
+  // Local shard information
+  LocalShardTelemetry local = 3;
+  // Remote shards
+  repeated RemoteShardTelemetry remote = 4;
+  map<uint64, ReplicaState> replica_states = 5;
+  // Snapshot operations telemetry
+  optional PartialSnapshotTelemetry partial_snapshot = 6;
+}
+
+message LocalShardTelemetry {
+  // Optimization status
+  optional ShardStatus status = 3;
+  // Total optimized points
+  uint64 total_optimized_points = 4;
+  // Estimated vectors size in bytes
+  optional uint64 vectors_size_bytes = 5;
+  // Estimated payloads size in bytes
+  optional uint64 payloads_size_bytes = 6;
+  // Approximate number of points
+  optional uint64 num_points = 7;
+  // Approximate number of vectors
+  optional uint64 num_vectors = 8;
+  // Approximate number of vectors by vector name
+  map<string, uint64> num_vectors_by_name = 9;
+  // egments
+  reserved 10;
+  // optimizations
+  reserved 11;
+  // Number of vectors excluded from search if `indexed_only` is used
+  map<string, uint64> indexed_only_excluded_vectors = 12;
+}
+
+enum ShardStatus {
+    // Shard is completely ready for requests
+    GREEN = 0;
+    // Shard is available, but some segments are under optimization
+    YELLOW = 1;
+    // Shard is available, but some segments are pending optimization
+    GREY = 2;
+    // Something is not OK:
+    // - some operations failed and was not recovered
+    RED = 3;
+}
+
+message RemoteShardTelemetry {
+    uint32 shard_id = 1;
+    uint64 peer_id = 2;
+}
+
+message PartialSnapshotTelemetry {
+  // Number of ongoing snapshot creation requests
+  uint64 ongoing_create_snapshot_requests = 1;
+  // Whether the shard is recovering
+  bool is_recovering = 2;
+  // Recovery timestamp
+  uint64 recovery_timestamp = 3;
 }
 
 message ClusterTelemetry {
