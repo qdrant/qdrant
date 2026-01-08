@@ -429,7 +429,7 @@ fn store_mapping_changes(
     persisted_mappings_size: &AtomicU64,
 ) -> OperationResult<()> {
     // Create or open file in append mode to write new changes to the end
-    let mut file = File::options()
+    let file = File::options()
         .create(true)
         .append(true)
         .open(mappings_path)?;
@@ -448,22 +448,13 @@ fn store_mapping_changes(
         // File size is what we expect, continue normally
         Ordering::Equal => {}
         // File is larger than expected, previous flush might not have completed properly
+        // Clean up by truncating to what we expect, then append
         // May happen if system is out of disk space and the file cannot be grown
-        // Try to truncate to what we expect to clean up but ignore if we fail, then seek to the
-        // correct append point
         Ordering::Greater => {
-            if let Err(err) = file.set_len(file_start_appending) {
-                log::warn!(
-                    "Failed to truncate mutable ID tracker mappings file that is too large, ignoring: {err}"
-                );
-            }
-
-            file.seek(io::SeekFrom::Start(file_start_appending))
-                .map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to seek to the persisted position of ID tracker mappings: {err}",
-                    ))
-                })?;
+            file.set_len(file_start_appending)
+                .map_err(|err| OperationError::service_error(
+                    format!("Failed to truncate mutable ID tracker mappings file that is too large, ignoring: {err}"),
+                ))?;
         }
         // File is smaller than expected, indicates a bug we cannot recover from
         Ordering::Less => {
