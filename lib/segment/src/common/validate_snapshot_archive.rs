@@ -59,7 +59,6 @@ pub fn open_snapshot_archive(
 
     let mut ar = tar::Archive::new(io::BufReader::new(file));
     ar.set_overwrite(false);
-    ar.set_sync(true);
 
     Ok(ar)
 }

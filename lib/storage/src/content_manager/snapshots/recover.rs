@@ -157,7 +157,9 @@ async fn _do_recover_from_snapshot(
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,
-        )
+        )?;
+        common::fs::bulk_sync_dir(&tmp_collection_dir_clone)?;
+        Ok::<(), StorageError>(())
     });
     restoring.await??;
 

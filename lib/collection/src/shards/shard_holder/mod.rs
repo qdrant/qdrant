@@ -1267,6 +1267,7 @@ impl ShardHolder {
                         this_peer_id,
                         is_distributed,
                     )?;
+                    common::fs::bulk_sync_dir(&snapshot_temp_dir)?;
 
                     Ok(())
                 },
