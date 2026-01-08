@@ -74,16 +74,17 @@ impl SegmentHolder {
         // as it is exclusive
         let mut background_flush_lock = self.lock_flushing()?;
 
+        // Capture all flushers first to improve data consistency
+        let flushers: Vec<_> = segment_reads
+            .iter()
+            .filter_map(|read_segment| read_segment.flusher(force))
+            .collect();
+
         if sync {
-            for read_segment in segment_reads.iter() {
-                read_segment.flush(force)?;
+            for flusher in flushers {
+                flusher()?;
             }
         } else {
-            let flushers: Vec<_> = segment_reads
-                .iter()
-                .filter_map(|read_segment| read_segment.flusher(force))
-                .collect();
-
             *background_flush_lock = Some(
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
