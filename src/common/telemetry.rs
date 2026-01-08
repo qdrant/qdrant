@@ -151,9 +151,12 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
 
     fn try_from(value: grpc::PeerTelemetry) -> Result<Self, Self::Error> {
         let grpc::PeerTelemetry {
+            app,
             collections,
             cluster,
         } = value;
+
+        let app = app.map(AppBuildTelemetry::try_from).transpose()?;
 
         let collections = collections
             .into_values()
@@ -168,7 +171,7 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
 
         Ok(TelemetryData {
             id: "".to_string(),
-            app: None,
+            app,
             collections: CollectionsTelemetry {
                 number_of_collections: collections.len(),
                 max_collections: None,
@@ -189,13 +192,15 @@ impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
     fn try_from(telemetry_data: TelemetryData) -> Result<Self, Self::Error> {
         let TelemetryData {
             id: _,
-            app: _,
+            app,
             collections,
             cluster,
             requests: _,
             memory: _,
             hardware: _,
         } = telemetry_data;
+
+        let app = app.map(grpc::AppTelemetry::from);
 
         let collections = collections
             .collections
@@ -215,6 +220,7 @@ impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
             .try_collect()?;
 
         Ok(grpc::PeerTelemetry {
+            app,
             collections,
             cluster: cluster.map(grpc::ClusterTelemetry::from),
         })

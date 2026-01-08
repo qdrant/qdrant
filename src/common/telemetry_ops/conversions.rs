@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 use api::grpc::qdrant as grpc;
+use chrono::DateTime;
 use storage::types::{ConsensusThreadStatus, PeerInfo, StateRole};
 use tonic::Status;
 
 use super::cluster_telemetry::ClusterStatusTelemetry;
+use crate::common::telemetry_ops::app_telemetry::AppBuildTelemetry;
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 
 fn try_convert_opt_role_from_grpc(role: Option<i32>) -> Result<Option<StateRole>, Status> {
@@ -14,6 +16,53 @@ fn try_convert_opt_role_from_grpc(role: Option<i32>) -> Result<Option<StateRole>
         )?))
     })
     .transpose()
+}
+
+impl TryFrom<grpc::AppTelemetry> for AppBuildTelemetry {
+    type Error = Status;
+
+    fn try_from(value: grpc::AppTelemetry) -> Result<Self, Self::Error> {
+        let grpc::AppTelemetry {
+            name,
+            version,
+            startup,
+        } = value;
+
+        Ok(Self {
+            name,
+            version,
+            features: None,
+            runtime_features: None,
+            hnsw_global_config: None,
+            system: None,
+            jwt_rbac: None,
+            hide_jwt_dashboard: None,
+            startup: DateTime::from_timestamp_secs(startup)
+                .ok_or_else(|| Status::internal("startup time is out-of-range"))?,
+        })
+    }
+}
+
+impl From<AppBuildTelemetry> for grpc::AppTelemetry {
+    fn from(value: AppBuildTelemetry) -> Self {
+        let AppBuildTelemetry {
+            name,
+            version,
+            features: _,
+            runtime_features: _,
+            hnsw_global_config: _,
+            system: _,
+            jwt_rbac: _,
+            hide_jwt_dashboard: _,
+            startup,
+        } = value;
+
+        Self {
+            name,
+            version,
+            startup: startup.timestamp(),
+        }
+    }
 }
 
 impl TryFrom<grpc::ClusterStatusTelemetry> for ClusterStatusTelemetry {
