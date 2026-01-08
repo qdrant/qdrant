@@ -111,11 +111,14 @@ pub struct MutableIdTracker {
 
     is_alive_lock: IsAliveLock,
 
-    /// Size of correctly persisted mappings in bytes
+    /// Expected length of the mappings file in bytes
     ///
     /// We initialize this on load, and keep bumping it after reach successful flush. Pending
     /// changes are written to the file after this offset.
-    persisted_mappings_size: Arc<AtomicU64>,
+    ///
+    /// If we have more bytes on disk it probably indicates a partial flush. If we have less bytes
+    /// on disk we hit some kind of a bug.
+    mappings_expected_len: Arc<AtomicU64>,
 }
 
 impl MutableIdTracker {
@@ -142,7 +145,7 @@ impl MutableIdTracker {
             );
         }
 
-        let (mappings, persisted_mappings_size) = if has_mappings {
+        let (mappings, mappings_expected_len) = if has_mappings {
             load_mappings(&mappings_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
             })?
@@ -181,7 +184,7 @@ impl MutableIdTracker {
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
-            persisted_mappings_size: Arc::new(AtomicU64::new(persisted_mappings_size)),
+            mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
         })
     }
 
@@ -312,7 +315,7 @@ impl IdTracker for MutableIdTracker {
 
         let is_alive_handle = self.is_alive_lock.handle();
         let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
-        let persisted_mappings_size = self.persisted_mappings_size.clone();
+        let mappings_expected_len = self.mappings_expected_len.clone();
 
         Box::new(move || {
             let (Some(is_alive_guard), Some(pending_mappings_arc)) = (
@@ -322,14 +325,13 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             };
 
-            let stored = store_mapping_changes(&mappings_path, &changes, &persisted_mappings_size);
+            let stored = store_mapping_changes(&mappings_path, &changes, &mappings_expected_len);
 
             // If persisting mappings failed, try to truncate mappings file to what we had before
             // in an best effort to get rid of partially persisted mappings. We can safely ignore
             // truncate errors because load should properly handle partial entries as well.
             if let Err(err) = stored {
-                let expected_len =
-                    persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
+                let expected_len = mappings_expected_len.load(std::sync::atomic::Ordering::Relaxed);
                 let truncate_result = File::options()
                     .write(true)
                     .open(&mappings_path)
