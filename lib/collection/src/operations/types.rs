@@ -35,6 +35,7 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+pub use shard::count::{CountRequestInternal, default_exact_count};
 use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 pub use shard::scroll::ScrollRequestInternal;
@@ -827,25 +828,6 @@ pub struct CountRequest {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-}
-
-/// Count Request
-/// Counts the number of points which satisfy the given filter.
-/// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub struct CountRequestInternal {
-    /// Look only for points which satisfies this conditions
-    #[validate(nested)]
-    pub filter: Option<Filter>,
-    /// If true, count exact number of points. If false, count approximate number of points faster.
-    /// Approximate count might be unreliable during the indexing process. Default: true
-    #[serde(default = "default_exact_count")]
-    pub exact: bool,
-}
-
-pub const fn default_exact_count() -> bool {
-    true
 }
 
 #[derive(Debug, Default, Serialize, JsonSchema)]
