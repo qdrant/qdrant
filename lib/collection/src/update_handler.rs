@@ -12,6 +12,7 @@ use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 
+use crate::collection::SegmentWorkerPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
@@ -96,6 +97,7 @@ pub struct UpdateHandler {
     /// Sender to stop flush worker
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
+    runtime_pool: Arc<SegmentWorkerPool>,
     /// WAL, required for operations
     wal: LockedWal,
     /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
@@ -141,6 +143,7 @@ impl UpdateHandler {
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: ResourceBudget,
         runtime_handle: Handle,
+        runtime_pool: Arc<SegmentWorkerPool>,
         segments: LockedSegmentHolder,
         wal: LockedWal,
         flush_interval_sec: u64,
@@ -165,6 +168,7 @@ impl UpdateHandler {
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
+            runtime_pool,
             wal,
             wal_keep_from: Arc::new(u64::MAX.into()),
             flush_interval_sec,
@@ -210,6 +214,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+        let update_pool = self.runtime_pool.clone();
 
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
@@ -222,6 +227,7 @@ impl UpdateHandler {
             self.prevent_unoptimized_threshold_kb,
             self.optimization_handles.clone(),
             optimization_finished_receiver,
+            update_pool,
         )));
 
         let segments = self.segments.clone();

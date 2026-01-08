@@ -275,6 +275,7 @@ impl ShardReplicaSet {
                 self.payload_index_schema.clone(),
                 recovery_type.is_full(),
                 self.update_runtime.clone(),
+                self.update_runtime_pool.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
             )

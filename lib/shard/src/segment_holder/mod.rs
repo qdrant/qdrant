@@ -8,7 +8,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -548,6 +548,13 @@ impl SegmentHolder {
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
         for (segment_id, points) in to_delete {
+            // TODO switch to modify segment_id, waiting
+            // We have an object passed to the thread:
+            // struct Token {...}
+            //
+            // let _guard = token.switch_to(segment_id, Exclusive);  // waits for with a condvar put in a queue
+            //
+            // What priority does it have? The original should be fine. Though stalled become a heap, not a deque.
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
@@ -675,6 +682,7 @@ impl SegmentHolder {
         mut point_cow_operation: H,
         update_nonappendable: G,
         hw_counter: &HardwareCounterCell,
+        operation_update_pool: &Weak<pool::AsyncPool<usize>>,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
