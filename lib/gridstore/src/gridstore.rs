@@ -586,13 +586,13 @@ impl<V> Gridstore<V> {
         Box::new(move || {
             let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Gridstore is cleared, cancel flush
-                return Ok(());
+                return Err(GridstoreError::FlushCancelled);
             };
 
             let (Some(pages), Some(tracker), Some(bitmask)) =
                 (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
             else {
-                return Ok(());
+                return Err(GridstoreError::FlushCancelled);
             };
 
             let mut bitmask_guard = bitmask.upgradable_read();
@@ -603,6 +603,7 @@ impl<V> Gridstore<V> {
 
             let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
             if old_pointers.is_empty() {
+                // Nothing to do flush here
                 return Ok(());
             }
             // Update all free blocks in the bitmask
@@ -1713,7 +1714,7 @@ mod tests {
 
         // Flusher is invalidated and does nothing
         // This was broken before <https://github.com/qdrant/qdrant/pull/7702>
-        flusher().unwrap();
+        assert!(flusher().is_err_and(|err| matches!(err, GridstoreError::FlushCancelled)));
 
         drop(storage_arcs);
 
