@@ -14,11 +14,34 @@ use crate::config::CollectionParams;
 
 const BYTES_IN_KB: usize = 1024;
 
-/// Optimizer that tries to reduce number of segments until it fits configured value.
+/// Optimizer that tries to reduce number of segments until it fits configured
+/// value.
 ///
-/// It merges 3 smallest segments into a single large segment.
-/// Merging 3 segments instead of 2 guarantees that after the optimization the number of segments
-/// will be less than before.
+/// ```text
+/// Suppose we have a set of mergeable segments, sorted by size.
+/// `A` is smallest, `M` is largest.
+///
+///     A B C D E F G H I J K L M
+///
+/// MergeOptimizer greedily arranges them in batches up to the size threshold.
+///
+///     [A B C D] [E F G] [H I J] K L M
+///     └───X───┘ └──Y──┘ └──Z──┘
+///
+/// After merging these batches, our segments would look like this:
+///
+///     ∅ X Y Z K L M
+///
+/// `∅` is the newly created appendable segment that Qdrant could potentially
+/// create because MergeOptimizer merged the last appendable segment.
+///
+/// To guarantee that the number of segments will be reduced after the merge,
+/// either merge a batch of at least 3 segments, or merge at least two batches.
+///
+/// - bad:   [A B]        →  ∅ X    (segment count is the same)
+/// - good:  [A B C]      →  ∅ X    (one segment less)
+/// - good:  [A B] [C D]  →  ∅ X Y  (one segment less)
+/// ```
 pub struct MergeOptimizer {
     default_segments_number: usize,
     thresholds_config: OptimizerThresholds,
@@ -109,6 +132,7 @@ impl SegmentOptimizer for MergeOptimizer {
             .max_segment_size_kb
             .saturating_mul(BYTES_IN_KB);
 
+        let mut first_batch = None;
         let mut taken_candidates = 0;
         let mut last_candidate =
             (planner.expected_segments_number() + 2).saturating_sub(self.default_segments_number);
@@ -121,13 +145,22 @@ impl SegmentOptimizer for MergeOptimizer {
                 })
                 .collect_vec();
 
-            // We need at least 3 segments because in this case we can guarantee
-            // that total segments number will be less.
-            if batch.len() < 3 {
+            if batch.len() < 2 {
                 return;
             }
+            let is_first_batch = taken_candidates == 0;
             taken_candidates += batch.len();
             last_candidate += 1;
+            if is_first_batch && batch.len() < 3 {
+                // First batch has length 2. To guarantee that the number of
+                // segments will be reduced, we need another batch.
+                // So, hold the first batch until we find the second one.
+                first_batch = Some(batch);
+                continue;
+            }
+            if let Some(first_batch) = first_batch.take() {
+                planner.plan(first_batch);
+            }
             planner.plan(batch);
         }
     }
@@ -274,24 +307,24 @@ mod tests {
     #[rustfmt::skip]
     const TEST_TABLE: &[(usize, usize, &str)] = &[
         ( 1,  5, ""),
-        ( 1, 33, ""),
+        ( 1, 33, "10+11 =21 | 12+13 =25 | 14+15 =29"),
 
         (17, 50, "10+11+12+13 =46 | 14+15+16 =45"),
-        (18, 50, "10+11+12+13 =46"),
+        (18, 50, "10+11+12+13 =46 | 14+15 =29"),
         (20, 50, "10+11+12 =33"),
 
-        ( 1, 54, "10+11+12+13 =46 | 14+15+16 =45"),
-        ( 1, 55, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54"),
-        ( 1, 60, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54"),
-        ( 1, 61, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57"),
-        ( 1, 66, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57"),
-        ( 1, 67, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60"),
-        ( 1, 70, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60 | 22+23+24 =69"),
+        ( 1, 54, "10+11+12+13 =46 | 14+15+16 =45 | 17+18 =35 | 19+20 =39 | 21+22 =43 | 23+24 =47 | 25+26 =51"),
+        ( 1, 55, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54 | 20+21 =41 | 22+23 =45 | 24+25 =49 | 26+27 =53"),
+        ( 1, 60, "10+11+12+13 =46 | 14+15+16 =45 | 17+18+19 =54 | 20+21 =41 | 22+23 =45 | 24+25 =49 | 26+27 =53 | 28+29 =57"),
+        ( 1, 61, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57 | 21+22 =43 | 23+24 =47 | 25+26 =51 | 27+28 =55 | 29+30 =59"),
+        ( 1, 66, "10+11+12+13+14 =60 | 15+16+17 =48 | 18+19+20 =57 | 21+22 =43 | 23+24 =47 | 25+26 =51 | 27+28 =55 | 29+30 =59"),
+        ( 1, 67, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60 | 22+23 =45 | 24+25 =49 | 26+27 =53 | 28+29 =57"),
+        ( 1, 70, "10+11+12+13+14 =60 | 15+16+17+18 =66 | 19+20+21 =60 | 22+23+24 =69 | 25+26 =51 | 27+28 =55 | 29+30 =59"),
 
         ( 5, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27+28+29 =135"),
         ( 6, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27+28 =106"),
         ( 7, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26+27 =78"),
-        ( 8, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129"),
+        ( 8, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129 | 25+26 =51"),
         ( 9, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23+24 =129"),
         (10, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22+23 =105"),
         (11, 143, "10+11+12+13+14+15+16+17+18 =126 | 19+20+21+22 =82"),
@@ -303,7 +336,7 @@ mod tests {
         ( 5, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27+28 =130"),
         ( 6, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26+27 =102"),
         ( 7, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25+26 =75"),
-        ( 8, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231"),
+        ( 8, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231 | 24+25 =49"),
         ( 9, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22+23 =231"),
         (10, 233, "10+11+12+13+14+15+16+17+18+19+20+21+22 =208"),
         (11, 233, "10+11+12+13+14+15+16+17+18+19+20+21 =186"),

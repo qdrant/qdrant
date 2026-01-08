@@ -101,7 +101,18 @@ pub trait SegmentOptimizer {
             let mut planner =
                 OptimizationPlanner::new(i + 1, remaining.iter().map(|(&id, &seg)| (id, seg)));
             self.plan_optimizations(&mut planner);
-            assert_eq!(planner.into_scheduled_for_test(), &result[i + 1..]);
+            let actual = planner.into_scheduled_for_test();
+            let expected = &result[i + 1..];
+            if self.name() == "merge"
+                && actual.is_empty()
+                && expected.len() == 1
+                && expected[0].len() == 2
+            {
+                // Special case for MergeOptimizer:
+                // `[A B] [C D]` is allowed, but `[C D]` is not. See its doc.
+                continue;
+            }
+            assert_eq!(actual, expected);
         }
 
         result
