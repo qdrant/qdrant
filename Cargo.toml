@@ -377,10 +377,6 @@ opt-level = 3
 [profile.ci.package.sha2]
 opt-level = 3
 
-[patch.crates-io]
-# Temporary patch until our PRs are merged.
-tar = { git = "https://github.com/qdrant/tar-rs", branch = "main" }
-
 [package.metadata.deb]
 maintainer = "Qdrant Team <team@qdrant.com>"
 depends = "$auto"

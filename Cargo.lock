@@ -1281,6 +1281,7 @@ dependencies = [
  "log",
  "memmap2",
  "memory",
+ "nix 0.30.1",
  "num-traits",
  "num_cpus",
  "ordered-float 5.1.0",
@@ -7045,8 +7046,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tar"
-version = "0.4.41"
-source = "git+https://github.com/qdrant/tar-rs?branch=main#856dbd090eede1736604f23cfe99a104b5639734"
+version = "0.4.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d863878d212c87a19c1a610eb53bb01fe12951c0501cf5a0d65f724914a667a"
 dependencies = [
  "filetime",
  "libc",
