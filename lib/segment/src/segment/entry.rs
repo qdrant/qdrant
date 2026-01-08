@@ -637,6 +637,7 @@ impl SegmentEntry for Segment {
             (_, _) => {}
         }
 
+        // Capture all flushers first to improve data consistency
         let vector_storage_flushers: Vec<_> = self
             .vector_data
             .values()
