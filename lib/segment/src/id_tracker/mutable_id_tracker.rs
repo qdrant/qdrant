@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -111,6 +112,9 @@ pub struct MutableIdTracker {
     is_alive_lock: IsAliveLock,
 
     /// Size of correctly persisted mappings in bytes
+    ///
+    /// We initialize this on load, and keep bumping it after reach succesful flush. Pending
+    /// changes are wrtiten to the file after this offset.
     persisted_mappings_size: Arc<AtomicU64>,
 }
 
@@ -409,9 +413,10 @@ fn store_mapping_changes(
     // Create or open file in append mode to write new changes to the end
     let mut file = File::options()
         .create(true)
-        .write(true)
+        .append(true)
         .open(mappings_path)?;
 
+    // Ensure correct file length to not corrupt mappings when appending
     let file_len = file
         .metadata()
         .map_err(|err| {
@@ -420,22 +425,34 @@ fn store_mapping_changes(
             ))
         })?
         .len();
-
-    // Seek to the end of the persisted part of the file.
-    // If previously call of `store_mapping_changes` failed,
-    // `persisted_mappings_size` may be less than actual file size.
     let file_start_appending = persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
-    if file_start_appending <= file_len {
-        file.seek(io::SeekFrom::Start(file_start_appending))
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to seek to the persisted position of ID tracker mappings: {err}"
-                ))
-            })?;
-    } else {
-        return Err(OperationError::service_error(format!(
-            "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
-        )));
+    match file_len.cmp(&file_start_appending) {
+        // File size is what we expect, continue normally
+        Ordering::Equal => {}
+        // File is larger than expected, previous flush might not have completed properly
+        // May happen if system is out of disk space and the file cannot be grown
+        // Try to truncate to what we expect to clean up but ignore if we fail, then seek to the
+        // correct append point
+        Ordering::Greater => {
+            if let Err(err) = file.set_len(file_start_appending) {
+                log::warn!(
+                    "Failed to truncate immutable ID tracker mappings file that is too large, ignoring: {err}"
+                );
+            }
+
+            file.seek(io::SeekFrom::Start(file_start_appending))
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "Failed to seek to the persisted position of ID tracker mappings: {err}",
+                    ))
+                })?;
+        }
+        // File is smaller than expected, indicates a bug we cannot recover from
+        Ordering::Less => {
+            return Err(OperationError::service_error(format!(
+                "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
+            )));
+        }
     }
 
     let mut writer = BufWriter::new(file);
