@@ -8,6 +8,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -20,8 +21,8 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    PointRequestInternal, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
+    UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};

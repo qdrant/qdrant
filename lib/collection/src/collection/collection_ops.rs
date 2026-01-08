@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
+use shard::count::CountRequestInternal;
 
 use super::Collection;
 use crate::collection_manager::optimizers::IndexingProgressViews;

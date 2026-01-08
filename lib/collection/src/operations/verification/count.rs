@@ -1,7 +1,7 @@
 use segment::types::{Filter, SearchParams};
+use shard::count::CountRequestInternal;
 
 use super::StrictModeVerification;
-use crate::operations::types::CountRequestInternal;
 
 impl StrictModeVerification for CountRequestInternal {
     fn query_limit(&self) -> Option<usize> {

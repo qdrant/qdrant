@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::*;
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
