@@ -322,7 +322,25 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             };
 
-            store_mapping_changes(&mappings_path, &changes, persisted_mappings_size)?;
+            let stored = store_mapping_changes(&mappings_path, &changes, &persisted_mappings_size);
+
+            // If persisting mappings failed, try to truncate mappings file to what we had before
+            // in an best effort to get rid of partially persisted mappings. We can safely ignore
+            // truncate errors because load should properly handle partial entries as well.
+            if let Err(err) = stored {
+                let expected_len =
+                    persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
+                let truncate_result = File::options()
+                    .write(true)
+                    .open(&mappings_path)
+                    .and_then(|f| f.set_len(expected_len));
+                if let Err(err) = truncate_result {
+                    log::warn!(
+                        "Failed to truncate immutable ID tracker mappings file after failed flush, ignoring: {err}"
+                    );
+                }
+                return Err(err);
+            }
 
             reconcile_persisted_mapping_changes(&pending_mappings_arc, &changes);
 
@@ -408,7 +426,7 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 fn store_mapping_changes(
     mappings_path: &Path,
     changes: &Vec<MappingChange>,
-    persisted_mappings_size: Arc<AtomicU64>,
+    persisted_mappings_size: &AtomicU64,
 ) -> OperationResult<()> {
     // Create or open file in append mode to write new changes to the end
     let mut file = File::options()
