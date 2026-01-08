@@ -303,7 +303,7 @@ impl LocalShard {
     /// Recovers shard from disk.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
-        _id: ShardId,
+        shard_id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
@@ -431,7 +431,7 @@ impl LocalShard {
 
         let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
-            log::debug!("Deduplicated {res} points");
+            log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
         }
 
         clear_temp_segments(shard_path);
