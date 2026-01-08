@@ -48,29 +48,32 @@ pub struct DistributedPeerInfo {
     /// Whether this peer responded for this request
     responsive: bool,
 
+    /// If responsive, these details should be available
+    details: Option<DistributedPeerDetails>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DistributedPeerDetails {
+    /// Qdrant version
+    version: String,
+
     /// Consensus role for the peer
-    #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<StateRole>,
 
     /// Whether it can participate in leader elections
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_voter: Option<bool>,
+    is_voter: bool,
 
     /// Election term
-    #[serde(skip_serializing_if = "Option::is_none")]
-    term: Option<u64>,
+    term: u64,
 
     /// Latest accepted commit
-    #[serde(skip_serializing_if = "Option::is_none")]
-    commit: Option<u64>,
+    commit: u64,
 
     /// Number of operations pending for being applied
-    #[serde(skip_serializing_if = "Option::is_none")]
-    num_pending_operations: Option<u64>,
+    num_pending_operations: u64,
 
     /// Status of consensus thread
-    #[serde(skip_serializing_if = "Option::is_none")]
-    consensus_thread_status: Option<ConsensusThreadStatus>,
+    consensus_thread_status: ConsensusThreadStatus,
 }
 
 impl DistributedTelemetryData {
@@ -268,6 +271,7 @@ fn aggregate_cluster_telemetry(
         peers,
     })
 }
+
 fn aggregate_peers_info(
     missing_peers: Vec<u64>,
     base_cluster: &ClusterTelemetry,
@@ -275,38 +279,60 @@ fn aggregate_peers_info(
 ) -> Option<HashMap<u64, DistributedPeerInfo>> {
     let all_peers = base_cluster.peers.as_ref()?;
 
-    let mut distributed_peers_info = HashMap::default();
-    for (peer_id, peer_info) in all_peers {
-        let responsive =
-            telemetry_by_peer.contains_key(peer_id) && !missing_peers.contains(peer_id);
+    let mut distributed_peers_info: HashMap<_, _> = all_peers
+        .iter()
+        .map(|(peer_id, peer_info)| {
+            let uri = peer_info.uri.clone();
 
-        let peer_telemetry = telemetry_by_peer.get(peer_id);
-        let status = peer_telemetry
-            .and_then(|t| t.cluster.as_ref())
-            .and_then(|c| c.status.as_ref());
+            let responsive =
+                telemetry_by_peer.contains_key(peer_id) && !missing_peers.contains(peer_id);
 
-        distributed_peers_info.insert(
-            *peer_id,
-            DistributedPeerInfo {
-                uri: peer_info.uri.clone(),
-                responsive,
-                role: status.as_ref().and_then(|s| s.role),
-                is_voter: status.as_ref().map(|s| s.is_voter),
-                term: status.as_ref().map(|s| s.term),
-                commit: status.as_ref().map(|s| s.commit),
-                num_pending_operations: status.as_ref().map(|s| s.pending_operations as u64),
-                consensus_thread_status: status.map(|s| s.consensus_thread_status.clone()),
-            },
-        );
-    }
+            let details = telemetry_by_peer.get(peer_id).and_then(|peer_telemetry| {
+                let Some(version) = peer_telemetry.app.as_ref().map(|t| t.version.clone()) else {
+                    debug_assert!(false, "internal service should include app version");
+                    return None;
+                };
+
+                let Some(status) = peer_telemetry
+                    .cluster
+                    .as_ref()
+                    .and_then(|c| c.status.as_ref())
+                else {
+                    debug_assert!(
+                        false,
+                        "internal service should include cluster status telemetry"
+                    );
+                    return None;
+                };
+
+                Some(DistributedPeerDetails {
+                    version,
+                    role: status.role,
+                    is_voter: status.is_voter,
+                    term: status.term,
+                    commit: status.commit,
+                    num_pending_operations: status.pending_operations as u64,
+                    consensus_thread_status: status.consensus_thread_status.clone(),
+                })
+            });
+
+            (
+                *peer_id,
+                DistributedPeerInfo {
+                    uri,
+                    responsive,
+                    details,
+                },
+            )
+        })
+        .collect();
 
     // Add any failed peers that aren't in the all_peers list
     for peer_id in missing_peers {
-        debug_assert!(false, "all missing peers should have been listed already");
-
         if distributed_peers_info.contains_key(&peer_id) {
             continue;
         }
+        debug_assert!(false, "all missing peers should have been listed already");
 
         let Some(info) = base_cluster
             .peers
@@ -321,12 +347,7 @@ fn aggregate_peers_info(
             DistributedPeerInfo {
                 uri: info.uri.clone(),
                 responsive: false,
-                role: None,
-                is_voter: None,
-                term: None,
-                commit: None,
-                num_pending_operations: None,
-                consensus_thread_status: None,
+                details: None,
             },
         );
     }
