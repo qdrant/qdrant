@@ -44,15 +44,15 @@ impl Default for ScrollRequestInternal {
 }
 
 impl ScrollRequestInternal {
-    pub fn default_limit() -> usize {
+    pub const fn default_limit() -> usize {
         10
     }
 
-    pub fn default_with_payload() -> WithPayloadInterface {
+    pub const fn default_with_payload() -> WithPayloadInterface {
         WithPayloadInterface::Bool(true)
     }
 
-    pub fn default_with_vector() -> WithVector {
+    pub const fn default_with_vector() -> WithVector {
         WithVector::Bool(false)
     }
 }
