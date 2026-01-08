@@ -336,7 +336,7 @@ impl IdTracker for MutableIdTracker {
                     .and_then(|f| f.set_len(expected_len));
                 if let Err(err) = truncate_result {
                     log::warn!(
-                        "Failed to truncate immutable ID tracker mappings file after failed flush, ignoring: {err}"
+                        "Failed to truncate mutable ID tracker mappings file after failed flush, ignoring: {err}"
                     );
                 }
                 return Err(err);
@@ -454,7 +454,7 @@ fn store_mapping_changes(
         Ordering::Greater => {
             if let Err(err) = file.set_len(file_start_appending) {
                 log::warn!(
-                    "Failed to truncate immutable ID tracker mappings file that is too large, ignoring: {err}"
+                    "Failed to truncate mutable ID tracker mappings file that is too large, ignoring: {err}"
                 );
             }
 
@@ -490,7 +490,7 @@ fn store_mapping_changes(
     })?;
 
     // Get new persisted size as a position after writing all changes.
-    // Stream position is used here ho handle cases where the pending changes are shorter than non-persisted part.
+    // Stream position is used here to handle cases where the pending changes are shorter than non-persisted part.
     let new_persisted_size = file.stream_position().map_err(|err| {
         OperationError::service_error(format!(
             "Failed to get new persisted size of ID tracker mappings: {err}"
