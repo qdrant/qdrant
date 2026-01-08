@@ -14,10 +14,12 @@ pub struct CountRequestInternal {
     pub filter: Option<Filter>,
     /// If true, count exact number of points. If false, count approximate number of points faster.
     /// Approximate count might be unreliable during the indexing process. Default: true
-    #[serde(default = "default_exact_count")]
+    #[serde(default = "CountRequestInternal::default_exact")]
     pub exact: bool,
 }
 
-pub const fn default_exact_count() -> bool {
-    true
+impl CountRequestInternal {
+    pub const fn default_exact() -> bool {
+        true
+    }
 }

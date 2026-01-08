@@ -35,7 +35,7 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
-pub use shard::count::{CountRequestInternal, default_exact_count};
+pub use shard::count::CountRequestInternal;
 use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 pub use shard::scroll::ScrollRequestInternal;
