@@ -247,7 +247,7 @@ mod tests {
         topo.add_dependency(2, 1, ());
         topo.add_dependency(3, 2, ());
         let result: Vec<_> = topo.sort_elements(&elements).collect();
-        // 4 is missing, so no element is depending on 3
+        // 4 is missing, only element 2 is depending on 3
         assert_eq!(result, vec![1, 2, 3]);
     }
 }
