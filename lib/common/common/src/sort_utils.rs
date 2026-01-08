@@ -6,6 +6,12 @@ pub fn sort_permutation<T: Eq + Hash + Copy, V>(
     keys: &[T],
     sort: impl FnOnce(&[T]) -> Vec<T>,
 ) {
+    debug_assert_eq!(
+        values.len(),
+        keys.len(),
+        "values and keys must have the same length",
+    );
+
     if values.len() <= 1 {
         return;
     }
@@ -25,7 +31,7 @@ pub fn sort_permutation<T: Eq + Hash + Copy, V>(
     // Apply permutation in-place using cycle sort
 
     // Example:
-    // keys: [K1, k3, K0, K2]
+    // keys: [K1, K3, K0, K2]
     // sorted_keys: [K0, K1, K2, K3]
     // perm: [1, 3, 0, 2]
     for i in 0..perm.len() {
