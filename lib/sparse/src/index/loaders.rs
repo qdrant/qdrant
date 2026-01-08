@@ -77,6 +77,10 @@ impl Csr {
 
     #[inline]
     unsafe fn vec(&self, row: usize) -> Result<SparseVector, ValidationErrors> {
+        const _: () = assert!(
+            cfg!(feature = "testing"),
+            "This unsafe block should be used only in internal benchmarks"
+        );
         unsafe {
             let start = *self.intptr.get_unchecked(row) as usize;
             let end = *self.intptr.get_unchecked(row + 1) as usize;
