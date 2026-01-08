@@ -202,15 +202,17 @@ impl RemoteShard {
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> RemoteShardTelemetry {
         RemoteShardTelemetry {
             shard_id: self.id,
-            peer_id: Some(self.peer_id),
-            searches: self
-                .telemetry_search_durations
-                .lock()
-                .get_statistics(detail),
-            updates: self
-                .telemetry_update_durations
-                .lock()
-                .get_statistics(detail),
+            peer_id: self.peer_id,
+            searches: Some(
+                self.telemetry_search_durations
+                    .lock()
+                    .get_statistics(detail),
+            ),
+            updates: Some(
+                self.telemetry_update_durations
+                    .lock()
+                    .get_statistics(detail),
+            ),
         }
     }
 

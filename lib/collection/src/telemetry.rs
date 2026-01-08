@@ -80,8 +80,8 @@ impl CollectionTelemetry {
         self.shards
             .iter()
             .flatten()
-            .filter_map(|replica_set| replica_set.local.as_ref())
-            .flat_map(|local_shard| local_shard.optimizations.log.iter().flatten())
+            .filter_map(|replica_set| replica_set.local.as_ref()?.optimizations.as_ref())
+            .flat_map(|optimizer| optimizer.log.iter().flatten())
             .filter(|log| log.status == TrackerStatus::Optimizing)
             .count()
     }

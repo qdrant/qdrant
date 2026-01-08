@@ -30,9 +30,9 @@ pub struct RemoteShardTelemetry {
     #[anonymize(false)]
     pub shard_id: ShardId,
     #[anonymize(false)]
-    pub peer_id: Option<PeerId>,
-    pub searches: OperationDurationStatistics,
-    pub updates: OperationDurationStatistics,
+    pub peer_id: PeerId,
+    pub searches: Option<OperationDurationStatistics>,
+    pub updates: Option<OperationDurationStatistics>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
@@ -67,7 +67,7 @@ pub struct LocalShardTelemetry {
     pub num_vectors_by_name: Option<HashMap<String, usize>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segments: Option<Vec<SegmentTelemetry>>,
-    pub optimizations: OptimizerTelemetry,
+    pub optimizations: Option<OptimizerTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
