@@ -1,4 +1,5 @@
 pub mod config;
+pub mod count;
 pub mod query;
 pub mod repr;
 pub mod scroll;
@@ -17,6 +18,7 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::count::*;
 use self::query::*;
 use self::scroll::*;
 use self::search::*;
@@ -45,6 +47,8 @@ mod qdrant_edge {
     };
     #[pymodule_export]
     use super::config::{PyPayloadStorageType, PySegmentConfig};
+    #[pymodule_export]
+    use super::count::PyCountRequest;
     #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
@@ -109,6 +113,11 @@ impl PyShard {
         let points = self.get_shard()?.scroll(scroll.into())?;
         let points = PyRecord::wrap_vec(points);
         Ok(points)
+    }
+
+    pub fn count(&self, count: PyCountRequest) -> Result<usize> {
+        let points_count = self.get_shard()?.count(count.into())?;
+        Ok(points_count)
     }
 
     pub fn retrieve(
