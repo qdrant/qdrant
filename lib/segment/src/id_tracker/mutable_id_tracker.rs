@@ -113,8 +113,8 @@ pub struct MutableIdTracker {
 
     /// Size of correctly persisted mappings in bytes
     ///
-    /// We initialize this on load, and keep bumping it after reach succesful flush. Pending
-    /// changes are wrtiten to the file after this offset.
+    /// We initialize this on load, and keep bumping it after reach successful flush. Pending
+    /// changes are written to the file after this offset.
     persisted_mappings_size: Arc<AtomicU64>,
 }
 
