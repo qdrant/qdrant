@@ -11,6 +11,7 @@ use thread::thread_worker;
 #[cfg(feature = "tokio")]
 mod async_pool;
 mod thread;
+mod switch;
 
 #[cfg(feature = "tokio")]
 pub use async_pool::{AsyncPool, AsyncTaskError};

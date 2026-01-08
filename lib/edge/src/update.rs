@@ -16,7 +16,7 @@ impl Shard {
 
         let result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&self.segments, operation_id, point_operation, &hw_counter)
+                process_point_operation(&self.segments, operation_id, point_operation, &hw_counter, todo!())
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(
@@ -24,6 +24,7 @@ impl Shard {
                     operation_id,
                     vector_operation,
                     &hw_counter,
+                    todo!(),
                 )
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {

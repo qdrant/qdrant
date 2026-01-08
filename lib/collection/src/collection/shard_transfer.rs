@@ -119,6 +119,7 @@ impl Collection {
                     self.shared_storage_config.clone(),
                     self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
+                    self.update_pool.clone(),
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     effective_optimizers_config,

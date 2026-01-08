@@ -1,10 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use segment::types::SeqNumberType;
 use shard::update::*;
 
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -46,6 +47,7 @@ impl CollectionUpdater {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
+        operation_update_pool: Weak<SegmentWorkerPool>,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -57,10 +59,10 @@ impl CollectionUpdater {
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(segments, op_num, point_operation, hw_counter)
+                    process_point_operation(segments, op_num, point_operation, hw_counter, &operation_update_pool)
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(segments, op_num, vector_operation, hw_counter)
+                    process_vector_operation(segments, op_num, vector_operation, hw_counter, &operation_update_pool)
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(segments, op_num, payload_operation, hw_counter)

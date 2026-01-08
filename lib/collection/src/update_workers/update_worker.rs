@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -7,6 +7,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -27,6 +28,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        update_pool: Arc<SegmentWorkerPool>,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -42,8 +44,12 @@ impl UpdateWorkers {
                     let segments_clone = segments.clone();
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
+                    // Weak reference to avoid Arc cycling, as the closure contains the pool,
+                    // and the pool contains the closure.
+                    let operation_update_pool = Arc::downgrade(&update_pool);
 
-                    let operation_result = tokio::task::spawn_blocking(move || {
+                    // submit an uncontended operation to determine a segment, and then switch to contented state.
+                    let operation_result = update_pool.submit_uncontended(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
                             operation,
@@ -54,6 +60,7 @@ impl UpdateWorkers {
                             update_operation_lock_clone,
                             update_tracker_clone,
                             hw_measurements,
+                            operation_update_pool,
                         )
                     })
                     .await;
@@ -114,6 +121,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
+        operation_update_pool: Weak<SegmentWorkerPool>,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {
@@ -137,6 +145,7 @@ impl UpdateWorkers {
             update_operation_lock.clone(),
             update_tracker.clone(),
             &hw_measurements.get_counter_cell(),
+            operation_update_pool,
         );
 
         let duration = start_time.elapsed();

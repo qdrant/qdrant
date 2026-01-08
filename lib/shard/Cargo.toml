@@ -21,6 +21,7 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
+pool = { path = "../common/pool" }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }

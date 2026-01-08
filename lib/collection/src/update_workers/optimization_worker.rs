@@ -503,6 +503,7 @@ impl UpdateWorkers {
                         update_operation_lock.clone(),
                         update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
+                        todo!(),
                     )?;
                 }
             }
