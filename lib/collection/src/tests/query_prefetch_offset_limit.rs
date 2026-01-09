@@ -122,6 +122,7 @@ async fn fixture() -> Collection {
         .update_from_client(
             operation,
             true,
+            None,
             WriteOrdering::Weak,
             None,
             HwMeasurementAcc::disposable(),
