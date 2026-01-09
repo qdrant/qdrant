@@ -7889,7 +7889,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -7931,7 +7931,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -7963,7 +7963,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -7990,7 +7990,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8071,7 +8071,7 @@
             ]
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8229,7 +8229,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8261,7 +8261,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8293,7 +8293,7 @@
             "nullable": true
           },
           "enable_hnsw": {
-            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }

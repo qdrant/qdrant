@@ -1362,7 +1362,7 @@ pub struct KeywordIndexParams {
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1386,7 +1386,7 @@ pub struct IntegerIndexParams {
     #[prost(bool, optional, tag = "4")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "5")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1403,7 +1403,7 @@ pub struct FloatIndexParams {
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1416,7 +1416,7 @@ pub struct GeoIndexParams {
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1465,7 +1465,7 @@ pub struct TextIndexParams {
     #[prost(bool, optional, tag = "9")]
     pub ascii_folding: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "10")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1504,7 +1504,7 @@ pub struct BoolIndexParams {
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "2")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1521,7 +1521,7 @@ pub struct DatetimeIndexParams {
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
@@ -1537,7 +1537,7 @@ pub struct UuidIndexParams {
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
     /// Enable HNSW graph building for this payload field.
-    /// If true, builds additional HNSW links (Need payload_M > 0).
+    /// If true, builds additional HNSW links (Need payload_m > 0).
     /// Default: true.
     #[prost(bool, optional, tag = "3")]
     pub enable_hnsw: ::core::option::Option<bool>,
