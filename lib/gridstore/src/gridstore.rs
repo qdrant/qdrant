@@ -1,29 +1,28 @@
 use std::io::BufReader;
-use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::is_alive_lock::IsAliveLock;
 use fs_err as fs;
 use fs_err::File;
 use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
-use memory::mmap_type;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 
+use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig, StorageOptions};
+use crate::error::GridstoreError;
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
 
 const CONFIG_FILENAME: &str = "config.json";
 
-pub(crate) type Result<T> = std::result::Result<T, String>;
-
-pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), mmap_type::Error> + Send>;
+pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
 /// Storage for values of type `V`.
 ///
@@ -47,9 +46,7 @@ pub struct Gridstore<V> {
     _value_type: std::marker::PhantomData<V>,
 
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
-    /// Default value is true - means segment is alive and flushes can be performed.
-    /// If value is false - means segment was dropped and no further flush is required.
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: IsAliveLock,
 }
 
 #[inline]
@@ -120,8 +117,11 @@ impl<V: Blob> Gridstore<V> {
             Self::open(base_path)
         } else {
             // create folder if it does not exist
-            fs::create_dir_all(&base_path)
-                .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
+            fs::create_dir_all(&base_path).map_err(|err| {
+                GridstoreError::service_error(format!(
+                    "Failed to create gridstore storage directory: {err}"
+                ))
+            })?;
             Self::new(base_path, create_options)
         }
     }
@@ -132,13 +132,15 @@ impl<V: Blob> Gridstore<V> {
     /// It should exist already.
     pub fn new(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         if !base_path.exists() {
-            return Err("Base path does not exist".to_string());
+            return Err(GridstoreError::service_error("Base path does not exist"));
         }
         if !base_path.is_dir() {
-            return Err("Base path is not a directory".to_string());
+            return Err(GridstoreError::service_error(
+                "Base path is not a directory",
+            ));
         }
 
-        let config = StorageConfig::try_from(options)?;
+        let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let storage = Self {
@@ -148,7 +150,7 @@ impl<V: Blob> Gridstore<V> {
             base_path,
             config,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            is_alive_flush_lock: IsAliveLock::new(),
         };
 
         // create first page to be covered by the bitmask
@@ -158,7 +160,8 @@ impl<V: Blob> Gridstore<V> {
         storage.pages.write().push(page);
 
         // lastly, write config to disk to use as a signal that the storage has been created correctly
-        atomic_save_json(&config_path, &config).map_err(|err| err.to_string())?;
+        atomic_save_json(&config_path, &config)
+            .map_err(|err| GridstoreError::service_error(err.to_string()))?;
 
         Ok(storage)
     }
@@ -167,17 +170,20 @@ impl<V: Blob> Gridstore<V> {
     /// Returns None if the storage does not exist
     pub fn open(base_path: PathBuf) -> Result<Self> {
         if !base_path.exists() {
-            return Err(format!("Path '{base_path:?}' does not exist"));
+            return Err(GridstoreError::service_error(format!(
+                "Path '{base_path:?}' does not exist"
+            )));
         }
         if !base_path.is_dir() {
-            return Err(format!("Path '{base_path:?}' is not a directory"));
+            return Err(GridstoreError::service_error(format!(
+                "Path '{base_path:?}' is not a directory"
+            )));
         }
 
         // read config file first
         let config_path = base_path.join(CONFIG_FILENAME);
-        let config_file = BufReader::new(File::open(&config_path).map_err(|err| err.to_string())?);
-        let config: StorageConfig =
-            serde_json::from_reader(config_file).map_err(|err| err.to_string())?;
+        let config_file = BufReader::new(File::open(&config_path)?);
+        let config: StorageConfig = serde_json::from_reader(config_file)?;
 
         let page_tracker = Tracker::open(&base_path)?;
 
@@ -192,7 +198,7 @@ impl<V: Blob> Gridstore<V> {
             bitmask: Arc::new(RwLock::new(bitmask)),
             base_path,
             _value_type: std::marker::PhantomData,
-            is_alive_flush_lock: Arc::new(Mutex::new(true)),
+            is_alive_flush_lock: IsAliveLock::new(),
         };
         // load pages
         let mut pages = storage.pages.write();
@@ -206,7 +212,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Get the path for a given page id
-    pub fn page_path(&self, page_id: u32) -> PathBuf {
+    fn page_path(&self, page_id: u32) -> PathBuf {
         self.base_path.join(format!("page_{page_id}.dat"))
     }
 
@@ -266,9 +272,6 @@ impl<V: Blob> Gridstore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
-        log::trace!(
-            "get_value offset:{point_offset} page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -439,9 +442,6 @@ impl<V: Blob> Gridstore<V> {
         // update the pointer
         let mut tracker_guard = self.tracker.write();
         let is_update = tracker_guard.has_pointer(point_offset);
-        log::trace!(
-            "put_value offset:{point_offset} set page_id:{start_page_id} block_offset:{block_offset} length:{value_size}"
-        );
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -463,9 +463,6 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages::<false>(page_id, block_offset, length);
-        log::trace!(
-            "delete_value offset:{point_offset} unset page_id:{page_id} block_offset:{block_offset} length:{length}"
-        );
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
@@ -479,19 +476,25 @@ impl<V: Blob> Gridstore<V> {
         let create_options = StorageOptions::from(self.config);
         let base_path = self.base_path.clone();
 
-        // Wait for all background flush operations to finish, abort pending flushes
-        // Below we create a new Gridstore instance with a new boolean, so flushers created on the
-        // new instance work as expected
-        *self.is_alive_flush_lock.lock() = false;
+        // Wait for all background flush operations to finish, abort pending flushes Below we
+        // create a new Gridstore instance with a new flush lock, so flushers created on the new
+        // instance work as expected
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Wipe
         self.pages.write().clear();
-        fs::remove_dir_all(&base_path)
-            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))?;
+        fs::remove_dir_all(&base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to remove gridstore storage directory: {err}"
+            ))
+        })?;
 
         // Recreate
-        fs::create_dir_all(&base_path)
-            .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
+        fs::create_dir_all(&base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to create gridstore storage directory: {err}"
+            ))
+        })?;
         *self = Self::new(base_path, create_options)?;
 
         Ok(())
@@ -505,17 +508,22 @@ impl<V: Blob> Gridstore<V> {
         let base_path = self.base_path.clone();
 
         // Wait for all background flush operations to finish, abort pending flushes
-        *self.is_alive_flush_lock.lock() = false;
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Make sure strong references are dropped, to avoid starting another flush
         drop(self);
 
         // deleted base directory
-        fs::remove_dir_all(base_path)
-            .map_err(|err| format!("Failed to remove gridstore storage directory: {err}"))
+        fs::remove_dir_all(base_path).map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to remove gridstore storage directory: {err}"
+            ))
+        })
     }
 
     /// Iterate over all the values in the storage
+    ///
+    /// Stops when the callback returns Ok(false)
     pub fn iter<F, E>(
         &self,
         mut callback: F,
@@ -555,31 +563,6 @@ impl<V: Blob> Gridstore<V> {
     pub fn get_storage_size_bytes(&self) -> usize {
         self.bitmask.read().get_storage_size_bytes()
     }
-
-    /// Iterate over all the values in the storage, including deleted ones
-    pub fn for_each_unfiltered<F>(&self, mut callback: F) -> Result<()>
-    where
-        F: FnMut(PointOffset, Option<&V>) -> ControlFlow<String, ()>,
-    {
-        for (point_offset, opt_pointer) in self.tracker.read().iter_pointers() {
-            let value = opt_pointer.map(
-                |ValuePointer {
-                     page_id,
-                     block_offset,
-                     length,
-                 }| {
-                    let raw = self.read_from_pages::<true>(page_id, block_offset, length);
-                    let decompressed = self.decompress(raw);
-                    V::from_bytes(&decompressed)
-                },
-            );
-            match callback(point_offset, value.as_ref()) {
-                ControlFlow::Continue(()) => (),
-                ControlFlow::Break(message) => return Err(message),
-            }
-        }
-        Ok(())
-    }
 }
 
 impl<V> Gridstore<V> {
@@ -598,16 +581,13 @@ impl<V> Gridstore<V> {
         let bitmask = Arc::downgrade(&self.bitmask);
         let block_size_bytes = self.config.block_size_bytes;
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
-                // Segment is cleared, skip flush
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
+                // Gridstore is cleared, cancel flush
                 return Ok(());
-            }
+            };
 
             let (Some(pages), Some(tracker), Some(bitmask)) =
                 (pages.upgrade(), tracker.upgrade(), bitmask.upgrade())
@@ -640,6 +620,9 @@ impl<V> Gridstore<V> {
                 }
             });
             bitmask_guard.flush()?;
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
 
             Ok(())
         })
@@ -908,15 +891,33 @@ mod tests {
     }
 
     enum Operation {
+        // Insert point with payload
         Put(PointOffset, Payload),
+        // Delete point by offset
         Delete(PointOffset),
+        // Get point by offset
         Get(PointOffset),
+        // Flush after delay
         FlushDelay(Duration),
+        // Clear storage
+        Clear,
+        // Iter up to limit
+        Iter(PointOffset),
     }
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let operation = rng.random_range(0..=3);
+            let workload = rand::distr::weighted::WeightedIndex::new([
+                max_point_offset,         // put
+                max_point_offset / 100,   // delete
+                max_point_offset,         // get
+                max_point_offset / 500,   // flush
+                max_point_offset / 5_000, // clear
+                max_point_offset / 5_000, // iter
+            ])
+            .unwrap();
+
+            let operation = workload.sample(rng);
             match operation {
                 0 => {
                     let size_factor = rng.random_range(1..10);
@@ -937,6 +938,11 @@ mod tests {
                     let delay = Duration::from_millis(delay_ms);
                     Operation::FlushDelay(delay)
                 }
+                4 => Operation::Clear,
+                5 => {
+                    let limit = rng.random_range(0..=10);
+                    Operation::Iter(limit)
+                }
                 op => panic!("{op} out of range"),
             }
         }
@@ -949,16 +955,18 @@ mod tests {
     ) {
         use ahash::AHashMap;
 
+        let operation_count = 100_000;
+        let max_point_offset = 10_000u32;
+
         let _ = env_logger::builder().is_test(true).try_init();
 
         let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
         let rng = &mut rand::rngs::SmallRng::from_os_rng();
-        let max_point_offset = 10_000u32;
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
-        let operations = (0..100_000u32).map(|_| Operation::random(rng, max_point_offset));
+        let operations = (0..operation_count).map(|_| Operation::random(rng, max_point_offset));
 
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -971,6 +979,30 @@ mod tests {
         // apply operations to storage and model_hashmap
         for (i, operation) in operations.enumerate() {
             match operation {
+                Operation::Clear => {
+                    log::debug!("op:{i} CLEAR");
+                    storage.clear().unwrap();
+                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                    model_hashmap.clear();
+                }
+                Operation::Iter(limit) => {
+                    log::debug!("op:{i} ITER limit:{limit}");
+                    storage
+                        .iter::<_, String>(
+                            |point_offset, payload| {
+                                if point_offset >= limit {
+                                    return Ok(false); // shortcut iteration
+                                }
+                                assert_eq!(
+                                    model_hashmap.get(&point_offset), Some(&payload),
+                                    "storage and model are different when using `iter` for offset:{point_offset}"
+                                );
+                                Ok(true) // no shortcutting
+                            },
+                            hw_counter_ref,
+                        )
+                        .unwrap();
+                }
                 Operation::Put(point_offset, payload) => {
                     log::debug!("op:{i} PUT offset:{point_offset}");
                     let old1 = storage
@@ -1050,13 +1082,21 @@ mod tests {
         }
 
         // asset same length
-        assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+        assert_eq!(
+            storage.tracker.read().mapping_len(),
+            model_hashmap.len(),
+            "different number of points"
+        );
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
             let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
-            assert_eq!(stored_payload.as_ref(), model_payload);
+            assert_eq!(
+                stored_payload.as_ref(),
+                model_payload,
+                "storage and model differ for offset:{point_offset} {stored_payload:?} vs {model_payload:?}"
+            );
         }
 
         // flush data
@@ -1083,6 +1123,15 @@ mod tests {
                 "failed for point_offset: {point_offset}",
             );
         }
+
+        // wipe storage
+        storage.wipe().unwrap();
+
+        // assert base folder is gone
+        assert!(
+            !dir.path().exists(),
+            "base folder should be deleted by wipe"
+        );
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 
 use common::tar_ext::BuilderExt;
 use common::tempfile_ext::MaybeTempPath;
@@ -8,8 +7,8 @@ use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::types::SnapshotFormat;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
@@ -23,7 +22,6 @@ use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::replica_set::snapshots::RecoveryType;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
@@ -286,8 +284,8 @@ impl Collection {
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
-            Arc::clone(&self.shards_holder).read_owned().await,
-            |x| x.get_shard(shard_id),
+            self.shards_holder.clone().read_owned().await,
+            |shard_holder| shard_holder.get_shard(shard_id),
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 

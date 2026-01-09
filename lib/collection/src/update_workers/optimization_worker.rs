@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -209,9 +210,8 @@ impl UpdateWorkers {
 
         let finished_any = !finished_handles.is_empty();
 
-        // Finalize all finished handles to propagate panics
         for handle in finished_handles {
-            handle.join_and_handle_panic().await;
+            handle.join().await;
         }
 
         finished_any
@@ -234,7 +234,7 @@ impl UpdateWorkers {
             total_optimized_points,
             optimizer_resource_budget,
             segments.clone(),
-            move |_optimization_result| {
+            move || {
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
                 // If receiver is already dead - we do not care.
@@ -260,7 +260,7 @@ impl UpdateWorkers {
         limit: Option<usize>,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
-        F: Fn(bool) + Send + Clone + Sync + 'static,
+        F: Fn() + Send + Clone + Sync + 'static,
     {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
@@ -306,7 +306,7 @@ impl UpdateWorkers {
                         optimizer.name(),
                     );
                     if handles.is_empty() {
-                        callback(false);
+                        callback();
                     }
                     break 'outer;
                 };
@@ -320,94 +320,88 @@ impl UpdateWorkers {
 
                 permit.set_on_manual_release(move || {
                     // Notify scheduler that resource budget is explicitly changed
-                    permit_callback(false);
+                    permit_callback();
                 });
 
+                let callback = callback.clone();
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
                 let total_optimized_points = total_optimized_points.clone();
                 let segments = segments.clone();
                 let nsi = nonoptimal_segment_ids.clone();
                 scheduled_segment_ids.extend(&nsi);
-                let callback = callback.clone();
                 let is_optimization_failed = is_optimization_failed.clone();
+                let resource_budget = optimizer_resource_budget.clone();
 
-                let handle = spawn_stoppable(
-                    // Stoppable task
-                    {
-                        let resource_budget = optimizer_resource_budget.clone();
-                        let segments = segments.clone();
-                        move |stopped| {
-                            // Track optimizer status
-                            let (tracker, progress) =
-                                Tracker::start(optimizer.as_ref().name(), nsi.clone());
-                            let tracker_handle = tracker.handle();
-                            optimizers_log.lock().register(tracker);
+                // Track optimizer status
+                let (tracker, progress) = Tracker::start(optimizer.as_ref().name(), nsi.clone());
+                let tracker_handle = tracker.handle();
 
-                            // Optimize and handle result
-                            let result = optimizer.as_ref().optimize(
-                                segments.clone(),
-                                nsi,
-                                permit,
-                                resource_budget,
-                                stopped,
-                                progress,
-                            );
-                            match result {
-                                // Perform some actions when optimization if finished
-                                Ok(optimized_points) => {
-                                    let is_optimized = optimized_points > 0;
-                                    total_optimized_points
-                                        .fetch_add(optimized_points, Ordering::Relaxed);
-                                    tracker_handle.update(TrackerStatus::Done);
-                                    callback(is_optimized);
-                                    is_optimized
-                                }
-                                // Handle and report errors
-                                Err(error) => match error {
-                                    CollectionError::Cancelled { description } => {
-                                        log::debug!("Optimization cancelled - {description}");
-                                        tracker_handle
-                                            .update(TrackerStatus::Cancelled(description));
-                                        false
-                                    }
-                                    _ => {
-                                        segments.write().report_optimizer_error(error.clone());
-
-                                        // Error of the optimization can not be handled by API user
-                                        // It is only possible to fix after full restart,
-                                        // so the best available action here is to stop whole
-                                        // optimization thread and log the error
-                                        log::error!("Optimization error: {error}");
-
-                                        tracker_handle
-                                            .update(TrackerStatus::Error(error.to_string()));
-
-                                        is_optimization_failed.store(true, Ordering::Relaxed);
-
-                                        panic!("Optimization error: {error}");
-                                    }
-                                },
-                            }
+                let handle = spawn_stoppable(move |stopped| {
+                    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                        optimizer.as_ref().optimize(
+                            segments.clone(),
+                            nsi,
+                            permit,
+                            resource_budget,
+                            stopped,
+                            progress,
+                            Box::new(move || {
+                                // Do not clutter the log with early cancelled optimizations,
+                                // wait for `on_successful_start` instead.
+                                optimizers_log.lock().register(tracker);
+                            }),
+                        )
+                    }));
+                    let is_optimized;
+                    let status;
+                    let reported_error;
+                    match result {
+                        // Success
+                        Ok(Ok(optimized_points)) => {
+                            is_optimized = optimized_points > 0;
+                            status = TrackerStatus::Done;
+                            reported_error = None;
+                            total_optimized_points.fetch_add(optimized_points, Ordering::Relaxed);
+                            callback();
                         }
-                    },
-                    // Panic handler
-                    Some(Box::new(move |panic_payload| {
-                        let message = panic::downcast_str(&panic_payload).unwrap_or("");
-                        let separator = if !message.is_empty() { ": " } else { "" };
+                        // Cancelled
+                        Ok(Err(CollectionError::Cancelled { description })) => {
+                            is_optimized = false;
+                            log::debug!("Optimization cancelled - {description}");
+                            status = TrackerStatus::Cancelled(description);
+                            reported_error = None;
+                        }
+                        // `optimize()` returned Result::Err
+                        Ok(Err(error)) => {
+                            is_optimized = false;
+                            status = TrackerStatus::Error(error.to_string());
+                            log::error!("Optimization error: {error}");
+                            reported_error = Some(error);
+                        }
+                        // `optimize()` panicked
+                        Err(panic_payload) => {
+                            let message = panic::downcast_str(&panic_payload).unwrap_or("");
+                            let separator = if !message.is_empty() { ": " } else { "" };
+                            let status_msg =
+                                format!("Optimization task panicked{separator}{message}");
 
-                        log::warn!(
-                            "Optimization task panicked, collection may be in unstable state\
-                             {separator}{message}"
-                        );
-
-                        segments
-                            .write()
-                            .report_optimizer_error(CollectionError::service_error(format!(
-                                "Optimization task panicked{separator}{message}"
-                            )));
-                    })),
-                );
+                            is_optimized = false;
+                            status = TrackerStatus::Error(status_msg.clone());
+                            reported_error = Some(CollectionError::service_error(status_msg));
+                            log::warn!(
+                                "Optimization task panicked, collection may be in unstable state\
+                                 {separator}{message}"
+                            );
+                        }
+                    }
+                    tracker_handle.update(status);
+                    if let Some(reported_error) = reported_error {
+                        segments.write().report_optimizer_error(reported_error);
+                        is_optimization_failed.store(true, Ordering::Relaxed);
+                    }
+                    is_optimized
+                });
                 handles.push(handle);
             }
         }

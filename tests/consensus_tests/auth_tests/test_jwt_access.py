@@ -8,6 +8,7 @@ import grpc_requests
 import pytest
 import requests
 from consensus_tests import fixtures
+from consensus_tests.utils import PROJECT_ROOT
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import (
@@ -19,7 +20,7 @@ from .utils import (
     REST_URI,
     SECRET,
     encode_jwt,
-    random_str, decode_jwt,
+    random_str,
 )
 
 COLL_NAME = "jwt_test_collection"
@@ -377,6 +378,7 @@ ACTION_ACCESS = {
     ),
     ### Cluster ###
     "get_cluster": EndpointAccess(True, False, True, "GET /cluster", coll_r=False),
+    "cluster_telemetry": EndpointAccess(True, True, True, "GET /cluster/telemetry"),
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
     ### Points ###
@@ -596,8 +598,8 @@ def test_all_actions_have_tests():
 
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
-    with open("./docs/redoc/master/openapi.json", "r") as file:
-        openapi_data = json.load(file)
+    openapi_path = PROJECT_ROOT / "docs" / "redoc" / "master" / "openapi.json"
+    openapi_data = json.loads(openapi_path.read_text())
 
     # Extract all endpoint paths
     endpoint_paths = []
@@ -1423,6 +1425,10 @@ def test_download_full_snapshot():
 
 def test_get_cluster():
     check_access("get_cluster")
+
+
+def test_cluster_telemetry():
+    check_access("cluster_telemetry")
 
 
 def test_recover_raft_state():

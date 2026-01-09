@@ -602,6 +602,7 @@ pub trait SegmentOptimizer {
     /// If there were any record changes during the optimization - an additional plain segment will be created.
     ///
     /// Returns id of the created optimized segment. If no optimization was done - returns None
+    #[expect(clippy::too_many_arguments)]
     fn optimize(
         &self,
         segments: LockedSegmentHolder,
@@ -610,6 +611,7 @@ pub trait SegmentOptimizer {
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
         progress: ProgressTracker,
+        on_successful_start: Box<dyn FnOnce()>,
     ) -> CollectionResult<usize> {
         check_process_stopped(stopped)?;
 
@@ -656,6 +658,8 @@ pub trait SegmentOptimizer {
 
         check_process_stopped(stopped)?;
 
+        on_successful_start();
+
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
         let extra_cow_segment_opt = need_extra_cow_segment
@@ -678,7 +682,7 @@ pub trait SegmentOptimizer {
         // If this ends up not being saved due to a crash, the segment will not be used
         match &extra_cow_segment_opt {
             Some(LockedSegment::Original(segment)) => {
-                let segment_path = &segment.read().current_path;
+                let segment_path = &segment.read().segment_path;
                 SegmentVersion::save(segment_path)?;
             }
             Some(LockedSegment::Proxy(_)) => unreachable!(),

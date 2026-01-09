@@ -15,7 +15,7 @@ use crate::operations::point_ops::{ConditionalInsertOperationInternal, PointOper
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
-use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
+use crate::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use crate::shards::shard::ShardId;
 
 impl ShardHolder {
@@ -163,14 +163,17 @@ impl ShardHolder {
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(resharding_key, check_stage(ReshardStage::MigratingPoints))?;
+        self.check_resharding(
+            resharding_key,
+            check_stage(ReshardingStage::MigratingPoints),
+        )?;
 
         self.resharding_state.write(|state| {
             let Some(state) = state else {
                 unreachable!();
             };
 
-            state.stage = ReshardStage::ReadHashRingCommitted;
+            state.stage = ReshardingStage::ReadHashRingCommitted;
         })?;
 
         Ok(())
@@ -179,7 +182,7 @@ impl ShardHolder {
     pub fn commit_write_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.check_resharding(
             resharding_key,
-            check_stage(ReshardStage::ReadHashRingCommitted),
+            check_stage(ReshardingStage::ReadHashRingCommitted),
         )?;
 
         let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
@@ -190,7 +193,7 @@ impl ShardHolder {
                 unreachable!();
             };
 
-            state.stage = ReshardStage::WriteHashRingCommitted;
+            state.stage = ReshardingStage::WriteHashRingCommitted;
         })?;
 
         Ok(())
@@ -199,7 +202,7 @@ impl ShardHolder {
     pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.check_resharding(
             resharding_key,
-            check_stage(ReshardStage::WriteHashRingCommitted),
+            check_stage(ReshardingStage::WriteHashRingCommitted),
         )?;
 
         Ok(())
@@ -278,7 +281,7 @@ impl ShardHolder {
         }
 
         // - it's safe to run, if read hash ring was not committed yet
-        if state.stage < ReshardStage::ReadHashRingCommitted {
+        if state.stage < ReshardingStage::ReadHashRingCommitted {
             return Ok(());
         }
 
@@ -321,7 +324,7 @@ impl ShardHolder {
                 // Revert replicas in `Resharding` state back into `Active` state
                 for (peer, state) in shard.peers() {
                     if state.is_resharding() {
-                        shard.set_replica_state(peer, ReplicaState::Active)?;
+                        shard.set_replica_state(peer, ReplicaState::Active).await?;
                     }
                 }
 
@@ -470,11 +473,11 @@ impl ShardHolder {
         // - and on *sender* shards during `ReadHashRingCommitted` stage when resharding *up*
 
         let should_split_receiver = is_receiver_shard
-            && state.stage == ReshardStage::MigratingPoints
+            && state.stage == ReshardingStage::MigratingPoints
             && !operation.is_upsert_points();
 
         let should_split_sender = is_sender_shard
-            && state.stage >= ReshardStage::ReadHashRingCommitted
+            && state.stage >= ReshardingStage::ReadHashRingCommitted
             && state.direction == ReshardingDirection::Up;
 
         if !should_split_receiver && !should_split_sender {
@@ -627,7 +630,7 @@ fn assert_resharding_state_consistency(
     shard_key: &Option<ShardKey>,
 ) {
     match state.as_ref().map(|state| state.stage) {
-        Some(ReshardStage::MigratingPoints | ReshardStage::ReadHashRingCommitted) => {
+        Some(ReshardingStage::MigratingPoints | ReshardingStage::ReadHashRingCommitted) => {
             debug_assert!(
                 ring.is_resharding(),
                 "resharding is in progress, \
@@ -636,7 +639,7 @@ fn assert_resharding_state_consistency(
             );
         }
 
-        Some(ReshardStage::WriteHashRingCommitted) => {
+        Some(ReshardingStage::WriteHashRingCommitted) => {
             debug_assert!(
                 !ring.is_resharding(),
                 "resharding is in progress, \
@@ -656,7 +659,7 @@ fn assert_resharding_state_consistency(
     }
 }
 
-fn check_stage(stage: ReshardStage) -> impl Fn(&ReshardState) -> CollectionResult<()> {
+fn check_stage(stage: ReshardingStage) -> impl Fn(&ReshardState) -> CollectionResult<()> {
     move |state| {
         if state.stage == stage {
             Ok(())

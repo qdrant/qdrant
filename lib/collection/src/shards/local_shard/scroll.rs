@@ -42,7 +42,7 @@ impl LocalShard {
             self.query_scroll(
                 request,
                 search_runtime_handle,
-                Some(timeout),
+                timeout,
                 hw_measurement_acc.clone(),
             )
         });
@@ -62,7 +62,7 @@ impl LocalShard {
         &self,
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
@@ -143,17 +143,19 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
-        let segments = self.segments.clone();
-
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
-
+        let segments = self.segments.clone();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "internal_scroll_by_id"));
+            };
+            segments_guard.split_segments()
+        };
         let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
@@ -228,16 +230,23 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(
+                    timeout,
+                    "internal_scroll_by_field",
+                ));
+            };
+            segments_guard.split_segments()
+        };
 
         let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
@@ -327,16 +336,20 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments.clone();
 
         let update_operation_lock = self.update_operation_lock.read().await;
-        let (non_appendable, appendable) = segments.read().split_segments();
+        let (non_appendable, appendable) = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "scroll_randomly"));
+            };
+            segments_guard.split_segments()
+        };
 
         let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();

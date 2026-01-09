@@ -8,6 +8,8 @@ use memory::mmap_ops::{
     MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
 };
 
+use crate::Result;
+use crate::error::GridstoreError;
 use crate::tracker::BlockOffset;
 
 #[derive(Debug)]
@@ -31,17 +33,17 @@ impl Page {
     }
 
     /// Create a new page at the given path
-    pub fn new(path: &Path, size: usize) -> Result<Page, String> {
-        create_and_ensure_length(path, size).map_err(|err| err.to_string())?;
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
-            .map_err(|err| err.to_string())?;
+    pub fn new(path: &Path, size: usize) -> Result<Page> {
+        create_and_ensure_length(path, size)?;
+        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
 
         // Only open second mmap for sequential reads if supported
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
-            Some(
-                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-                    .map_err(|err| err.to_string())?,
-            )
+            Some(open_read_mmap(
+                path,
+                AdviceSetting::from(Advice::Sequential),
+                false,
+            )?)
         } else {
             None
         };
@@ -57,19 +59,22 @@ impl Page {
 
     /// Open an existing page at the given path
     /// If the file does not exist, return None
-    pub fn open(path: &Path) -> Result<Page, String> {
+    pub fn open(path: &Path) -> Result<Page> {
         if !path.exists() {
-            return Err(format!("Page file does not exist: {}", path.display()));
+            return Err(GridstoreError::service_error(format!(
+                "Page file does not exist: {}",
+                path.display()
+            )));
         }
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
 
         // Only open second mmap for sequential reads if supported
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
-            Some(
-                open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
-                    .map_err(|err| err.to_string())?,
-            )
+            Some(open_read_mmap(
+                path,
+                AdviceSetting::from(Advice::Sequential),
+                false,
+            )?)
         } else {
             None
         };

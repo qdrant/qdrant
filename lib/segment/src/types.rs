@@ -739,7 +739,7 @@ pub enum ScalarType {
     Int8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct ScalarQuantizationConfig {
     /// Type of quantization to use
@@ -765,13 +765,13 @@ impl ScalarQuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ScalarQuantization {
     #[validate(nested)]
     pub scalar: ScalarQuantizationConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct ProductQuantizationConfig {
     pub compression: CompressionRatio,
@@ -791,7 +791,7 @@ impl ProductQuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ProductQuantization {
     #[validate(nested)]
     pub product: ProductQuantizationConfig,
@@ -821,7 +821,7 @@ impl BinaryQuantizationEncoding {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct BinaryQuantizationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -837,13 +837,13 @@ pub struct BinaryQuantizationConfig {
     pub query_encoding: Option<BinaryQuantizationQueryEncoding>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct BinaryQuantization {
     #[validate(nested)]
     pub binary: BinaryQuantizationConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(untagged, rename_all = "snake_case")]
 #[anonymize(false)]
 pub enum QuantizationConfig {
@@ -1329,17 +1329,11 @@ pub enum PayloadStorageType {
     InRamMmap,
 }
 
+#[cfg(any(test, feature = "testing"))]
 #[allow(clippy::derivable_impls)]
 impl Default for PayloadStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            PayloadStorageType::OnDisk
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            PayloadStorageType::Mmap
-        }
+        PayloadStorageType::Mmap
     }
 }
 
@@ -1356,7 +1350,7 @@ impl PayloadStorageType {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]
@@ -1504,14 +1498,7 @@ pub enum VectorStorageType {
 #[allow(clippy::derivable_impls)]
 impl Default for VectorStorageType {
     fn default() -> Self {
-        #[cfg(feature = "rocksdb")]
-        {
-            VectorStorageType::Memory
-        }
-        #[cfg(not(feature = "rocksdb"))]
-        {
-            VectorStorageType::InRamChunkedMmap
-        }
+        VectorStorageType::InRamChunkedMmap
     }
 }
 
@@ -2114,6 +2101,19 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Bool(i) => i.on_disk.unwrap_or_default(),
         }
     }
+
+    pub fn enable_hnsw(&self) -> bool {
+        match self {
+            PayloadSchemaParams::Keyword(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Integer(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Float(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Datetime(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Uuid(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Text(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Geo(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Bool(params) => params.enable_hnsw.unwrap_or(true),
+        }
+    }
 }
 
 impl Validate for PayloadSchemaParams {
@@ -2263,6 +2263,13 @@ impl PayloadFieldSchema {
                 PayloadSchemaParams::Text(_) => false,
                 PayloadSchemaParams::Datetime(_) => false,
             },
+        }
+    }
+
+    pub fn enable_hnsw(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(_) => true,
+            PayloadFieldSchema::FieldParams(p) => p.enable_hnsw(),
         }
     }
 }

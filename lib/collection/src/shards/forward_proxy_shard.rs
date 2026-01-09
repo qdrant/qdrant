@@ -9,7 +9,6 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -17,6 +16,7 @@ use segment::types::{
 };
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -120,6 +120,7 @@ impl ForwardProxyShard {
                         }),
                     )),
                     false,
+                    None,
                     HwMeasurementAcc::disposable(), // Internal operation
                 )
                 .await?;
@@ -180,6 +181,7 @@ impl ForwardProxyShard {
             .update(
                 OperationWithClockTag::from(insert_points_operation),
                 wait,
+                None,
                 HwMeasurementAcc::disposable(), // Internal operation
             ) // TODO: Assign clock tag!? 🤔
             .await?;
@@ -395,6 +397,14 @@ impl ForwardProxyShard {
             .estimate_cardinality(filter, hw_measurement_acc)
             .await
     }
+
+    pub async fn set_extended_wal_retention(&self) {
+        self.wrapped_shard.set_extended_wal_retention().await;
+    }
+
+    pub async fn set_normal_wal_retention(&self) {
+        self.wrapped_shard.set_normal_wal_retention().await;
+    }
 }
 
 #[async_trait]
@@ -408,6 +418,7 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         operation: OperationWithClockTag,
         _wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -423,7 +434,7 @@ impl ShardOperation for ForwardProxyShard {
         // the transfer needs to have access to the latest version of points.
         let mut result = self
             .wrapped_shard
-            .update(operation.clone(), true, hw_measurement_acc.clone())
+            .update(operation.clone(), true, timeout, hw_measurement_acc.clone())
             .await?;
 
         let points_matching_filter_before = {
@@ -501,11 +512,11 @@ impl ShardOperation for ForwardProxyShard {
         // Strip the clock tag from the operation, because clock tags are incompatible between different shards.
         if self.shard_id != self.remote_shard.id {
             operation.clock_tag = None;
-        };
+        }
 
         let remote_result = self
             .remote_shard
-            .update(operation, false, hw_measurement_acc)
+            .update(operation, false, None, hw_measurement_acc)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 

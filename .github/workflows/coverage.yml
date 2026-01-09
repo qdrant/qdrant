@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
 env:
-  POETRY_VERSION: 2.2.1
+  UV_VERSION: 0.9.17
 
 jobs:
   unit-coverage:
@@ -33,7 +33,7 @@ jobs:
       - name: Run unit tests with coverage
         run: RUN_PER_PACKAGE=true tools/unit-test-coverage.sh
       - name: Upload unit test coverage artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: unit-test-coverage
           path: unit-test-coverage.lcov
@@ -65,17 +65,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install dependencies
+      - name: Install uv and Python dependencies
         run: |
-          echo "Installing Poetry $POETRY_VERSION"
-          curl -sSL https://install.python-poetry.org | python3 - --version "$POETRY_VERSION"
-
-          poetry --project tests check --lock
-          poetry --project tests install --no-root
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Run integration tests with coverage
         run: tools/integration-test-coverage.sh
       - name: Upload integration test coverage artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: integration-test-coverage
           path: integration-test-coverage.lcov
@@ -93,11 +92,11 @@ jobs:
       - name: Install lcov
         run: sudo apt install -y lcov
       - name: Download unit test coverage
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: unit-test-coverage
       - name: Download integration test coverage
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: integration-test-coverage
       - name: Merge coverage reports

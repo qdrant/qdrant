@@ -2,6 +2,7 @@ pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
+mod snapshots;
 pub mod update;
 
 use std::num::NonZero;
@@ -12,10 +13,11 @@ use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
+use io::safe_delete::safe_delete_with_suffix;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
-use segment::segment_constructor::load_segment;
+use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
@@ -24,7 +26,7 @@ use wal::WalOptions;
 
 #[derive(Debug)]
 pub struct Shard {
-    _path: PathBuf,
+    path: PathBuf,
     config: SegmentConfig,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
@@ -101,14 +103,17 @@ impl Shard {
                 ))
             })?;
 
-            let Some(mut segment) = segment else {
-                fs::remove_dir_all(&segment_path).map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to remove leftover segment: {err}",
-                    ))
-                })?;
+            let mut segment = match segment {
+                LoadSegmentOutcome::Loaded(segment) => segment,
+                LoadSegmentOutcome::Skipped => {
+                    safe_delete_with_suffix(&segment_path).map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to remove leftover segment: {err}",
+                        ))
+                    })?;
 
-                continue;
+                    continue;
+                }
             };
 
             if let Some(config) = &config {
@@ -161,7 +166,7 @@ impl Shard {
         }
 
         let shard = Self {
-            _path: path.into(),
+            path: path.into(),
             config: config.expect("config was provided or at least one segment was loaded"),
             wal: parking_lot::Mutex::new(wal),
             segments: Arc::new(parking_lot::RwLock::new(segments)),
@@ -172,6 +177,10 @@ impl Shard {
 
     pub fn config(&self) -> &SegmentConfig {
         &self.config
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 

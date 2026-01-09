@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  POETRY_VERSION: 2.2.1
+  UV_VERSION: 0.9.17
 
 jobs:
   integration-tests:
@@ -32,14 +32,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install clang
-          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
-
-          poetry -C tests check --lock
-          poetry -C tests install --no-root
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build
         run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests
-        run: poetry --project tests run bash ./tests/integration-tests.sh
+        run: uv --project tests run bash ./tests/integration-tests.sh
         shell: bash
 
   integration-tests-consensus:
@@ -61,22 +61,22 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install dependencies
+      - name: Install uv and Python dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
-
-          poetry -C tests check --lock
-          poetry -C tests install --no-root
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build
         run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
       - name: Run integration tests - 1 peer
-        run: poetry --project tests run bash ./tests/integration-tests.sh distributed
+        run: uv --project tests run bash ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: poetry --project tests run pytest tests/consensus_tests --durations=10
+        run: uv --project tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: upload logs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           path: consensus_test_logs
@@ -92,12 +92,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Install dependencies
+      - name: Install uv and Python dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
-
-          poetry -C tests check --lock
-          poetry -C tests install --no-root
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -114,7 +114,7 @@ jobs:
             PROFILE=ci
             FEATURES=staging
       - name: Run integration tests - multiple peers - compose
-        run: poetry run bash ./test_restart.sh
+        run: uv --project tests run bash ./test_restart.sh
         working-directory: ./tests/consensus_tests
 
   test-consistency:
@@ -239,14 +239,12 @@ jobs:
           python-version: '3.13'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Install Poetry
+      - name: Install uv and Python dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install Python dependencies
-        run: |
-          poetry -C tests check --lock
-          poetry -C tests install --no-root
+          uv --project tests lock --check
+          uv --project tests sync
       - name: Build Qdrant Docker image
         uses: docker/build-push-action@v6
         with:
@@ -263,11 +261,11 @@ jobs:
       - name: Verify Docker image
         run: docker images | grep qdrant
       - name: Run e2e tests
-        run: poetry --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
         shell: bash
         timeout-minutes: 20
       - name: Upload test logs on failure
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: e2e-test-logs

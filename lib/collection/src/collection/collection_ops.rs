@@ -1,9 +1,8 @@
 use std::cmp::{self, Reverse};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryStreamExt as _, future};
-use lazy_static::lazy_static;
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
@@ -17,12 +16,14 @@ use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::PeerId;
 
-lazy_static! {
-    /// When dropping a shard, only cancel all related shard transfers to and from it when all nodes
-    /// are running at least this version. That way, we avoid getting an inconsistent state in
-    /// consensus if some nodes are still running an older version.
-    static ref ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION: Version = Version::parse("1.9.0-dev").unwrap();
-}
+/// Old logic for aborting shard transfers on shard drop, had a bug: it dropped all transfers
+/// regardless of the shard id. In order to keep consensus consistent, we can only
+/// enable new fixed logic once cluster fully switched to this version.
+/// Otherwise, some node might follow old logic and some - new logic.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/7792>
+pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
 impl Collection {
     /// Updates collection params:
@@ -247,19 +248,24 @@ impl Collection {
                 });
             }
 
-            let all_nodes_cancel_transfers = self
+            let all_nodes_fixed_cancellation = self
                 .channel_service
-                .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION);
-            if all_nodes_cancel_transfers {
-                // Collect shard transfers related to removed shard...
-                let transfers = shard_holder
-                    .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
+                .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
 
-                // ...and cancel transfer tasks and remove transfers from internal state
-                for transfer in transfers {
-                    self.abort_shard_transfer_and_resharding(transfer.key(), Some(&shard_holder))
-                        .await?;
-                }
+            // Collect shard transfers related to removed shard...
+            let transfers = if all_nodes_fixed_cancellation {
+                shard_holder.get_related_transfers(peer_id, shard_id)
+            } else {
+                // This is the old buggy logic, but we have to keep it
+                // for maintaining consistency in a cluster with mixed versions.
+                shard_holder
+                    .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id)
+            };
+
+            // ...and cancel transfer tasks and remove transfers from internal state
+            for transfer in transfers {
+                self.abort_shard_transfer_and_resharding(transfer.key(), Some(&shard_holder))
+                    .await?;
             }
 
             replica_set.remove_peer(peer_id).await?;
@@ -321,7 +327,10 @@ impl Collection {
 
         let mut info = match requests.try_next().await? {
             Some(info) => info,
-            None => CollectionInfo::empty(self.collection_config.read().await.clone()),
+            None => CollectionInfo::empty(
+                self.collection_config.read().await.clone(),
+                self.payload_index_schema.read().clone(),
+            ),
         };
 
         while let Some(response) = requests.try_next().await? {

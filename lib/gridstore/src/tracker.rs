@@ -8,6 +8,9 @@ use memory::mmap_ops::{
 };
 use smallvec::SmallVec;
 
+use crate::Result;
+use crate::error::GridstoreError;
+
 pub type PointOffset = u32;
 pub type BlockOffset = u32;
 pub type PageId = u32;
@@ -218,13 +221,15 @@ impl Tracker {
 
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return None
-    pub fn open(path: &Path) -> Result<Self, String> {
+    pub fn open(path: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(path);
         if !path.exists() {
-            return Err(format!("Tracker file does not exist: {}", path.display()));
+            return Err(GridstoreError::service_error(format!(
+                "Tracker file does not exist: {}",
+                path.display()
+            )));
         }
-        let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
-            .map_err(|err| err.to_string())?;
+        let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
         let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
         let pending_updates = AHashMap::new();
         Ok(Self {
@@ -275,7 +280,12 @@ impl Tracker {
                 let is_empty = latest_updates.drain_persisted(&updates);
                 if is_empty {
                     let prev = self.pending_updates.remove(&point_offset);
-                    log::trace!("removed pending update offset:{point_offset} prev:{prev:?}");
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.is_empty(),
+                            "remove pending element should be empty but got {prev:?}"
+                        );
+                    }
                 }
             }
         }
@@ -341,6 +351,7 @@ impl Tracker {
 
     /// Get the length of the mapping
     /// Excludes None values
+    /// Warning: performs a full scan of the tracker.
     #[cfg(test)]
     pub fn mapping_len(&self) -> usize {
         (0..self.next_pointer_offset)

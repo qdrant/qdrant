@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use common::is_alive_lock::IsAliveLock;
 use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use fs_err::File;
@@ -613,8 +614,8 @@ fn create_segment(
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
-        is_alive_flush_lock: Arc::new(Mutex::new(true)),
-        current_path: segment_path.to_owned(),
+        is_alive_flush_lock: IsAliveLock::new(),
+        segment_path: segment_path.to_owned(),
         version_tracker: Default::default(),
         id_tracker,
         vector_data,
@@ -687,7 +688,23 @@ fn create_segment_id_tracker(
     )))
 }
 
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
+/// Outcome of [`load_segment()`].
+#[expect(clippy::large_enum_variant, reason = "Self::Skipped is rarely used")]
+pub enum LoadSegmentOutcome {
+    Loaded(Segment),
+    Skipped,
+}
+
+impl LoadSegmentOutcome {
+    pub fn unwrap(self) -> Segment {
+        match self {
+            LoadSegmentOutcome::Loaded(segment) => segment,
+            LoadSegmentOutcome::Skipped => panic!("Called unwrap on Skipped segment"),
+        }
+    }
+}
+
+pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSegmentOutcome> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -695,8 +712,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         .unwrap_or(false)
     {
         log::warn!("Segment is marked as deleted, skipping: {}", path.display());
-        // Skip deleted segments
-        return Ok(None);
+        return Ok(LoadSegmentOutcome::Skipped);
     }
 
     let Some(stored_version) = SegmentVersion::load(path)? else {
@@ -706,7 +722,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
             "Segment version file not found, skipping: {}",
             path.display()
         );
-        return Ok(None);
+        return Ok(LoadSegmentOutcome::Skipped);
     };
 
     let app_version = SegmentVersion::current();
@@ -763,7 +779,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         }
     }
 
-    Ok(Some(segment))
+    Ok(LoadSegmentOutcome::Loaded(segment))
 }
 
 pub fn new_segment_path(segments_path: &Path) -> PathBuf {
@@ -837,7 +853,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
         pub storage_type: StorageTypeV5,
         /// Defines payload storage type
         #[serde(default)]
-        pub payload_storage_type: PayloadStorageType,
+        pub payload_storage_type: Option<PayloadStorageType>,
     }
 
     let path = segment_path.join(SEGMENT_STATE_FILE);
@@ -857,6 +873,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 quantization_config: None,
                 on_disk: None,
             };
+
             let segment_config = SegmentConfigV5 {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,

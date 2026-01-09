@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -12,6 +12,7 @@ use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::vector::PySparseVector;
+use crate::repr::*;
 
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -72,6 +73,16 @@ impl<'py> IntoPyObject<'py> for &PyVectorInternal {
             VectorStructInternal::Named(named) => {
                 PyNamedVectorInternal::wrap_map_ref(named).into_bound_py_any(py)
             }
+        }
+    }
+}
+
+impl Repr for PyVectorInternal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            VectorStructInternal::Single(single) => single.fmt(f),
+            VectorStructInternal::MultiDense(multi) => f.list(multi.multi_vectors()),
+            VectorStructInternal::Named(named) => PyNamedVectorInternal::wrap_map_ref(named).fmt(f),
         }
     }
 }
@@ -139,6 +150,16 @@ impl<'py> IntoPyObject<'py> for &PyNamedVectorInternal {
             VectorInternal::Dense(dense) => dense.into_bound_py_any(py),
             VectorInternal::Sparse(sparse) => PySparseVector(sparse.clone()).into_bound_py_any(py),
             VectorInternal::MultiDense(multi) => multi_dense_into_py(multi, py),
+        }
+    }
+}
+
+impl Repr for PyNamedVectorInternal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            VectorInternal::Dense(dense) => dense.fmt(f),
+            VectorInternal::Sparse(sparse) => PySparseVector::wrap_ref(sparse).fmt(f),
+            VectorInternal::MultiDense(multi) => f.list(multi.multi_vectors()),
         }
     }
 }

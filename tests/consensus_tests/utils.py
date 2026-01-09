@@ -16,7 +16,7 @@ from .assertions import assert_http_ok
 
 WAIT_TIME_SEC = 30
 RETRY_INTERVAL_SEC = 0.2
-
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Tracks processes that need to be killed at the end of the test
 processes: List['PeerProcess'] = []
@@ -110,26 +110,23 @@ def get_uri(port: int) -> str:
 
 
 def assert_project_root():
-    directory_path = os.getcwd()
-    folder_name = os.path.basename(directory_path)
-    assert folder_name == "qdrant"
+    """Deprecated: No longer needed as paths are resolved relative to __file__."""
+    pass
 
 
 def get_qdrant_exec() -> str:
-    directory_path = os.getcwd()
     if is_coverage_mode():
-        qdrant_exec = directory_path + "/target/llvm-cov-target/debug/qdrant"
+        qdrant_exec = PROJECT_ROOT / "target" / "llvm-cov-target" / "debug" / "qdrant"
     else:
-        qdrant_exec = directory_path + "/target/debug/qdrant"
-    return qdrant_exec
+        qdrant_exec = PROJECT_ROOT / "target" / "debug" / "qdrant"
+    return str(qdrant_exec)
 
 def get_llvm_profile_file() -> str:
-    project_root = os.getcwd()
     # %m: keep merging results from each test into the same file
     # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
     # Not using -%p since each test will generate a new file
-    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%m.profraw"
-    return llvm_profile_file
+    llvm_profile_file = PROJECT_ROOT / "target" / "llvm-cov-target" / "qdrant-consensus-tests-%m.profraw"
+    return str(llvm_profile_file)
 
 
 def get_pytest_current_test_name() -> str:
@@ -256,7 +253,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
 def make_peer_folder(base_path: Path, peer_number: int) -> Path:
     peer_dir = base_path / f"peer{peer_number}"
     peer_dir.mkdir()
-    shutil.copytree("config", peer_dir / "config")
+    shutil.copytree(PROJECT_ROOT / "config", peer_dir / "config")
     return peer_dir
 
 
@@ -481,13 +478,21 @@ def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: s
                                            expected_method: str) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
 
+    # Shortcut if no transfers
+    if len(collection_cluster_info["shard_transfers"]) == 0:
+        print(f"check_collection_shard_transfer_method: no transfers for collection '{collection_name}'")
+        return False
+
     # Check method on each transfer
     for transfer in collection_cluster_info["shard_transfers"]:
         if "method" not in transfer:
+            print(f"check_collection_shard_transfer_method: unknown method not match expected '{expected_method}'")
             continue
         method = transfer["method"]
         if method == expected_method:
             return True
+        else:
+            print(f"check_collection_shard_transfer_method: method '{method}' does not match expected '{expected_method}'")
 
     return False
 

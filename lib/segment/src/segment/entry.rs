@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
-use fs_err as fs;
+use io::safe_delete::safe_delete_with_suffix;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -20,7 +20,7 @@ use crate::data_types::query_context::{
     FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::entry_point::{SegmentEntry, SegmentFlushOrdering};
+use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
@@ -611,14 +611,6 @@ impl SegmentEntry for Segment {
         self.appendable_flag
     }
 
-    fn flush_ordering(&self) -> SegmentFlushOrdering {
-        if self.is_appendable() {
-            SegmentFlushOrdering::Appendable
-        } else {
-            SegmentFlushOrdering::NonAppendable
-        }
-    }
-
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
@@ -637,6 +629,7 @@ impl SegmentEntry for Segment {
             (_, _) => {}
         }
 
+        // Capture all flushers first to improve data consistency
         let vector_storage_flushers: Vec<_> = self
             .vector_data
             .values()
@@ -648,7 +641,7 @@ impl SegmentEntry for Segment {
             .filter_map(|v| v.quantized_vectors.borrow().as_ref().map(|q| q.flusher()))
             .collect();
         let state = self.get_state();
-        let current_path = self.current_path.clone();
+        let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
@@ -701,16 +694,13 @@ impl SegmentEntry for Segment {
         //
         //  400
 
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         let flush_op = move || {
-            // Keep the guard till the end of the flush to prevent concurrent flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
+            let Some(is_alive_flush_guard) = is_alive_flush_lock.lock_if_alive() else {
                 // Segment is removed, skip flush
                 return Ok(());
-            }
+            };
 
             // Flush mapping first to prevent having orphan internal ids.
             id_tracker_mapping_flusher().map_err(|err| {
@@ -753,12 +743,16 @@ impl SegmentEntry for Segment {
                 return Ok(());
             }
 
-            Self::save_state(&state, &current_path).map_err(|err| {
+            Self::save_state(&state, &segment_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to flush segment state: {err}"))
             })?;
 
             *current_persisted_version_guard = state.version;
             debug_assert!(state.version.is_some());
+
+            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            drop(is_alive_flush_guard);
+
             Ok(())
         };
 
@@ -766,22 +760,15 @@ impl SegmentEntry for Segment {
     }
 
     fn drop_data(self) -> OperationResult<()> {
-        let current_path = self.current_path.clone();
+        let segment_path = self.segment_path.clone();
         drop(self);
-        let mut deleted_path = current_path.clone();
-        deleted_path.set_extension("deleted");
-        fs::rename(&current_path, &deleted_path)?;
-        fs::remove_dir_all(&deleted_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Can't remove segment data at {}, error: {}",
-                deleted_path.to_str().unwrap_or_default(),
-                err
-            ))
+        safe_delete_with_suffix(&segment_path).map_err(|err| {
+            OperationError::service_error(format!("Failed to remove segment: {err}"))
         })
     }
 
     fn data_path(&self) -> PathBuf {
-        self.current_path.clone()
+        self.segment_path.clone()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {

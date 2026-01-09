@@ -15,15 +15,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use batched_points::BatchedPoints;
 use gpu_devices_manager::GpuDevicesMaganer;
-use lazy_static::lazy_static;
 use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::HnswM;
 
-lazy_static! {
-    pub static ref GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
-}
+pub static GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
 
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.

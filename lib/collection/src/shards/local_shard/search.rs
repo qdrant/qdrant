@@ -31,7 +31,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
@@ -100,17 +100,18 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let start = std::time::Instant::now();
         let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
-
             let query_context_opt = SegmentsSearcher::prepare_query_context(
                 self.segments.clone(),
                 &core_request,
                 &collection_config,
+                timeout,
                 search_runtime_handle,
                 is_stopped_guard,
                 hw_counter_acc.clone(),
@@ -125,15 +126,17 @@ impl LocalShard {
             (query_context, collection_config.params.clone())
         };
 
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+
         let search_request = SegmentsSearcher::search(
             Arc::clone(&self.segments),
             Arc::clone(&core_request),
             search_runtime_handle,
             true,
             query_context,
+            timeout,
         );
-
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
         let res = tokio::time::timeout(timeout, search_request)
             .await
@@ -159,7 +162,7 @@ impl LocalShard {
                         | QueryEnum::RecommendSumScores(_)
                         | QueryEnum::Discover(_)
                         | QueryEnum::Context(_)
-                        | QueryEnum::FeedbackSimple(_) => {}
+                        | QueryEnum::FeedbackNaive(_) => {}
                     };
                     scored_point
                 });

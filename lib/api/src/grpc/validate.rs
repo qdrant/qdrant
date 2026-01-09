@@ -495,6 +495,7 @@ impl Validate for super::qdrant::IntegerIndexParams {
             range,
             is_principal: _,
             on_disk: _,
+            enable_hnsw: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }

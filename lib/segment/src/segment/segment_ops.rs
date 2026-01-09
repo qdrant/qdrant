@@ -155,7 +155,7 @@ impl Segment {
             // ToDo: Recover previous segment state
             log::error!(
                 "Segment {:?} operation error: {error}",
-                self.current_path.as_path(),
+                self.segment_path.as_path(),
             );
             self.error_status = Some(SegmentFailedState {
                 version: op_num,
@@ -226,7 +226,7 @@ impl Segment {
                 // ToDo: Recover previous segment state
                 log::error!(
                     "Segment {:?} operation error: {error}",
-                    self.current_path.as_path(),
+                    self.segment_path.as_path(),
                 );
                 let point_id = op_point_offset
                     .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
@@ -358,17 +358,17 @@ impl Segment {
         }
     }
 
-    pub fn save_state(state: &SegmentState, current_path: &Path) -> OperationResult<()> {
-        let state_path = current_path.join(SEGMENT_STATE_FILE);
+    pub fn save_state(state: &SegmentState, segment_path: &Path) -> OperationResult<()> {
+        let state_path = segment_path.join(SEGMENT_STATE_FILE);
         Ok(atomic_save_json(&state_path, state)?)
     }
 
-    pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
-        let state_path = current_path.join(SEGMENT_STATE_FILE);
+    pub fn load_state(segment_path: &Path) -> OperationResult<SegmentState> {
+        let state_path = segment_path.join(SEGMENT_STATE_FILE);
         read_json(&state_path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to read segment state {} error: {}",
-                current_path.display(),
+                segment_path.display(),
                 err
             ))
         })
@@ -447,7 +447,7 @@ impl Segment {
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
-        Self::save_state(&self.get_state(), &self.current_path)
+        Self::save_state(&self.get_state(), &self.segment_path)
     }
 
     /// Unpacks and restores the segment snapshot in-place. The original
@@ -469,7 +469,7 @@ impl Segment {
     /// Check consistency of the segment's data and repair it if possible.
     /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
-        // Get rid of versionless points.
+        // Get rid of mappingless points.
         let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
         // There are some leftovers to clean from segment.
@@ -479,7 +479,11 @@ impl Segment {
         // This is internal operation, no hw measurement needed
         let disposable_hw_counter = HardwareCounterCell::disposable();
         if !ids_to_clean.is_empty() {
-            log::debug!("cleaning up {} points without version", ids_to_clean.len());
+            log::debug!(
+                "Cleaning up {} points with version but no mapping in segment {:?}",
+                ids_to_clean.len(),
+                self.data_path()
+            );
 
             for internal_id in ids_to_clean {
                 self.delete_point_internal(internal_id, &disposable_hw_counter)?;
@@ -637,7 +641,7 @@ impl Segment {
     }
 
     /// Fixes inconsistencies in the ID tracker, if any.
-    /// Returns list of IDs, which should be removed from segment
+    /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }

@@ -1,9 +1,9 @@
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
-use segment::data_types::order_by::OrderValue;
 use shard::retrieve::record_internal::RecordInternal;
 
+use crate::repr::*;
 use crate::*;
 
 #[pyclass(name = "Record")]
@@ -11,6 +11,7 @@ use crate::*;
 #[repr(transparent)]
 pub struct PyRecord(pub RecordInternal);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRecord {
     #[getter]
@@ -32,19 +33,21 @@ impl PyRecord {
     pub fn order_value(&self) -> Option<PyOrderValue> {
         self.0.order_value.map(PyOrderValue::from)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
 }
 
-#[derive(IntoPyObject)]
-pub enum PyOrderValue {
-    Int(i64),
-    Float(f64),
-}
-
-impl From<OrderValue> for PyOrderValue {
-    fn from(value: OrderValue) -> Self {
-        match value {
-            OrderValue::Int(int) => Self::Int(int),
-            OrderValue::Float(float) => Self::Float(float),
-        }
+impl PyRecord {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let RecordInternal {
+            id: _,
+            payload: _,
+            vector: _,
+            shard_key: _, // not relevant for Qdrant Edge
+            order_value: _,
+        } = self.0;
     }
 }

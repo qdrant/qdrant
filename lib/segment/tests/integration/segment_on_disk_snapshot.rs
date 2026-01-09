@@ -82,6 +82,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     r#type: segment::data_types::index::KeywordIndexType::Keyword,
                     is_tenant: None,
                     on_disk: Some(true),
+                    enable_hnsw: None,
                 }),
             )),
             &hw_counter,
@@ -98,6 +99,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     range: Some(true),
                     is_principal: None,
                     on_disk: Some(true),
+                    enable_hnsw: None,
                 }),
             )),
             &hw_counter,
@@ -158,7 +160,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         .tempfile()
         .unwrap();
     let segment_id = segment
-        .current_path
+        .segment_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();

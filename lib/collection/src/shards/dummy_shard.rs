@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -15,6 +14,7 @@ use segment::types::{
 use shard::operations::CollectionUpdateOperations;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;
@@ -103,6 +103,7 @@ impl ShardOperation for DummyShard {
         &self,
         op: OperationWithClockTag,
         _: bool,
+        _: Option<Duration>,
         _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {

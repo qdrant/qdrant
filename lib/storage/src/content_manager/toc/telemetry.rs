@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use ahash::HashSet;
 use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
@@ -17,6 +18,15 @@ use crate::rbac::Access;
 #[derive(Default)]
 pub(super) struct TocTelemetryCollector {
     snapshots: DashMap<String, SnapshotTelemetryCollector>,
+}
+
+impl TocTelemetryCollector {
+    /// Initialize snapshot telemetry entry for a collection.
+    pub fn init_snapshot_telemetry(&self, collection_name: &str) {
+        self.snapshots
+            .entry(collection_name.to_string())
+            .or_default();
+    }
 }
 
 /// Collected telemetry data provided by ToC.
@@ -43,6 +53,7 @@ impl TableOfContent {
         &self,
         detail: TelemetryDetail,
         access: &Access,
+        only_collections: Option<HashSet<String>>,
         timeout: Duration,
         is_stopped: &AtomicBool,
     ) -> CollectionResult<TocTelemetryData> {
@@ -51,6 +62,11 @@ impl TableOfContent {
         for collection_pass in &all_collections {
             if is_stopped.load(Ordering::Relaxed) {
                 break;
+            }
+            if let Some(only_collections) = &only_collections
+                && !only_collections.contains(collection_pass.name())
+            {
+                continue;
             }
             if let Ok(collection) = self.get_collection(collection_pass).await {
                 collection_telemetry.push(collection.get_telemetry_data(detail, timeout).await?);

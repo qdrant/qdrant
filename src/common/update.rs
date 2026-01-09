@@ -16,6 +16,7 @@ use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
+use serde_with::DurationSeconds;
 use shard::operations::payload_ops::*;
 use shard::operations::*;
 use storage::content_manager::collection_meta_ops::*;
@@ -31,13 +32,14 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
 
+#[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct UpdateParams {
     #[serde(default)]
     pub wait: bool,
     #[serde(default)]
     pub ordering: WriteOrdering,
-    #[serde(default)]
+    #[serde_as(as = "Option<DurationSeconds<String>>")]
     pub timeout: Option<Duration>,
 }
 
@@ -45,12 +47,12 @@ impl UpdateParams {
     pub fn from_grpc(
         wait: Option<bool>,
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
-        timeout: Option<Duration>,
+        timeout: Option<u64>,
     ) -> tonic::Result<Self> {
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
-            timeout,
+            timeout: timeout.map(Duration::from_secs),
         };
 
         Ok(params)
@@ -853,13 +855,11 @@ pub async fn do_create_index(
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
-    // Use per-request timeout from params if provided
-    let wait_timeout = params.timeout;
-
     // Check strict mode before submitting consensus operation
     let pass = check_strict_mode(
         &operation,
-        wait_timeout.map(|d| d.as_secs() as usize),
+        // Use per-request timeout from params if provided
+        params.timeout_as_secs(),
         &collection_name,
         &dispatcher,
         &access,
@@ -882,7 +882,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(consensus_op, access, params.timeout)
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -946,9 +946,6 @@ pub async fn do_delete_index(
         field_name: index_name.clone(),
     });
 
-    // Use per-request timeout from params if provided
-    let wait_timeout = params.timeout;
-
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
 
@@ -956,7 +953,12 @@ pub async fn do_delete_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(
+            consensus_op,
+            access,
+            // Use per-request timeout from params if provided
+            params.timeout,
+        )
         .await?;
 
     do_delete_index_internal(
@@ -1052,6 +1054,7 @@ pub async fn update(
         collection_name,
         OperationWithClockTag::new(operation, clock_tag),
         wait,
+        params.timeout,
         ordering,
         shard_selector,
         access,

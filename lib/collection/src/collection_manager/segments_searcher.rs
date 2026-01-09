@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -172,6 +172,7 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         batch_request: &CoreSearchRequestBatch,
         collection_config: &CollectionConfigInternal,
+        timeout: Duration,
         search_runtime_handle: &Handle,
         is_stopped_guard: &StoppingGuard,
         hw_measurement_acc: HwMeasurementAcc,
@@ -196,13 +197,12 @@ impl SegmentsSearcher {
                     .unwrap_or(false)
             },
         );
-
+        let is_stopped = is_stopped_guard.get_is_stopped().clone();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = AbortOnDropHandle::new(
-            search_runtime_handle
-                .spawn_blocking(move || fill_query_context(query_context, segments)),
-        )
-        .await?;
+        let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
+            fill_query_context(query_context, segments, timeout, &is_stopped)
+        }))
+        .await??;
         Ok(task)
     }
 
@@ -212,14 +212,18 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         query_context: QueryContext,
+        timeout: Duration,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let start = Instant::now();
         let query_context_arc = Arc::new(query_context);
 
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
             // Unfortunately, we have to do `segments.read()` twice, once in blocking task
             // and once here, due to `Send` bounds :/
-            let segments_lock = segments.read();
+            let Some(segments_lock) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "search"));
+            };
             let segments = segments_lock.non_appendable_then_appendable_segments();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
@@ -236,7 +240,8 @@ impl SegmentsSearcher {
             segments
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
-
+                    // update timeout
+                    let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
@@ -248,6 +253,7 @@ impl SegmentsSearcher {
                                 batch_request,
                                 use_sampling,
                                 &segment_query_context,
+                                timeout,
                             )
                         }
                     });
@@ -298,7 +304,8 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-
+                    // update timeout
+                    let timeout = timeout.saturating_sub(start.elapsed());
                     let handle = runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
@@ -308,6 +315,7 @@ impl SegmentsSearcher {
                             partial_batch_request,
                             false,
                             &segment_query_context,
+                            timeout,
                         )
                     });
 
@@ -394,13 +402,19 @@ impl SegmentsSearcher {
         filter: Option<&Filter>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Option<Duration>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
-            let segments = segments.read();
+            let segments = match timeout {
+                None => Ok(segments.read()),
+                Some(t) => segments
+                    .try_read_for(t)
+                    .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
+            }?;
             let hw_counter = hw_measurement_acc.get_counter_cell();
             let all_points: BTreeSet<_> = segments
                 .non_appendable_then_appendable_segments()
@@ -427,11 +441,14 @@ impl SegmentsSearcher {
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments_guard = segments.read();
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
+            };
             segments_guard
                 .non_appendable_then_appendable_segments()
                 .map(|segment| {
@@ -476,7 +493,7 @@ pub enum SearchType {
     RecommendSumScores,
     Discover,
     Context,
-    FeedbackSimple,
+    FeedbackNaive,
 }
 
 impl From<&QueryEnum> for SearchType {
@@ -487,7 +504,7 @@ impl From<&QueryEnum> for SearchType {
             QueryEnum::RecommendSumScores(_) => Self::RecommendSumScores,
             QueryEnum::Discover(_) => Self::Discover,
             QueryEnum::Context(_) => Self::Context,
-            QueryEnum::FeedbackSimple(_) => Self::FeedbackSimple,
+            QueryEnum::FeedbackNaive(_) => Self::FeedbackNaive,
         }
     }
 }
@@ -553,6 +570,7 @@ fn search_in_segment(
     request: Arc<CoreSearchRequestBatch>,
     use_sampling: bool,
     segment_query_context: &SegmentQueryContext,
+    timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     if segment_query_context.is_stopped() {
         return Err(CollectionError::cancelled(
@@ -598,6 +616,7 @@ fn search_in_segment(
                     &prev_params,
                     use_sampling,
                     segment_query_context,
+                    timeout,
                 )?;
                 further_results.append(&mut further);
                 result.append(&mut res);
@@ -617,6 +636,7 @@ fn search_in_segment(
             &prev_params,
             use_sampling,
             segment_query_context,
+            timeout,
         )?;
         further_results.append(&mut further);
         result.append(&mut res);
@@ -631,9 +651,12 @@ fn execute_batch_search(
     search_params: &BatchSearchParams,
     use_sampling: bool,
     segment_query_context: &SegmentQueryContext,
+    timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
-    let read_segment = locked_segment.read();
+    let Some(read_segment) = locked_segment.try_read_for(timeout) else {
+        return Err(CollectionError::timeout(timeout, "batch search"));
+    };
 
     let segment_points = read_segment.available_point_count();
     let segment_config = read_segment.config();
@@ -664,6 +687,8 @@ fn execute_batch_search(
         search_params.params,
         segment_query_context,
     )?;
+
+    drop(read_segment);
 
     let further_results = res
         .iter()
@@ -702,7 +727,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_test_holder, random_segment};
+    use crate::collection_manager::fixtures::{TEST_TIMEOUT, build_test_holder, random_segment};
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::types::CoreSearchRequest;
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
@@ -778,6 +803,7 @@ mod tests {
             &Handle::current(),
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
+            TEST_TIMEOUT,
         )
         .await
         .unwrap()
@@ -847,6 +873,7 @@ mod tests {
                 &Handle::current(),
                 false,
                 query_context,
+                TEST_TIMEOUT,
             )
             .await
             .unwrap();
@@ -865,6 +892,7 @@ mod tests {
                 &Handle::current(),
                 true,
                 query_context,
+                TEST_TIMEOUT,
             )
             .await
             .unwrap();

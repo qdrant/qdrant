@@ -28,8 +28,8 @@ env_logger = "0.11"
 fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
-ndarray = "0.16.1"
-ndarray-npy = { version = "0.9.1", default-features = false }
+ndarray = "0.17.1"
+ndarray-npy = { version = "0.10.0", default-features = false }
 rmp-serde = "~1.3"
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
@@ -71,7 +71,7 @@ atomicwrites = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
-geo = "0.31.0"
+geo = "0.32.0"
 geohash = "0.13.1"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
@@ -81,7 +81,7 @@ bitvec = { workspace = true }
 seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }
-fs_extra = "1.3.0"
+fs_extra = { workspace = true }
 tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
 validator = { workspace = true }
 chrono = { workspace = true }
@@ -89,7 +89,7 @@ ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = "1.2.1"
+self_cell = "1.2.2"
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 is_sorted = "0.1.1"
@@ -97,7 +97,6 @@ strum = { workspace = true }
 byteorder = { workspace = true }
 tap = { workspace = true }
 zerocopy = { workspace = true }
-lazy_static = "1.5.0"
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers.git", tag = "v1.2.1" }
 sysinfo = "0.37"
@@ -124,7 +123,7 @@ tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
-roaring = { version = "0.11.2" }
+roaring = { version = "0.11.3" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

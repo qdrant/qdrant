@@ -678,6 +678,96 @@
         }
       }
     },
+    "/cluster/telemetry": {
+      "get": {
+        "tags": [
+          "Distributed"
+        ],
+        "summary": "Collect cluster telemetry data",
+        "description": "Get telemetry data, from the point of view of the cluster. This includes peers info, collections info, shard transfers, and resharding status",
+        "operationId": "cluster_telemetry",
+        "parameters": [
+          {
+            "name": "details_level",
+            "in": "query",
+            "description": "The level of detail to include in the response",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for this request",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/DistributedTelemetryData"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster/recover": {
       "post": {
         "tags": [
@@ -7797,6 +7887,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7834,6 +7929,11 @@
             "description": "If true, store the index on disk. Default: false. Default is false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7861,6 +7961,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7881,6 +7986,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -7959,6 +8069,11 @@
                 "nullable": true
               }
             ]
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8112,6 +8227,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8139,6 +8259,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8164,6 +8289,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -9467,11 +9597,12 @@
         }
       },
       "UpdateStatus": {
-        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual.",
+        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual. `WaitTimeout` - Request is waiting for timeout.",
         "type": "string",
         "enum": [
           "acknowledged",
-          "completed"
+          "completed",
+          "wait_timeout"
         ]
       },
       "RecommendRequest": {
@@ -11616,7 +11747,8 @@
           "Recovery",
           "Resharding",
           "ReshardingScaleDown",
-          "ActiveRead"
+          "ActiveRead",
+          "ManualRecovery"
         ]
       },
       "RemoteShardInfo": {
@@ -11670,7 +11802,7 @@
             "minimum": 0
           },
           "to_shard_id": {
-            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardStreamRecords` transfer method.",
+            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardingStreamRecords` transfer method.",
             "type": "integer",
             "format": "uint32",
             "minimum": 0,
@@ -11763,7 +11895,6 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "app",
           "collections",
           "id"
         ],
@@ -11772,7 +11903,14 @@
             "type": "string"
           },
           "app": {
-            "$ref": "#/components/schemas/AppBuildTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppBuildTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "collections": {
             "$ref": "#/components/schemas/CollectionsTelemetry"
@@ -12105,9 +12243,7 @@
       "CollectionTelemetry": {
         "type": "object",
         "required": [
-          "config",
-          "id",
-          "init_time_ms"
+          "id"
         ],
         "properties": {
           "id": {
@@ -12116,10 +12252,18 @@
           "init_time_ms": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfigTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionConfigTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shards": {
             "type": "array",
@@ -16325,6 +16469,163 @@
             "items": {
               "$ref": "#/components/schemas/ProgressTree"
             }
+          }
+        }
+      },
+      "DistributedTelemetryData": {
+        "type": "object",
+        "required": [
+          "collections"
+        ],
+        "properties": {
+          "collections": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedCollectionTelemetry"
+            }
+          },
+          "cluster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedClusterTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedCollectionTelemetry": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "description": "Collection name",
+            "type": "string"
+          },
+          "reshardings": {
+            "description": "Ongoing resharding operations",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReshardingInfo"
+            },
+            "nullable": true
+          },
+          "shard_transfers": {
+            "description": "Ongoing shard transfers",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DistributedClusterTelemetry": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "peers"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "number_of_peers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "peers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedPeerInfo"
+            }
+          }
+        }
+      },
+      "DistributedPeerInfo": {
+        "type": "object",
+        "required": [
+          "responsive",
+          "uri"
+        ],
+        "properties": {
+          "uri": {
+            "description": "URI of the peer",
+            "type": "string"
+          },
+          "responsive": {
+            "description": "Whether this peer responded for this request",
+            "type": "boolean"
+          },
+          "details": {
+            "description": "If responsive, these details should be available",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedPeerDetails"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedPeerDetails": {
+        "type": "object",
+        "required": [
+          "commit",
+          "consensus_thread_status",
+          "is_voter",
+          "num_pending_operations",
+          "term",
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "description": "Qdrant version",
+            "type": "string"
+          },
+          "role": {
+            "description": "Consensus role for the peer",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "is_voter": {
+            "description": "Whether it can participate in leader elections",
+            "type": "boolean"
+          },
+          "term": {
+            "description": "Election term",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "commit": {
+            "description": "Latest accepted commit",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "num_pending_operations": {
+            "description": "Number of operations pending for being applied",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "consensus_thread_status": {
+            "$ref": "#/components/schemas/ConsensusThreadStatus"
           }
         }
       }

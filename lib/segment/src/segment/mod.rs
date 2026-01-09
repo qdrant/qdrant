@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::is_alive_lock::IsAliveLock;
 use io::storage_version::StorageVersion;
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
@@ -70,11 +71,9 @@ pub struct Segment {
     /// Locked structure on which we hold the lock during flush to prevent concurrent flushes
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
-    /// Default value is true - means segment is alive and flushes can be performed.
-    /// If value is false - means segment was dropped and no further flush is required.
-    pub is_alive_flush_lock: Arc<Mutex<bool>>,
-    /// Path of the storage root
-    pub current_path: PathBuf,
+    pub is_alive_flush_lock: IsAliveLock,
+    /// Path to the segment directory
+    pub segment_path: PathBuf,
     pub version_tracker: VersionTracker,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -108,7 +107,7 @@ impl fmt::Debug for VectorData {
 impl Drop for Segment {
     fn drop(&mut self) {
         // Wait for all background flush operations to finish
-        *self.is_alive_flush_lock.lock() = false;
+        self.is_alive_flush_lock.blocking_mark_dead();
 
         // Try to remove everything from the disk cache, as it might pollute the cache
         if let Err(e) = self.payload_storage.borrow().clear_cache() {

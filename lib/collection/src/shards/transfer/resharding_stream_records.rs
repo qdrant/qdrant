@@ -9,7 +9,7 @@ use crate::operations::types::{CollectionError, CollectionResult, CountRequestIn
 use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::SharedShardHolder;
 use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
 
 /// Orchestrate shard transfer by streaming records, but only the points that fall into the new
@@ -25,7 +25,7 @@ use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
 ///
 /// This function is cancel safe.
 pub(crate) async fn transfer_resharding_stream_records(
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,

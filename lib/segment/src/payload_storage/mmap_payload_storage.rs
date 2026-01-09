@@ -58,8 +58,7 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::new(path, StorageOptions::default())
-            .map_err(OperationError::service_error)?;
+        let storage = Gridstore::new(path, StorageOptions::default())?;
 
         if populate {
             storage.populate()?;
@@ -90,8 +89,7 @@ impl PayloadStorage for MmapPayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage
-            .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())
-            .map_err(OperationError::service_error)?;
+            .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())?;
         Ok(())
     }
 
@@ -104,18 +102,18 @@ impl PayloadStorage for MmapPayloadStorage {
         match self.storage.get_value::<false>(point_id, hw_counter) {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
-                self.storage
-                    .put_value(
-                        point_id,
-                        &point_payload,
-                        hw_counter.ref_payload_io_write_counter(),
-                    )
-                    .map_err(OperationError::service_error)?;
+                self.storage.put_value(
+                    point_id,
+                    &point_payload,
+                    hw_counter.ref_payload_io_write_counter(),
+                )?;
             }
             None => {
-                self.storage
-                    .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())
-                    .map_err(OperationError::service_error)?;
+                self.storage.put_value(
+                    point_id,
+                    payload,
+                    hw_counter.ref_payload_io_write_counter(),
+                )?;
             }
         }
         Ok(())
@@ -131,24 +129,20 @@ impl PayloadStorage for MmapPayloadStorage {
         match self.storage.get_value::<false>(point_id, hw_counter) {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
-                self.storage
-                    .put_value(
-                        point_id,
-                        &point_payload,
-                        hw_counter.ref_payload_io_write_counter(),
-                    )
-                    .map_err(OperationError::service_error)?;
+                self.storage.put_value(
+                    point_id,
+                    &point_payload,
+                    hw_counter.ref_payload_io_write_counter(),
+                )?;
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                self.storage
-                    .put_value(
-                        point_id,
-                        &dest_payload,
-                        hw_counter.ref_payload_io_write_counter(),
-                    )
-                    .map_err(OperationError::service_error)?;
+                self.storage.put_value(
+                    point_id,
+                    &dest_payload,
+                    hw_counter.ref_payload_io_write_counter(),
+                )?;
             }
         }
         Ok(())
@@ -186,13 +180,11 @@ impl PayloadStorage for MmapPayloadStorage {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.storage
-                        .put_value(
-                            point_id,
-                            &payload,
-                            hw_counter.ref_payload_io_write_counter(),
-                        )
-                        .map_err(OperationError::service_error)?;
+                    self.storage.put_value(
+                        point_id,
+                        &payload,
+                        hw_counter.ref_payload_io_write_counter(),
+                    )?;
                 }
                 Ok(res)
             }

@@ -244,12 +244,6 @@ fn test_byte_storage_binary_quantization_hnsw(
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
-        #[cfg(feature = "rocksdb")]
-        assert!(matches!(
-            raw_storage,
-            &VectorStorageEnum::DenseSimpleByte(_) | &VectorStorageEnum::DenseSimpleHalf(_),
-        ));
-        #[cfg(not(feature = "rocksdb"))]
         assert!(matches!(
             raw_storage,
             &VectorStorageEnum::DenseAppendableInRamByte(_)

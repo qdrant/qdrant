@@ -10,7 +10,7 @@ use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use crate::Shard;
+use crate::{DEFAULT_EDGE_TIMEOUT, Shard};
 
 impl Shard {
     /// This method is DEPRECATED and should be replaced with query.
@@ -30,8 +30,13 @@ impl Shard {
             },
         );
         let [search] = searches;
-
-        let Some(context) = fill_query_context(query_context, self.segments.clone()) else {
+        let Some(context) = fill_query_context(
+            query_context,
+            self.segments.clone(),
+            DEFAULT_EDGE_TIMEOUT,
+            &is_stopped_guard.get_is_stopped(),
+        )?
+        else {
             // No segments to search
             return Ok(vec![]);
         };
@@ -110,7 +115,7 @@ impl Shard {
             QueryVector::RecommendSumScores(_) => (),
             QueryVector::Discovery(_) => (),
             QueryVector::Context(_) => (),
-            QueryVector::FeedbackSimple(_) => (),
+            QueryVector::FeedbackNaive(_) => (),
         }
 
         if let Some(score_threshold) = score_threshold {

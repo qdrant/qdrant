@@ -77,7 +77,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         Arc::new(storage_config),
         shard_distribution,
         None,
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
@@ -111,7 +111,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     ));
     let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
         .await
         .unwrap();
 
@@ -137,7 +143,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         recover_dir.path(),
         snapshots_path.path(),
         Default::default(),
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),

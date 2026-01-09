@@ -10,7 +10,6 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -18,6 +17,7 @@ use segment::types::{
 };
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 use tokio::sync::{RwLock, oneshot};
 use tokio::time::timeout;
@@ -47,7 +47,7 @@ type ChangedPointsSet = Arc<RwLock<AHashSet<PointIdType>>>;
 /// It can be used to provide all read and write operations while the wrapped shard is being transferred to another node.
 /// It keeps track of changed points during the shard transfer to assure consistency.
 pub struct ProxyShard {
-    wrapped_shard: LocalShard,
+    pub(super) wrapped_shard: LocalShard,
     changed_points: ChangedPointsSet,
     pub changed_alot: AtomicBool,
 }
@@ -181,6 +181,14 @@ impl ProxyShard {
             .estimate_cardinality(filter, hw_measurement_acc)
             .await
     }
+
+    pub async fn set_extended_wal_retention(&self) {
+        self.wrapped_shard.set_extended_wal_retention().await;
+    }
+
+    pub async fn set_normal_wal_retention(&self) {
+        self.wrapped_shard.set_normal_wal_retention().await;
+    }
 }
 
 #[async_trait]
@@ -194,6 +202,7 @@ impl ShardOperation for ProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
@@ -214,7 +223,12 @@ impl ShardOperation for ProxyShard {
                 } else {
                     let runtime_handle = self.wrapped_shard.search_runtime.clone();
                     let points = local_shard
-                        .read_filtered(Some(filter), &runtime_handle, hw_measurement_acc.clone())
+                        .read_filtered(
+                            Some(filter),
+                            &runtime_handle,
+                            hw_measurement_acc.clone(),
+                            None, // no timeout on update path
+                        )
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
@@ -241,7 +255,7 @@ impl ShardOperation for ProxyShard {
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
             local_shard
-                .update(operation, wait, hw_measurement_acc)
+                .update(operation, wait, timeout, hw_measurement_acc)
                 .await
         }
     }

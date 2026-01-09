@@ -1,5 +1,6 @@
 mod resharding;
 pub(crate) mod shard_mapping;
+pub mod shared_shard_holder;
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
@@ -15,22 +16,23 @@ use common::tar_ext::BuilderExt;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
+use io::safe_delete::sync_parent_dir_async;
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::{
     open_snapshot_archive, validate_snapshot_archive,
 };
-use segment::data_types::manifest::SnapshotManifest;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
-use super::replica_set::snapshots::RecoveryType;
+pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
-use super::resharding::{ReshardStage, ReshardState};
+use super::resharding::{ReshardState, ReshardingStage};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::collection_size_stats::CollectionSizeStats;
@@ -73,8 +75,6 @@ pub struct ShardHolder {
     shard_id_to_key_mapping: AHashMap<ShardId, ShardKey>,
     sharding_method: ShardingMethod,
 }
-
-pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub async fn trigger_optimizers(&self) {
@@ -153,6 +153,10 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
+    pub fn get_sharding_method(&self) -> ShardingMethod {
+        self.sharding_method
+    }
+
     /// Set the shard key mappings
     ///
     /// # Warning
@@ -184,11 +188,12 @@ impl ShardHolder {
             // file to be left behind if the process is killed in the middle. We must avoid this so
             // we don't attempt to load this shard anymore on restart.
             let shard_config_path = ShardConfig::get_config_path(&shard_path);
-            if let Err(err) = tokio_fs::remove_file(shard_config_path).await {
+            if let Err(err) = tokio_fs::remove_file(&shard_config_path).await {
                 log::error!(
                     "Failed to remove shard config file before removing the rest of the files: {err}",
                 );
             }
+            sync_parent_dir_async(&shard_config_path).await?;
 
             tokio_fs::remove_dir_all(shard_path).await?;
         }
@@ -314,7 +319,7 @@ impl ShardHolder {
 
             ring.start_resharding(state.shard_id, state.direction);
 
-            if state.stage >= ReshardStage::WriteHashRingCommitted {
+            if state.stage >= ReshardingStage::WriteHashRingCommitted {
                 ring.commit_resharding();
             }
         }
@@ -553,16 +558,16 @@ impl ShardHolder {
             peer_id: resharding_state.peer_id,
             direction: resharding_state.direction,
             shard_key: resharding_state.shard_key.clone(),
+            stage: resharding_state.stage,
         });
 
         resharding_operations.sort_by_key(|k| k.shard_id);
         Some(resharding_operations)
     }
 
-    pub fn get_related_transfers(&self, shard_id: ShardId, peer_id: PeerId) -> Vec<ShardTransfer> {
-        self.get_transfers(|transfer| {
-            transfer.shard_id == shard_id && (transfer.from == peer_id || transfer.to == peer_id)
-        })
+    /// Get all transfers related to the given peer and shard ID pair
+    pub fn get_related_transfers(&self, peer_id: PeerId, shard_id: ShardId) -> Vec<ShardTransfer> {
+        self.get_transfers(|transfer| transfer.is_source_or_target(peer_id, shard_id))
     }
 
     pub fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
@@ -597,7 +602,7 @@ impl ShardHolder {
                         self.resharding_state.read().clone().is_some_and(|state| {
                             state.direction == ReshardingDirection::Up
                                 && state.shard_id == shard_id
-                                && state.stage < ReshardStage::ReadHashRingCommitted
+                                && state.stage < ReshardingStage::ReadHashRingCommitted
                         });
                     if resharding_migrating_up {
                         continue;
@@ -917,6 +922,7 @@ impl ShardHolder {
                 );
                 replica_set
                     .set_replica_state(local_peer_id, ReplicaState::Active)
+                    .await
                     .expect("Failed to set local shard state");
             }
             let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
@@ -1263,6 +1269,7 @@ impl ShardHolder {
                         this_peer_id,
                         is_distributed,
                     )?;
+                    common::fs::bulk_sync_dir(&snapshot_temp_dir)?;
 
                     Ok(())
                 },

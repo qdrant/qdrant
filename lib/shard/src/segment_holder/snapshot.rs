@@ -6,7 +6,6 @@ use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::entry::SegmentEntry;
 use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
@@ -15,16 +14,15 @@ use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
 use crate::segment_holder::{SegmentHolder, SegmentId};
+use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
 impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
         let mut manifest = SnapshotManifest::default();
 
         for (_, segment) in self.iter() {
-            segment
-                .get()
-                .read()
-                .collect_snapshot_manifest(&mut manifest)?;
+            let segment_manifest = segment.get().read().get_segment_manifest()?;
+            manifest.add(segment_manifest);
         }
 
         Ok(manifest)
@@ -55,18 +53,7 @@ impl SegmentHolder {
         )?;
 
         // List all segments we want to snapshot
-        let mut segment_ids = segments_lock.segment_ids();
-
-        // Re-sort segments for flush ordering, required to guarantee data consistency
-        // TODO: sort in a better place to not lock each segment
-        segment_ids.sort_by_cached_key(|segment_id| {
-            segments_lock
-                .get(*segment_id)
-                .unwrap()
-                .get()
-                .read()
-                .flush_ordering()
-        });
+        let segment_ids = segments_lock.segment_ids();
 
         // Create proxy for all segments
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
@@ -84,7 +71,7 @@ impl SegmentHolder {
         // If this ends up not being saved due to a crash, the segment will not be used
         match &tmp_segment {
             LockedSegment::Original(segment) => {
-                let segment_path = &segment.read().current_path;
+                let segment_path = &segment.read().segment_path;
                 SegmentVersion::save(segment_path)?;
             }
             LockedSegment::Proxy(_) => unreachable!(),

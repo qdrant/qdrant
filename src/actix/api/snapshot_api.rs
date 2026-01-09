@@ -11,7 +11,6 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
-use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::shard_not_found_error;
 use fs_err::tokio as tokio_fs;
@@ -19,8 +18,8 @@ use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use segment::common::BYTES_IN_MB;
-use segment::data_types::manifest::SnapshotManifest;
 use serde::{Deserialize, Serialize};
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
@@ -734,8 +733,9 @@ async fn recover_partial_snapshot_from(
 
             let http_client = http_client.client(api_key.as_deref())?;
 
+            let encoded_collection_name = urlencoding::encode(&collection_name);
             let create_snapshot_url = format!(
-                "{peer_url}/collections/{collection_name}/shards/{shard_id}/snapshot/partial/create"
+                "{peer_url}/collections/{encoded_collection_name}/shards/{shard_id}/snapshot/partial/create"
             );
 
             let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;

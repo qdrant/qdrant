@@ -19,6 +19,7 @@ pub trait ShardOperation {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult>;
 

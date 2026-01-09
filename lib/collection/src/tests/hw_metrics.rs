@@ -55,7 +55,7 @@ async fn test_hw_metrics_cancellation() {
 
     let upsert_ops = make_random_points_upsert_op(10_000);
     shard
-        .update(upsert_ops.into(), true, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -84,7 +84,7 @@ async fn test_hw_metrics_cancellation() {
             .do_search(
                 Arc::new(req),
                 &current_runtime,
-                Some(Duration::from_millis(10)), // Very short duration to hit timeout before the search finishes
+                Duration::from_millis(10), // Very short duration to hit timeout before the search finishes
                 hw_counter,
             )
             .await;

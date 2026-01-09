@@ -5,6 +5,7 @@
 /storage
 /snapshots
 /consensus_test_logs
+/tests/consensus_test_logs
 /config/local
 /tls
 /static
@@ -18,3 +19,4 @@ tests/storage-compat/storage.tar.bz2
 venv
 .venv
 .env
+.python-version

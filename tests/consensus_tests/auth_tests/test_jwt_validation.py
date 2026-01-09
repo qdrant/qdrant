@@ -2,7 +2,7 @@ import pytest
 import requests
 from consensus_tests import fixtures
 
-from .utils import API_KEY_HEADERS, READ_ONLY_API_KEY, REST_URI, SECRET, encode_jwt
+from .utils import API_KEY_HEADERS, READ_ONLY_API_KEY, REST_URI, SECRET, encode_jwt, ALT_SECRET
 
 COLL_NAME = "jwt_test_collection"
 OTHER_COLL_NAME = "jwt_other_test_collection"
@@ -59,6 +59,11 @@ def scroll_with_token(collection: str, token: str) -> requests.Response:
 
 
 def test_value_exists_claim():
+    value_exists_claim_check(SECRET)
+    value_exists_claim_check(ALT_SECRET)
+
+
+def value_exists_claim_check(secret):
     validation_collection = "jwt_validation_collection"
 
     key = "tokenId"
@@ -70,7 +75,8 @@ def test_value_exists_claim():
             "matches": [{"key": key, "value": value}],
         },
     }
-    token = encode_jwt(claims, SECRET)
+
+    token = encode_jwt(claims, secret)
 
     # Check that token does not work with unexisting collection
     with pytest.raises(requests.HTTPError):

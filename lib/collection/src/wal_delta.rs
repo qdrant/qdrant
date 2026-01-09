@@ -59,13 +59,13 @@ pub enum WalMode {
 impl RecoverableWal {
     pub fn new(
         wal: LockedWal,
-        highest_clocks: Arc<Mutex<ClockMap>>,
-        cutoff_clocks: Arc<Mutex<ClockMap>>,
+        newest_clocks: Arc<Mutex<ClockMap>>,
+        oldest_clocks: Arc<Mutex<ClockMap>>,
     ) -> Self {
         Self {
             wal,
-            newest_clocks: highest_clocks,
-            oldest_clocks: cutoff_clocks,
+            newest_clocks,
+            oldest_clocks,
         }
     }
 
@@ -96,6 +96,32 @@ impl RecoverableWal {
         wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
+    /// Take clocks snapshot because we deactivated our replica
+    ///
+    /// Does nothing if a snapshot already existed. Returns `true` if a snapshot was taken.
+    ///
+    /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
+    /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
+    /// clock tags were bumped during a different transfer that was not finished.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7787>
+    pub async fn take_newest_clocks_snapshot(&self) -> bool {
+        self.newest_clocks.lock().await.take_snapshot()
+    }
+
+    /// Clear any clocks snapshot because we activated our replica
+    ///
+    /// Returns `true` if a snapshot was cleared.
+    ///
+    /// When doing a WAL delta recovery transfer, the recovery point is sourced from the latest
+    /// seen snapshot if it exists. This way we prevent skipping operations if the regular latest
+    /// clock tags were bumped during a different transfer that was not finished.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/7787>
+    pub async fn clear_newest_clocks_snapshot(&self) -> bool {
+        self.newest_clocks.lock().await.clear_snapshot()
+    }
+
     /// Update the cutoff clock map based on the given recovery point
     ///
     /// This can only increase clock ticks in the cutoff clock map. If there already are higher
@@ -120,7 +146,9 @@ impl RecoverableWal {
         }
     }
 
-    /// Get a recovery point for this WAL.
+    /// Get a recovery point for this WAL
+    ///
+    /// Uses newest clocks snapshot if set, otherwise uses newest clocks.
     pub async fn recovery_point(&self) -> RecoveryPoint {
         self.newest_clocks.lock().await.to_recovery_point()
     }
@@ -168,6 +196,14 @@ impl RecoverableWal {
             let (_, _) = self.lock_and_write(update).await?;
         }
         Ok(())
+    }
+
+    pub async fn set_extended_retention(&self) {
+        self.wal.lock().await.set_extended_retention();
+    }
+
+    pub async fn set_normal_retention(&self) {
+        self.wal.lock().await.set_normal_retention();
     }
 }
 

@@ -63,8 +63,10 @@ impl UnindexedField {
             });
         }
 
+        let encoded_collection_name = urlencoding::encode(&collection_name);
+
         let endpoint = match Uri::builder()
-            .path_and_query(format!("/collections/{collection_name}/index").as_str())
+            .path_and_query(format!("/collections/{encoded_collection_name}/index").as_str())
             .build()
         {
             Ok(uri) => uri,

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
 use derive_more::Into;
 use ordered_float::OrderedFloat;
@@ -6,9 +8,11 @@ use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::vector_storage::query::*;
 use shard::query::query_enum::QueryEnum;
 
+use crate::repr::*;
 use crate::types::*;
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyQuery(pub QueryEnum);
 
 impl FromPyObject<'_, '_> for PyQuery {
@@ -45,9 +49,9 @@ impl FromPyObject<'_, '_> for PyQuery {
                 using,
             }),
 
-            PyQueryInterface::FeedbackSimple { query, using } => {
-                QueryEnum::FeedbackSimple(NamedQuery {
-                    query: FeedbackQueryInternal::from(query),
+            PyQueryInterface::FeedbackNaive { query, using } => {
+                QueryEnum::FeedbackNaive(NamedQuery {
+                    query: NaiveFeedbackQuery::from(query),
                     using,
                 })
             }
@@ -93,15 +97,58 @@ impl<'py> IntoPyObject<'py> for PyQuery {
                 using,
             },
 
-            QueryEnum::FeedbackSimple(NamedQuery { query, using }) => {
-                PyQueryInterface::FeedbackSimple {
-                    query: PyFeedbackSimpleQuery(query),
+            QueryEnum::FeedbackNaive(NamedQuery { query, using }) => {
+                PyQueryInterface::FeedbackNaive {
+                    query: PyFeedbackNaiveQuery(query),
                     using,
                 }
             }
         };
 
         Bound::new(py, query)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyQuery {
+    type Target = PyQueryInterface;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr; // Infallible
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
+    }
+}
+
+impl Repr for PyQuery {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (repr, query, using): (_, &dyn Repr, _) = match &self.0 {
+            QueryEnum::Nearest(NamedQuery { query, using }) => {
+                ("Nearest", PyNamedVectorInternal::wrap_ref(query), using)
+            }
+            QueryEnum::RecommendBestScore(NamedQuery { query, using }) => (
+                "RecommendBestScore",
+                PyRecommendQuery::wrap_ref(query),
+                using,
+            ),
+            QueryEnum::RecommendSumScores(NamedQuery { query, using }) => (
+                "RecommendSumScores",
+                PyRecommendQuery::wrap_ref(query),
+                using,
+            ),
+            QueryEnum::Discover(NamedQuery { query, using }) => {
+                ("Discover", PyDiscoverQuery::wrap_ref(query), using)
+            }
+            QueryEnum::Context(NamedQuery { query, using }) => {
+                ("Context", PyContextQuery::wrap_ref(query), using)
+            }
+            QueryEnum::FeedbackNaive(NamedQuery { query, using }) => (
+                "FeedbackNaive",
+                PyFeedbackNaiveQuery::wrap_ref(query),
+                using,
+            ),
+        };
+
+        f.complex_enum::<PyQueryInterface>(repr, &[("query", query), ("using", using)])
     }
 }
 
@@ -139,16 +186,44 @@ pub enum PyQueryInterface {
     },
 
     #[pyo3(constructor = (query, using = None))]
-    FeedbackSimple {
-        query: PyFeedbackSimpleQuery,
+    FeedbackNaive {
+        query: PyFeedbackNaiveQuery,
         using: Option<String>,
     },
 }
 
-#[pyclass(name = "RecommendationQuery")]
-#[derive(Clone, Debug, Into)]
+#[pymethods]
+impl PyQueryInterface {
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl Repr for PyQueryInterface {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let (repr, query, using): (_, &dyn Repr, _) = match self {
+            PyQueryInterface::Nearest { query, using } => ("Nearest", query, using),
+            PyQueryInterface::RecommendBestScore { query, using } => {
+                ("RecommendBestScore", query, using)
+            }
+            PyQueryInterface::RecommendSumScores { query, using } => {
+                ("RecommendSumScores", query, using)
+            }
+            PyQueryInterface::Discover { query, using } => ("Discover", query, using),
+            PyQueryInterface::Context { query, using } => ("Context", query, using),
+            PyQueryInterface::FeedbackNaive { query, using } => ("FeedbackNaive", query, using),
+        };
+
+        f.complex_enum::<Self>(repr, &[("query", query), ("using", using)])
+    }
+}
+
+#[pyclass(name = "RecommendQuery")]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyRecommendQuery(RecoQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyRecommendQuery {
     #[new]
@@ -171,12 +246,28 @@ impl PyRecommendQuery {
     pub fn negatives(&self) -> &[PyNamedVectorInternal] {
         PyNamedVectorInternal::wrap_slice(&self.0.negatives)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
 }
 
-#[pyclass(name = "DiscoveryQuery")]
-#[derive(Clone, Debug, Into)]
+impl PyRecommendQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let RecoQuery {
+            positives: _,
+            negatives: _,
+        } = self.0;
+    }
+}
+
+#[pyclass(name = "DiscoverQuery")]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyDiscoverQuery {
     #[new]
@@ -196,12 +287,28 @@ impl PyDiscoverQuery {
     pub fn pairs(&self) -> &[PyContextPair] {
         PyContextPair::wrap_slice(&self.0.pairs)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyDiscoverQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let DiscoveryQuery {
+            target: _,
+            pairs: _,
+        } = self.0;
+    }
 }
 
 #[pyclass(name = "ContextQuery")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyContextQuery(ContextQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyContextQuery {
     #[new]
@@ -215,6 +322,17 @@ impl PyContextQuery {
     pub fn pairs(&self) -> &[PyContextPair] {
         PyContextPair::wrap_slice(&self.0.pairs)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyContextQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ContextQuery { pairs: _ } = self.0;
+    }
 }
 
 #[pyclass(name = "ContextPair")]
@@ -222,6 +340,7 @@ impl PyContextQuery {
 #[repr(transparent)]
 pub struct PyContextPair(ContextPair<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyContextPair {
     #[new]
@@ -241,6 +360,20 @@ impl PyContextPair {
     pub fn negative(&self) -> &PyNamedVectorInternal {
         PyNamedVectorInternal::wrap_ref(&self.0.negative)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyContextPair {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let ContextPair {
+            positive: _,
+            negative: _,
+        } = self.0;
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &PyContextPair {
@@ -253,22 +386,24 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     }
 }
 
-#[pyclass(name = "FeedbackSimpleQuery")]
-#[derive(Clone, Debug, Into)]
-pub struct PyFeedbackSimpleQuery(FeedbackQueryInternal<VectorInternal, SimpleFeedbackStrategy>);
+#[pyclass(name = "FeedbackNaiveQuery")]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyFeedbackNaiveQuery(NaiveFeedbackQuery<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
-impl PyFeedbackSimpleQuery {
+impl PyFeedbackNaiveQuery {
     #[new]
     pub fn new(
         target: PyNamedVectorInternal,
         feedback: Vec<PyFeedbackItem>,
-        strategy: PySimpleFeedbackStrategy,
+        strategy: PyNaiveFeedbackCoefficients,
     ) -> Self {
-        Self(FeedbackQueryInternal {
+        Self(NaiveFeedbackQuery {
             target: VectorInternal::from(target),
             feedback: PyFeedbackItem::peel_vec(feedback),
-            strategy: SimpleFeedbackStrategy::from(strategy),
+            coefficients: NaiveFeedbackCoefficients::from(strategy),
         })
     }
 
@@ -283,8 +418,23 @@ impl PyFeedbackSimpleQuery {
     }
 
     #[getter]
-    pub fn strategy(&self) -> PySimpleFeedbackStrategy {
-        PySimpleFeedbackStrategy(self.0.strategy)
+    pub fn coefficients(&self) -> PyNaiveFeedbackCoefficients {
+        PyNaiveFeedbackCoefficients(self.0.coefficients)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyFeedbackNaiveQuery {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let NaiveFeedbackQuery {
+            target: _,
+            feedback: _,
+            coefficients: _,
+        } = self.0;
     }
 }
 
@@ -293,6 +443,7 @@ impl PyFeedbackSimpleQuery {
 #[repr(transparent)]
 pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFeedbackItem {
     #[new]
@@ -312,6 +463,20 @@ impl PyFeedbackItem {
     pub fn score(&self) -> f32 {
         self.0.score.into_inner()
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyFeedbackItem {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let FeedbackItem {
+            vector: _,
+            score: _,
+        } = self.0;
+    }
 }
 
 impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
@@ -324,15 +489,16 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     }
 }
 
-#[pyclass(name = "SimpleFeedbackStrategy")]
+#[pyclass(name = "NaiveFeedbackStrategy")]
 #[derive(Copy, Clone, Debug, Into)]
-pub struct PySimpleFeedbackStrategy(SimpleFeedbackStrategy);
+pub struct PyNaiveFeedbackCoefficients(NaiveFeedbackCoefficients);
 
+#[pyclass_repr]
 #[pymethods]
-impl PySimpleFeedbackStrategy {
+impl PyNaiveFeedbackCoefficients {
     #[new]
     pub fn new(a: f32, b: f32, c: f32) -> Self {
-        Self(SimpleFeedbackStrategy {
+        Self(NaiveFeedbackCoefficients {
             a: OrderedFloat(a),
             b: OrderedFloat(b),
             c: OrderedFloat(c),
@@ -352,5 +518,16 @@ impl PySimpleFeedbackStrategy {
     #[getter]
     pub fn c(&self) -> f32 {
         self.0.c.into_inner()
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl PyNaiveFeedbackCoefficients {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let NaiveFeedbackCoefficients { a: _, b: _, c: _ } = self.0;
     }
 }

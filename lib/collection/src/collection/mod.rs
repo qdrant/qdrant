@@ -29,13 +29,14 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
+use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::collection_size_stats::{
     CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
 };
 use crate::common::is_ready::IsReady;
-use crate::config::CollectionConfigInternal;
+use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
@@ -50,7 +51,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaState::{
 use crate::shards::replica_set::{ChangePeerFromState, ChangePeerState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
-use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};
+use crate::shards::shard_holder::{ShardHolder, SharedShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
@@ -60,7 +61,7 @@ use crate::telemetry::CollectionsAggregatedTelemetry;
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
-    pub(crate) shards_holder: Arc<LockedShardHolder>,
+    pub(crate) shards_holder: SharedShardHolder,
     pub(crate) collection_config: Arc<RwLock<CollectionConfigInternal>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -165,10 +166,10 @@ impl Collection {
                 .await?;
         }
 
-        let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
+        let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&locked_shard_holder).await,
+            Self::estimate_collection_size_stats(&shared_shard_holder).await,
         );
 
         // Once the config is persisted - the collection is considered to be successfully created.
@@ -177,7 +178,7 @@ impl Collection {
 
         Ok(Self {
             id: name.clone(),
-            shards_holder: locked_shard_holder,
+            shards_holder: shared_shard_holder,
             collection_config: shared_collection_config,
             optimizers_overwrite,
             payload_index_schema,
@@ -293,15 +294,15 @@ impl Collection {
             )
             .await;
 
-        let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
+        let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&locked_shard_holder).await,
+            Self::estimate_collection_size_stats(&shared_shard_holder).await,
         );
 
         Self {
             id: collection_id.clone(),
-            shards_holder: locked_shard_holder,
+            shards_holder: shared_shard_holder,
             collection_config: shared_collection_config,
             optimizers_overwrite,
             payload_index_schema,
@@ -361,14 +362,17 @@ impl Collection {
         self.collection_config.read().await.uuid
     }
 
-    pub async fn get_shard_keys(&self) -> Vec<ShardKey> {
-        self.shards_holder
-            .read()
-            .await
+    pub async fn get_sharding_method_and_keys(&self) -> (ShardingMethod, Vec<ShardKey>) {
+        let shards_holder = self.shards_holder.read().await;
+
+        let sharding_method = shards_holder.get_sharding_method();
+        let shard_keys = shards_holder
             .get_shard_key_to_ids_mapping()
             .keys()
             .cloned()
-            .collect()
+            .collect();
+
+        (sharding_method, shard_keys)
     }
 
     /// Return a list of local shards, present on this peer
@@ -471,7 +475,20 @@ impl Collection {
 
         if new_state == ReplicaState::Dead {
             let resharding_state = shard_holder.resharding_state.read().clone();
-            let related_transfers = shard_holder.get_related_transfers(shard_id, peer_id);
+
+            let all_nodes_fixed_cancellation = self
+                .channel_service
+                .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+            let related_transfers = if all_nodes_fixed_cancellation {
+                shard_holder.get_related_transfers(peer_id, shard_id)
+            } else {
+                // This is the old buggy logic, but we have to keep it
+                // for maintaining consistency in a cluster with mixed versions.
+                shard_holder.get_transfers(|transfer| {
+                    transfer.shard_id == shard_id
+                        && (transfer.from == peer_id || transfer.to == peer_id)
+                })
+            };
 
             // Functions below lock `shard_holder`!
             drop(shard_holder);
@@ -629,8 +646,7 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
 
         let get_shard_transfers = |shard_id, from| {
-            shard_holder
-                .get_transfers(|transfer| transfer.shard_id == shard_id && transfer.from == from)
+            shard_holder.get_transfers(|transfer| transfer.is_source(from, shard_id))
         };
 
         for replica_set in shard_holder.all_shards() {
@@ -869,7 +885,7 @@ impl Collection {
         &self.snapshots_path
     }
 
-    pub fn shards_holder(&self) -> Arc<LockedShardHolder> {
+    pub fn shards_holder(&self) -> SharedShardHolder {
         self.shards_holder.clone()
     }
 
@@ -878,7 +894,7 @@ impl Collection {
     }
 
     async fn estimate_collection_size_stats(
-        shards_holder: &Arc<RwLock<ShardHolder>>,
+        shards_holder: &SharedShardHolder,
     ) -> Option<CollectionSizeStats> {
         let shard_lock = shards_holder.read().await;
         shard_lock.estimate_collection_size_stats().await

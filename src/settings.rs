@@ -26,6 +26,13 @@ pub struct ServiceConfig {
     pub host: String,
     pub http_port: u16,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
+
+    /// If specified, qdrant will serve a separate service for `/metrics` on this port.
+    /// Separate port is not protected by API keys and dedicated for internal monitoring systems.
+    /// This port should not be exposed to untrusted networks.
+    #[serde(default)]
+    pub metrics_port: Option<u16>,
+
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
     #[serde(default = "default_cors")]
@@ -35,6 +42,10 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub verify_https_client_certificate: bool,
     pub api_key: Option<String>,
+
+    /// Same as `api_key`, can be used for rolling key rotation.
+    pub alt_api_key: Option<String>,
+
     pub read_only_api_key: Option<String>,
     #[serde(default)]
     pub jwt_rbac: Option<bool>,
@@ -308,14 +319,32 @@ impl Settings {
         // Using HMAC-SHA256, recommended secret size is 32 bytes
         const JWT_RECOMMENDED_SECRET_LENGTH: usize = 256 / 8;
 
+        let all_keys_are_empty = self.service.api_key.clone().unwrap_or_default().is_empty()
+            && self
+                .service
+                .alt_api_key
+                .clone()
+                .unwrap_or_default()
+                .is_empty();
+
+        let min_length = [
+            self.service.api_key.as_ref(),
+            self.service.alt_api_key.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|key| key.len())
+        .min()
+        .unwrap_or_default();
+
+        let any_api_key_is_short = min_length < JWT_RECOMMENDED_SECRET_LENGTH;
+
         // Log if JWT RBAC is enabled but no API key is set
         if self.service.jwt_rbac.unwrap_or_default() {
-            if self.service.api_key.clone().unwrap_or_default().is_empty() {
+            if all_keys_are_empty {
                 log::warn!("JWT RBAC configured but no API key set, JWT RBAC is not enabled")
             // Log if JWT RAC is enabled, API key is set but smaller than recommended size for JWT secret
-            } else if self.service.api_key.clone().unwrap_or_default().len()
-                < JWT_RECOMMENDED_SECRET_LENGTH
-            {
+            } else if any_api_key_is_short {
                 log::warn!(
                     "It is highly recommended to use an API key of {JWT_RECOMMENDED_SECRET_LENGTH} bytes when JWT RBAC is enabled",
                 )

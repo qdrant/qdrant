@@ -23,7 +23,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
-use crate::vector_storage::query::FeedbackQueryInternal;
+use crate::vector_storage::query::NaiveFeedbackQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
@@ -200,8 +200,8 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::FeedbackSimple(feedback_query) => {
-            let feedback_query: FeedbackQueryInternal<SparseVector, _> =
+        QueryVector::FeedbackNaive(feedback_query) => {
+            let feedback_query: NaiveFeedbackQuery<SparseVector> =
                 feedback_query.transform_into()?;
             let query_scorer = SparseCustomQueryScorer::<_, _>::new(
                 feedback_query.into_query(),
@@ -315,8 +315,8 @@ fn new_scorer_with_metric<
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::FeedbackSimple(feedback_query) => {
-            let feedback_query: FeedbackQueryInternal<DenseVector, _> =
+        QueryVector::FeedbackNaive(feedback_query) => {
+            let feedback_query: NaiveFeedbackQuery<DenseVector> =
                 feedback_query.transform_into()?;
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 feedback_query.into_query(),
@@ -430,8 +430,8 @@ fn new_multi_scorer_with_metric<
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
-        QueryVector::FeedbackSimple(feedback_query) => {
-            let feedback_query: FeedbackQueryInternal<MultiDenseVectorInternal, _> =
+        QueryVector::FeedbackNaive(feedback_query) => {
+            let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
                 feedback_query.transform_into()?;
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 feedback_query.into_query(),

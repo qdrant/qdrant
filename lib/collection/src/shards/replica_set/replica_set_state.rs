@@ -1,10 +1,16 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 
 use crate::shards::shard::PeerId;
+
+/// Service version, starting from which `ManualRecovery` state is supported.
+pub static MANUAL_RECOVERY_SHARD_STATE_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.16.4-dev").expect("valid version string"));
 
 /// Represents a replica set state
 #[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq, Clone)]
@@ -19,8 +25,9 @@ impl ReplicaSetState {
         self.peers.get(&peer_id).copied()
     }
 
-    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
-        self.peers.insert(peer_id, state);
+    /// Returns previous state if any
+    pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) -> Option<ReplicaState> {
+        self.peers.insert(peer_id, state)
     }
 
     pub fn remove_peer_state(&mut self, peer_id: PeerId) -> Option<ReplicaState> {
@@ -117,6 +124,12 @@ pub enum ReplicaState {
     ReshardingScaleDown,
     // Active for readers, Partial for writers
     ActiveRead,
+    // State for manually creation/recovery of a shard.
+    // Usually when snapshot is uploaded.
+    // This state is equivalent to `Partial`, except:
+    // - it can't receive updates
+    // - it is not treated as broken on startup
+    ManualRecovery,
 }
 
 impl ReplicaState {
@@ -129,6 +142,7 @@ impl ReplicaState {
 
             ReplicaState::Dead
             | ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::Initializing
             | ReplicaState::Listener
             | ReplicaState::PartialSnapshot
@@ -147,6 +161,7 @@ impl ReplicaState {
             // False from here on
             ReplicaState::Dead => false,
             ReplicaState::Partial => false,
+            ReplicaState::ManualRecovery => false,
             ReplicaState::Initializing => false,
             ReplicaState::Listener => false,
             ReplicaState::PartialSnapshot => false,
@@ -165,6 +180,7 @@ impl ReplicaState {
             ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
             ReplicaState::Dead => false,
             ReplicaState::ActiveRead => true,
+            ReplicaState::ManualRecovery => false,
         }
     }
 
@@ -180,6 +196,7 @@ impl ReplicaState {
             ReplicaState::ReshardingScaleDown => true, // Acts like Active, until resharding is committed
             // false from here on
             ReplicaState::Partial => false,
+            ReplicaState::ManualRecovery => false,
             ReplicaState::Initializing => false,
             ReplicaState::Listener => false,
             ReplicaState::PartialSnapshot => false,
@@ -195,6 +212,7 @@ impl ReplicaState {
             ReplicaState::Active
             | ReplicaState::Listener
             | ReplicaState::Resharding
+            | ReplicaState::ManualRecovery
             | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Dead
@@ -202,6 +220,23 @@ impl ReplicaState {
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
+            | ReplicaState::ActiveRead => false,
+        }
+    }
+
+    /// Check if the replica state requires automatic recovery to be scheduled.
+    pub fn requires_recovery(self) -> bool {
+        match self {
+            ReplicaState::Dead => true,
+            ReplicaState::Active
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Listener
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::ManualRecovery
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown
             | ReplicaState::ActiveRead => false,
         }
     }
@@ -214,6 +249,7 @@ impl ReplicaState {
     pub fn is_partial_or_recovery(self) -> bool {
         match self {
             ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Resharding
@@ -233,6 +269,7 @@ impl ReplicaState {
             ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Partial
+            | ReplicaState::ManualRecovery
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
             | ReplicaState::Active

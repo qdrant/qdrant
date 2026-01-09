@@ -9,7 +9,6 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
@@ -18,6 +17,7 @@ use segment::types::{
 use semver::Version;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -132,6 +132,11 @@ impl QueueProxyShard {
                 progress,
             )),
         })
+    }
+
+    /// Get the wrapped local shard
+    pub(super) fn wrapped_shard(&self) -> Option<&LocalShard> {
+        self.inner.as_ref().map(|inner| &inner.wrapped_shard)
     }
 
     /// Get inner queue proxy shard. Will panic if the queue proxy has been finalized.
@@ -272,6 +277,18 @@ impl QueueProxyShard {
             .estimate_cardinality(filter, hw_measurement_acc)
             .await
     }
+
+    pub async fn set_extended_wal_retention(&self) {
+        if let Some(inner) = &self.inner {
+            inner.wrapped_shard.set_extended_wal_retention().await;
+        }
+    }
+
+    pub async fn set_normal_wal_retention(&self) {
+        if let Some(inner) = &self.inner {
+            inner.wrapped_shard.set_normal_wal_retention().await;
+        }
+    }
 }
 
 #[async_trait]
@@ -285,11 +302,12 @@ impl ShardOperation for QueueProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `Inner::update` is cancel safe, so this is also cancel safe.
         self.inner_unchecked()
-            .update(operation, wait, hw_measurement_acc)
+            .update(operation, wait, timeout, hw_measurement_acc)
             .await
     }
 
@@ -588,7 +606,9 @@ impl Inner {
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
             let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
-            match transfer_operations_batch(&batch, &self.remote_shard, wait, disposed_hw).await {
+            match transfer_operations_batch(&batch, &self.remote_shard, wait, None, disposed_hw)
+                .await
+            {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
@@ -636,6 +656,7 @@ impl ShardOperation for Inner {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` is cancel safe, so this is also cancel safe.
@@ -646,7 +667,7 @@ impl ShardOperation for Inner {
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
         local_shard
-            .update(operation.clone(), wait, hw_measurement_acc)
+            .update(operation.clone(), wait, timeout, hw_measurement_acc)
             .await
     }
 
@@ -790,6 +811,7 @@ async fn transfer_operations_batch(
     batch: &[(u64, OperationWithClockTag)],
     remote_shard: &RemoteShard,
     wait: bool,
+    timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
     if batch.is_empty() {
@@ -816,6 +838,7 @@ async fn transfer_operations_batch(
             .forward_update_batch(
                 batch_upd,
                 wait,
+                timeout,
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
@@ -838,6 +861,7 @@ async fn transfer_operations_batch(
             .forward_update(
                 operation,
                 wait,
+                timeout,
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )

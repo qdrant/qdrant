@@ -17,6 +17,7 @@ mod snapshot_tests;
 mod drop;
 #[cfg(feature = "testing")]
 pub mod testing;
+mod wal_ops;
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
@@ -39,14 +40,16 @@ use fs_err::tokio as tokio_fs;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
+use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
-use segment::segment_constructor::{build_segment, load_segment};
+use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
+use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::wal::SerdeWal;
@@ -82,14 +85,6 @@ use crate::wal_delta::{ReadOnlyWal, RecoverableWal, WalMode};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
-
-const WAL_PATH: &str = "wal";
-
-const SEGMENTS_PATH: &str = "segments";
-
-const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
-
-const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 
 /// LocalShard
 ///
@@ -145,43 +140,70 @@ impl LocalShard {
             to.display()
         );
 
-        let wal_from = Self::wal_path(from);
-        let wal_to = Self::wal_path(to);
-        let segments_from = Self::segments_path(from);
-        let segments_to = Self::segments_path(to);
+        let shard_data_files_from = shard::files::get_shard_data_files(from);
+        let shard_data_files_to = shard::files::get_shard_data_files(to);
+
+        let ShardDataFiles {
+            wal_path: wal_from,
+            segments_path: segments_from,
+            newest_clocks_path: newest_clocks_path_from,
+            oldest_clocks_path: oldest_clocks_path_from,
+        } = shard_data_files_from;
+
+        let ShardDataFiles {
+            wal_path: wal_to,
+            segments_path: segments_to,
+            newest_clocks_path: newest_clocks_path_to,
+            oldest_clocks_path: oldest_clocks_path_to,
+        } = shard_data_files_to;
 
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
-        LocalShardClocks::move_data(from, to).await?;
+        if newest_clocks_path_from.exists() {
+            move_file(newest_clocks_path_from, newest_clocks_path_to).await?;
+        }
+
+        if oldest_clocks_path_from.exists() {
+            move_file(oldest_clocks_path_from, oldest_clocks_path_to).await?;
+        }
 
         Ok(())
     }
 
     /// Checks if path have local shard data present
     pub fn check_data(shard_path: &Path) -> bool {
-        let wal_path = Self::wal_path(shard_path);
-        let segments_path = Self::segments_path(shard_path);
-        wal_path.exists() && segments_path.exists()
+        shard::files::check_data(shard_path)
     }
 
     /// Clear local shard related data.
     ///
     /// Do NOT remove config file.
     pub async fn clear(shard_path: &Path) -> CollectionResult<()> {
-        // Delete WAL
-        let wal_path = Self::wal_path(shard_path);
+        let shard_data_files = shard::files::get_shard_data_files(shard_path);
+
+        let ShardDataFiles {
+            wal_path,
+            segments_path,
+            newest_clocks_path,
+            oldest_clocks_path,
+        } = shard_data_files;
+
         if wal_path.exists() {
             tokio_fs::remove_dir_all(wal_path).await?;
         }
 
-        // Delete segments
-        let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
             tokio_fs::remove_dir_all(segments_path).await?;
         }
 
-        LocalShardClocks::delete_data(shard_path).await?;
+        if newest_clocks_path.exists() {
+            tokio_fs::remove_file(newest_clocks_path).await?;
+        }
+
+        if oldest_clocks_path.exists() {
+            tokio_fs::remove_file(oldest_clocks_path).await?;
+        }
 
         Ok(())
     }
@@ -292,7 +314,7 @@ impl LocalShard {
     /// Recovers shard from disk.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
-        _id: ShardId,
+        shard_id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
@@ -370,15 +392,16 @@ impl LocalShard {
                 let handle = tokio::task::spawn_blocking(move || {
                     let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
 
-                    let Some(mut segment) = segment else {
-                        fs::remove_dir_all(&segment_path).map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "failed to remove leftover segment {}: {err}",
-                                segment_path.display(),
-                            ))
-                        })?;
-
-                        return Ok(None);
+                    let mut segment = match segment {
+                        LoadSegmentOutcome::Loaded(segment) => segment,
+                        LoadSegmentOutcome::Skipped => {
+                            safe_delete_with_suffix(&segment_path).map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "failed to remove leftover segment: {err}",
+                                ))
+                            })?;
+                            return Ok(LoadSegmentOutcome::Skipped);
+                        }
                     };
 
                     segment.check_consistency_and_repair()?;
@@ -389,7 +412,7 @@ impl LocalShard {
                         )?;
                     }
 
-                    CollectionResult::Ok(Some(segment))
+                    CollectionResult::Ok(LoadSegmentOutcome::Loaded(segment))
                 });
                 AbortOnDropHandle::new(handle)
             })
@@ -398,10 +421,9 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
 
         while let Some(result) = segment_stream.next().await {
-            let segment = result??;
-
-            let Some(segment) = segment else {
-                continue;
+            let segment = match result?? {
+                LoadSegmentOutcome::Loaded(segment) => segment,
+                LoadSegmentOutcome::Skipped => continue,
             };
 
             collection_config_read
@@ -427,7 +449,7 @@ impl LocalShard {
 
         let res = deduplicate_points_async(&segment_holder).await?;
         if res > 0 {
-            log::debug!("Deduplicated {res} points");
+            log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
         }
 
         clear_temp_segments(shard_path);
@@ -492,11 +514,11 @@ impl LocalShard {
     }
 
     pub fn wal_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(WAL_PATH)
+        shard::files::wal_path(shard_path)
     }
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(SEGMENTS_PATH)
+        shard::files::segments_path(shard_path)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -798,7 +820,7 @@ impl LocalShard {
                     if let Err(err) = segment_guard.check_data_consistency() {
                         log::error!(
                             "Segment {:?} is inconsistent: {}",
-                            segment_guard.current_path,
+                            segment_guard.segment_path,
                             err
                         );
                         return Err(err.into());
@@ -871,9 +893,10 @@ impl LocalShard {
         filter: Option<&'a Filter>,
         runtime_handle: &Handle,
         hw_counter: HwMeasurementAcc,
+        timeout: Option<Duration>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter).await
+        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
@@ -1000,6 +1023,42 @@ impl LocalShard {
         self.wal.recovery_point().await
     }
 
+    /// Take snapshot of newest clocks, if not snapshotted already
+    ///
+    /// Also immediately persists clocks to disk.
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        let changed = self.wal.take_newest_clocks_snapshot().await;
+
+        // When taking clocks snapshot, persist changes immediately
+        if changed {
+            self.update_handler
+                .lock()
+                .await
+                .store_clocks_if_changed()
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear any snapshot of newest clocks
+    ///
+    /// Also immediately persists clocks to disk.
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        let changed = self.wal.clear_newest_clocks_snapshot().await;
+
+        // When clearing clocks snapshot, persist changes immediately
+        if changed {
+            self.update_handler
+                .lock()
+                .await
+                .store_clocks_if_changed()
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Update the cutoff point on the current shard
     ///
     /// This also updates the highest seen clocks.
@@ -1037,6 +1096,11 @@ impl LocalShard {
                 })?;
         }
         Ok(())
+    }
+
+    // Returns configured default search timeout if timeout is None
+    fn timeout_or_default_search_timeout(&self, timeout: Option<Duration>) -> Duration {
+        timeout.unwrap_or(self.shared_storage_config.search_timeout)
     }
 }
 
@@ -1128,45 +1192,11 @@ impl LocalShardClocks {
         Ok(())
     }
 
-    /// Move clock data on disk from one shard path to another.
-    pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
-        let newest_clocks_from = Self::newest_clocks_path(from);
-        let oldest_clocks_from = Self::oldest_clocks_path(from);
-
-        if newest_clocks_from.exists() {
-            let newest_clocks_to = Self::newest_clocks_path(to);
-            move_file(newest_clocks_from, newest_clocks_to).await?;
-        }
-
-        if oldest_clocks_from.exists() {
-            let oldest_clocks_to = Self::oldest_clocks_path(to);
-            move_file(oldest_clocks_from, oldest_clocks_to).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Delete clock data from disk at the given shard path.
-    pub async fn delete_data(shard_path: &Path) -> CollectionResult<()> {
-        let newest_clocks_path = Self::newest_clocks_path(shard_path);
-        let oldest_clocks_path = Self::oldest_clocks_path(shard_path);
-
-        if newest_clocks_path.exists() {
-            tokio_fs::remove_file(newest_clocks_path).await?;
-        }
-
-        if oldest_clocks_path.exists() {
-            tokio_fs::remove_file(oldest_clocks_path).await?;
-        }
-
-        Ok(())
-    }
-
     fn newest_clocks_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(NEWEST_CLOCKS_PATH)
+        shard::files::newest_clocks_path(shard_path)
     }
 
     fn oldest_clocks_path(shard_path: &Path) -> PathBuf {
-        shard_path.join(OLDEST_CLOCKS_PATH)
+        shard::files::oldest_clocks_path(shard_path)
     }
 }

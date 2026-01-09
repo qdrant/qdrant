@@ -43,11 +43,11 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
-
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -105,19 +105,40 @@ impl ShardOperation for LocalShard {
             operation_id
         };
 
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Completed,
-                clock_tag: operation.clock_tag,
-            })
-        } else {
-            Ok(UpdateResult {
+        match (callback_receiver, timeout) {
+            // Wait indefinitely
+            (Some(receiver), None) => {
+                let _ = receiver.await??;
+                Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                })
+            }
+            // Wait for timeout
+            (Some(receiver), Some(timeout)) => {
+                match tokio::time::timeout(timeout, receiver).await {
+                    Ok(res) => {
+                        res??;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::Completed,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
+                    Err(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                }
+            }
+            // Don't wait at all
+            (None, _) => Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
                 clock_tag: operation.clock_tag,
-            })
+            }),
         }
     }
 
@@ -157,7 +178,7 @@ impl ShardOperation for LocalShard {
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let order_by = order_by.clone().map(OrderBy::from);
-
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let result = match order_by {
             None => {
                 self.internal_scroll_by_id(
@@ -203,6 +224,7 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         self.internal_scroll_by_id(
             offset,
             limit,
@@ -233,6 +255,7 @@ impl ShardOperation for LocalShard {
         self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
@@ -255,13 +278,14 @@ impl ShardOperation for LocalShard {
         })?;
         let start_time = Instant::now();
         let total_count = if request.exact {
-            let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+            let timeout = self.timeout_or_default_search_timeout(timeout);
             let all_points = tokio::time::timeout(
                 timeout,
                 self.read_filtered(
                     request.filter.as_ref(),
                     search_runtime_handle,
                     hw_measurement_acc,
+                    Some(timeout),
                 ),
             )
             .await
@@ -289,7 +313,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+        let timeout = self.timeout_or_default_search_timeout(timeout);
 
         let start_time = Instant::now();
         let records_map = tokio::time::timeout(
@@ -339,7 +363,7 @@ impl ShardOperation for LocalShard {
                 .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
                 .sum()
         })?;
-
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let result = self
             .do_planned_query(
                 planned_query,
@@ -373,6 +397,7 @@ impl ShardOperation for LocalShard {
         })?;
 
         let start_time = Instant::now();
+        let timeout = self.timeout_or_default_search_timeout(timeout);
         let hits = if request.exact {
             self.exact_facet(
                 request.clone(),

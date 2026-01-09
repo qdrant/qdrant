@@ -241,7 +241,7 @@ mod tests {
         let old_path = segments_to_merge
             .iter()
             .map(|sid| match locked_holder.read().get(*sid).unwrap() {
-                LockedSegment::Original(x) => x.read().current_path.clone(),
+                LockedSegment::Original(x) => x.read().segment_path.clone(),
                 LockedSegment::Proxy(_) => panic!("Not expected"),
             })
             .collect_vec();
@@ -258,6 +258,7 @@ mod tests {
                 budget,
                 &AtomicBool::new(false),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 

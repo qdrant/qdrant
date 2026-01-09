@@ -16,10 +16,13 @@ workspace = true
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 fs-err = { workspace = true }
+fs_extra = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-fs-err = { workspace = true, features = ["debug"] }
+fs-err = { workspace = true, features = ["debug_tokio"] }
+tempfile = { workspace = true }

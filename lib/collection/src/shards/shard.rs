@@ -8,9 +8,9 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -38,7 +38,7 @@ pub type ShardReplicasPlacement = Vec<PeerId>;
 /// Example: [
 ///     [1, 2],
 ///     [2, 3],
-///     [3, 4]
+///     [3, 4],
 /// ] - 3 shards, each has 2 replicas
 pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
 
@@ -271,6 +271,44 @@ impl Shard {
         }
     }
 
+    pub async fn take_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.take_newest_clocks_snapshot().await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.take_newest_clocks_snapshot().await
+            }
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.take_newest_clocks_snapshot().await
+                } else {
+                    Ok(())
+                }
+            }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
+        }
+    }
+
+    pub async fn clear_newest_clocks_snapshot(&self) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.clear_newest_clocks_snapshot().await,
+            Self::Proxy(ProxyShard { wrapped_shard, .. })
+            | Self::ForwardProxy(ForwardProxyShard { wrapped_shard, .. }) => {
+                wrapped_shard.clear_newest_clocks_snapshot().await
+            }
+            Self::QueueProxy(proxy) => {
+                if let Some(local_shard) = proxy.wrapped_shard() {
+                    local_shard.clear_newest_clocks_snapshot().await
+                } else {
+                    Ok(())
+                }
+            }
+            // Ignore dummy shard, it is not loaded
+            Self::Dummy(_) => Ok(()),
+        }
+    }
+
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) -> CollectionResult<()> {
         match self {
             Self::Local(local_shard) => local_shard.update_cutoff(cutoff).await,
@@ -338,6 +376,27 @@ impl Shard {
                     self.variant_name(),
                 )))
             }
+        }
+    }
+
+    pub async fn set_extended_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_extended_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_extended_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_extended_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_extended_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
+        }
+    }
+
+    /// WAL is keeping normal amount of data after truncation.
+    pub async fn set_normal_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_normal_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_normal_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_normal_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_normal_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
         }
     }
 

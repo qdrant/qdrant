@@ -388,7 +388,8 @@ pub struct GeoLineString {
     #[prost(message, repeated, tag = "1")]
     pub points: ::prost::alloc::vec::Vec<GeoPoint>,
 }
-/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must consist of a minimum of 4 points.
+/// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
+/// consist of a minimum of 4 points.
 /// Additionally, the first and last points of each GeoLineString must be the same.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -433,15 +434,18 @@ pub struct VectorParams {
     /// Distance function used for comparing vectors
     #[prost(enumeration = "Distance", tag = "2")]
     pub distance: i32,
-    /// Configuration of vector HNSW graph. If omitted - the collection configuration will be used
+    /// Configuration of vector HNSW graph.
+    /// If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "3")]
     #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
-    /// Configuration of vector quantization config. If omitted - the collection configuration will be used
+    /// Configuration of vector quantization config.
+    /// If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "4")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
-    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    /// If true - serve vectors from disk.
+    /// If set to false, the vectors will be loaded in RAM.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
     /// Data type of the vectors
@@ -456,7 +460,8 @@ pub struct VectorParams {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsDiff {
-    /// Update params for HNSW index. If empty object - it will be unset
+    /// Update params for HNSW index.
+    /// If empty object - it will be unset
     #[prost(message, optional, tag = "1")]
     #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
@@ -464,7 +469,8 @@ pub struct VectorParamsDiff {
     #[prost(message, optional, tag = "2")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
-    /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+    /// If true - serve vectors from disk.
+    /// If set to false, the vectors will be loaded in RAM.
     #[prost(bool, optional, tag = "3")]
     pub on_disk: ::core::option::Option<bool>,
 }
@@ -709,10 +715,12 @@ pub struct CollectionWarning {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HnswConfigDiff {
-    /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    /// Number of edges per node in the index graph.
+    /// Larger the value - more accurate the search, more space required.
     #[prost(uint64, optional, tag = "1")]
     pub m: ::core::option::Option<u64>,
-    /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
+    /// Number of neighbours to consider during the index building.
+    /// Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
@@ -733,7 +741,8 @@ pub struct HnswConfigDiff {
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
-    /// Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
+    /// Number of additional payload-aware links per node in the index graph.
+    /// If not set - regular M parameter will be used.
     #[prost(uint64, optional, tag = "6")]
     pub payload_m: ::core::option::Option<u64>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
@@ -780,11 +789,13 @@ pub struct WalConfigDiff {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizersConfigDiff {
-    /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    /// The minimal fraction of deleted vectors in a segment, required to perform
+    /// segment optimization
     #[prost(double, optional, tag = "1")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: ::core::option::Option<f64>,
-    /// The minimal number of vectors in a segment, required to perform segment optimization
+    /// The minimal number of vectors in a segment, required to perform segment
+    /// optimization
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 100))]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
@@ -821,9 +832,11 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     #[prost(uint64, optional, tag = "5")]
     pub memmap_threshold: ::core::option::Option<u64>,
-    /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
+    /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding
+    /// this threshold will enable vector indexing
     ///
-    /// Default value is 20,000, based on <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
+    /// Default value is 20,000, based on
+    /// <<https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.>
     ///
     /// To disable vector indexing, set to `0`.
     ///
@@ -942,7 +955,8 @@ pub struct BinaryQuantization {
     /// Binary quantization encoding method
     #[prost(enumeration = "BinaryQuantizationEncoding", optional, tag = "2")]
     pub encoding: ::core::option::Option<i32>,
-    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+    /// Asymmetric quantization configuration allows a query to have different
+    /// quantization than stored vectors.
     /// It can increase the accuracy of search at the cost of performance.
     #[prost(message, optional, tag = "3")]
     pub query_encoding: ::core::option::Option<BinaryQuantizationQueryEncoding>,
@@ -1138,14 +1152,16 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Number of shards in the collection, default is 1 for standalone, otherwise equal to the number of nodes. Minimum is 1
+    /// Number of shards in the collection, default is 1 for standalone, otherwise
+    /// equal to the number of nodes. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub shard_number: ::core::option::Option<u32>,
     /// If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag = "8")]
     pub on_disk_payload: ::core::option::Option<bool>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds, if not specified - default
+    /// value will be supplied
     #[prost(uint64, optional, tag = "9")]
     pub timeout: ::core::option::Option<u64>,
     /// Configuration for vectors
@@ -1190,11 +1206,14 @@ pub struct UpdateCollection {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    /// New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete
+    /// New configuration parameters for the collection.
+    /// This operation is blocking, it will only proceed once all current
+    /// optimizations are complete
     #[prost(message, optional, tag = "2")]
     #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds if blocking.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "3")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
@@ -1221,7 +1240,8 @@ pub struct UpdateCollection {
     #[prost(message, optional, tag = "9")]
     #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
-    /// Arbitrary JSON-like metadata for the collection, will be merged with already stored metadata
+    /// Arbitrary JSON-like metadata for the collection, will be merged with
+    /// already stored metadata
     #[prost(map = "string, message", tag = "10")]
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
@@ -1237,7 +1257,8 @@ pub struct DeleteCollection {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
@@ -1340,6 +1361,11 @@ pub struct KeywordIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1351,12 +1377,19 @@ pub struct IntegerIndexParams {
     /// If true - support ranges filters. Default is true.
     #[prost(bool, optional, tag = "2")]
     pub range: ::core::option::Option<bool>,
-    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests. Default is false.
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
+    /// Default is false.
     #[prost(bool, optional, tag = "3")]
     pub is_principal: ::core::option::Option<bool>,
     /// If true - store index on disk. Default is false.
     #[prost(bool, optional, tag = "4")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "5")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1365,9 +1398,15 @@ pub struct FloatIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
-    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1376,6 +1415,11 @@ pub struct GeoIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "2")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1416,9 +1460,15 @@ pub struct TextIndexParams {
     /// Set an algorithm for stemming.
     #[prost(message, optional, tag = "8")]
     pub stemmer: ::core::option::Option<StemmingAlgorithm>,
-    /// If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao"). Default: false.
+    /// If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao").
+    /// Default: false.
     #[prost(bool, optional, tag = "9")]
     pub ascii_folding: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "10")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1453,6 +1503,11 @@ pub struct BoolIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "2")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1461,9 +1516,15 @@ pub struct DatetimeIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
-    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1475,6 +1536,11 @@ pub struct UuidIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1530,7 +1596,7 @@ pub struct PayloadSchemaInfo {
     /// Field index parameters
     #[prost(message, optional, tag = "2")]
     pub params: ::core::option::Option<PayloadIndexParams>,
-    /// Number of points indexed within this field indexed
+    /// Number of points indexed within this field
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
 }
@@ -1574,7 +1640,8 @@ pub struct ChangeAliases {
     /// List of actions
     #[prost(message, repeated, tag = "1")]
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "2")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
@@ -1746,7 +1813,8 @@ pub struct ShardTransferInfo {
     pub from: u64,
     #[prost(uint64, tag = "3")]
     pub to: u64,
-    /// If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
+    /// If `true` transfer is a synchronization of a replicas;
+    /// If `false` transfer is a moving of a shard from one peer to another
     #[prost(bool, tag = "4")]
     pub sync: bool,
 }
@@ -1908,7 +1976,8 @@ pub struct UpdateCollectionClusterSetupRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "6")]
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
@@ -1962,7 +2031,8 @@ pub struct CreateShardKeyRequest {
     /// Request to create shard key
     #[prost(message, optional, tag = "2")]
     pub request: ::core::option::Option<CreateShardKey>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "3")]
     pub timeout: ::core::option::Option<u64>,
 }
@@ -1976,7 +2046,8 @@ pub struct DeleteShardKeyRequest {
     /// Request to delete shard key
     #[prost(message, optional, tag = "2")]
     pub request: ::core::option::Option<DeleteShardKey>,
-    /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
+    /// Wait timeout for operation commit in seconds.
+    /// If not specified - default value will be supplied.
     #[prost(uint64, optional, tag = "3")]
     pub timeout: ::core::option::Option<u64>,
 }
@@ -2399,11 +2470,14 @@ pub enum ReplicaState {
     Partial = 2,
     /// Collection is being created
     Initializing = 3,
-    /// A shard which receives data, but is not used for search; Useful for backup shards
+    /// A shard which receives data, but is not used for search.
+    /// Useful for backup shards.
     Listener = 4,
-    /// Deprecated: snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
+    /// Deprecated: snapshot shard transfer is in progress.
+    /// Updates should not be sent to (and are ignored by) the shard.
     PartialSnapshot = 5,
-    /// Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true
+    /// Shard is undergoing recovery by an external node.
+    /// Normally rejects updates, accepts updates if force is true.
     Recovery = 6,
     /// Points are being migrated to this shard as part of scale-up resharding
     Resharding = 7,
@@ -2411,6 +2485,13 @@ pub enum ReplicaState {
     ReshardingScaleDown = 8,
     /// Active for readers, Partial for writers
     ActiveRead = 9,
+    /// State for manually creation/recovery of a shard.
+    /// Usually when snapshot is uploaded.
+    /// This state is equivalent to `Partial`, except:
+    ///
+    /// * it can't receive updates
+    /// * it is not treated as broken on startup
+    ManualRecovery = 10,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2429,6 +2510,7 @@ impl ReplicaState {
             ReplicaState::Resharding => "Resharding",
             ReplicaState::ReshardingScaleDown => "ReshardingScaleDown",
             ReplicaState::ActiveRead => "ActiveRead",
+            ReplicaState::ManualRecovery => "ManualRecovery",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2444,6 +2526,7 @@ impl ReplicaState {
             "Resharding" => Some(Self::Resharding),
             "ReshardingScaleDown" => Some(Self::ReshardingScaleDown),
             "ActiveRead" => Some(Self::ActiveRead),
+            "ManualRecovery" => Some(Self::ManualRecovery),
             _ => None,
         }
     }
@@ -2623,7 +2706,7 @@ pub mod collections_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Collections", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        /// Get list name of all existing collections
+        /// Get list of names of all existing collections
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListCollectionsRequest>,
@@ -2974,7 +3057,7 @@ pub mod collections_server {
             tonic::Response<super::GetCollectionInfoResponse>,
             tonic::Status,
         >;
-        /// Get list name of all existing collections
+        /// Get list of names of all existing collections
         async fn list(
             &self,
             request: tonic::Request<super::ListCollectionsRequest>,
@@ -4104,8 +4187,6 @@ pub mod collections_internal_client {
                 .insert(GrpcMethod::new("qdrant.CollectionsInternal", "Initiate"));
             self.inner.unary(req, path, codec).await
         }
-        /// *
-        ///
         /// Wait for a shard to get into the given state
         pub async fn wait_for_shard_state(
             &mut self,
@@ -4221,8 +4302,6 @@ pub mod collections_internal_server {
             tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
-        /// *
-        ///
         /// Wait for a shard to get into the given state
         async fn wait_for_shard_state(
             &self,
@@ -4638,7 +4717,8 @@ pub mod read_consistency {
         /// Common read consistency configurations
         #[prost(enumeration = "super::ReadConsistencyType", tag = "1")]
         Type(i32),
-        /// Send request to a specified number of nodes, and return points which are present on all of them
+        /// Send request to a specified number of nodes,
+        /// and return points which are present on all of them
         #[prost(uint64, tag = "2")]
         Factor(u64),
     }
@@ -4793,7 +4873,8 @@ pub struct MultiDenseVector {
     #[prost(message, repeated, tag = "1")]
     pub vectors: ::prost::alloc::vec::Vec<DenseVector>,
 }
-/// Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+/// Vector type to be used in queries.
+/// Ids will be substituted with their corresponding vectors from the collection.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5280,7 +5361,7 @@ pub mod with_vectors_selector {
         /// If `true` - return all vectors, if `false` - none
         #[prost(bool, tag = "1")]
         Enable(bool),
-        /// List of payload keys to include into result
+        /// List of vectors to include into result
         #[prost(message, tag = "2")]
         Include(super::VectorsSelector),
     }
@@ -5293,7 +5374,8 @@ pub struct QuantizationSearchParams {
     /// If set to true, search will ignore quantized vector data
     #[prost(bool, optional, tag = "1")]
     pub ignore: ::core::option::Option<bool>,
-    /// If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
+    /// If true, use original vectors to re-score top-k results.
+    /// If ignored, qdrant decides automatically does rescore enabled or not.
     #[prost(bool, optional, tag = "2")]
     pub rescore: ::core::option::Option<bool>,
     /// Oversampling factor for quantization.
@@ -5301,7 +5383,8 @@ pub struct QuantizationSearchParams {
     /// Defines how many extra vectors should be pre-selected using quantized index,
     /// and then re-scored using original vectors.
     ///
-    /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
+    /// For example, if `oversampling` is 2.4 and `limit` is 100,
+    /// then 240 vectors will be pre-selected using quantized index,
     /// and then top-100 will be returned after re-scoring.
     #[prost(double, optional, tag = "3")]
     #[validate(range(min = 1.0))]
@@ -5487,7 +5570,9 @@ pub struct SearchPointGroups {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
-    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    /// Payload field to group by, must be a string or number field.
+    /// If there are multiple values for the field, all of them will be used.
+    /// One point can be in multiple groups.
     #[prost(string, tag = "10")]
     #[validate(length(min = 1))]
     pub group_by: ::prost::alloc::string::String,
@@ -5739,7 +5824,9 @@ pub struct RecommendPointGroups {
     /// Name of the collection to use for points lookup, if not specified - use current collection
     #[prost(message, optional, tag = "11")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
-    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    /// Payload field to group by, must be a string or number field.
+    /// If there are multiple values for the field, all of them will be used.
+    /// One point can be in multiple groups.
     #[prost(string, tag = "12")]
     #[validate(length(min = 1))]
     pub group_by: ::prost::alloc::string::String,
@@ -6133,10 +6220,13 @@ pub struct DecayParamsExpression {
     #[prost(message, optional, boxed, tag = "2")]
     #[validate(nested)]
     pub target: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
-    /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
+    /// The scale factor of the decay, in terms of `x`.
+    /// Defaults to 1.0. Must be a non-zero positive number.
     #[prost(float, optional, tag = "3")]
     pub scale: ::core::option::Option<f32>,
-    /// The midpoint of the decay. Should be between 0 and 1. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+    /// The midpoint of the decay.
+    /// Should be between 0 and 1. Defaults to 0.5.
+    /// Output will be this value when `|x - target| == scale`.
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
@@ -6242,15 +6332,18 @@ pub mod query {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrefetchQuery {
-    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    /// Sub-requests to perform first.
+    /// If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "1")]
     #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
-    /// Query to perform. If missing, returns points ordered by their IDs.
+    /// Query to perform.
+    /// If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "2")]
     #[validate(nested)]
     pub query: ::core::option::Option<Query>,
-    /// Define which vector to use for querying. If missing, the default vector is is used.
+    /// Define which vector to use for querying.
+    /// If missing, the default vector is used.
     #[prost(string, optional, tag = "3")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6268,7 +6361,8 @@ pub struct PrefetchQuery {
     #[prost(uint64, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
-    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// The location to use for IDs lookup.
+    /// If not specified - use the current collection and the 'using' vector.
     #[prost(message, optional, tag = "8")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
 }
@@ -6284,7 +6378,8 @@ pub struct QueryPoints {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    /// Sub-requests to perform first.
+    /// If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "2")]
     #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
@@ -6292,7 +6387,8 @@ pub struct QueryPoints {
     #[prost(message, optional, tag = "3")]
     #[validate(nested)]
     pub query: ::core::option::Option<Query>,
-    /// Define which vector to use for querying. If missing, the default vector is used.
+    /// Define which vector to use for querying.
+    /// If missing, the default vector is used.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6322,10 +6418,12 @@ pub struct QueryPoints {
     /// Options for specifying read consistency guarantees.
     #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
-    /// Specify in which shards to look for the points, if not specified - look in all shards.
+    /// Specify in which shards to look for the points.
+    /// If not specified - look in all shards.
     #[prost(message, optional, tag = "13")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// The location to use for IDs lookup.
+    /// If not specified - use the current collection and the 'using' vector.
     #[prost(message, optional, tag = "14")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
@@ -6367,7 +6465,8 @@ pub struct QueryPointGroups {
         custom(function = "common::validation::validate_collection_name_legacy")
     )]
     pub collection_name: ::prost::alloc::string::String,
-    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    /// Sub-requests to perform first.
+    /// If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "2")]
     #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
@@ -6375,7 +6474,8 @@ pub struct QueryPointGroups {
     #[prost(message, optional, tag = "3")]
     #[validate(nested)]
     pub query: ::core::option::Option<Query>,
-    /// Define which vector to use for querying. If missing, the default vector is used.
+    /// Define which vector to use for querying.
+    /// If missing, the default vector is used.
     #[prost(string, optional, tag = "4")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
@@ -6395,18 +6495,21 @@ pub struct QueryPointGroups {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
-    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// The location to use for IDs lookup.
+    /// If not specified - use the current collection and the 'using' vector.
     #[prost(message, optional, tag = "10")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// Max number of points. Default is 3.
     #[prost(uint64, optional, tag = "11")]
     #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
-    /// Maximum amount of points to return per group. Default to 10.
+    /// Maximum amount of points to return per group. Defaults to 10.
     #[prost(uint64, optional, tag = "12")]
     #[validate(range(min = 1))]
     pub group_size: ::core::option::Option<u64>,
-    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    /// Payload field to group by, must be a string or number field.
+    /// If there are multiple values for the field, all of them will be used.
+    /// One point can be in multiple groups.
     #[prost(string, tag = "13")]
     #[validate(length(min = 1))]
     pub group_by: ::prost::alloc::string::String,
@@ -6520,7 +6623,7 @@ pub struct SearchMatrixPoints {
     #[prost(uint64, optional, tag = "4")]
     #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
-    /// Define which vector to use for querying. If missing, the default vector is is used.
+    /// Define which vector to use for querying. If missing, the default vector is used.
     #[prost(string, optional, tag = "5")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
@@ -6832,7 +6935,7 @@ pub mod group_id {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
-        /// Represents a double value.
+        /// Represents an unsigned integer value.
         #[prost(uint64, tag = "1")]
         UnsignedValue(u64),
         /// Represents an integer value
@@ -7209,9 +7312,11 @@ pub struct HardwareUsage {
 pub enum WriteOrderingType {
     /// Write operations may be reordered, works faster, default
     Weak = 0,
-    /// Write operations go through dynamically selected leader, may be inconsistent for a short period of time in case of leader change
+    /// Write operations go through dynamically selected leader,
+    /// may be inconsistent for a short period of time in case of leader change
     Medium = 1,
-    /// Write operations go through the permanent leader, consistent, but may be unavailable if leader is down
+    /// Write operations go through the permanent leader, consistent,
+    /// but may be unavailable if leader is down
     Strong = 2,
 }
 impl WriteOrderingType {
@@ -7448,6 +7553,8 @@ pub enum UpdateStatus {
     Completed = 2,
     /// Internal: update is rejected due to an outdated clock
     ClockRejected = 3,
+    /// Timeout of awaited operations
+    WaitTimeout = 4,
 }
 impl UpdateStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -7460,6 +7567,7 @@ impl UpdateStatus {
             UpdateStatus::Acknowledged => "Acknowledged",
             UpdateStatus::Completed => "Completed",
             UpdateStatus::ClockRejected => "ClockRejected",
+            UpdateStatus::WaitTimeout => "WaitTimeout",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -7469,6 +7577,7 @@ impl UpdateStatus {
             "Acknowledged" => Some(Self::Acknowledged),
             "Completed" => Some(Self::Completed),
             "ClockRejected" => Some(Self::ClockRejected),
+            "WaitTimeout" => Some(Self::WaitTimeout),
             _ => None,
         }
     }
@@ -7558,7 +7667,8 @@ pub mod points_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
+        /// Perform insert + updates on points.
+        /// If a point with a given ID already exists - it will be overwritten.
         pub async fn upsert(
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPoints>,
@@ -7829,7 +7939,8 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
-        /// Retrieve closest points based on vector similarity and given filtering conditions
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions
         pub async fn search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPoints>,
@@ -7849,7 +7960,8 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Search"));
             self.inner.unary(req, path, codec).await
         }
-        /// Retrieve closest points based on vector similarity and given filtering conditions
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions
         pub async fn search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchBatchPoints>,
@@ -7874,7 +7986,8 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "SearchBatch"));
             self.inner.unary(req, path, codec).await
         }
-        /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions, grouped by a given field
         pub async fn search_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchPointGroups>,
@@ -7920,7 +8033,8 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Scroll"));
             self.inner.unary(req, path, codec).await
         }
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples.
         pub async fn recommend(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPoints>,
@@ -7943,7 +8057,8 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Recommend"));
             self.inner.unary(req, path, codec).await
         }
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples.
         pub async fn recommend_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendBatchPoints>,
@@ -7969,7 +8084,8 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendBatch"));
             self.inner.unary(req, path, codec).await
         }
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples, grouped by a given field
         pub async fn recommend_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::RecommendPointGroups>,
@@ -7995,21 +8111,25 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "RecommendGroups"));
             self.inner.unary(req, path, codec).await
         }
-        /// Use context and a target to find the most similar points to the target, constrained by the context.
+        /// Use context and a target to find the most similar points to the target,
+        /// constrained by the context.
         ///
-        /// When using only the context (without a target), a special search - called context search - is performed where
-        /// pairs of points are used to generate a loss that guides the search towards the zone where
-        /// most positive examples overlap. This means that the score minimizes the scenario of
-        /// finding a point closer to a negative than to a positive part of a pair.
+        /// When using only the context (without a target), a special search - called
+        /// context search - is performed where pairs of points are used to generate a
+        /// loss that guides the search towards the zone where most positive examples
+        /// overlap. This means that the score minimizes the scenario of finding a
+        /// point closer to a negative than to a positive part of a pair.
         ///
-        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
-        /// and it becomes normal that many points can have a score of 0.0.
+        /// Since the score of a context relates to loss, the maximum score a point
+        /// can get is 0.0, and it becomes normal that many points can have a score of
+        /// 0.0.
         ///
-        /// When using target (with or without context), the score behaves a little different: The
-        /// integer part of the score represents the rank with respect to the context, while the
-        /// decimal part of the score relates to the distance to the target. The context part of the score for
-        /// each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair,
-        /// and -1 otherwise.
+        /// When using target (with or without context), the score behaves a little
+        /// different: The integer part of the score represents the rank with respect
+        /// to the context, while the decimal part of the score relates to the
+        /// distance to the target. The context part of the score for each pair is
+        /// calculated +1 if the point is closer to a positive than to a negative part
+        /// of a pair, and -1 otherwise.
         pub async fn discover(
             &mut self,
             request: impl tonic::IntoRequest<super::DiscoverPoints>,
@@ -8103,7 +8223,9 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "UpdateBatch"));
             self.inner.unary(req, path, codec).await
         }
-        /// Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         pub async fn query(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryPoints>,
@@ -8123,7 +8245,9 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Query"));
             self.inner.unary(req, path, codec).await
         }
-        /// Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points in a batch fashion.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         pub async fn query_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryBatchPoints>,
@@ -8146,7 +8270,9 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "QueryBatch"));
             self.inner.unary(req, path, codec).await
         }
-        /// Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points in a group fashion.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         pub async fn query_groups(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryPointGroups>,
@@ -8171,7 +8297,9 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "QueryGroups"));
             self.inner.unary(req, path, codec).await
         }
-        /// Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions.
+        /// Perform facet counts.
+        /// For each value in the field, count the number of points that have this
+        /// value and match the conditions.
         pub async fn facet(
             &mut self,
             request: impl tonic::IntoRequest<super::FacetCounts>,
@@ -8252,7 +8380,8 @@ pub mod points_server {
     /// Generated trait containing gRPC methods that should be implemented for use with PointsServer.
     #[async_trait]
     pub trait Points: Send + Sync + 'static {
-        /// Perform insert + updates on points. If a point with a given ID already exists - it will be overwritten.
+        /// Perform insert + updates on points.
+        /// If a point with a given ID already exists - it will be overwritten.
         async fn upsert(
             &self,
             request: tonic::Request<super::UpsertPoints>,
@@ -8337,12 +8466,14 @@ pub mod points_server {
             tonic::Response<super::PointsOperationResponse>,
             tonic::Status,
         >;
-        /// Retrieve closest points based on vector similarity and given filtering conditions
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions
         async fn search(
             &self,
             request: tonic::Request<super::SearchPoints>,
         ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        /// Retrieve closest points based on vector similarity and given filtering conditions
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions
         async fn search_batch(
             &self,
             request: tonic::Request<super::SearchBatchPoints>,
@@ -8350,7 +8481,8 @@ pub mod points_server {
             tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
         >;
-        /// Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given field
+        /// Retrieve closest points based on vector similarity and given filtering
+        /// conditions, grouped by a given field
         async fn search_groups(
             &self,
             request: tonic::Request<super::SearchPointGroups>,
@@ -8363,7 +8495,8 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::ScrollPoints>,
         ) -> std::result::Result<tonic::Response<super::ScrollResponse>, tonic::Status>;
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples.
         async fn recommend(
             &self,
             request: tonic::Request<super::RecommendPoints>,
@@ -8371,7 +8504,8 @@ pub mod points_server {
             tonic::Response<super::RecommendResponse>,
             tonic::Status,
         >;
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples.
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples.
         async fn recommend_batch(
             &self,
             request: tonic::Request<super::RecommendBatchPoints>,
@@ -8379,7 +8513,8 @@ pub mod points_server {
             tonic::Response<super::RecommendBatchResponse>,
             tonic::Status,
         >;
-        /// Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given field
+        /// Look for the points which are closer to stored positive examples and at
+        /// the same time further to negative examples, grouped by a given field
         async fn recommend_groups(
             &self,
             request: tonic::Request<super::RecommendPointGroups>,
@@ -8387,21 +8522,25 @@ pub mod points_server {
             tonic::Response<super::RecommendGroupsResponse>,
             tonic::Status,
         >;
-        /// Use context and a target to find the most similar points to the target, constrained by the context.
+        /// Use context and a target to find the most similar points to the target,
+        /// constrained by the context.
         ///
-        /// When using only the context (without a target), a special search - called context search - is performed where
-        /// pairs of points are used to generate a loss that guides the search towards the zone where
-        /// most positive examples overlap. This means that the score minimizes the scenario of
-        /// finding a point closer to a negative than to a positive part of a pair.
+        /// When using only the context (without a target), a special search - called
+        /// context search - is performed where pairs of points are used to generate a
+        /// loss that guides the search towards the zone where most positive examples
+        /// overlap. This means that the score minimizes the scenario of finding a
+        /// point closer to a negative than to a positive part of a pair.
         ///
-        /// Since the score of a context relates to loss, the maximum score a point can get is 0.0,
-        /// and it becomes normal that many points can have a score of 0.0.
+        /// Since the score of a context relates to loss, the maximum score a point
+        /// can get is 0.0, and it becomes normal that many points can have a score of
+        /// 0.0.
         ///
-        /// When using target (with or without context), the score behaves a little different: The
-        /// integer part of the score represents the rank with respect to the context, while the
-        /// decimal part of the score relates to the distance to the target. The context part of the score for
-        /// each pair is calculated +1 if the point is closer to a positive than to a negative part of a pair,
-        /// and -1 otherwise.
+        /// When using target (with or without context), the score behaves a little
+        /// different: The integer part of the score represents the rank with respect
+        /// to the context, while the decimal part of the score relates to the
+        /// distance to the target. The context part of the score for each pair is
+        /// calculated +1 if the point is closer to a positive than to a negative part
+        /// of a pair, and -1 otherwise.
         async fn discover(
             &self,
             request: tonic::Request<super::DiscoverPoints>,
@@ -8430,12 +8569,16 @@ pub mod points_server {
             tonic::Response<super::UpdateBatchResponse>,
             tonic::Status,
         >;
-        /// Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         async fn query(
             &self,
             request: tonic::Request<super::QueryPoints>,
         ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status>;
-        /// Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points in a batch fashion.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         async fn query_batch(
             &self,
             request: tonic::Request<super::QueryBatchPoints>,
@@ -8443,7 +8586,9 @@ pub mod points_server {
             tonic::Response<super::QueryBatchResponse>,
             tonic::Status,
         >;
-        /// Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        /// Universally query points in a group fashion.
+        /// This endpoint covers all capabilities of search, recommend, discover, filters.
+        /// But also enables hybrid and multi-stage queries.
         async fn query_groups(
             &self,
             request: tonic::Request<super::QueryPointGroups>,
@@ -8451,7 +8596,9 @@ pub mod points_server {
             tonic::Response<super::QueryGroupsResponse>,
             tonic::Status,
         >;
-        /// Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions.
+        /// Perform facet counts.
+        /// For each value in the field, count the number of points that have this
+        /// value and match the conditions.
         async fn facet(
             &self,
             request: tonic::Request<super::FacetCounts>,
@@ -10194,13 +10341,13 @@ pub mod feedback_strategy {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
         #[prost(message, tag = "1")]
-        Simple(super::SimpleFeedbackStrategy),
+        Naive(super::NaiveFeedbackStrategy),
     }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SimpleFeedbackStrategy {
+pub struct NaiveFeedbackStrategy {
     #[prost(float, tag = "1")]
     pub a: f32,
     #[prost(float, tag = "2")]
@@ -10227,13 +10374,15 @@ pub mod query_enum {
         /// Recommend points with higher similarity to positive examples
         #[prost(message, tag = "2")]
         RecommendBestScore(super::RecoQuery),
-        /// Search for points that get closer to a target, constrained by a context of positive and negative pairs
+        /// Search for points that get closer to a target,
+        /// constrained by a context of positive and negative pairs
         #[prost(message, tag = "3")]
         Discover(super::DiscoveryQuery),
         /// Use only the context to find points that minimize loss against negative examples
         #[prost(message, tag = "4")]
         Context(super::ContextQuery),
-        /// Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+        /// Recommend points which have the greatest sum of scores against all vectors.
+        /// Positive vectors are added, negatives are subtracted.
         #[prost(message, tag = "5")]
         RecommendSumScores(super::RecoQuery),
     }
@@ -10430,16 +10579,19 @@ pub mod raw_query {
         /// ANN
         #[prost(message, tag = "1")]
         Nearest(super::RawVector),
-        /// Recommend points with highest similarity to positive examples, or lowest to negative examples
+        /// Recommend points with highest similarity to positive examples,
+        /// or lowest to negative examples
         #[prost(message, tag = "2")]
         RecommendBestScore(Recommend),
-        /// Search for points that get closer to a target, constrained by a context of positive and negative pairs
+        /// Search for points that get closer to a target,
+        /// constrained by a context of positive and negative pairs
         #[prost(message, tag = "3")]
         Discover(Discovery),
         /// Use only the context to find points that minimize loss against negative examples
         #[prost(message, tag = "4")]
         Context(Context),
-        /// Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+        /// Recommend points which have the greatest sum of scores against all vectors.
+        /// Positive vectors are added, negatives are subtracted.
         #[prost(message, tag = "5")]
         RecommendSumScores(Recommend),
         #[prost(message, tag = "6")]
@@ -12350,18 +12502,40 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryRequest {
-    /// The peer id to ask for telemetry
-    #[prost(uint64, tag = "1")]
-    pub peer_id: u64,
+pub struct GetTelemetryRequest {
     /// The level of detail needed
-    #[prost(uint32, tag = "2")]
+    #[prost(uint32, tag = "1")]
     pub details_level: u32,
+    /// If present, select these collections
+    #[prost(message, optional, tag = "2")]
+    pub collections_selector: ::core::option::Option<CollectionsSelector>,
+    /// Timeout in secs for the request
+    #[prost(uint64, tag = "3")]
+    pub timeout: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryResponse {
+pub struct CollectionsSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub only_collections: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTelemetryResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<PeerTelemetry>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerTelemetry {
+    /// app
+    #[prost(message, optional, tag = "2")]
+    pub app: ::core::option::Option<AppTelemetry>,
     /// Mapping from collection name to its telemetry
     #[prost(map = "string, message", tag = "3")]
     pub collections: ::std::collections::HashMap<
@@ -12371,6 +12545,20 @@ pub struct GetPeerTelemetryResponse {
     /// Telemetry about the cluster and peers
     #[prost(message, optional, tag = "4")]
     pub cluster: ::core::option::Option<ClusterTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AppTelemetry {
+    /// Name of service
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Qdrant version
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// Last startup timestamp in seconds
+    #[prost(int64, tag = "3")]
+    pub startup: i64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12397,7 +12585,7 @@ pub struct ShardTransferTelemetry {
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
     /// Target shard ID if different than source shard ID.
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[prost(uint32, optional, tag = "2")]
     pub to_shard_id: ::core::option::Option<u32>,
     /// From peer id
@@ -12411,8 +12599,8 @@ pub struct ShardTransferTelemetry {
     #[prost(bool, tag = "5")]
     pub sync: bool,
     /// Method of transferring points
-    #[prost(enumeration = "ShardTransferMethod", tag = "6")]
-    pub method: i32,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "6")]
+    pub method: ::core::option::Option<i32>,
     /// Freeform string. Typically reports progress
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
@@ -12494,6 +12682,8 @@ pub mod shard_clean_status_telemetry {
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
+    #[prost(map = "uint64, message", tag = "3")]
+    pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12507,12 +12697,12 @@ pub struct ClusterStatusTelemetry {
     pub commit: u64,
     #[prost(uint64, tag = "4")]
     pub pending_operations: u64,
-    #[prost(enumeration = "StateRole", tag = "5")]
-    pub role: i32,
+    #[prost(enumeration = "StateRole", optional, tag = "5")]
+    pub role: ::core::option::Option<i32>,
     #[prost(bool, tag = "6")]
     pub is_voter: bool,
-    #[prost(uint64, tag = "7")]
-    pub peer_id: u64,
+    #[prost(uint64, optional, tag = "7")]
+    pub peer_id: ::core::option::Option<u64>,
     #[prost(message, optional, tag = "8")]
     pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
 }
@@ -12556,6 +12746,13 @@ pub mod consensus_thread_status {
         #[prost(message, tag = "3")]
         StoppedWithErr(StoppedWithErr),
     }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerInfo {
+    #[prost(string, tag = "1")]
+    pub uri: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -12796,12 +12993,12 @@ pub mod qdrant_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Get telemetry from a peer
-        pub async fn get_peer_telemetry(
+        /// Get telemetry
+        pub async fn get_telemetry(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetPeerTelemetryRequest>,
+            request: impl tonic::IntoRequest<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         > {
             self.inner
@@ -12815,11 +13012,11 @@ pub mod qdrant_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.QdrantInternal/GetPeerTelemetry",
+                "/qdrant.QdrantInternal/GetTelemetry",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetPeerTelemetry"));
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetTelemetry"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -12847,12 +13044,12 @@ pub mod qdrant_internal_server {
             tonic::Response<super::WaitOnConsensusCommitResponse>,
             tonic::Status,
         >;
-        /// Get telemetry from a peer
-        async fn get_peer_telemetry(
+        /// Get telemetry
+        async fn get_telemetry(
             &self,
-            request: tonic::Request<super::GetPeerTelemetryRequest>,
+            request: tonic::Request<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         >;
     }
@@ -13032,26 +13229,25 @@ pub mod qdrant_internal_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.QdrantInternal/GetPeerTelemetry" => {
+                "/qdrant.QdrantInternal/GetTelemetry" => {
                     #[allow(non_camel_case_types)]
-                    struct GetPeerTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
+                    struct GetTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
                     impl<
                         T: QdrantInternal,
-                    > tonic::server::UnaryService<super::GetPeerTelemetryRequest>
-                    for GetPeerTelemetrySvc<T> {
-                        type Response = super::GetPeerTelemetryResponse;
+                    > tonic::server::UnaryService<super::GetTelemetryRequest>
+                    for GetTelemetrySvc<T> {
+                        type Response = super::GetTelemetryResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetPeerTelemetryRequest>,
+                            request: tonic::Request<super::GetTelemetryRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as QdrantInternal>::get_peer_telemetry(&inner, request)
-                                    .await
+                                <T as QdrantInternal>::get_telemetry(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -13063,7 +13259,7 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetPeerTelemetrySvc(inner);
+                        let method = GetTelemetrySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

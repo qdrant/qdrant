@@ -1,15 +1,18 @@
-use bytemuck::TransparentWrapper as _;
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::*;
 
+use crate::repr::*;
 use crate::types::*;
 
 #[pyclass(name = "FieldCondition")]
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
 pub struct PyFieldCondition(pub FieldCondition);
 
+#[pyclass_repr]
 #[pymethods]
 impl PyFieldCondition {
     #[new]
@@ -92,5 +95,22 @@ impl PyFieldCondition {
     #[getter]
     pub fn is_null(&self) -> Option<bool> {
         self.0.is_null
+    }
+}
+
+impl PyFieldCondition {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_bounding_box: _,
+            geo_radius: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty: _,
+            is_null: _,
+        } = self.0;
     }
 }

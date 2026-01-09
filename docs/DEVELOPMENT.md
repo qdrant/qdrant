@@ -108,11 +108,8 @@ To run Qdrant on local development environment you need to install below:
 
     ./target/release/qdrant
     ```
-- Install Python dependencies for testing
-    ```shell
-    poetry -C tests install --no-root
-    ```
-    Then you could use `poetry -P tests run pytest tests/openapi` and `poetry -P tests run pytest tests/consensus_tests` to run the tests.
+- Install [uv](https://docs.astral.sh/uv) for testing
+    Then you can use `uv --project tests run pytest tests/openapi` and `uv --project tests run pytest tests/consensus_tests` to run the tests.
 - Use the web UI
 
     Web UI repo is [in a separate repo](https://github.com/qdrant/qdrant-web-ui), but there's a utility script to sync it to the `static` folder:
@@ -297,7 +294,7 @@ Here is a quick step-by-step guide:
 2. change specs in `/openapi/*ytt.yaml`
 3. add new schema definitions to `src/schema_generator.rs`
 4. run `./tools/generate_openapi_models.sh` to generate specs
-5. update integration tests `tests/openapi` and run them with `pytest tests/openapi` (use poetry or nix to get `pytest`)
+5. update integration tests `tests/openapi` and run them with `uv --project tests run pytest tests/openapi`
 6. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 7. validate specs by browsing redoc on `http://localhost:8000/?v=master`
 8. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)

@@ -35,6 +35,7 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
@@ -53,6 +54,7 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -203,7 +205,10 @@ pub struct CollectionInfo {
 }
 
 impl CollectionInfo {
-    pub fn empty(collection_config: CollectionConfigInternal) -> Self {
+    pub fn empty(
+        collection_config: CollectionConfigInternal,
+        payload_schema: PayloadIndexSchema,
+    ) -> Self {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
@@ -212,7 +217,11 @@ impl CollectionInfo {
             points_count: Some(0),
             segments_count: 0,
             config: CollectionConfig::from(collection_config),
-            payload_schema: HashMap::new(),
+            payload_schema: payload_schema
+                .schema
+                .into_iter()
+                .map(|(k, v)| (k, PayloadIndexInfo::new(v, 0)))
+                .collect(),
         }
     }
 }
@@ -302,7 +311,7 @@ pub struct ShardTransferInfo {
 
     /// Target shard ID if different than source shard ID
     ///
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub to_shard_id: Option<ShardId>,
@@ -345,6 +354,11 @@ pub struct ReshardingInfo {
     pub peer_id: PeerId,
 
     pub shard_key: Option<ShardKey>,
+
+    /// Only included in peer telemetry
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub stage: ReshardingStage,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -377,14 +391,39 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
+/// `WaitTimeout` - Request is waiting for timeout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
+    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
     ClockRejected,
+}
+
+impl UpdateStatus {
+    /// Returns priority of the update status
+    ///
+    /// A higher value means the status is more significant
+    pub fn priority(&self) -> i32 {
+        match self {
+            UpdateStatus::Acknowledged => 0,
+            UpdateStatus::Completed => 1,
+            UpdateStatus::WaitTimeout => 2,
+            UpdateStatus::ClockRejected => 3,
+        }
+    }
+
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            UpdateStatus::WaitTimeout => true,
+            UpdateStatus::Acknowledged => false,
+            UpdateStatus::Completed => false,
+            UpdateStatus::ClockRejected => false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]

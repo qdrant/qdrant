@@ -253,7 +253,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         let original_segment_path = match segment {
-            LockedSegment::Original(s) => s.read().current_path.clone(),
+            LockedSegment::Original(s) => s.read().segment_path.clone(),
             LockedSegment::Proxy(_) => panic!("Not expected"),
         };
 
@@ -356,6 +356,7 @@ mod tests {
                 budget.clone(),
                 &AtomicBool::new(false),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
 
@@ -509,6 +510,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");
@@ -626,6 +628,7 @@ mod tests {
                 budget.clone(),
                 &false.into(),
                 ProgressTracker::new_for_test(),
+                Box::new(|| ()),
             )
             .unwrap();
         assert!(changed > 0, "optimizer should have rebuilt this segment");

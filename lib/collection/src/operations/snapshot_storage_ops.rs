@@ -5,7 +5,7 @@ use common::budget::ResourceBudget;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::StreamExt;
-use object_store::WriteMultipart;
+use object_store::{ObjectStoreExt, WriteMultipart};
 use segment::common::BYTES_IN_MB;
 use tokio::io::AsyncWriteExt;
 

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
 
@@ -21,13 +22,13 @@ pub(crate) struct BufferedDynamicFlags {
     buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
 
     /// Lock to prevent concurrent flush and drop
-    is_alive_flush_lock: Arc<Mutex<bool>>,
+    is_alive_flush_lock: IsAliveLock,
 }
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
         let buffer = Arc::new(RwLock::new(AHashMap::new()));
-        let is_alive_flush_lock = Arc::new(Mutex::new(true));
+        let is_alive_flush_lock = IsAliveLock::new();
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
             buffer,
@@ -50,30 +51,29 @@ impl BufferedDynamicFlags {
     }
 
     pub fn flusher(&self) -> Flusher {
-        // take pending changes
-        let (updates, required_len) = {
-            let mut buffer_guard = self.buffer.write();
-            let updates = std::mem::take(&mut *buffer_guard);
-            let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
+        let updates = {
+            let buffer_guard = self.buffer.read();
+            if buffer_guard.is_empty() {
                 return Box::new(|| Ok(()));
-            };
-            (updates, required_len)
+            }
+            buffer_guard.clone()
+        };
+
+        let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
+            return Box::new(|| Ok(()));
         };
 
         // Weak reference to detect when the storage has been deleted
         let flags_arc = Arc::downgrade(&self.storage);
-        let is_alive_flush_lock = self.is_alive_flush_lock.clone();
+        let buffer = Arc::downgrade(&self.buffer);
+        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
-            let is_alive_flush_guard = is_alive_flush_lock.lock();
-
-            if !*is_alive_flush_guard {
-                // Storage is removed, skip flush
-                return Ok(());
-            }
-
-            let Some(flags_arc) = flags_arc.upgrade() else {
+            let (Some(is_alive_flush_guard), Some(flags_arc), Some(buffer_arc)) = (
+                is_alive_flush_lock.lock_if_alive(),
+                flags_arc.upgrade(),
+                buffer.upgrade(),
+            ) else {
                 log::debug!("skipping flushing on deleted storage");
                 return Ok(());
             };
@@ -86,22 +86,32 @@ impl BufferedDynamicFlags {
                 flags_guard.set_len(required_len)?;
             }
 
-            for (index, value) in updates {
+            for (&index, &value) in &updates {
                 flags_guard.set(index as usize, value);
             }
 
             flags_guard.flusher()()?;
+
+            // Keep the guard till here to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
+            drop(is_alive_flush_guard);
+
+            reconcile_persisted_buffer(&buffer_arc, updates);
 
             Ok(())
         })
     }
 }
 
-impl Drop for BufferedDynamicFlags {
-    fn drop(&mut self) {
-        // Wait for all background flush operations to finish, and cancel future flushes
-        *self.is_alive_flush_lock.lock() = false;
-    }
+/// Removes from `buffer` all results that are flushed.
+/// If values in `pending_updates` are changed, do not remove them.
+fn reconcile_persisted_buffer(
+    buffer: &RwLock<AHashMap<u32, bool>>,
+    persisted: AHashMap<u32, bool>,
+) {
+    buffer
+        .write()
+        .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
 #[cfg(test)]

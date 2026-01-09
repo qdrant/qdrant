@@ -213,7 +213,7 @@ impl GpuScalarQuantization {
     ) -> OperationResult<Self> {
         Ok(GpuScalarQuantization {
             multiplier: quantized_storage.get_multiplier(),
-            diff: quantized_storage.get_diff(),
+            diff: quantized_storage.get_shift(),
             offsets_buffer: GpuScalarQuantization::create_sq_offsets_buffer(
                 device,
                 quantized_storage,

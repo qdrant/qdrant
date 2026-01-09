@@ -2,10 +2,8 @@ from qdrant_edge import *
 from common import *
 
 
-
 shard = load_new_shard()
 fill_dummy_data(shard)
-
 
 search_filter = Filter(
     must=[
@@ -15,7 +13,6 @@ search_filter = Filter(
         )
     ]
 )
-
 
 result = shard.query(QueryRequest(
     prefetches = [
@@ -36,7 +33,7 @@ result = shard.query(QueryRequest(
             score_threshold=None,
         )
     ],
-    query = Fusion.rrfk(2),
+    query = Fusion.Rrfk(2),
     filter = None,
     score_threshold = None,
     limit = 10,
@@ -46,9 +43,5 @@ result = shard.query(QueryRequest(
     with_payload = True,
 ))
 
-
 for point in result:
-    print(f"Point: {point.id}, vector: {point.vector}, payload: {point.payload}, score: {point.score}")
-
-
-
+    print(point)

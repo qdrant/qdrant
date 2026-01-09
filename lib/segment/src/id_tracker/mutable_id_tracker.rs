@@ -1,10 +1,13 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
-use std::mem;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
@@ -24,7 +27,7 @@ const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum MappingChange {
     Insert(PointIdType, PointOffsetType),
     Delete(PointIdType),
@@ -101,10 +104,21 @@ pub struct MutableIdTracker {
     pub(super) mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
-    pending_versions: Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
+    pending_versions: Arc<Mutex<BTreeMap<PointOffsetType, SeqNumberType>>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
-    pending_mappings: Mutex<Vec<MappingChange>>,
+    pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
+
+    is_alive_lock: IsAliveLock,
+
+    /// Expected length of the mappings file in bytes
+    ///
+    /// We initialize this on load, and keep bumping it after reach successful flush. Pending
+    /// changes are written to the file after this offset.
+    ///
+    /// If we have more bytes on disk it probably indicates a partial flush. If we have less bytes
+    /// on disk we hit some kind of a bug.
+    mappings_expected_len: Arc<AtomicU64>,
 }
 
 impl MutableIdTracker {
@@ -131,12 +145,12 @@ impl MutableIdTracker {
             );
         }
 
-        let mappings = if has_mappings {
+        let (mappings, mappings_expected_len) = if has_mappings {
             load_mappings(&mappings_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
             })?
         } else {
-            PointMappings::default()
+            (PointMappings::default(), 0)
         };
 
         let internal_to_version = if has_versions {
@@ -169,6 +183,8 @@ impl MutableIdTracker {
             mappings,
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
+            is_alive_lock: IsAliveLock::new(),
+            mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
         })
     }
 
@@ -289,20 +305,50 @@ impl IdTracker for MutableIdTracker {
     fn mapping_flusher(&self) -> Flusher {
         let mappings_path = mappings_path(&self.segment_path);
 
-        // Take out pending mappings to flush and replace it with a preallocated vector to avoid
-        // frequent reallocation on a busy segment
-        let pending_mappings = {
-            let mut pending_mappings = self.pending_mappings.lock();
-            let count = pending_mappings.len();
-            mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
+        let changes = {
+            let changes_guard = self.pending_mappings.lock();
+            if changes_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            changes_guard.clone()
         };
 
+        let is_alive_handle = self.is_alive_lock.handle();
+        let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
+        let mappings_expected_len = self.mappings_expected_len.clone();
+
         Box::new(move || {
-            if pending_mappings.is_empty() {
+            let (Some(is_alive_guard), Some(pending_mappings_arc)) = (
+                is_alive_handle.lock_if_alive(),
+                pending_mappings_weak.upgrade(),
+            ) else {
                 return Ok(());
+            };
+
+            let stored = store_mapping_changes(&mappings_path, &changes, &mappings_expected_len);
+
+            // If persisting mappings failed, try to truncate mappings file to what we had before
+            // in an best effort to get rid of partially persisted mappings. We can safely ignore
+            // truncate errors because load should properly handle partial entries as well.
+            if let Err(err) = stored {
+                let expected_len = mappings_expected_len.load(std::sync::atomic::Ordering::Relaxed);
+                let truncate_result = File::options()
+                    .write(true)
+                    .open(&mappings_path)
+                    .and_then(|f| f.set_len(expected_len));
+                if let Err(err) = truncate_result {
+                    log::warn!(
+                        "Failed to truncate mutable ID tracker mappings file after failed flush, ignoring: {err}"
+                    );
+                }
+                return Err(err);
             }
 
-            store_mapping_changes(&mappings_path, pending_mappings)
+            reconcile_persisted_mapping_changes(&pending_mappings_arc, &changes);
+
+            drop(is_alive_guard);
+
+            Ok(())
         })
     }
 
@@ -310,15 +356,34 @@ impl IdTracker for MutableIdTracker {
     /// and flushes the version database to disk.
     /// This function should be called _after_ flushing the mapping database.
     fn versions_flusher(&self) -> Flusher {
+        let changes = {
+            let changes_guard = self.pending_versions.lock();
+            if changes_guard.is_empty() {
+                return Box::new(|| Ok(()));
+            }
+            changes_guard.clone()
+        };
+
         let versions_path = versions_path(&self.segment_path);
-        let pending_versions = mem::take(&mut *self.pending_versions.lock());
+
+        let pending_versions_weak = Arc::downgrade(&self.pending_versions);
+        let is_alive_handle = self.is_alive_lock.handle();
 
         Box::new(move || {
-            if pending_versions.is_empty() {
+            let (Some(is_alive_guard), Some(pending_versions_arc)) = (
+                is_alive_handle.lock_if_alive(),
+                pending_versions_weak.upgrade(),
+            ) else {
                 return Ok(());
-            }
+            };
 
-            store_version_changes(&versions_path, pending_versions)
+            store_version_changes(&versions_path, &changes)?;
+
+            reconcile_persisted_version_changes(&pending_versions_arc, changes);
+
+            drop(is_alive_guard);
+
+            Ok(())
         })
     }
 
@@ -360,12 +425,47 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 }
 
 /// Store new mapping changes, appending them to the given file
-fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> OperationResult<()> {
+fn store_mapping_changes(
+    mappings_path: &Path,
+    changes: &Vec<MappingChange>,
+    persisted_mappings_size: &AtomicU64,
+) -> OperationResult<()> {
     // Create or open file in append mode to write new changes to the end
     let file = File::options()
         .create(true)
         .append(true)
         .open(mappings_path)?;
+
+    // Ensure correct file length to not corrupt mappings when appending
+    let file_len = file
+        .metadata()
+        .map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to get ID tracker mappings file size: {err}"
+            ))
+        })?
+        .len();
+    let file_start_appending = persisted_mappings_size.load(std::sync::atomic::Ordering::Relaxed);
+    match file_len.cmp(&file_start_appending) {
+        // File size is what we expect, continue normally
+        Ordering::Equal => {}
+        // File is larger than expected, previous flush might not have completed properly
+        // Clean up by truncating to what we expect, then append
+        // May happen if system is out of disk space and the file cannot be grown
+        Ordering::Greater => {
+            file.set_len(file_start_appending)
+                .map_err(|err| OperationError::service_error(
+                    format!("Failed to truncate mutable ID tracker mappings file that is too large, ignoring: {err}"),
+                ))?;
+        }
+        // File is smaller than expected, indicates a bug we cannot recover from
+        Ordering::Less => {
+            return Err(OperationError::service_error(format!(
+                "Mutable ID tracker mappings file size is less than persisted mappings size, cannot append new mappings (file size: {file_len}, persisted mappings size: {file_start_appending})",
+            )));
+        }
+    }
+
     let mut writer = BufWriter::new(file);
 
     write_mapping_changes(&mut writer, changes).map_err(|err| {
@@ -375,12 +475,28 @@ fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> O
         ))
     })?;
 
-    // Explicitly fsync file contents to ensure durability
     writer.flush()?;
-    let file = writer.into_inner().unwrap();
+    let mut file = writer.into_inner().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to flush ID tracker point mappings write buffer: {err}"
+        ))
+    })?;
+
+    // Get new persisted size as a position after writing all changes.
+    // Stream position is used here to handle cases where the pending changes are shorter than non-persisted part.
+    let new_persisted_size = file.stream_position().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to get new persisted size of ID tracker mappings: {err}"
+        ))
+    })?;
+
+    // Explicitly fsync file contents to ensure durability
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
     })?;
+
+    // Update persisted mappings size.
+    persisted_mappings_size.store(new_persisted_size, std::sync::atomic::Ordering::Relaxed);
 
     Ok(())
 }
@@ -395,9 +511,9 @@ fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> O
 /// See [`read_entry`] and [`write_entry`] for more details.
 fn write_mapping_changes<W: Write>(
     mut writer: W,
-    changes: Vec<MappingChange>,
+    changes: &Vec<MappingChange>,
 ) -> OperationResult<()> {
-    for change in changes {
+    for &change in changes {
         write_entry(&mut writer, change)?;
     }
 
@@ -407,10 +523,11 @@ fn write_mapping_changes<W: Write>(
     Ok(())
 }
 
-/// Load point mappings from the given file
+/// Load point mappings from the given file.
+/// Returns loaded point mappings and the number of bytes read from the file.
 ///
 /// If the file ends with an incomplete entry, it is truncated from the file.
-fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
+fn load_mappings(mappings_path: &Path) -> OperationResult<(PointMappings, u64)> {
     let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
@@ -437,7 +554,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
         file.sync_all()?;
     }
 
-    Ok(mappings)
+    Ok((mappings, read_to))
 }
 
 /// Iterate over mapping changes from the given reader
@@ -684,7 +801,7 @@ fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
 /// Store new version changes, appending them to the given file
 fn store_version_changes(
     versions_path: &Path,
-    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+    changes: &BTreeMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()> {
     if changes.is_empty() {
         return Ok(());
@@ -740,7 +857,7 @@ fn store_version_changes(
 /// Serializes pending point version changes into the given writer
 fn write_version_changes<W>(
     mut writer: W,
-    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+    changes: &BTreeMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()>
 where
     W: Write + Seek,
@@ -748,7 +865,7 @@ where
     let mut position = writer.stream_position()?;
 
     // Write all changes, must be ordered by internal ID, see optimization note below
-    for (internal_id, version) in changes {
+    for (&internal_id, &version) in changes {
         let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
 
         // Seek to correct position if not already at it
@@ -780,6 +897,36 @@ where
     writer.flush()?;
 
     Ok(())
+}
+
+fn reconcile_persisted_version_changes(
+    pending: &Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+) {
+    pending.lock().retain(|point_offset, pending_version| {
+        changes
+            .get(point_offset)
+            .is_none_or(|persisted_version| pending_version != persisted_version)
+    });
+}
+
+fn reconcile_persisted_mapping_changes(
+    pending: &Mutex<Vec<MappingChange>>,
+    changes: &Vec<MappingChange>,
+) {
+    let mut pending = pending.lock();
+
+    // Count how many entries are equal in both lists
+    // With concurrent flushers it is possible that the beginning of the lists doesn't match. Since
+    // each event is idempotent it is not a problem, and we can store everything again in the next
+    // iteration.
+    let count = pending
+        .iter()
+        .zip(changes)
+        .take_while(|(pending, persisted)| pending == persisted)
+        .count();
+
+    pending.drain(0..count);
 }
 
 #[cfg(test)]
@@ -1158,6 +1305,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1173,6 +1321,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1188,6 +1337,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1202,6 +1352,7 @@ pub(super) mod tests {
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );

@@ -49,7 +49,7 @@ async fn test_delete_from_indexed_payload() {
     let hw_acc = HwMeasurementAcc::new();
 
     shard
-        .update(upsert_ops.into(), true, hw_acc.clone())
+        .update(upsert_ops.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -64,13 +64,13 @@ async fn test_delete_from_indexed_payload() {
         })
         .unwrap();
     shard
-        .update(index_op.into(), true, hw_acc.clone())
+        .update(index_op.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(delete_point_op.into(), true, hw_acc.clone())
+        .update(delete_point_op.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -106,7 +106,7 @@ async fn test_delete_from_indexed_payload() {
     eprintln!("dropping point 5");
     let delete_point_op = delete_point_operation(5);
     shard
-        .update(delete_point_op.into(), true, hw_acc.clone())
+        .update(delete_point_op.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -179,7 +179,7 @@ async fn test_partial_flush_recovery() {
     let hw_acc = HwMeasurementAcc::new();
 
     shard
-        .update(upsert_ops.into(), true, hw_acc.clone())
+        .update(upsert_ops.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -195,7 +195,7 @@ async fn test_partial_flush_recovery() {
         .unwrap();
 
     shard
-        .update(index_op.into(), true, hw_acc.clone())
+        .update(index_op.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 
@@ -205,7 +205,7 @@ async fn test_partial_flush_recovery() {
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(delete_point_op.into(), true, hw_acc.clone())
+        .update(delete_point_op.into(), true, None, hw_acc.clone())
         .await
         .unwrap();
 

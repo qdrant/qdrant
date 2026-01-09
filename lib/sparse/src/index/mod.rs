@@ -1,5 +1,6 @@
 pub mod compressed_posting_list;
 pub mod inverted_index;
+#[cfg(feature = "testing")]
 pub mod loaders;
 pub mod posting_list;
 pub mod posting_list_common;

@@ -1,4 +1,4 @@
-name: Qdrant Edge
+name: Qdrant Edge Tests
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
     branches: [ '**' ]
 
 jobs:
-  qdrant-edge-py:
-    name: Build Qdrant Edge Python bindings
+  edge-py-test:
+    name: Test Python bindings
 
     runs-on: ubuntu-latest
 
@@ -55,7 +55,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
 
-          maturin develop --no-default-features
+          maturin develop --no-default-features --features abi3
 
       - name: Run Qdrant Edge examples
         run: |

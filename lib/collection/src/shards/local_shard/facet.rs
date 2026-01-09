@@ -24,11 +24,9 @@ impl LocalShard {
         &self,
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
-
         let stopping_guard = StoppingGuard::new();
 
         let spawn_read = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
@@ -93,16 +91,13 @@ impl LocalShard {
         &self,
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
         // To return exact counts we need to consider that the same point can be in different segments if it has different versions.
         // So, we need to consider all point ids for a given filter in all segments to do an accurate count.
         //
         // To do this we will perform exact counts for each of the values in the field.
-
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
-
         let instant = std::time::Instant::now();
 
         // Get unique values for the field
@@ -127,7 +122,12 @@ impl LocalShard {
             let hw_acc = hw_measurement_acc.clone();
             async move {
                 let count = self
-                    .read_filtered(filter.as_ref(), search_runtime_handle, hw_acc)
+                    .read_filtered(
+                        filter.as_ref(),
+                        search_runtime_handle,
+                        hw_acc,
+                        Some(timeout.saturating_sub(instant.elapsed())),
+                    )
                     .await?
                     .len();
                 CollectionResult::Ok(FacetValueHit { value, count })

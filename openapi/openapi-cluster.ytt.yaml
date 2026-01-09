@@ -10,6 +10,31 @@ paths:
       operationId: cluster_status
       responses: #@ response(reference("ClusterStatus"))
 
+  /cluster/telemetry:
+    get:
+      tags:
+        - Distributed
+      summary: Collect cluster telemetry data
+      description: Get telemetry data, from the point of view of the cluster. This includes peers info, collections info, shard transfers, and resharding status
+      operationId: cluster_telemetry
+      parameters:
+        - name: details_level
+          in: query
+          description: The level of detail to include in the response
+          required: false
+          schema:
+            type: integer
+        #! todo: - name: anonymize
+        - name: timeout
+          in: query
+          description: Timeout for this request
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 60
+      responses: #@ response(reference("DistributedTelemetryData"))
+
   /cluster/recover:
     post:
       tags:

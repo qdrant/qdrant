@@ -32,7 +32,7 @@ use crate::common::{
     dummy_request_shard_transfer,
 };
 
-// RUST_LOG=trace cargo nextest run --all continuous --nocapture
+// RUST_LOG=trace cargo nextest run --workspace continuous --nocapture
 #[tokio::test(flavor = "multi_thread")]
 async fn test_continuous_snapshot() {
     // Initialize logger for tests
@@ -80,7 +80,7 @@ async fn test_continuous_snapshot() {
         Arc::new(storage_config),
         shard_distribution,
         None,
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
@@ -120,6 +120,7 @@ async fn test_continuous_snapshot() {
                     .update_from_client_simple(
                         delete_points,
                         true,
+                        None,
                         WriteOrdering::default(),
                         hw_counter,
                     )
@@ -141,6 +142,7 @@ async fn test_continuous_snapshot() {
                         .update_from_client_simple(
                             insert_points,
                             true,
+                            None,
                             WriteOrdering::default(),
                             hw_counter,
                         )
@@ -186,6 +188,7 @@ async fn test_continuous_snapshot() {
                         .update_from_client_simple(
                             set_payload,
                             true,
+                            None,
                             WriteOrdering::default(),
                             hw_counter,
                         )

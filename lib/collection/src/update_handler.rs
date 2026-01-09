@@ -235,6 +235,17 @@ impl UpdateHandler {
         }
     }
 
+    /// Notify optimization handles to stop *without* waiting
+    ///
+    /// Blocking operation
+    pub fn notify_optimization_handles_to_stop(&self) {
+        log::trace!("notify optimization handles to stop");
+        let opt_handles_guard = self.optimization_handles.blocking_lock();
+        for handle in opt_handles_guard.iter() {
+            handle.ask_to_stop();
+        }
+    }
+
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
@@ -291,5 +302,22 @@ impl UpdateHandler {
         });
 
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
+    }
+
+    pub async fn store_clocks_if_changed(&self) -> CollectionResult<()> {
+        let clocks = self.clocks.clone();
+        let segments = self.segments.clone();
+        let shard_path = self.shard_path.clone();
+
+        self.runtime_handle
+            .spawn_blocking(move || {
+                if let Err(err) = clocks.store_if_changed(&shard_path) {
+                    log::warn!("Failed to store clock maps to disk: {err}");
+                    segments.write().report_optimizer_error(err);
+                }
+            })
+            .await?;
+
+        Ok(())
     }
 }

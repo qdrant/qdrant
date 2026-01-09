@@ -59,7 +59,7 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .lock()
             .await
-            .prepare_data(&access, detail, params.timeout())
+            .prepare_data(&access, detail, None, params.timeout())
             .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
@@ -104,6 +104,7 @@ async fn metrics(
                 level: DetailsLevel::Level4,
                 histograms: true,
             },
+            None,
             params.timeout(),
         )
         .await;
@@ -221,4 +222,9 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
         .service(readyz)
         .service(get_logger_config)
         .service(update_logger_config);
+}
+
+// Dedicated service for metrics
+pub fn config_metrics_api(cfg: &mut web::ServiceConfig) {
+    cfg.service(metrics);
 }

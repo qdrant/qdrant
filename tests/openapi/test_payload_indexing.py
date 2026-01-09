@@ -322,6 +322,7 @@ def test_payload_schemas(collection_name):
             "type": "keyword",
             "is_tenant": True,
             "on_disk": True,
+            "enable_hnsw": True,
         },
         {
             "type": "integer",
@@ -329,14 +330,17 @@ def test_payload_schemas(collection_name):
             "range": True,
             "is_principal": True,
             "on_disk": True,
+            "enable_hnsw": True,
         },
         {
             "type": "float",
             "on_disk": True,
             "is_principal": True,
+            "enable_hnsw": True,
         },
         {
             "type": "geo",
+            "enable_hnsw": True,
         },
         {
             "type": "text",
@@ -344,19 +348,23 @@ def test_payload_schemas(collection_name):
             "lowercase": True,
             "min_token_len": 2,
             "max_token_len": 10,
+            "enable_hnsw": True,
         },
         {
             "type": "bool",
+            "enable_hnsw": True,
         },
         {
             "type": "datetime",
             "on_disk": True,
             "is_principal": True,
+            "enable_hnsw": True,
         },
         {
             "type": "uuid",
             "is_tenant": True,
             "on_disk": True,
+            "enable_hnsw": True,
         },
     ]
 

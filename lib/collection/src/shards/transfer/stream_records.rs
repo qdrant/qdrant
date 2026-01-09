@@ -10,7 +10,7 @@ use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::SharedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
@@ -32,7 +32,7 @@ const STATE_ACTIVE_READ_MIN_VERSION: Version = Version::new(1, 16, 0);
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_stream_records(
     transfer_config: ShardTransfer,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
@@ -44,6 +44,16 @@ pub(super) async fn transfer_stream_records(
     let cutoff;
     let filter = transfer_config.filter;
     let merge_points = filter.is_some();
+
+    #[cfg(feature = "staging")]
+    let staging_delay = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC")
+        .ok()
+        .map(|val| {
+            std::time::Duration::from_secs_f64(
+                val.parse::<f64>()
+                    .expect("invalid QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC value"),
+            )
+        });
 
     // Whether we need an intermediate replica state (ActiveRead) during transfer to sync nodes
     // We use this when transferring between different shard IDs to ensure data consistency, this
@@ -74,7 +84,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         replica_set
-            .proxify_local(remote_shard.clone(), None, filter)
+            .proxify_local(remote_shard.clone(), None, filter.clone())
             .await?;
 
         // Don't increment hardware usage for internal operations
@@ -82,7 +92,7 @@ pub(super) async fn transfer_stream_records(
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
-                    filter: None,
+                    filter,
                     exact: false,
                 }),
                 None, // no timeout
@@ -124,6 +134,11 @@ pub(super) async fn transfer_stream_records(
 
         offset = new_offset;
         progress.lock().add(count);
+
+        #[cfg(feature = "staging")]
+        if let Some(delay) = staging_delay {
+            tokio::time::sleep(delay).await;
+        }
 
         // If this is the last batch, finalize
         if offset.is_none() {

@@ -1144,17 +1144,6 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
-    #[cfg(feature = "rocksdb")]
-    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
-        match &self.storage_type {
-            StorageType::RocksDbAppendable(db) | StorageType::RocksDbNonAppendable(db) => {
-                let db_guard = db.read();
-                crate::rocksdb_backup::create(&db_guard, path)
-            }
-            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable => Ok(()),
-        }
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         let mut files = self
             .field_indexes
@@ -1230,7 +1219,7 @@ mod tests {
                 )
                 .unwrap();
 
-            segment.current_path.clone()
+            segment.segment_path.clone()
         };
 
         let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {
@@ -1256,9 +1245,7 @@ mod tests {
 
         // Load once and drop.
         {
-            load_segment(&full_segment_path, &AtomicBool::new(false))
-                .unwrap()
-                .unwrap();
+            load_segment(&full_segment_path, &AtomicBool::new(false)).unwrap();
         }
 
         // Check that index type has been written to disk again.
