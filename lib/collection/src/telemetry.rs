@@ -502,7 +502,7 @@ mod internal_conversions {
             } = value;
 
             grpc::LocalShardTelemetry {
-                status: status.map(|s| grpc::CollectionStatus::from(s) as i32),
+                status: status.map(|s| grpc::ShardStatus::from(s) as i32),
                 total_optimized_points: total_optimized_points as u64,
                 vectors_size_bytes: vectors_size_bytes.map(|v| v as u64),
                 payloads_size_bytes: payloads_size_bytes.map(|v| v as u64),
@@ -519,6 +519,17 @@ mod internal_conversions {
                     .flatten()
                     .map(|(k, v)| (k, v as u64))
                     .collect(),
+            }
+        }
+    }
+
+    impl From<ShardStatus> for grpc::ShardStatus {
+        fn from(value: ShardStatus) -> Self {
+            match value {
+                ShardStatus::Green => grpc::ShardStatus::Green,
+                ShardStatus::Yellow => grpc::ShardStatus::Yellow,
+                ShardStatus::Grey => grpc::ShardStatus::Grey,
+                ShardStatus::Red => grpc::ShardStatus::Red,
             }
         }
     }
@@ -629,7 +640,7 @@ mod internal_conversions {
             Ok(LocalShardTelemetry {
                 variant_name: None,
                 status: status
-                    .map(|s| grpc::ShardStatus::try_from(s))
+                    .map(grpc::ShardStatus::try_from)
                     .transpose()
                     .map_err(|err| {
                         Status::invalid_argument(format!("failed to decode ShardStatus: {err}"))
