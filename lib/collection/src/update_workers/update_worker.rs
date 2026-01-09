@@ -2,6 +2,7 @@ use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use pool::SwitchToken;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::LockedSegmentHolder;
@@ -74,21 +75,22 @@ impl UpdateWorkers {
                     };
 
                     // submit an uncontended operation to determine a segment, and then switch to contented state.
-                    let operation_result = update_pool.submit_uncontended(move || {
-                        Self::update_worker_internal(
-                            collection_name_clone,
-                            operation,
-                            op_num,
-                            wait,
-                            wal_clone,
-                            segments_clone,
-                            update_operation_lock_clone,
-                            update_tracker_clone,
-                            hw_measurements,
-                            operation_update_pool,
-                        )
-                    })
-                    .await;
+                    let operation_result = update_pool
+                        .submit_uncontended(move |token| {
+                            Self::update_worker_internal(
+                                collection_name_clone,
+                                operation,
+                                op_num,
+                                wait,
+                                wal_clone,
+                                segments_clone,
+                                update_operation_lock_clone,
+                                update_tracker_clone,
+                                hw_measurements,
+                                token,
+                            )
+                        })
+                        .await;
 
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
@@ -202,7 +204,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
-        operation_update_pool: Weak<SegmentWorkerPool>,
+        switch_token: SwitchToken<usize>,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {
@@ -226,7 +228,7 @@ impl UpdateWorkers {
             update_operation_lock.clone(),
             update_tracker.clone(),
             &hw_measurements.get_counter_cell(),
-            operation_update_pool,
+            switch_token,
         );
 
         let duration = start_time.elapsed();

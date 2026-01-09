@@ -20,6 +20,7 @@ use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use pool::SwitchToken;
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -614,6 +615,7 @@ impl SegmentHolder {
         &self,
         segment_ids: &[SegmentId],
         mut apply: F,
+        switch_token: &mut SwitchToken<usize>,
     ) -> OperationResult<bool>
     where
         F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -634,7 +636,10 @@ impl SegmentHolder {
                 Some(segment_lock) => {
                     match segment_lock.try_write() {
                         None => {}
-                        Some(mut lock) => return apply(*segment_id, &mut lock),
+                        Some(mut lock) => {
+                            let _guard = switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
+                            return apply(*segment_id, &mut lock);
+                        },
                     }
                     // save segments for further lock attempts
                     entries.push((*segment_id, segment_lock))
@@ -644,6 +649,9 @@ impl SegmentHolder {
 
         let mut rng = rand::rng();
         let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+
+        // We may wait here despite the pool, but at least it is not worse than without the pool.
+        let _guard = switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
         let mut segment_write = segment_lock.write();
         apply(*segment_id, &mut segment_write)
     }
@@ -682,7 +690,7 @@ impl SegmentHolder {
         mut point_cow_operation: H,
         update_nonappendable: G,
         hw_counter: &HardwareCounterCell,
-        operation_update_pool: &Weak<pool::AsyncPool<usize>>,
+        switch_token: &mut SwitchToken<usize>,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -743,6 +751,7 @@ impl SegmentHolder {
 
                             Ok(true)
                         },
+                        switch_token,
                     )?
                 };
                 applied_points.insert(point_id);

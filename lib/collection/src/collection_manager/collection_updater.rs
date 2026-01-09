@@ -2,6 +2,7 @@ use std::sync::{Arc, Weak};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
+use pool::SwitchToken;
 use segment::types::SeqNumberType;
 use shard::update::*;
 
@@ -47,7 +48,7 @@ impl CollectionUpdater {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
-        operation_update_pool: Weak<SegmentWorkerPool>,
+        mut switch_token: SwitchToken<usize>,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -59,10 +60,10 @@ impl CollectionUpdater {
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(segments, op_num, point_operation, hw_counter, &operation_update_pool)
+                    process_point_operation(segments, op_num, point_operation, hw_counter, &mut switch_token)
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(segments, op_num, vector_operation, hw_counter, &operation_update_pool)
+                    process_vector_operation(segments, op_num, vector_operation, hw_counter, &mut switch_token)
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(segments, op_num, payload_operation, hw_counter)

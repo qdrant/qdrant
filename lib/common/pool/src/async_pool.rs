@@ -2,7 +2,7 @@ use std::hash::Hash;
 
 use tokio::sync::oneshot;
 
-use crate::{OperationMode, Pool, Task};
+use crate::{OperationMode, Pool, Task, switch::SwitchToken};
 
 pub struct AsyncPool<GroupId> {
     inner: Pool<GroupId>,
@@ -60,9 +60,9 @@ where
 
     pub async fn submit_uncontended<R: Send + 'static>(
         &self,
-        task: impl FnOnce() -> R + Send + 'static,
+        task: impl FnOnce(SwitchToken<GroupId>) -> R + Send + 'static,
     ) -> Result<R, AsyncTaskError> {
-        let (oneshot_receiver, oneshot_task) = async_wrap(task);
+        let (oneshot_receiver, oneshot_task) = async_wrap1(task);
         self.inner.submit_uncontended(oneshot_task);
         match oneshot_receiver.await {
             Ok(value) => Ok(value),
@@ -77,6 +77,17 @@ fn async_wrap<R: Send + 'static>(
     let (oneshot_sender, oneshot_receiver) = oneshot::channel();
     let oneshot_task = move || {
         let result = task();
+        let _ = oneshot_sender.send(result);
+    };
+    (oneshot_receiver, Box::new(oneshot_task))
+}
+
+fn async_wrap1<R: Send + 'static, A>(
+    task: impl FnOnce(A) -> R + Send + 'static,
+) -> (oneshot::Receiver<R>, impl FnOnce(A) -> () + Send + 'static) {
+    let (oneshot_sender, oneshot_receiver) = oneshot::channel();
+    let oneshot_task = move |a: A| {
+        let result = task(a);
         let _ = oneshot_sender.send(result);
     };
     (oneshot_receiver, Box::new(oneshot_task))
