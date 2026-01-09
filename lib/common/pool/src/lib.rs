@@ -146,9 +146,10 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         } = self;
 
         let task_group = waiting_tasks.entry(group_id.clone()).or_default();
-        task_group
-            .stalled_tasks
-            .push_back((mode, task_id, StalledTask::Function(task)));
+        task_group.stalled_tasks.push(RevQueuePair::new(
+            task_id,
+            (mode, StalledTask::Function(task)),
+        ));
         task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
@@ -185,9 +186,10 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         } = self;
 
         let task_group = waiting_tasks.entry(group_id.clone()).or_default();
-        task_group
-            .stalled_tasks
-            .push_back((mode, task_id, StalledTask::Condvar(switch_condvar)));
+        task_group.stalled_tasks.push(RevQueuePair::new(
+            task_id,
+            (mode, StalledTask::Condvar(switch_condvar)),
+        ));
         task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
@@ -271,7 +273,7 @@ struct KeyTaskGroup {
     // ready_to_run: current_mode != Some(Exclusive)
     current_mode: Option<GroupState>,
     // it is implicitely ordered by the priority
-    stalled_tasks: VecDeque<(OperationMode, TaskId, StalledTask)>,
+    stalled_tasks: BinaryHeap<RevQueuePair<TaskId, (OperationMode, StalledTask)>>,
 }
 
 impl KeyTaskGroup {
@@ -285,22 +287,22 @@ impl KeyTaskGroup {
     }
 
     fn try_get_next_runnable_task(&mut self) -> Option<(OperationMode, TaskId, Task)> {
-        if let Some(&(mode, _task_id, ref _task)) = self.stalled_tasks.front() {
+        if let Some(&RevQueuePair(_task_id, (mode, ref _task))) = self.stalled_tasks.peek() {
             let (mode, task_id, task) = match (self.current_mode.as_ref(), mode) {
                 (None, _) => {
                     // no running tasks, can run anything
-                    let (_, task_id, task) = self.stalled_tasks.pop_front().unwrap();
+                    let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
                     self.current_mode = Some(match mode {
                         OperationMode::Shared => GroupState::Shared(1),
                         OperationMode::Exclusive => GroupState::Exclusive,
                     });
-                    (mode, task_id, task)
+                    (mode, task_id.0, task)
                 }
                 (Some(GroupState::Shared(count)), OperationMode::Shared) => {
                     // can run another shared task
-                    let (_, task_id, task) = self.stalled_tasks.pop_front().unwrap();
+                    let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
                     self.current_mode = Some(GroupState::Shared(count + 1));
-                    (mode, task_id, task)
+                    (mode, task_id.0, task)
                 }
                 _ => {
                     // cannot run the next task
