@@ -2101,6 +2101,19 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Bool(i) => i.on_disk.unwrap_or_default(),
         }
     }
+
+    pub fn enable_hnsw(&self) -> bool {
+        match self {
+            PayloadSchemaParams::Keyword(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Integer(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Float(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Datetime(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Uuid(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Text(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Geo(params) => params.enable_hnsw.unwrap_or(true),
+            PayloadSchemaParams::Bool(params) => params.enable_hnsw.unwrap_or(true),            
+        }
+    }
 }
 
 impl Validate for PayloadSchemaParams {
@@ -2250,6 +2263,13 @@ impl PayloadFieldSchema {
                 PayloadSchemaParams::Text(_) => false,
                 PayloadSchemaParams::Datetime(_) => false,
             },
+        }
+    }
+
+    pub fn enable_hnsw(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(_) => true,
+            PayloadFieldSchema::FieldParams(p) => p.enable_hnsw(),
         }
     }
 }

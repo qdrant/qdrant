@@ -7887,6 +7887,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7924,6 +7929,11 @@
             "description": "If true, store the index on disk. Default: false. Default is false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7951,6 +7961,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7971,6 +7986,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8049,6 +8069,11 @@
                 "nullable": true
               }
             ]
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8202,6 +8227,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8229,6 +8259,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8254,6 +8289,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_M > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
