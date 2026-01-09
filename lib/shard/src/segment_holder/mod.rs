@@ -636,13 +636,12 @@ impl SegmentHolder {
                 Some(segment_lock) => {
                     let _guard =
                         switch_token.try_switch_to(*segment_id, pool::OperationMode::Exclusive);
-                    if _guard.is_none() {
-                        continue;
-                    }
-                    match segment_lock.try_write() {
-                        None => {}
-                        Some(mut lock) => {
-                            return apply(*segment_id, &mut lock);
+                    if _guard.is_some() {
+                        match segment_lock.try_write() {
+                            None => {}
+                            Some(mut lock) => {
+                                return apply(*segment_id, &mut lock);
+                            }
                         }
                     }
                     // save segments for further lock attempts
