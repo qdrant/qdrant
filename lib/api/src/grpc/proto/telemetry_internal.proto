@@ -154,7 +154,7 @@ message LocalShardTelemetry {
   optional uint64 num_vectors = 8;
   // Approximate number of vectors by vector name
   map<string, uint64> num_vectors_by_name = 9;
-  // egments
+  // segments
   reserved 10;
   // optimizations
   reserved 11;
@@ -184,7 +184,7 @@ message PartialSnapshotTelemetry {
   uint64 ongoing_create_snapshot_requests = 1;
   // Whether the shard is recovering
   bool is_recovering = 2;
-  // Recovery timestamp
+  // Last successful recovery timestamp
   uint64 recovery_timestamp = 3;
 }
 

@@ -601,7 +601,7 @@ mod internal_conversions {
                     }
                     grpc::shard_key::Key::Number(n) => Some(segment::types::ShardKey::Number(n)),
                 }),
-                local: local.map(LocalShardTelemetry::from),
+                local: local.map(LocalShardTelemetry::try_from).transpose()?,
                 remote: remote.into_iter().map(RemoteShardTelemetry::from).collect(),
                 replicate_states,
                 partial_snapshot: partial_snapshot
@@ -611,8 +611,10 @@ mod internal_conversions {
         }
     }
 
-    impl From<grpc::LocalShardTelemetry> for LocalShardTelemetry {
-        fn from(value: grpc::LocalShardTelemetry) -> Self {
+    impl TryFrom<grpc::LocalShardTelemetry> for LocalShardTelemetry {
+        type Error = Status;
+
+        fn try_from(value: grpc::LocalShardTelemetry) -> Result<Self, Self::Error> {
             let grpc::LocalShardTelemetry {
                 status,
                 total_optimized_points,
@@ -624,11 +626,15 @@ mod internal_conversions {
                 indexed_only_excluded_vectors,
             } = value;
 
-            LocalShardTelemetry {
+            Ok(LocalShardTelemetry {
                 variant_name: None,
                 status: status
-                    .and_then(|s| grpc::CollectionStatus::try_from(s).ok())
-                    .and_then(|s| ShardStatus::try_from(s).ok()),
+                    .map(|s| grpc::ShardStatus::try_from(s))
+                    .transpose()
+                    .map_err(|err| {
+                        Status::invalid_argument(format!("failed to decode ShardStatus: {err}"))
+                    })?
+                    .map(ShardStatus::from),
                 total_optimized_points: total_optimized_points as usize,
                 vectors_size_bytes: vectors_size_bytes.map(|v| v as usize),
                 payloads_size_bytes: payloads_size_bytes.map(|v| v as usize),
@@ -651,6 +657,17 @@ mod internal_conversions {
                             .collect()
                     },
                 ),
+            })
+        }
+    }
+
+    impl From<grpc::ShardStatus> for ShardStatus {
+        fn from(value: grpc::ShardStatus) -> Self {
+            match value {
+                grpc::ShardStatus::Green => ShardStatus::Green,
+                grpc::ShardStatus::Yellow => ShardStatus::Yellow,
+                grpc::ShardStatus::Grey => ShardStatus::Grey,
+                grpc::ShardStatus::Red => ShardStatus::Red,
             }
         }
     }

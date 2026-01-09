@@ -12711,7 +12711,7 @@ pub struct PartialSnapshotTelemetry {
     /// Whether the shard is recovering
     #[prost(bool, tag = "2")]
     pub is_recovering: bool,
-    /// Recovery timestamp
+    /// Last successful recovery timestamp
     #[prost(uint64, tag = "3")]
     pub recovery_timestamp: u64,
 }
