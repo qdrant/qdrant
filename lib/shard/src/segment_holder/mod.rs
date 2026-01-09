@@ -634,17 +634,14 @@ impl SegmentHolder {
             match segment_opt {
                 None => {}
                 Some(segment_lock) => {
+                    let _guard =
+                        switch_token.try_switch_to(*segment_id, pool::OperationMode::Exclusive);
+                    if _guard.is_none() {
+                        continue;
+                    }
                     match segment_lock.try_write() {
                         None => {}
                         Some(mut lock) => {
-                            // We should've switched before taking the lock, but here
-                            // 1. it is not possible.
-                            // 2. if we've taken the lock, there are no other threads, that's ok.
-                            // But we are informing the pool anyway.
-                            // TODO: race condition deadlock?  We may lock the pool for some time. No, it wouldn't help.
-                            // WE NEED TRY_SWITCH_TO.
-                            let _guard =
-                                switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
                             return apply(*segment_id, &mut lock);
                         }
                     }

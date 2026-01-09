@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap};
 use std::hash::Hash;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -187,6 +187,35 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
             (mode, StalledTask::Condvar(switch_condvar)),
         ));
         task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+    }
+
+    fn try_submit_switch(
+        &mut self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task_id: TaskId,
+        switch_condvar: Arc<Condvar>,
+        condvar: &Condvar,
+    ) -> Option<()> {
+        use std::collections::hash_map::Entry;
+        let PoolTasks {
+            stalled_tasks: waiting_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        let new_task_group = match waiting_tasks.entry(group_id.clone()) {
+            Entry::Occupied(_occupied_entry) => return None,
+            Entry::Vacant(vacant_entry) => vacant_entry.insert(Default::default()),
+        };
+
+        new_task_group.stalled_tasks.push(RevQueuePair::new(
+            task_id,
+            (mode, StalledTask::Condvar(switch_condvar)),
+        ));
+        new_task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+
+        Some(())
     }
 
     fn get_next_task(&mut self) -> Option<(Option<TaskInfo<GroupId>>, Task)> {
