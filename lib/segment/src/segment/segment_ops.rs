@@ -469,7 +469,7 @@ impl Segment {
     /// Check consistency of the segment's data and repair it if possible.
     /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
-        // Get rid of versionless points.
+        // Get rid of mappingless points.
         let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
         // There are some leftovers to clean from segment.
@@ -479,7 +479,11 @@ impl Segment {
         // This is internal operation, no hw measurement needed
         let disposable_hw_counter = HardwareCounterCell::disposable();
         if !ids_to_clean.is_empty() {
-            log::debug!("cleaning up {} points without version", ids_to_clean.len());
+            log::debug!(
+                "Cleaning up {} points with version but no mapping in segment {:?}",
+                ids_to_clean.len(),
+                self.data_path()
+            );
 
             for internal_id in ids_to_clean {
                 self.delete_point_internal(internal_id, &disposable_hw_counter)?;
@@ -637,7 +641,7 @@ impl Segment {
     }
 
     /// Fixes inconsistencies in the ID tracker, if any.
-    /// Returns list of IDs, which should be removed from segment
+    /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
