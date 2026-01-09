@@ -41,6 +41,7 @@ use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use pool::SwitchToken;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment_constructor::{build_segment, load_segment};
@@ -693,6 +694,8 @@ impl LocalShard {
                 newest_clocks.advance_clock(clock_tag);
             }
 
+            let mut dummy_token = SwitchToken::dummy();
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
                 segments,
@@ -701,7 +704,7 @@ impl LocalShard {
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
-                todo!(),
+                dummy_token,
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
