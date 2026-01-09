@@ -60,10 +60,22 @@ impl CollectionUpdater {
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(segments, op_num, point_operation, hw_counter, &mut switch_token)
+                    process_point_operation(
+                        segments,
+                        op_num,
+                        point_operation,
+                        hw_counter,
+                        &mut switch_token,
+                    )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(segments, op_num, vector_operation, hw_counter, &mut switch_token)
+                    process_vector_operation(
+                        segments,
+                        op_num,
+                        vector_operation,
+                        hw_counter,
+                        &mut switch_token,
+                    )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                     process_payload_operation(segments, op_num, payload_operation, hw_counter)

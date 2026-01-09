@@ -2,7 +2,8 @@ use std::hash::Hash;
 
 use tokio::sync::oneshot;
 
-use crate::{OperationMode, Pool, Task, switch::SwitchToken};
+use crate::switch::SwitchToken;
+use crate::{OperationMode, Pool, Task};
 
 pub struct AsyncPool<GroupId> {
     inner: Pool<GroupId>,
