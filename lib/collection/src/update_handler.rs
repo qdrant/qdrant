@@ -220,6 +220,7 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized_threshold,
+            self.optimization_handles.clone(),
             optimization_finished_receiver,
         )));
 

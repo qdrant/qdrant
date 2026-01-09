@@ -6,9 +6,10 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::watch;
+use tokio::sync::{Mutex as TokioMutex, watch};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
+use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
@@ -30,6 +31,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized_threshold: Option<usize>,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
     ) {
         while let Some(signal) = receiver.recv().await {
@@ -50,6 +52,7 @@ impl UpdateWorkers {
                     let operation_result = Self::wait_for_optimization(
                         prevent_unoptimized_threshold,
                         &segments_clone,
+                        optimization_handles.clone(),
                         &mut optimization_finished_receiver,
                     )
                     .await;
@@ -132,6 +135,7 @@ impl UpdateWorkers {
         // If `None`, waiting is disabled.
         optimization_threshold: Option<usize>,
         segments: &LockedSegmentHolder,
+        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
         let Some(optimization_threshold) = optimization_threshold else {
@@ -159,11 +163,15 @@ impl UpdateWorkers {
                 return Ok(());
             }
 
-            // ToDo: if there are no optimizations running, it can be a deadlock situation
-            // We have to check validate that there are at least some optimizations
+            // Block only if there are running optimization that can terminate
+            let current_optimizations = optimization_handles.lock().await;
+            if current_optimizations.iter().all(|h| h.is_finished()) {
+                return Ok(());
+            }
 
             // If unoptimized segments are too large, the only way it can be fixed is optimization
             // So we wait the notification of optimization completion to re-check the sizes
+            log::debug!("waiting for optimization to allow updates");
             if let Err(err) = optimization_finished_receiver.changed().await {
                 // this can be if optimization is cancelled, we don't need to wait anymore
                 log::debug!("Optimization thread terminated with an error: {err}");
