@@ -1,8 +1,10 @@
-use std::{hash::Hash, sync::Arc};
+use std::hash::Hash;
+use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::{OperationMode, PoolTasks, TaskId, TaskInfo, thread::TaskCompletionGuard};
+use crate::thread::TaskCompletionGuard;
+use crate::{OperationMode, PoolTasks, TaskId, TaskInfo};
 
 pub struct SwitchToken<GroupId> {
     pub(crate) task_pool: Arc<Mutex<PoolTasks<GroupId>>>,

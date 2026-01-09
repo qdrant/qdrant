@@ -70,7 +70,9 @@ impl<'env, GroupId: Clone + Eq + Hash + Send + 'static> TaskCompletionGuard<'env
     }
 }
 
-impl<'env, GroupId: Clone + Eq + Hash + Send + 'static> Drop for TaskCompletionGuard<'env, GroupId> {
+impl<'env, GroupId: Clone + Eq + Hash + Send + 'static> Drop
+    for TaskCompletionGuard<'env, GroupId>
+{
     fn drop(&mut self) {
         if let Some(task_info) = &self.task_info {
             let mut guard = self.task_pool.lock();

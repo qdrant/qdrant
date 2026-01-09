@@ -322,13 +322,7 @@ pub fn conditional_upsert(
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(
-        segments,
-        op_num,
-        points.iter(),
-        hw_counter,
-        switch_token,
-    )?;
+    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter, switch_token)?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.

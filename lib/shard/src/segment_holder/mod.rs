@@ -8,8 +8,8 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -643,9 +643,10 @@ impl SegmentHolder {
                             // But we are informing the pool anyway.
                             // TODO: race condition deadlock?  We may lock the pool for some time. No, it wouldn't help.
                             // WE NEED TRY_SWITCH_TO.
-                            let _guard = switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
+                            let _guard =
+                                switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
                             return apply(*segment_id, &mut lock);
-                        },
+                        }
                     }
                     // save segments for further lock attempts
                     entries.push((*segment_id, segment_lock))
