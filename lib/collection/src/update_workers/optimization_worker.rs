@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
@@ -270,6 +271,7 @@ impl UpdateWorkers {
         let scheduled;
         let mut pending_segments = 0;
         let mut pending_points = 0;
+        let mut pending_debug = Vec::new();
         {
             let segments = segments.read();
             let mut planner = OptimizationPlanner::new(
@@ -282,13 +284,18 @@ impl UpdateWorkers {
             }
             scheduled = planner.into_scheduled();
 
-            for (_, segment_ids) in &scheduled {
+            for (optimizer, segment_ids) in &scheduled {
                 pending_segments += segment_ids.len();
+                let mut debug_entry =
+                    format!("{}:", optimizer.as_ref().map_or("?", |opt| opt.name()));
                 for &segment_id in segment_ids {
                     if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
-                        pending_points += segment.read().total_point_count()
+                        let points = segment.read().total_point_count();
+                        pending_points += points;
+                        write!(debug_entry, " [id={segment_id} points={points}]").unwrap();
                     }
                 }
+                pending_debug.push(debug_entry);
             }
         }
 
@@ -296,6 +303,7 @@ impl UpdateWorkers {
             optimizations: scheduled.len(),
             segments: pending_segments,
             points: pending_points,
+            debug: pending_debug,
         };
 
         for (optimizer, segments_to_merge) in scheduled {
