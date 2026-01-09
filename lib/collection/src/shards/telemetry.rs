@@ -82,7 +82,7 @@ pub struct OptimizerTelemetry {
     pub log: Option<Vec<TrackerTelemetry>>,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, JsonSchema, Anonymize)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, JsonSchema, Anonymize)]
 pub struct PartialSnapshotTelemetry {
     #[anonymize(false)]
     pub ongoing_create_snapshot_requests: usize,
@@ -90,4 +90,14 @@ pub struct PartialSnapshotTelemetry {
     pub is_recovering: bool,
     #[anonymize(false)]
     pub recovery_timestamp: u64,
+}
+
+impl PartialSnapshotTelemetry {
+    pub fn is_empty(&self) -> bool {
+        self == &Self {
+            ongoing_create_snapshot_requests: 0,
+            is_recovering: false,
+            recovery_timestamp: 0,
+        }
+    }
 }

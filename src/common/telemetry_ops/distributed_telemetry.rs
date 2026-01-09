@@ -368,7 +368,9 @@ fn aggregate_shards(
                     num_points: local_shard.num_points,
                     num_vectors: local_shard.num_vectors,
                     num_vectors_by_name: local_shard.num_vectors_by_name.clone(),
-                    partial_snapshot: replicaset.partial_snapshot,
+                    partial_snapshot: replicaset.partial_snapshot.and_then(|partial_snapshot| {
+                        (!partial_snapshot.is_empty()).then_some(partial_snapshot)
+                    }),
                     shard_cleaning_status,
                 }
             } else {
