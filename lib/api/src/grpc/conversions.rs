@@ -248,9 +248,16 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
 
 impl From<segment::data_types::index::GeoIndexParams> for PayloadIndexParams {
     fn from(params: segment::data_types::index::GeoIndexParams) -> Self {
-        let segment::data_types::index::GeoIndexParams { r#type: _, on_disk, enable_hnsw } = params;
+        let segment::data_types::index::GeoIndexParams {
+            r#type: _,
+            on_disk,
+            enable_hnsw,
+        } = params;
         PayloadIndexParams {
-            index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams { on_disk, enable_hnsw })),
+            index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {
+                on_disk,
+                enable_hnsw,
+            })),
         }
     }
 }
@@ -296,9 +303,16 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
 
 impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
     fn from(params: segment::data_types::index::BoolIndexParams) -> Self {
-        let segment::data_types::index::BoolIndexParams { r#type: _, on_disk , enable_hnsw} = params;
+        let segment::data_types::index::BoolIndexParams {
+            r#type: _,
+            on_disk,
+            enable_hnsw,
+        } = params;
         PayloadIndexParams {
-            index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams { on_disk, enable_hnsw })),
+            index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {
+                on_disk,
+                enable_hnsw,
+            })),
         }
     }
 }
@@ -466,7 +480,11 @@ impl From<segment::types::PayloadSchemaParams> for PayloadIndexParams {
 impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexParams {
     type Error = Status;
     fn try_from(params: KeywordIndexParams) -> Result<Self, Self::Error> {
-        let KeywordIndexParams { is_tenant, on_disk, enable_hnsw } = params;
+        let KeywordIndexParams {
+            is_tenant,
+            on_disk,
+            enable_hnsw,
+        } = params;
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
             is_tenant,
@@ -517,7 +535,10 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
 impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
     type Error = Status;
     fn try_from(params: GeoIndexParams) -> Result<Self, Self::Error> {
-        let GeoIndexParams { on_disk, enable_hnsw } = params;
+        let GeoIndexParams {
+            on_disk,
+            enable_hnsw,
+        } = params;
         Ok(segment::data_types::index::GeoIndexParams {
             r#type: GeoIndexType::Geo,
             on_disk,
@@ -630,7 +651,10 @@ impl TryFrom<StemmingParams> for segment::data_types::index::StemmingAlgorithm {
 impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
     type Error = Status;
     fn try_from(params: BoolIndexParams) -> Result<Self, Self::Error> {
-        let BoolIndexParams { on_disk , enable_hnsw} = params;
+        let BoolIndexParams {
+            on_disk,
+            enable_hnsw,
+        } = params;
         Ok(segment::data_types::index::BoolIndexParams {
             r#type: BoolIndexType::Bool,
             on_disk,
@@ -659,7 +683,11 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
 impl TryFrom<UuidIndexParams> for segment::data_types::index::UuidIndexParams {
     type Error = Status;
     fn try_from(params: UuidIndexParams) -> Result<Self, Self::Error> {
-        let UuidIndexParams { is_tenant, on_disk, enable_hnsw } = params;
+        let UuidIndexParams {
+            is_tenant,
+            on_disk,
+            enable_hnsw,
+        } = params;
         Ok(segment::data_types::index::UuidIndexParams {
             r#type: UuidIndexType::Uuid,
             is_tenant,

@@ -2111,7 +2111,7 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Uuid(params) => params.enable_hnsw.unwrap_or(true),
             PayloadSchemaParams::Text(params) => params.enable_hnsw.unwrap_or(true),
             PayloadSchemaParams::Geo(params) => params.enable_hnsw.unwrap_or(true),
-            PayloadSchemaParams::Bool(params) => params.enable_hnsw.unwrap_or(true),            
+            PayloadSchemaParams::Bool(params) => params.enable_hnsw.unwrap_or(true),
         }
     }
 }
