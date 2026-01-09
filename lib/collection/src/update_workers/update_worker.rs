@@ -164,9 +164,11 @@ impl UpdateWorkers {
             }
 
             // Block only if there are running optimization that can terminate
-            let current_optimizations = optimization_handles.lock().await;
-            if current_optimizations.iter().all(|h| h.is_finished()) {
-                return Ok(());
+            {
+                let optimizations_guard = optimization_handles.lock().await;
+                if optimizations_guard.iter().all(|h| h.is_finished()) {
+                    return Ok(());
+                }
             }
 
             // If unoptimized segments are too large, the only way it can be fixed is optimization
