@@ -724,7 +724,7 @@ impl LocalShard {
                 newest_clocks.advance_clock(clock_tag);
             }
 
-            let mut dummy_token = SwitchToken::dummy();
+            let dummy_token = SwitchToken::dummy();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
