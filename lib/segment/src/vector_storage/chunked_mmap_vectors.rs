@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::io::BufReader;
 use std::mem::MaybeUninit;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -48,7 +49,21 @@ pub struct ChunkedMmapVectors<T: Sized + 'static> {
     status: MmapType<Status>,
     chunks: Vec<UniversalMmapChunk<T>>,
     directory: PathBuf,
-    chunk_locks: Vec<RwLock<usize>>,
+    chunk_locks: Vec<AlignedRwLock<usize>>,
+}
+
+#[repr(align(128))]
+#[derive(Debug, Default)]
+pub struct AlignedRwLock<T> {
+    lock: RwLock<T>,
+}
+
+impl<T> Deref for AlignedRwLock<T> {
+    type Target = RwLock<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.lock
+    }
 }
 
 impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
@@ -167,7 +182,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             config,
             chunks,
             directory: directory.to_owned(),
-            chunk_locks: (0..chunks_len).map(|_| RwLock::new(0)).collect(),
+            chunk_locks: (0..chunks_len).map(|_| AlignedRwLock::default()).collect(),
         };
         Ok(vectors)
     }
@@ -204,7 +219,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         )?;
 
         self.chunks.push(chunk);
-        self.chunk_locks.push(RwLock::new(0));
+        self.chunk_locks.push(AlignedRwLock::default());
 
         Ok(())
     }
