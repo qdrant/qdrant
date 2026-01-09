@@ -48,7 +48,13 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
             ));
         let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+            .update_from_client_simple(
+                insert_points,
+                true,
+                None,
+                WriteOrdering::default(),
+                hw_counter,
+            )
             .await
             .unwrap();
 
@@ -97,7 +103,13 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             ));
         let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+            .update_from_client_simple(
+                insert_points,
+                true,
+                None,
+                WriteOrdering::default(),
+                hw_counter,
+            )
             .await
             .unwrap();
 
@@ -182,7 +194,13 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             ));
         let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+            .update_from_client_simple(
+                insert_points,
+                true,
+                None,
+                WriteOrdering::default(),
+                hw_counter,
+            )
             .await
             .unwrap();
 

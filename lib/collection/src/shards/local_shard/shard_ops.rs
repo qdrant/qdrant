@@ -45,11 +45,11 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
-
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -101,19 +101,40 @@ impl ShardOperation for LocalShard {
             operation_id
         };
 
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Completed,
-                clock_tag: operation.clock_tag,
-            })
-        } else {
-            Ok(UpdateResult {
+        match (callback_receiver, timeout) {
+            // Wait indefinitely
+            (Some(receiver), None) => {
+                let _ = receiver.await??;
+                Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                })
+            }
+            // Wait for timeout
+            (Some(receiver), Some(timeout)) => {
+                match tokio::time::timeout(timeout, receiver).await {
+                    Ok(res) => {
+                        res??;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::Completed,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
+                    Err(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                }
+            }
+            // Don't wait at all
+            (None, _) => Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
                 clock_tag: operation.clock_tag,
-            })
+            }),
         }
     }
 

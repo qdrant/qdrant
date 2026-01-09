@@ -393,14 +393,39 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
+/// `WaitTimeout` - Request is waiting for timeout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
+    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
     ClockRejected,
+}
+
+impl UpdateStatus {
+    /// Returns priority of the update status
+    ///
+    /// A higher value means the status is more significant
+    pub fn priority(&self) -> i32 {
+        match self {
+            UpdateStatus::Acknowledged => 0,
+            UpdateStatus::Completed => 1,
+            UpdateStatus::WaitTimeout => 2,
+            UpdateStatus::ClockRejected => 3,
+        }
+    }
+
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            UpdateStatus::WaitTimeout => true,
+            UpdateStatus::Acknowledged => false,
+            UpdateStatus::Completed => false,
+            UpdateStatus::ClockRejected => false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]

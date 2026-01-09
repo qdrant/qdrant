@@ -85,6 +85,7 @@ mod group_by {
             .update_from_client_simple(
                 insert_points,
                 true,
+                None,
                 WriteOrdering::default(),
                 hw_counter.clone(),
             )
@@ -547,6 +548,7 @@ mod group_by_builder {
                 .update_from_client_simple(
                     insert_points,
                     true,
+                    None,
                     WriteOrdering::default(),
                     hw_counter.clone(),
                 )
@@ -581,6 +583,7 @@ mod group_by_builder {
                 .update_from_client_simple(
                     insert_points,
                     true,
+                    None,
                     WriteOrdering::default(),
                     hw_counter.clone(),
                 )
