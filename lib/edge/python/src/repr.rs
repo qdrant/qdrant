@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 pub use edge_py_codegen::pyclass_repr;
@@ -95,6 +95,12 @@ impl<K: Repr + ReprStr, V: Repr, S> Repr for HashMap<K, V, S> {
 }
 
 impl<T: Repr, S> Repr for HashSet<T, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.set(self)
+    }
+}
+
+impl<T: Repr> Repr for BTreeSet<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.set(self)
     }
