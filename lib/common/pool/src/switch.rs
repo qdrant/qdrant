@@ -72,6 +72,45 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> SwitchToken<GroupId> {
             SwitchToken::Dummy => SwitchGuard::Dummy,
         }
     }
+
+    pub fn try_switch_to(
+        &mut self,
+        group: GroupId,
+        mode: OperationMode,
+    ) -> Option<SwitchGuard<'_, GroupId>> {
+        match self {
+            SwitchToken::Real(switch_token_real) => {
+                let switching_condvar = Arc::new(Condvar::new());
+
+                {
+                    let mut task_pool_guard = switch_token_real.task_pool.lock();
+
+                    task_pool_guard.try_submit_switch(
+                        group.clone(),
+                        mode,
+                        switch_token_real.task_id,
+                        switching_condvar.clone(),
+                        &switch_token_real.wait_for_jobs,
+                    )?;
+                }
+
+                let task_guard = TaskCompletionGuard::new(
+                    &switch_token_real.task_pool,
+                    &switch_token_real.wait_for_jobs,
+                    Some(TaskInfo {
+                        group_id: group,
+                        mode,
+                    }),
+                );
+
+                Some(SwitchGuard::Real(SwitchGuardReal {
+                    token: switch_token_real,
+                    task_guard,
+                }))
+            }
+            SwitchToken::Dummy => Some(SwitchGuard::Dummy),
+        }
+    }
 }
 
 pub(crate) struct SwitchGuardReal<'env, GroupId: Clone + Eq + Hash + Send + 'static> {
