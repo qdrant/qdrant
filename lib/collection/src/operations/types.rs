@@ -319,6 +319,9 @@ pub struct PendingOptimizations {
     pub segments: usize,
     /// Total number of points in unoptimized segments.
     pub points: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
+    pub debug: Vec<String>,
 }
 
 impl PendingOptimizations {
@@ -327,10 +330,12 @@ impl PendingOptimizations {
             optimizations,
             segments,
             points,
+            debug,
         } = self;
         *optimizations += other.optimizations;
         *segments += other.segments;
         *points += other.points;
+        debug.extend_from_slice(&other.debug);
     }
 }
 
