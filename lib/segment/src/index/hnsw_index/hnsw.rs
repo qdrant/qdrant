@@ -287,9 +287,14 @@ impl HNSWIndex {
                     let progress_additional_links = progress.subtask("additional_links");
                     let fields = fields
                         .into_iter()
-                        .map(|(field, payload_schema)| {
+                        .filter_map(|(field, payload_schema)| {
                             let subtask_name = format!("{}:{field}", payload_schema.name());
-                            (progress_additional_links.subtask(subtask_name), field)
+                            if payload_schema.enable_hnsw() {
+                                Some((progress_additional_links.subtask(subtask_name), field))
+                            } else {
+                                debug!("enable_hnsw=false. Skip building additional index for field {}", &field);
+                                None
+                            }
                         })
                         .collect::<Vec<_>>();
                     (progress_additional_links, fields)
