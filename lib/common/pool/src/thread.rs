@@ -6,7 +6,7 @@ use parking_lot::{Condvar, Mutex};
 
 use crate::{PoolTasks, TaskInfo};
 
-pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone>(
+pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone + Send + 'static>(
     wait_for_jobs: Arc<Condvar>,
     tasks: Arc<Mutex<PoolTasks<GroupId>>>,
     terminate: Arc<AtomicBool>,
@@ -50,14 +50,14 @@ pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone>(
     }
 }
 
-struct TaskCompletionGuard<'env, GroupId: Clone + Eq + Hash> {
+pub(crate) struct TaskCompletionGuard<'env, GroupId: Clone + Eq + Hash + Send + 'static> {
     task_pool: &'env Mutex<PoolTasks<GroupId>>,
     wait_for_jobs: &'env Condvar,
     task_info: Option<TaskInfo<GroupId>>,
 }
 
-impl<'env, GroupId: Clone + Eq + Hash> TaskCompletionGuard<'env, GroupId> {
-    fn new(
+impl<'env, GroupId: Clone + Eq + Hash + Send + 'static> TaskCompletionGuard<'env, GroupId> {
+    pub(crate) fn new(
         task_pool: &'env Mutex<PoolTasks<GroupId>>,
         wait_for_jobs: &'env Condvar,
         task_info: Option<TaskInfo<GroupId>>,
@@ -70,7 +70,7 @@ impl<'env, GroupId: Clone + Eq + Hash> TaskCompletionGuard<'env, GroupId> {
     }
 }
 
-impl<'env, GroupId: Clone + Eq + Hash> Drop for TaskCompletionGuard<'env, GroupId> {
+impl<'env, GroupId: Clone + Eq + Hash + Send + 'static> Drop for TaskCompletionGuard<'env, GroupId> {
     fn drop(&mut self) {
         if let Some(task_info) = &self.task_info {
             let mut guard = self.task_pool.lock();

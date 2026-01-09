@@ -6,12 +6,13 @@ use std::sync::atomic::AtomicBool;
 use std::thread::JoinHandle;
 
 use parking_lot::{Condvar, Mutex};
+pub use switch::SwitchToken;
 use thread::thread_worker;
 
 #[cfg(feature = "tokio")]
 mod async_pool;
-mod thread;
 mod switch;
+mod thread;
 
 #[cfg(feature = "tokio")]
 pub use async_pool::{AsyncPool, AsyncTaskError};
@@ -23,6 +24,11 @@ type TaskId = usize;
 
 // The UnwindSafe bound may be removed if we handle panics with recreating a new thread.
 pub type Task = Box<dyn FnOnce() + Send + 'static>;
+
+pub enum StalledTask {
+    Function(Task),
+    Condvar(Arc<Condvar>),
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OperationMode {
@@ -101,14 +107,24 @@ impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
         }
     }
 
-    pub fn submit(&self, group_id: GroupId, mode: OperationMode, task: Task) {
+    pub fn submit(
+        &self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task: impl FnOnce() + Send + 'static,
+    ) {
         let mut guard = self.tasks.lock();
-        guard.submit(group_id, mode, task, self.wait_for_jobs_condvar.as_ref());
+        guard.submit(
+            group_id,
+            mode,
+            Box::new(task),
+            self.wait_for_jobs_condvar.as_ref(),
+        );
     }
 
-    pub fn submit_uncontended(&self, task: Task) {
+    pub fn submit_uncontended(&self, task: impl FnOnce(SwitchToken<GroupId>) + Send + 'static) {
         let mut guard = self.tasks.lock();
-        guard.submit_uncontended(task);
+        guard.submit_uncontended(task, self.tasks.clone(), self.wait_for_jobs_condvar.clone());
     }
 }
 
@@ -118,7 +134,7 @@ struct PoolTasks<GroupId> {
     stalled_tasks: HashMap<GroupId, KeyTaskGroup>,
 }
 
-impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
+impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
     fn submit(&mut self, group_id: GroupId, mode: OperationMode, task: Task, condvar: &Condvar) {
         let task_id = self.next_available_priority;
         self.next_available_priority += 1;
@@ -130,16 +146,49 @@ impl<GroupId: Clone + Eq + Hash> PoolTasks<GroupId> {
         } = self;
 
         let task_group = waiting_tasks.entry(group_id.clone()).or_default();
-        task_group.waiting_tasks.push_back((mode, task_id, task));
+        task_group
+            .stalled_tasks
+            .push_back((mode, task_id, StalledTask::Function(task)));
         task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
-    fn submit_uncontended(&mut self, task: Task) {
+    fn submit_uncontended(
+        &mut self,
+        task: impl FnOnce(SwitchToken<GroupId>) + Send + 'static,
+        task_pool: Arc<Mutex<PoolTasks<GroupId>>>,
+        wait_for_jobs: Arc<Condvar>,
+    ) {
         let task_id = self.next_available_priority;
         self.next_available_priority += 1;
 
+        let token = SwitchToken {
+            task_pool,
+            wait_for_jobs,
+            task_id,
+        };
         self.ready_to_run_tasks
-            .push(RevQueuePair::new(task_id, (None, task)));
+            .push(RevQueuePair::new(task_id, (None, Box::new(|| task(token)))));
+    }
+
+    fn submit_switch(
+        &mut self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task_id: TaskId,
+        switch_condvar: Arc<Condvar>,
+        condvar: &Condvar,
+    ) {
+        let PoolTasks {
+            stalled_tasks: waiting_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        let task_group = waiting_tasks.entry(group_id.clone()).or_default();
+        task_group
+            .stalled_tasks
+            .push_back((mode, task_id, StalledTask::Condvar(switch_condvar)));
+        task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
     }
 
     fn get_next_task(&mut self) -> Option<(Option<TaskInfo<GroupId>>, Task)> {
@@ -222,7 +271,7 @@ struct KeyTaskGroup {
     // ready_to_run: current_mode != Some(Exclusive)
     current_mode: Option<GroupState>,
     // it is implicitely ordered by the priority
-    waiting_tasks: VecDeque<(OperationMode, TaskId, Task)>,
+    stalled_tasks: VecDeque<(OperationMode, TaskId, StalledTask)>,
 }
 
 impl KeyTaskGroup {
@@ -232,29 +281,37 @@ impl KeyTaskGroup {
             Some(GroupState::Exclusive) => true,
             None => false,
         };
-        self.waiting_tasks.is_empty() && !has_running
+        self.stalled_tasks.is_empty() && !has_running
     }
 
     fn try_get_next_runnable_task(&mut self) -> Option<(OperationMode, TaskId, Task)> {
-        if let Some(&(mode, _task_id, ref _task)) = self.waiting_tasks.front() {
-            match (self.current_mode.as_ref(), mode) {
+        if let Some(&(mode, _task_id, ref _task)) = self.stalled_tasks.front() {
+            let (mode, task_id, task) = match (self.current_mode.as_ref(), mode) {
                 (None, _) => {
                     // no running tasks, can run anything
-                    let (_, task_id, task) = self.waiting_tasks.pop_front().unwrap();
+                    let (_, task_id, task) = self.stalled_tasks.pop_front().unwrap();
                     self.current_mode = Some(match mode {
                         OperationMode::Shared => GroupState::Shared(1),
                         OperationMode::Exclusive => GroupState::Exclusive,
                     });
-                    Some((mode, task_id, task))
+                    (mode, task_id, task)
                 }
                 (Some(GroupState::Shared(count)), OperationMode::Shared) => {
                     // can run another shared task
-                    let (_, task_id, task) = self.waiting_tasks.pop_front().unwrap();
+                    let (_, task_id, task) = self.stalled_tasks.pop_front().unwrap();
                     self.current_mode = Some(GroupState::Shared(count + 1));
-                    Some((mode, task_id, task))
+                    (mode, task_id, task)
                 }
                 _ => {
                     // cannot run the next task
+                    return None;
+                }
+            };
+            match task {
+                StalledTask::Function(fn_once) => Some((mode, task_id, fn_once)),
+                StalledTask::Condvar(condvar) => {
+                    condvar.notify_all();
+                    // We've notified the parked thread and it handles both mode and task_id.
                     None
                 }
             }
