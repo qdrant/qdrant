@@ -15,6 +15,7 @@ use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::common::Flusher;
@@ -47,6 +48,7 @@ pub struct ChunkedMmapVectors<T: Sized + 'static> {
     status: MmapType<Status>,
     chunks: Vec<UniversalMmapChunk<T>>,
     directory: PathBuf,
+    chunk_locks: Vec<RwLock<usize>>,
 }
 
 impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
@@ -137,15 +139,35 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     ) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
-        let status = unsafe { MmapType::from(status_mmap) };
+        let status: MmapType<Status> = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim, populate)?;
         let chunks = read_mmaps(directory, populate.unwrap_or_default(), advice)?;
+
+        let chunk_avg_size = if !chunks.is_empty() {
+            chunks
+                .iter()
+                .map(|i| i.as_slice().len() * size_of::<T>())
+                .sum::<usize>()
+                / chunks.len()
+        } else {
+            0
+        };
+
+        println!(
+            "Existing chunks: {}; Avg chunk size: {chunk_avg_size}; Vectors: {}",
+            chunks.len(),
+            status.len,
+        );
+
+        let chunks_len = chunks.len();
+
         let vectors = Self {
             status,
             config,
             chunks,
             directory: directory.to_owned(),
+            chunk_locks: (0..chunks_len).map(|_| RwLock::new(0)).collect(),
         };
         Ok(vectors)
     }
@@ -182,6 +204,8 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         )?;
 
         self.chunks.push(chunk);
+        self.chunk_locks.push(RwLock::new(0));
+
         Ok(())
     }
 
@@ -224,9 +248,11 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             self.add_chunk()?;
         }
 
+        let chunk_lock = self.chunk_locks[chunk_idx].write();
         let chunk = &mut self.chunks[chunk_idx];
 
         chunk.as_mut_slice()[chunk_offset..chunk_offset + vectors.len()].copy_from_slice(vectors);
+        drop(chunk_lock);
 
         hw_counter
             .vector_io_write_counter()
@@ -275,15 +301,20 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             return None;
         }
 
+        let chunk_lock = self.chunk_locks[chunk_idx].read();
+
         let block_size_elements = count * self.config.dim;
         let chunk_offset = self.get_chunk_offset(start_key);
         let chunk_end = chunk_offset + block_size_elements;
         let chunk = &self.chunks[chunk_idx];
         if chunk_end > chunk.len() {
+            drop(chunk_lock);
             None
         } else if force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4 {
+            drop(chunk_lock);
             Some(&chunk.as_seq_slice()[chunk_offset..chunk_end])
         } else {
+            drop(chunk_lock);
             Some(&chunk.as_slice()[chunk_offset..chunk_end])
         }
     }
