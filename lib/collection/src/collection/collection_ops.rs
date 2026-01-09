@@ -428,13 +428,17 @@ impl Collection {
     ) -> CollectionResult<OptimizationsResponse> {
         let mut all_ongoing = Vec::new();
         let mut all_completed = completed_limit.map(|_| Vec::new());
+        let mut pending = PendingOptimizations::default();
 
         let shards_holder = self.shards_holder.read().await;
         for (_shard_id, replica_set) in shards_holder.get_shards() {
             let Some(log) = replica_set.optimizers_log().await else {
                 continue;
             };
-            let IndexingProgressViews { ongoing, completed } = log.lock().progress_views();
+            let log = log.lock();
+            let IndexingProgressViews { ongoing, completed } = log.progress_views();
+            pending.merge(&log.pending);
+            drop(log);
             all_ongoing.extend(ongoing);
             if let Some(all_completed) = all_completed.as_mut() {
                 all_completed.extend(completed);
@@ -452,6 +456,7 @@ impl Collection {
         Ok(OptimizationsResponse {
             ongoing: all_ongoing.into_iter().map(|v| v.snapshot(root)).collect(),
             completed: all_completed.map(|c| c.into_iter().map(|v| v.snapshot(root)).collect()),
+            pending,
         })
     }
 
