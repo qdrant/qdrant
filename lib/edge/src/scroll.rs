@@ -36,7 +36,7 @@ impl Shard {
 
         match order_by.map(OrderBy::from) {
             None => {
-                let limit_plus_one = limit + 1;
+                let limit_plus_one = limit.saturating_add(1);
                 let mut records = self.scroll_by_id(
                     offset,
                     limit_plus_one,
@@ -57,7 +57,7 @@ impl Shard {
             Some(order_by) => {
                 if offset.is_some() {
                     return Err(OperationError::validation_error(
-                        "Offset is not supported when ordering by field".to_string(),
+                        "Offset is not supported when ordering by field",
                     ));
                 }
                 let records = self.scroll_by_field(
