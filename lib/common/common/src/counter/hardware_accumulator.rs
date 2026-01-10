@@ -119,12 +119,18 @@ impl HwMeasurementAcc {
     /// Create a disposable accumulator, which will not accumulate any values.
     /// WARNING: This is intended for specific internal use-cases only.
     /// DO NOT use it in tests or if you don't know what you're doing.
+    /// Prefer `new` to be used in tests.
     pub fn disposable() -> Self {
         Self {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
             disposable: true,
         }
+    }
+
+    /// Same as `disposable`, but expected to be used in edge crate for better code navigation.
+    pub fn disposable_edge() -> Self {
+        Self::disposable()
     }
 
     pub fn is_disposable(&self) -> bool {

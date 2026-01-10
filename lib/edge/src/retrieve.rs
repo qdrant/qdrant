@@ -26,7 +26,7 @@ impl Shard {
             &with_vector,
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::disposable_edge(),
         )?;
 
         let points: Vec<_> = point_ids

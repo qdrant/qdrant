@@ -50,7 +50,7 @@ impl Shard {
                 root_plan,
                 &mut search_results,
                 &mut scroll_results,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?;
 
             scored_points_batch.push(scored_points)

@@ -21,7 +21,7 @@ impl Shard {
             &searches,
             DEFAULT_FULL_SCAN_THRESHOLD,
             &is_stopped_guard,
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::disposable_edge(),
             |vector_name| {
                 self.config
                     .sparse_vector_data
