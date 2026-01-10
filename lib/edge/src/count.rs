@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
-use segment::index::field_index::CardinalityEstimation;
+use segment::index::field_index::EstimationMerge;
 use shard::count::CountRequestInternal;
 
 use super::Shard;
@@ -34,14 +34,7 @@ impl Shard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &HardwareCounterCell::disposable())
                 })
-                .fold(CardinalityEstimation::exact(0), |acc, x| {
-                    CardinalityEstimation {
-                        primary_clauses: vec![],
-                        min: acc.min + x.min,
-                        exp: acc.exp + x.exp,
-                        max: acc.max + x.max,
-                    }
-                });
+                .merge_independent();
 
             cardinality.exp
         };

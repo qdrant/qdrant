@@ -43,7 +43,7 @@ use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
-use segment::index::field_index::CardinalityEstimation;
+use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
@@ -844,14 +844,7 @@ impl LocalShard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &hw_counter)
                 })
-                .fold(CardinalityEstimation::exact(0), |acc, x| {
-                    CardinalityEstimation {
-                        primary_clauses: vec![],
-                        min: acc.min + x.min,
-                        exp: acc.exp + x.exp,
-                        max: acc.max + x.max,
-                    }
-                })
+                .merge_independent()
         });
         let cardinality = AbortOnDropHandle::new(cardinality).await?;
         Ok(cardinality)

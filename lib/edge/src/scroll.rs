@@ -18,7 +18,10 @@ use super::Shard;
 use crate::DEFAULT_EDGE_TIMEOUT;
 
 impl Shard {
-    pub fn scroll(&self, request: ScrollRequestInternal) -> OperationResult<Vec<RecordInternal>> {
+    pub fn scroll(
+        &self,
+        request: ScrollRequestInternal,
+    ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
         let ScrollRequestInternal {
             offset,
             limit,
@@ -31,27 +34,43 @@ impl Shard {
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let with_payload = with_payload.unwrap_or(ScrollRequestInternal::default_with_payload());
 
-        let records = match order_by.map(OrderBy::from) {
-            None => self.scroll_by_id(
-                offset,
-                limit,
-                &with_payload,
-                &with_vector,
-                filter.as_ref(),
-                HwMeasurementAcc::disposable(),
-            )?,
+        match order_by.map(OrderBy::from) {
+            None => {
+                let limit_plus_one = limit + 1;
+                let mut records = self.scroll_by_id(
+                    offset,
+                    limit_plus_one,
+                    &with_payload,
+                    &with_vector,
+                    filter.as_ref(),
+                    HwMeasurementAcc::disposable(),
+                )?;
+                let next_offset = if records.len() > limit {
+                    let last_record = records.pop().unwrap();
+                    Some(last_record.id)
+                } else {
+                    None
+                };
+                Ok((records, next_offset))
+            }
 
-            Some(order_by) => self.scroll_by_field(
-                limit,
-                &with_payload,
-                &with_vector,
-                filter.as_ref(),
-                &order_by,
-                HwMeasurementAcc::disposable(),
-            )?,
-        };
-
-        Ok(records)
+            Some(order_by) => {
+                if offset.is_some() {
+                    return Err(OperationError::validation_error(
+                        "Offset is not supported when ordering by field".to_string(),
+                    ));
+                }
+                let records = self.scroll_by_field(
+                    limit,
+                    &with_payload,
+                    &with_vector,
+                    filter.as_ref(),
+                    &order_by,
+                    HwMeasurementAcc::disposable(),
+                )?;
+                Ok((records, None))
+            }
+        }
     }
 
     pub fn query_scroll(

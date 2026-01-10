@@ -15,7 +15,8 @@ pub struct PyCountRequest(CountRequestInternal);
 #[pymethods]
 impl PyCountRequest {
     #[new]
-    pub fn new(filter: Option<PyFilter>, exact: bool) -> Self {
+    #[pyo3(signature = (exact = true, filter = None))]
+    pub fn new(exact: bool, filter: Option<PyFilter>) -> Self {
         Self(CountRequestInternal {
             filter: filter.map(Filter::from),
             exact,

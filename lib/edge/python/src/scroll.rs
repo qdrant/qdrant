@@ -16,12 +16,20 @@ pub struct PyScrollRequest(ScrollRequestInternal);
 #[pymethods]
 impl PyScrollRequest {
     #[new]
+    #[pyo3(signature = (
+        offset = None,
+        limit = None,
+        filter = None,
+        with_payload = None,
+        with_vector = None,
+        order_by = None,
+    ))]
     pub fn new(
         offset: Option<PyPointId>,
         limit: Option<usize>,
         filter: Option<PyFilter>,
         with_payload: Option<PyWithPayload>,
-        with_vector: PyWithVector,
+        with_vector: Option<PyWithVector>,
         order_by: Option<PyOrderBy>,
     ) -> Self {
         Self(ScrollRequestInternal {
@@ -29,7 +37,7 @@ impl PyScrollRequest {
             limit,
             filter: filter.map(Filter::from),
             with_payload: with_payload.map(WithPayloadInterface::from),
-            with_vector: WithVector::from(with_vector),
+            with_vector: with_vector.map(WithVector::from).unwrap_or_default(),
             order_by: order_by.map(OrderByInterface::from),
         })
     }

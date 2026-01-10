@@ -109,10 +109,10 @@ impl PyShard {
         Ok(points)
     }
 
-    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<Vec<PyRecord>> {
-        let points = self.get_shard()?.scroll(scroll.into())?;
+    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<(Vec<PyRecord>, Option<PyPointId>)> {
+        let (points, next_offset) = self.get_shard()?.scroll(scroll.into())?;
         let points = PyRecord::wrap_vec(points);
-        Ok(points)
+        Ok((points, next_offset.map(PyPointId)))
     }
 
     pub fn count(&self, count: PyCountRequest) -> Result<usize> {
