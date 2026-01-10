@@ -216,14 +216,8 @@ fn test_mmr_points_without_required_vector() {
         candidates_limit: 100,
     };
 
-    let result = mmr_from_points_with_vector(
-        points,
-        mmr,
-        distance,
-        None,
-        5,
-        HwMeasurementAcc::new(),
-    );
+    let result =
+        mmr_from_points_with_vector(points, mmr, distance, None, 5, HwMeasurementAcc::new());
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -253,14 +247,8 @@ fn test_mmr_duplicate_points() {
         candidates_limit: 100,
     };
 
-    let result = mmr_from_points_with_vector(
-        points,
-        mmr,
-        distance,
-        None,
-        5,
-        HwMeasurementAcc::new(),
-    );
+    let result =
+        mmr_from_points_with_vector(points, mmr, distance, None, 5, HwMeasurementAcc::new());
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
