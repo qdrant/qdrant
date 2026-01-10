@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -16,7 +15,9 @@ use tokio::task::JoinHandle;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizationPlanner, SegmentOptimizer,
+};
 use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -294,11 +295,14 @@ impl UpdateHandler {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
 
-        let excluded_ids = HashSet::<_>::default();
+        let segments = self.segments.read();
+        let mut planner = OptimizationPlanner::new(
+            segments.running_optimizations.count(),
+            segments.iter_original(),
+        );
         let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
-            let nonoptimal_segment_ids =
-                optimizer.check_condition(self.segments.clone(), &excluded_ids);
-            !nonoptimal_segment_ids.is_empty()
+            optimizer.plan_optimizations(&mut planner);
+            !planner.scheduled().is_empty()
         });
 
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
