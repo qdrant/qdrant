@@ -33,3 +33,28 @@ def test_collection_not_found(collection_name):
     assert response.ok
     result = response.json()["result"]["exists"]
     assert not result
+
+
+def test_empty_collection_name():
+    """Test that empty collection name returns 422 Unprocessable Entity"""
+    response = request_with_validation(
+        api="/collections/{collection_name}/exists",
+        method="GET",
+        path_params={"collection_name": ""},
+        validate=False,
+    )
+    assert response.status_code == 422
+    assert "error" in response.json()["status"]
+
+
+def test_control_character_collection_name():
+    """Test that control characters in collection name return 422"""
+    for invalid_name in ["\t", "\n", "\r", "name\twith\ttabs"]:
+        response = request_with_validation(
+            api="/collections/{collection_name}/exists",
+            method="GET",
+            path_params={"collection_name": invalid_name},
+            validate=False,
+        )
+        assert response.status_code == 422, f"Expected 422 for name: {repr(invalid_name)}"
+        assert "error" in response.json()["status"]
