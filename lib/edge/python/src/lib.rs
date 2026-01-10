@@ -87,6 +87,7 @@ pub struct PyShard(Option<edge::Shard>);
 #[pymethods]
 impl PyShard {
     #[new]
+    #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
         let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
         Ok(Self(Some(shard)))
