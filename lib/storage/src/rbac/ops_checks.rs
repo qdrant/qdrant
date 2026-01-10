@@ -7,12 +7,13 @@ use collection::lookup::WithLookup;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::types::{
     CoreSearchRequest, CountRequestInternal, DiscoverRequestInternal, PointRequestInternal,
-    RecommendRequestInternal, ScrollRequestInternal,
+    RecommendRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest,
 };
 use segment::data_types::facets::FacetParams;
+use shard::scroll::ScrollRequestInternal;
 
 use super::{Access, AccessRequirements, CollectionAccessList, CollectionPass};
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;

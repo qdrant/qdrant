@@ -1,11 +1,13 @@
 pub mod config;
+pub mod count;
 pub mod query;
 pub mod repr;
+pub mod scroll;
 pub mod search;
-mod snapshots;
+pub mod snapshots;
 pub mod types;
 pub mod update;
-mod utils;
+pub mod utils;
 
 use std::path::PathBuf;
 
@@ -16,7 +18,9 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::count::*;
 use self::query::*;
+use self::scroll::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -44,13 +48,16 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::config::{PyPayloadStorageType, PySegmentConfig};
     #[pymodule_export]
+    use super::count::PyCountRequest;
+    #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
     };
     #[pymodule_export]
+    use super::scroll::PyScrollRequest;
+    #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyPayloadSelectorInterface, PyQuantizationSearchParams,
-        PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
@@ -64,7 +71,8 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::query::{
         PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
-        PyNaiveFeedbackCoefficients, PyQueryInterface, PyRecommendQuery,
+        PyNaiveFeedbackCoefficients, PyPayloadSelectorInterface, PyQueryInterface,
+        PyRecommendQuery,
     };
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
@@ -99,6 +107,17 @@ impl PyShard {
         let points = self.get_shard()?.search(search.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
+    }
+
+    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<(Vec<PyRecord>, Option<PyPointId>)> {
+        let (points, next_offset) = self.get_shard()?.scroll(scroll.into())?;
+        let points = PyRecord::wrap_vec(points);
+        Ok((points, next_offset.map(PyPointId)))
+    }
+
+    pub fn count(&self, count: PyCountRequest) -> Result<usize> {
+        let points_count = self.get_shard()?.count(count.into())?;
+        Ok(points_count)
     }
 
     pub fn retrieve(

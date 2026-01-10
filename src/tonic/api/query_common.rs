@@ -18,15 +18,15 @@ use collection::collection::distance_matrix::{
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::try_discover_request_from_grpc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{
-    CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, default_exact_count,
-};
+use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
+use shard::count::CountRequestInternal;
 use shard::query::query_enum::QueryEnum;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
@@ -666,9 +666,9 @@ pub async fn count(
         timeout,
     } = count_points;
 
-    let count_request = collection::operations::types::CountRequestInternal {
+    let count_request = CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
-        exact: exact.unwrap_or_else(default_exact_count),
+        exact: exact.unwrap_or_else(CountRequestInternal::default_exact),
     };
 
     let toc = toc_provider

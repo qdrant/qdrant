@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTimeError};
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
-    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
-    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
+    BaseGroupRequest, LookupLocation, RecommendStrategy, SearchGroupsRequestInternal,
+    SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
 use common::progress_tracker::ProgressTree;
@@ -35,8 +35,10 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+pub use shard::count::CountRequestInternal;
 use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
+pub use shard::scroll::ScrollRequestInternal;
 pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
 use sparse::common::sparse_vector::SparseVector;
@@ -453,59 +455,6 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-/// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub struct ScrollRequestInternal {
-    /// Start ID to read points from.
-    pub offset: Option<PointIdType>,
-
-    /// Page size. Default: 10
-    #[validate(range(min = 1))]
-    pub limit: Option<usize>,
-
-    /// Look only for points which satisfies this conditions. If not provided - all points.
-    #[validate(nested)]
-    pub filter: Option<Filter>,
-
-    /// Select which payload to return with the response. Default is true.
-    pub with_payload: Option<WithPayloadInterface>,
-
-    /// Options for specifying which vectors to include into response. Default is false.
-    #[serde(default, alias = "with_vectors")]
-    pub with_vector: WithVector,
-
-    /// Order the records by a payload field.
-    pub order_by: Option<OrderByInterface>,
-}
-
-impl ScrollRequestInternal {
-    pub(crate) fn default_limit() -> usize {
-        10
-    }
-
-    pub(crate) fn default_with_payload() -> WithPayloadInterface {
-        WithPayloadInterface::Bool(true)
-    }
-
-    pub(crate) fn default_with_vector() -> WithVector {
-        WithVector::Bool(false)
-    }
-}
-
-impl Default for ScrollRequestInternal {
-    fn default() -> Self {
-        ScrollRequestInternal {
-            offset: None,
-            limit: Some(Self::default_limit()),
-            filter: None,
-            with_payload: Some(Self::default_with_payload()),
-            with_vector: Self::default_with_vector(),
-            order_by: None,
-        }
-    }
-}
-
 fn points_example() -> Vec<api::rest::Record> {
     let mut payload_map_1 = Map::new();
     payload_map_1.insert("city".to_string(), Value::String("London".to_string()));
@@ -904,25 +853,6 @@ pub struct CountRequest {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-}
-
-/// Count Request
-/// Counts the number of points which satisfy the given filter.
-/// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub struct CountRequestInternal {
-    /// Look only for points which satisfies this conditions
-    #[validate(nested)]
-    pub filter: Option<Filter>,
-    /// If true, count exact number of points. If false, count approximate number of points faster.
-    /// Approximate count might be unreliable during the indexing process. Default: true
-    #[serde(default = "default_exact_count")]
-    pub exact: bool,
-}
-
-pub const fn default_exact_count() -> bool {
-    true
 }
 
 #[derive(Debug, Default, Serialize, JsonSchema)]

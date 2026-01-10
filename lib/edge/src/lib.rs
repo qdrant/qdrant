@@ -1,8 +1,9 @@
+pub mod count;
 pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
-mod snapshots;
+pub mod snapshots;
 pub mod update;
 
 use std::num::NonZero;
