@@ -16,23 +16,33 @@ pub struct PySearchRequest(CoreSearchRequest);
 #[pymethods]
 impl PySearchRequest {
     #[new]
+    #[pyo3(signature = (
+        query,
+        limit,
+        offset,
+        filter = None,
+        params = None,
+        with_vector = None,
+        with_payload = None,
+        score_threshold = None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         query: PyQuery,
-        filter: Option<PyFilter>,
-        params: Option<PySearchParams>,
         limit: usize,
         offset: usize,
+        filter: Option<PyFilter>,
+        params: Option<PySearchParams>,
         with_vector: Option<PyWithVector>,
         with_payload: Option<PyWithPayload>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(CoreSearchRequest {
             query: QueryEnum::from(query),
-            filter: filter.map(Filter::from),
-            params: params.map(SearchParams::from),
             limit,
             offset,
+            filter: filter.map(Filter::from),
+            params: params.map(SearchParams::from),
             with_vector: with_vector.map(WithVector::from),
             with_payload: with_payload.map(WithPayloadInterface::from),
             score_threshold,
@@ -108,6 +118,13 @@ pub struct PySearchParams(pub SearchParams);
 #[pymethods]
 impl PySearchParams {
     #[new]
+    #[pyo3(signature = (
+        hnsw_ef = None,
+        exact = false,
+        quantization = None,
+        indexed_only = false,
+        acorn = None,
+    ))]
     pub fn new(
         hnsw_ef: Option<usize>,
         exact: bool,
@@ -175,6 +192,7 @@ pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 #[pymethods]
 impl PyQuantizationSearchParams {
     #[new]
+    #[pyo3(signature = (ignore = false, rescore = None, oversampling = None))]
     pub fn new(ignore: bool, rescore: Option<bool>, oversampling: Option<f64>) -> Self {
         Self(QuantizationSearchParams {
             ignore,
@@ -222,6 +240,7 @@ pub struct PyAcornSearchParams(AcornSearchParams);
 #[pymethods]
 impl PyAcornSearchParams {
     #[new]
+    #[pyo3(signature = (enable = false, max_selectivity = None))]
     pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
         Self(AcornSearchParams {
             enable,

@@ -25,28 +25,39 @@ pub struct PyQueryRequest(ShardQueryRequest);
 #[pymethods]
 impl PyQueryRequest {
     #[new]
+    #[pyo3(signature = (
+        prefetches,
+        limit,
+        offset,
+        with_vector,
+        with_payload,
+        query = None,
+        filter = None,
+        score_threshold = None,
+        params = None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         prefetches: Vec<PyPrefetch>,
+        limit: usize,
+        offset: usize,
+        with_vector: PyWithVector,
+        with_payload: PyWithPayload,
         query: Option<PyScoringQuery>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
-        limit: usize,
-        offset: usize,
         params: Option<PySearchParams>,
-        with_vector: PyWithVector,
-        with_payload: PyWithPayload,
     ) -> Self {
         Self(ShardQueryRequest {
             prefetches: PyPrefetch::peel_vec(prefetches),
+            limit,
+            offset,
+            with_vector: WithVector::from(with_vector),
+            with_payload: WithPayloadInterface::from(with_payload),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
-            limit,
-            offset,
             params: params.map(SearchParams::from),
-            with_vector: WithVector::from(with_vector),
-            with_payload: WithPayloadInterface::from(with_payload),
         })
     }
 
@@ -128,18 +139,26 @@ pub struct PyPrefetch(ShardPrefetch);
 #[pymethods]
 impl PyPrefetch {
     #[new]
+    #[pyo3(signature = (
+        prefetches,
+        limit,
+        query = None,
+        params = None,
+        filter = None,
+        score_threshold = None,
+    ))]
     pub fn new(
         prefetches: Vec<PyPrefetch>,
-        query: Option<PyScoringQuery>,
         limit: usize,
+        query: Option<PyScoringQuery>,
         params: Option<PySearchParams>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(ShardPrefetch {
             prefetches: PyPrefetch::peel_vec(prefetches),
-            query: query.map(ScoringQuery::from),
             limit,
+            query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
@@ -341,6 +360,7 @@ pub struct PyOrderBy(OrderBy);
 #[pymethods]
 impl PyOrderBy {
     #[new]
+    #[pyo3(signature = (key, direction = None, start_from = None))]
     pub fn new(
         key: PyJsonPath,
         direction: Option<PyDirection>,
@@ -561,11 +581,12 @@ pub struct PyMmr(MmrInternal);
 #[pymethods]
 impl PyMmr {
     #[new]
+    #[pyo3(signature = (vector, lambda, candidates_limit, using = None))]
     pub fn new(
         vector: PyNamedVectorInternal,
-        using: Option<String>,
         lambda: f32,
         candidates_limit: usize,
+        using: Option<String>,
     ) -> Self {
         let mmr = MmrInternal {
             vector: VectorInternal::from(vector),

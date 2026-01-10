@@ -16,6 +16,7 @@ pub struct PyPoint(PointStructPersisted);
 #[pymethods]
 impl PyPoint {
     #[new]
+    #[pyo3(signature = (id, vector, payload = None))]
     pub fn new(id: PyPointId, vector: PyVector, payload: Option<PyPayload>) -> Self {
         let point = PointStructPersisted {
             id: PointIdType::from(id),

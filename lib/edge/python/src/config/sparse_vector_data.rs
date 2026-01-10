@@ -36,6 +36,7 @@ impl PySparseVectorDataConfig {
 #[pymethods]
 impl PySparseVectorDataConfig {
     #[new]
+    #[pyo3(signature = (index, storage_type, modifier = None))]
     pub fn new(
         index: PySparseIndexConfig,
         storage_type: PySparseVectorStorageType,
@@ -98,14 +99,15 @@ pub struct PySparseIndexConfig(SparseIndexConfig);
 #[pymethods]
 impl PySparseIndexConfig {
     #[new]
+    #[pyo3(signature = (index_type, full_scan_threshold = None, datatype = None))]
     pub fn new(
-        full_scan_threshold: Option<usize>,
         index_type: PySparseIndexType,
+        full_scan_threshold: Option<usize>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
         Self(SparseIndexConfig {
-            full_scan_threshold,
             index_type: SparseIndexType::from(index_type),
+            full_scan_threshold,
             datatype: datatype.map(VectorStorageDatatype::from),
         })
     }
