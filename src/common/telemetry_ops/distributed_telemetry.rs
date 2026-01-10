@@ -1,6 +1,12 @@
-use ahash::{HashMap, HashMapExt};
-use collection::operations::types::{ReshardingInfo, ShardTransferInfo};
+use std::collections::HashMap;
+
+use collection::operations::types::{ReshardingInfo, ShardStatus, ShardTransferInfo};
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::shard::ShardId;
+use collection::shards::telemetry::PartialSnapshotTelemetry;
+use collection::telemetry::{CollectionTelemetry, ShardCleanStatusTelemetry};
 use schemars::JsonSchema;
+use segment::types::ShardKey;
 use serde::Serialize;
 use shard::PeerId;
 use storage::content_manager::errors::{StorageError, StorageResult};
@@ -24,6 +30,10 @@ pub struct DistributedCollectionTelemetry {
     /// Collection name
     id: String,
 
+    /// Shards topology
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shards: Option<Vec<DistributedShardTelemetry>>,
+
     /// Ongoing resharding operations
     #[serde(skip_serializing_if = "Option::is_none")]
     reshardings: Option<Vec<ReshardingInfo>>,
@@ -31,6 +41,66 @@ pub struct DistributedCollectionTelemetry {
     /// Ongoing shard transfers
     #[serde(skip_serializing_if = "Option::is_none")]
     shard_transfers: Option<Vec<ShardTransferInfo>>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DistributedShardTelemetry {
+    /// Shard ID
+    id: ShardId,
+
+    /// Optional shard key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<ShardKey>,
+
+    /// Replica information
+    replicas: Vec<DistributedReplicaTelemetry>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct DistributedReplicaTelemetry {
+    /// Peer ID hosting this replica
+    peer_id: PeerId,
+
+    /// Consensus state for this replica
+    state: ReplicaState,
+
+    // All below are None if the relevant local shard is not found
+    /// Shard status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<ShardStatus>,
+
+    /// Total optimized points
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_optimized_points: Option<usize>,
+
+    /// Estimated vectors size in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vectors_size_bytes: Option<usize>,
+
+    /// Estimated payloads size in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payloads_size_bytes: Option<usize>,
+
+    /// Approximate number of points
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_points: Option<usize>,
+
+    /// Approximate number of vectors
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_vectors: Option<usize>,
+
+    /// Approximate number of vectors by name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_vectors_by_name: Option<HashMap<String, usize>>,
+
+    /// Shard cleaning task status.
+    /// After a resharding, a cleanup task is performed to remove outdated points from this shard.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shard_cleaning_status: Option<ShardCleanStatusTelemetry>,
+
+    /// Partial snapshot telemetry
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partial_snapshot: Option<PartialSnapshotTelemetry>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -142,10 +212,14 @@ fn aggregate_collections(
         let reshardings =
             aggregate_resharding_info(&base_peer_id, telemetry_by_peer, &collection_id);
 
+        // Aggregate shards from all peers
+        let shards = aggregate_shards(telemetry_by_peer, collection, &collection_id);
+
         collections.insert(
             collection_id.clone(),
             DistributedCollectionTelemetry {
                 id: collection_id,
+                shards,
                 shard_transfers: (!transfers.is_empty()).then_some(transfers),
                 reshardings: (!reshardings.is_empty()).then_some(reshardings),
             },
@@ -248,6 +322,102 @@ fn aggregate_resharding_info(
                 .unwrap_or_else(|| base_resharding.clone())
         })
         .collect::<Vec<_>>()
+}
+
+fn aggregate_shards(
+    telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
+    base_collection: &CollectionTelemetry,
+    collection_id: &str,
+) -> Option<Vec<DistributedShardTelemetry>> {
+    let base_replicasets = base_collection.shards.as_ref()?;
+
+    let mut distributed_shards = Vec::new();
+
+    for base_replicaset in base_replicasets {
+        // Collect all telemetry for this shard from all peers
+        let mut replica_map: HashMap<PeerId, DistributedReplicaTelemetry> = HashMap::new();
+
+        // Use replicate_states as source of truth for which replicas exist
+        for (peer_id, replica_state) in &base_replicaset.replicate_states {
+            // Try to find local shard info from this peer
+            let peer_telemetry = telemetry_by_peer.get(peer_id);
+            let local = peer_telemetry.and_then(|t| {
+                let collection = get_collection_telemetry(t, collection_id)?;
+                let shard_cleaning_status = collection
+                    .shard_clean_tasks
+                    .as_ref()
+                    .and_then(|tasks| tasks.get(&base_replicaset.id).cloned());
+                let replicaset = collection
+                    .shards
+                    .as_ref()?
+                    .iter()
+                    .find(|s| s.id == base_replicaset.id)?;
+                let local_shard = replicaset.local.as_ref()?;
+                Some((shard_cleaning_status, replicaset, local_shard))
+            });
+
+            let replica = if let Some((shard_cleaning_status, replicaset, local_shard)) = local {
+                // Full replica info from local shard
+                DistributedReplicaTelemetry {
+                    peer_id: *peer_id,
+                    state: *replica_state,
+                    status: local_shard.status,
+                    total_optimized_points: Some(local_shard.total_optimized_points),
+                    vectors_size_bytes: local_shard.vectors_size_bytes,
+                    payloads_size_bytes: local_shard.payloads_size_bytes,
+                    num_points: local_shard.num_points,
+                    num_vectors: local_shard.num_vectors,
+                    num_vectors_by_name: local_shard.num_vectors_by_name.clone(),
+                    partial_snapshot: replicaset.partial_snapshot.and_then(|partial_snapshot| {
+                        (!partial_snapshot.is_empty()).then_some(partial_snapshot)
+                    }),
+                    shard_cleaning_status,
+                }
+            } else {
+                // Minimal info for remote/unresponsive replica
+                DistributedReplicaTelemetry {
+                    peer_id: *peer_id,
+                    state: *replica_state,
+                    status: None,
+                    total_optimized_points: None,
+                    vectors_size_bytes: None,
+                    payloads_size_bytes: None,
+                    num_points: None,
+                    num_vectors: None,
+                    num_vectors_by_name: None,
+                    shard_cleaning_status: None,
+                    partial_snapshot: None,
+                }
+            };
+
+            replica_map.insert(*peer_id, replica);
+        }
+
+        distributed_shards.push(DistributedShardTelemetry {
+            id: base_replicaset.id,
+            key: base_replicaset.key.clone(),
+            replicas: replica_map.into_values().collect(),
+        });
+    }
+
+    Some(distributed_shards)
+}
+
+fn get_collection_telemetry<'a>(
+    telemetry: &'a TelemetryData,
+    collection_id: &str,
+) -> Option<&'a CollectionTelemetry> {
+    telemetry
+        .collections
+        .collections
+        .as_ref()?
+        .iter()
+        .find_map(|c| match c {
+            CollectionTelemetryEnum::Full(coll) if coll.id == collection_id => {
+                Some(Box::as_ref(coll))
+            }
+            _ => None,
+        })
 }
 
 fn aggregate_cluster_telemetry(
