@@ -522,12 +522,15 @@ impl ShardHolder {
     ) -> Vec<ShardTransferInfo> {
         let mut shard_transfers = vec![];
         for shard_transfer in self.shard_transfers.read().iter() {
-            let shard_id = shard_transfer.shard_id;
-            let to_shard_id = shard_transfer.to_shard_id;
-            let to = shard_transfer.to;
-            let from = shard_transfer.from;
-            let sync = shard_transfer.sync;
-            let method = shard_transfer.method;
+            let ShardTransfer {
+                shard_id,
+                to_shard_id,
+                from,
+                to,
+                sync,
+                method,
+                filter,
+            } = shard_transfer.clone();
             let status = tasks_pool.get_task_status(&shard_transfer.key());
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
@@ -536,6 +539,7 @@ impl ShardHolder {
                 to,
                 sync,
                 method,
+                filter,
                 comment: status.map(|p| p.comment),
             })
         }
