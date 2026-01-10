@@ -19,7 +19,7 @@ impl PySearchRequest {
     #[pyo3(signature = (
         query,
         limit,
-        offset,
+        offset = None,
         filter = None,
         params = None,
         with_vector = None,
@@ -30,7 +30,7 @@ impl PySearchRequest {
     pub fn new(
         query: PyQuery,
         limit: usize,
-        offset: usize,
+        offset: Option<usize>,
         filter: Option<PyFilter>,
         params: Option<PySearchParams>,
         with_vector: Option<PyWithVector>,
@@ -40,7 +40,7 @@ impl PySearchRequest {
         Self(CoreSearchRequest {
             query: QueryEnum::from(query),
             limit,
-            offset,
+            offset: offset.unwrap_or(0),
             filter: filter.map(Filter::from),
             params: params.map(SearchParams::from),
             with_vector: with_vector.map(WithVector::from),

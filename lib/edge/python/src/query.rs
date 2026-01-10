@@ -26,34 +26,36 @@ pub struct PyQueryRequest(ShardQueryRequest);
 impl PyQueryRequest {
     #[new]
     #[pyo3(signature = (
-        prefetches,
         limit,
-        offset,
-        with_vector,
-        with_payload,
+        offset = None,
         query = None,
+        prefetches = None,
+        with_vector = None,
+        with_payload = None,
         filter = None,
         score_threshold = None,
         params = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
         limit: usize,
-        offset: usize,
-        with_vector: PyWithVector,
-        with_payload: PyWithPayload,
+        offset: Option<usize>,
         query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
+        with_vector: Option<PyWithVector>,
+        with_payload: Option<PyWithPayload>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
         params: Option<PySearchParams>,
     ) -> Self {
         Self(ShardQueryRequest {
-            prefetches: PyPrefetch::peel_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
-            offset,
-            with_vector: WithVector::from(with_vector),
-            with_payload: WithPayloadInterface::from(with_payload),
+            offset: offset.unwrap_or(0),
+            with_vector: with_vector.map(WithVector::from).unwrap_or_default(),
+            with_payload: with_payload
+                .map(WithPayloadInterface::from)
+                .unwrap_or_default(),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
@@ -140,23 +142,23 @@ pub struct PyPrefetch(ShardPrefetch);
 impl PyPrefetch {
     #[new]
     #[pyo3(signature = (
-        prefetches,
         limit,
         query = None,
+        prefetches = None,
         params = None,
         filter = None,
         score_threshold = None,
     ))]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
         limit: usize,
         query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
         params: Option<PySearchParams>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(ShardPrefetch {
-            prefetches: PyPrefetch::peel_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
             query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
