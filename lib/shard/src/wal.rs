@@ -251,6 +251,8 @@ pub enum WalError {
     TruncateWalError(String),
     #[error("Operation rejected by WAL for old clock")]
     ClockRejected,
+    #[error("Cannot write to WAL in read-only mode")]
+    ReadOnlyWalError,
 }
 
 #[cfg(test)]

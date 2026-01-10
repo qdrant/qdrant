@@ -51,14 +51,15 @@ impl LocalShard {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
-        save_wal: bool,
+        lock_wal: bool, // aka save_wal
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
-        let wal = self.wal.wal.clone();
+        let wal = self.wal.as_writable_wal().cloned();
 
-        if !save_wal {
-            // If we are not saving WAL, we still need to make sure that all submitted by this point
-            // updates have made it to the segments. So we use the Plunger to achieve that.
+        if !lock_wal {
+            // If we are not allowed to lock WAL, we still need to make sure that all
+            // submitted by this point updates have made it to the segments.
+            // So we use the Plunger to achieve that.
             // It will notify us when all submitted updates so far have been processed.
             let (tx, rx) = oneshot::channel();
             let plunger = UpdateSignal::Plunger(tx);
@@ -74,6 +75,7 @@ impl LocalShard {
             .to_base_segment_config()?;
         let payload_index_schema = self.payload_index_schema.clone();
         let temp_path = temp_path.to_owned();
+        let shard_path = self.path.clone();
 
         let tar_c = tar.clone();
         let update_lock = self.update_operation_lock.clone();
@@ -92,11 +94,22 @@ impl LocalShard {
                 update_lock,
             )?;
 
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+            match (wal, lock_wal) {
+                (Some(wal), true) => {
+                    // snapshot all shard's WAL
+                    Self::snapshot_wal(wal, &tar_c)
+                }
+                (Some(wal), false) => {
+                    // Create empty WAL compatible with stored data
+                    // Avoid locking WAL in this case
+                    Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+                }
+                (None, _) => {
+                    // In read-only mode, copy WAL files from disk if they exist
+                    // We don't have a WAL to lock anyway
+                    let wal_path = Self::wal_path(&shard_path);
+                    Self::copy_wal_from_disk(&wal_path, &tar_c)
+                }
             }
         });
         AbortOnDropHandle::new(handle).await??;
@@ -157,8 +170,21 @@ impl LocalShard {
         wal_guard.flush()?;
         let source_wal_path = wal_guard.path();
 
+        Self::copy_wal_from_disk(source_wal_path, tar)
+    }
+
+    /// Copy WAL files from disk in read-only mode
+    ///
+    /// In read-only mode we don't have a WAL handle, so we copy files directly from disk.
+    /// If save_wal is true, we copy the actual WAL files.
+    /// If save_wal is false, we create an empty WAL compatible with the stored data.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    fn copy_wal_from_disk(wal_path: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         let tar = tar.descend(Path::new(WAL_PATH))?;
-        for entry in fs::read_dir(source_wal_path).map_err(|err| {
+        for entry in fs::read_dir(wal_path).map_err(|err| {
             CollectionError::service_error(format!("Can't read WAL directory: {err}",))
         })? {
             let entry = entry.map_err(|err| {

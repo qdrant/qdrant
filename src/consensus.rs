@@ -1488,6 +1488,7 @@ mod tests {
             ChannelService::new(settings.service.http_port, None, None),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
+            false, // read_only
         );
         let toc_arc = Arc::new(toc);
         let storage_path = toc_arc.storage_path();

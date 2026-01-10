@@ -95,8 +95,8 @@ pub struct UpdateHandler {
     /// Sender to stop flush worker
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
-    /// WAL, required for operations
-    wal: LockedWal,
+    /// WAL, required for operations (None in read-only mode)
+    wal: Option<LockedWal>,
     /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
     /// This is used when other bits of code still depend on information in the WAL, such as the
     /// queue proxy shard.
@@ -135,7 +135,7 @@ impl UpdateHandler {
         optimizer_resource_budget: ResourceBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
         clocks: LocalShardClocks,

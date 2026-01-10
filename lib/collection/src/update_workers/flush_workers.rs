@@ -32,11 +32,21 @@ impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     fn flush_worker_internal(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
     ) {
+        // In read-only mode, only flush segments without WAL operations
+        let Some(wal) = wal else {
+            log::trace!("Read-only mode: flushing segments without WAL");
+            if let Err(err) = Self::flush_segments(segments.clone()) {
+                log::error!("Failed to flush segments in read-only mode: {err}");
+                segments.write().report_optimizer_error(err);
+            }
+            return;
+        };
+
         log::trace!("Attempting flushing");
         let wal_flush_job = wal.blocking_lock().flush_async();
 
@@ -100,7 +110,7 @@ impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: Option<LockedWal>,
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         flush_interval_sec: u64,

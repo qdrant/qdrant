@@ -87,6 +87,12 @@ impl ShardOperation for LocalShard {
                     });
                 }
 
+                Err(shard::wal::WalError::ReadOnlyWalError) => {
+                    return Err(CollectionError::bad_request(
+                        "Cannot write operations in read-only mode",
+                    ));
+                }
+
                 Err(err) => return Err(err.into()),
             };
 
