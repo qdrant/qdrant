@@ -8,6 +8,9 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+staging = ["shard/staging"]
+
 [dependencies]
 common = { path = "../common/common" }
 io = { path = "../common/io" }

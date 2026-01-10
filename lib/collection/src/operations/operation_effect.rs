@@ -40,6 +40,8 @@ impl EstimateOperationEffectArea for CollectionUpdateOperations {
                 payload_operation.estimate_effect_area()
             }
             CollectionUpdateOperations::FieldIndexOperation(_) => OperationEffectArea::Empty,
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(_) => OperationEffectArea::Empty,
         }
     }
 }
@@ -68,8 +70,6 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                     sync_op.points.iter().map(|x| x.id).collect(),
                 ))
             }
-            #[cfg(feature = "staging")]
-            point_ops::PointOperations::TestDelay(_) => OperationEffectArea::Empty,
         }
     }
 }
