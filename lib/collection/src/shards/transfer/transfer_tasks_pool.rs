@@ -2,7 +2,9 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
+use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 
 use crate::common::eta_calculator::EtaCalculator;
@@ -17,7 +19,7 @@ pub struct TransferTasksPool {
 
 pub struct TransferTaskItem {
     pub task: CancellableAsyncTaskHandle<bool>,
-    pub started_at: chrono::DateTime<chrono::Utc>,
+    pub started_at: chrono::DateTime<Utc>,
     pub progress: Arc<Mutex<TransferTaskProgress>>,
 }
 
@@ -27,16 +29,45 @@ pub struct TransferTaskProgress {
     pub eta: EtaCalculator,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum TaskResult {
     Running,
     Finished,
     Failed,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct TransferTaskStatus {
     pub result: TaskResult,
-    pub comment: String,
+    pub points_transferred: usize,
+    pub points_total: usize,
+    pub eta: Option<Duration>,
+    pub started_at: DateTime<Utc>,
+    pub elapsed: usize,
+}
+
+impl TransferTaskStatus {
+    pub fn comment(&self) -> String {
+        let mut comment = format!(
+            "Transferring records ({}/{}), started {}s ago, ETA: ",
+            self.points_transferred, self.points_total, self.elapsed,
+        );
+        if let Some(eta) = self.eta {
+            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
+        } else {
+            comment.push('-');
+        }
+
+        comment
+    }
+
+    pub fn failed(&self) -> bool {
+        matches!(self.result, TaskResult::Failed)
+    }
+
+    pub fn running(&self) -> bool {
+        matches!(self.result, TaskResult::Running)
+    }
 }
 
 impl TransferTaskProgress {
@@ -57,7 +88,7 @@ impl TransferTaskProgress {
 
     pub fn set(&mut self, transferred: usize, total: usize) {
         self.points_transferred = transferred;
-        self.points_total = total;
+        self.points_total = max(total, transferred);
         self.eta.set_progress(transferred);
     }
 }
@@ -81,22 +112,17 @@ impl TransferTasksPool {
         };
 
         let progress = task.progress.lock();
-        let total = max(progress.points_transferred, progress.points_total);
-        let mut comment = format!(
-            "Transferring records ({}/{}), started {}s ago, ETA: ",
-            progress.points_transferred,
-            total,
-            chrono::Utc::now()
-                .signed_duration_since(task.started_at)
-                .num_seconds(),
-        );
-        if let Some(eta) = progress.eta.estimate(total) {
-            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
-        } else {
-            comment.push('-');
-        }
 
-        Some(TransferTaskStatus { result, comment })
+        let elapsed = (Utc::now() - task.started_at).num_seconds().max(0) as usize;
+
+        Some(TransferTaskStatus {
+            result,
+            points_transferred: progress.points_transferred,
+            points_total: progress.points_total,
+            eta: progress.eta.estimate(progress.points_total),
+            started_at: task.started_at,
+            elapsed,
+        })
     }
 
     /// Stop the task and return the result. If the task is not found, return None.

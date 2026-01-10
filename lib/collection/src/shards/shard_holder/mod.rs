@@ -529,6 +529,7 @@ impl ShardHolder {
             let sync = shard_transfer.sync;
             let method = shard_transfer.method;
             let status = tasks_pool.get_task_status(&shard_transfer.key());
+
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
                 to_shard_id,
@@ -536,7 +537,8 @@ impl ShardHolder {
                 to,
                 sync,
                 method,
-                comment: status.map(|p| p.comment),
+                comment: status.map(|p| p.comment()),
+                status,
             })
         }
         shard_transfers.sort_by_key(|k| k.shard_id);
