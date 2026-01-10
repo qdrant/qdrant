@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
-
+use log::trace;
 use common::sort_utils::sort_permutation;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -121,6 +121,8 @@ impl SegmentHolder {
 
     fn sort_segment_ids_by_flush_dependency(&self, segment_ids: &[SegmentId]) -> Vec<SegmentId> {
         let flush_topology = self.flush_dependency.lock().clone();
+        trace!("{flush_topology:?}");
+
         let mut iter = flush_topology.sort_elements(segment_ids);
         let sorted_keys: Vec<_> = iter.by_ref().collect();
 
