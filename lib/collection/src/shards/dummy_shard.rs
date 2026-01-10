@@ -11,17 +11,18 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, ShardStatus, UpdateResult,
-    UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
+    PointRequestInternal, ShardStatus, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::shard_trait::ShardOperation;

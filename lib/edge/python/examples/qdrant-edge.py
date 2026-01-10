@@ -137,3 +137,21 @@ points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
 
 for point in points:
     print(point)
+
+print("---- Scroll ----")
+
+scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2))
+for point in scroll_result:
+    print(point)
+
+while next_offset is not None:
+    print(f"--- Next scroll (offset = {next_offset})---")
+    scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2, offset=next_offset))
+    for point in scroll_result:
+        print(point)
+
+print("---- Count ----")
+
+count = shard.count(CountRequest(exact=True))
+
+print(f"Total points count: {count}")

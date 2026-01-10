@@ -15,7 +15,9 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use semver::Version;
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
@@ -29,8 +31,8 @@ use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
+    PointRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;

@@ -3,9 +3,10 @@ use std::sync::Arc;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 use semver::Version;
+use shard::count::CountRequestInternal;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;

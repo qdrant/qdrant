@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 use segment::data_types::facets::FacetParams;
 use serde_json::Value;
+use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
+use shard::scroll::ScrollRequestInternal;
 
-use crate::operations::types::{CountRequestInternal, PointRequestInternal, ScrollRequestInternal};
+use crate::operations::types::PointRequestInternal;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 
 pub trait Loggable {
