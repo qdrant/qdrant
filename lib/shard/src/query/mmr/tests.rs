@@ -129,7 +129,7 @@ fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
         distance,
         None,
         3,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     );
 
     let scored_points = result.unwrap();
@@ -170,7 +170,7 @@ fn test_mmr_less_than_two_points() {
         distance,
         None,
         5,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     );
 
     assert!(result.is_ok());
@@ -189,7 +189,7 @@ fn test_mmr_less_than_two_points() {
         distance,
         None,
         5,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     );
 
     assert!(result.is_ok());
@@ -222,7 +222,7 @@ fn test_mmr_points_without_required_vector() {
         distance,
         None,
         5,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     );
 
     assert!(result.is_ok());
@@ -259,7 +259,7 @@ fn test_mmr_duplicate_points() {
         distance,
         None,
         5,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     );
 
     assert!(result.is_ok());
@@ -295,7 +295,7 @@ fn test_mmr_dense_vectors() {
             distance,
             None,
             3,
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::new(),
         );
 
         assert!(
@@ -348,7 +348,7 @@ fn test_mmr_sparse_vectors() {
         distance,
         None,
         3,
-        HwMeasurementAcc::disposable(),
+        HwMeasurementAcc::new(),
     )
     .unwrap();
 
@@ -395,7 +395,7 @@ fn test_mmr_multi_vector() {
             distance,
             Some(multi_vector_config),
             3,
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::new(),
         );
 
         assert!(

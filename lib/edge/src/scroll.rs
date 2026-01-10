@@ -43,7 +43,7 @@ impl Shard {
                     &with_payload,
                     &with_vector,
                     filter.as_ref(),
-                    HwMeasurementAcc::disposable(),
+                    HwMeasurementAcc::disposable_edge(),
                 )?;
                 let next_offset = if records.len() > limit {
                     let last_record = records.pop().unwrap();
@@ -66,7 +66,7 @@ impl Shard {
                     &with_vector,
                     filter.as_ref(),
                     &order_by,
-                    HwMeasurementAcc::disposable(),
+                    HwMeasurementAcc::disposable_edge(),
                 )?;
                 Ok((records, None))
             }
@@ -92,7 +92,7 @@ impl Shard {
                 with_payload,
                 with_vector,
                 filter.as_ref(),
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
             ScrollOrder::ByField(order_by) => self.scroll_by_field(
                 *limit,
@@ -100,14 +100,14 @@ impl Shard {
                 with_vector,
                 filter.as_ref(),
                 order_by,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
             ScrollOrder::Random => self.scroll_randomly(
                 *limit,
                 with_payload,
                 with_vector,
                 filter.as_ref(),
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
         };
 
