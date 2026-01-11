@@ -61,6 +61,11 @@ impl PyTextIndexParams {
     pub fn stemmer(&self) -> Option<&PyStemmingAlgorithm> {
         self.0.stemmer.as_ref().map(PyStemmingAlgorithm::wrap_ref)
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyTextIndexParams {
@@ -77,6 +82,7 @@ impl PyTextIndexParams {
             stopwords: _,
             on_disk: _,
             stemmer: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }

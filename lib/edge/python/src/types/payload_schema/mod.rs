@@ -187,6 +187,11 @@ impl PyKeywordIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyKeywordIndexParams {
@@ -196,6 +201,7 @@ impl PyKeywordIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -227,6 +233,11 @@ impl PyIntegerIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyIntegerIndexParams {
@@ -238,6 +249,7 @@ impl PyIntegerIndexParams {
             range: _,
             is_principal: _,
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -259,6 +271,11 @@ impl PyFloatIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyFloatIndexParams {
@@ -268,6 +285,7 @@ impl PyFloatIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -284,6 +302,11 @@ impl PyGeoIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyGeoIndexParams {
@@ -292,6 +315,7 @@ impl PyGeoIndexParams {
         let GeoIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -308,6 +332,11 @@ impl PyBoolIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyBoolIndexParams {
@@ -316,6 +345,7 @@ impl PyBoolIndexParams {
         let BoolIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -337,6 +367,11 @@ impl PyDatetimeIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyDatetimeIndexParams {
@@ -346,6 +381,7 @@ impl PyDatetimeIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_principal: _,
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
@@ -367,6 +403,11 @@ impl PyUuidIndexParams {
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
     }
+
+    #[getter]
+    pub fn enable_hnsw(&self) -> Option<bool> {
+        self.0.enable_hnsw
+    }
 }
 
 impl PyUuidIndexParams {
@@ -376,6 +417,7 @@ impl PyUuidIndexParams {
             r#type: _, // not relevant for Qdrant Edge
             is_tenant: _,
             on_disk: _,
+            enable_hnsw: _,
         } = self.0;
     }
 }
