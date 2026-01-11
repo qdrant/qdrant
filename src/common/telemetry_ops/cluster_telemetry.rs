@@ -80,6 +80,8 @@ pub struct ClusterTelemetry {
     pub peer_metadata: Option<HashMap<PeerId, PeerMetadata>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resharding_enabled: Option<bool>,
 }
 
 impl ClusterTelemetry {
@@ -134,6 +136,7 @@ impl ClusterTelemetry {
                         .filter(|metadata| !metadata.is_empty())
                 })
                 .flatten(),
+            resharding_enabled: Some(settings.cluster.resharding_enabled),
         })
     }
 
