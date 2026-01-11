@@ -13421,6 +13421,10 @@
             "type": "object",
             "additionalProperties": true,
             "nullable": true
+          },
+          "resharding_enabled": {
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
