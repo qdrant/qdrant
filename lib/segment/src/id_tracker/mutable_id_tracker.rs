@@ -468,7 +468,7 @@ fn store_mapping_changes(
 
     let mut writer = BufWriter::new(file);
 
-    log::debug!("writing mapping changes to {mappings_path:?}: {changes:?}");
+    log::trace!("writing mapping changes to {mappings_path:?}: {changes:?}");
 
     write_mapping_changes(&mut writer, changes).map_err(|err| {
         OperationError::service_error(format!(
