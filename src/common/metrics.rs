@@ -516,6 +516,7 @@ impl MetricsProvider for ClusterTelemetry {
             peers: _,
             peer_metadata: _,
             metadata: _,
+            resharding_enabled: _,
         } = self;
 
         metrics.push_metric(metric_family(
