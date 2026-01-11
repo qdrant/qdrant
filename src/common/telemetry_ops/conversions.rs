@@ -144,8 +144,8 @@ impl TryFrom<grpc::ClusterTelemetry> for ClusterTelemetry {
             status: status.map(ClusterStatusTelemetry::try_from).transpose()?,
             config: None, // Not provided in gRPC
             peers: (!peers.is_empty()).then_some(peers),
-            peer_metadata: None, // Not provided in gRPC
-            metadata: None,      // Not provided in gRPC
+            peer_metadata: None,      // Not provided in gRPC
+            metadata: None,           // Not provided in gRPC
             resharding_enabled: None, // Not provided in gRPC
         })
     }
