@@ -27,10 +27,14 @@ pub struct PyFormula(pub ParsedFormula);
 #[pymethods]
 impl PyFormula {
     #[new]
-    pub fn new(formula: PyExpression, defaults: HashMap<String, PyValue>) -> PyResult<Self> {
+    #[pyo3(signature = (formula, defaults = None))]
+    pub fn new(
+        formula: PyExpression,
+        defaults: Option<HashMap<String, PyValue>>,
+    ) -> PyResult<Self> {
         let formula = FormulaInternal {
             formula: ExpressionInternal::from(formula),
-            defaults: PyValue::peel_map(defaults),
+            defaults: PyValue::peel_map(defaults.unwrap_or_default()),
         };
 
         let formula = ParsedFormula::try_from(formula)
