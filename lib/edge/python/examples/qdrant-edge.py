@@ -69,13 +69,8 @@ shard.update(UpdateOperation.upsert_points([
 print("---- Query ----")
 
 result = shard.query(QueryRequest(
-    prefetches = [],
     query = Query.Nearest([6.0, 9.0, 4.0, 2.0]),
-    filter = None,
-    score_threshold = None,
     limit = 10,
-    offset = 0,
-    params = None,
     with_vector = True,
     with_payload = True,
 ))
@@ -88,13 +83,9 @@ print("---- Search ----")
 
 points = shard.search(SearchRequest(
     query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
-    filter=None,
-    params=None,
     limit=10,
-    offset=0,
     with_vector=True,
     with_payload=True,
-    score_threshold=None,
 ))
 
 for point in points:
@@ -119,12 +110,9 @@ search_filter = Filter(
 points = shard.search(SearchRequest(
     query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
     filter=search_filter,
-    params=None,
     limit=10,
-    offset=0,
     with_vector=True,
     with_payload=True,
-    score_threshold=None,
 ))
 
 for point in points:
