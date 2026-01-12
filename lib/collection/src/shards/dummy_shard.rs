@@ -118,6 +118,13 @@ impl ShardOperation for DummyShard {
                 status: UpdateStatus::Acknowledged,
                 clock_tag: None,
             }),
+            // Allow (and ignore) staging operations on dummy shards
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(_) => Ok(UpdateResult {
+                operation_id: None,
+                status: UpdateStatus::Acknowledged,
+                clock_tag: None,
+            }),
         }
     }
 
