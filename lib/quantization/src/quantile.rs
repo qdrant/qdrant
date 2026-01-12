@@ -40,6 +40,10 @@ pub(crate) fn find_quantile_interval<'a>(
     let selected_vectors_count = selected_vectors.len();
     let mut data_slice: Vec<f32> = Vec::with_capacity(selected_vectors_count * dim);
     for vector in selected_vectors.iter() {
+        if stopped.load(Ordering::Relaxed) {
+            return Err(EncodingError::Stopped);
+        }
+
         data_slice.extend_from_slice(vector.as_ref());
     }
 
@@ -102,6 +106,10 @@ fn find_min_max_interval_per_coordinate<'a>(
         .collect::<Vec<&[f32]>>();
 
     for vector in selected_vectors.iter() {
+        if stopped.load(Ordering::Relaxed) {
+            return Err(EncodingError::Stopped);
+        }
+
         for ((min, max), &value) in result.iter_mut().zip(vector.iter()) {
             *min = min.min(value);
             *max = max.max(value);
