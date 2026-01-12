@@ -42,6 +42,14 @@ impl Shard {
                     &hw_counter,
                 )
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(staging_operation) => {
+                shard::update::process_staging_operation(
+                    &self.segments,
+                    operation_id,
+                    staging_operation,
+                )
+            }
         };
 
         result.map(|_| ())

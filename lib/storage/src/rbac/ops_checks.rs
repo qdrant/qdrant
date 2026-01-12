@@ -299,6 +299,12 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 manage: true,
                 extras: true,
             },
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(_) => AccessRequirements {
+                write: true,
+                manage: false,
+                extras: false,
+            },
         }
     }
 
@@ -647,6 +653,14 @@ mod tests_ops {
             CollectionUpdateOperationsDiscriminants::FieldIndexOperation => {
                 check_collection_update_operations_field_index()
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperationsDiscriminants::StagingOperation => {
+                use shard::operations::staging::{StagingOperations, TestDelayOperation};
+                let op = CollectionUpdateOperations::StagingOperation(StagingOperations::Delay(
+                    TestDelayOperation::new(1.0),
+                ));
+                assert_requires_whole_write_access(&op);
+            }
         });
     }
 
@@ -723,14 +737,6 @@ mod tests_ops {
                         to_id: None,
                         points: Vec::new(),
                     },
-                ));
-                assert_requires_whole_write_access(&op);
-            }
-            #[cfg(feature = "staging")]
-            PointOperationsDiscriminants::TestDelay => {
-                use shard::operations::staging::TestDelayOperation;
-                let op = CollectionUpdateOperations::PointOperation(PointOperations::TestDelay(
-                    TestDelayOperation::new(1.0),
                 ));
                 assert_requires_whole_write_access(&op);
             }

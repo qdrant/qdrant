@@ -68,6 +68,10 @@ impl CollectionUpdater {
                 CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                     process_field_index_operation(segments, op_num, &index_operation, hw_counter)
                 }
+                #[cfg(feature = "staging")]
+                CollectionUpdateOperations::StagingOperation(staging_operation) => {
+                    shard::update::process_staging_operation(segments, op_num, staging_operation)
+                }
             }
         });
 
