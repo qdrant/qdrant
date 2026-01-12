@@ -79,7 +79,7 @@ def test_validations(collection_name):
         },
     )
     assert not response.ok, response.text
-    assert response.json()["status"]["error"] == "Validation error in JSON body: [internal.query.feedback.strategy.b: value -1.0 invalid, must be 0.0 or larger]"
+    assert response.json()["status"]["error"] == "Validation error in JSON body: [internal.query.relevance_feedback.strategy.b: value -1.0 invalid, must be 0.0 or larger]"
 
 
 def test_feedback_pair_requirement(collection_name):
