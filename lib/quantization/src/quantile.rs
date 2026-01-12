@@ -36,7 +36,7 @@ pub(crate) fn find_quantile_interval<'a>(
         return Ok(None);
     }
 
-    let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE / dim, stopped)?;
+    let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
     let selected_vectors_count = selected_vectors.len();
     let mut data_slice: Vec<f32> = Vec::with_capacity(selected_vectors_count * dim);
     for vector in selected_vectors.iter() {
