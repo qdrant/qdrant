@@ -3,6 +3,7 @@ use std::hash::Hash;
 use std::mem;
 use std::slice::ChunksExactMut;
 
+use common::math::approx_eq_slice;
 use half::f16;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -87,6 +88,22 @@ impl VectorInternal {
             })
         } else {
             VectorInternal::Dense(vector)
+        }
+    }
+
+    pub fn approx_eq(&self, other: &Self) -> bool {
+        use VectorInternal::{Dense, MultiDense, Sparse};
+
+        match (self, other) {
+            (Dense(a), Dense(b)) => approx_eq_slice(a, b),
+
+            (MultiDense(a), MultiDense(b)) => {
+                approx_eq_slice(&a.flattened_vectors, &b.flattened_vectors)
+            }
+
+            (Sparse(a), Sparse(b)) => a.approx_eq(b),
+
+            _ => false,
         }
     }
 }
@@ -542,6 +559,31 @@ pub enum VectorStructInternal {
     Single(DenseVector),
     MultiDense(MultiDenseVectorInternal),
     Named(HashMap<VectorNameBuf, VectorInternal>),
+}
+
+impl VectorStructInternal {
+    pub fn approx_eq(&self, other: &Self) -> bool {
+        use VectorStructInternal::{MultiDense, Named, Single};
+
+        match (self, other) {
+            (Single(a), Single(b)) => approx_eq_slice(a, b),
+
+            (MultiDense(a), MultiDense(b)) => {
+                approx_eq_slice(&a.flattened_vectors, &b.flattened_vectors)
+            }
+
+            (Named(a), Named(b)) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+
+                a.iter()
+                    .all(|(key, va)| b.get(key).is_some_and(|vb| va.approx_eq(vb)))
+            }
+
+            _ => false,
+        }
+    }
 }
 
 impl From<DenseVector> for VectorStructInternal {

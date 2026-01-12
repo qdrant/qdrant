@@ -27,3 +27,27 @@ pub fn is_close_tol(a: f64, b: f64, abs_tol: f64, rel_tol: f64) -> bool {
     let tol = a.abs().max(b.abs()) * rel_tol + abs_tol;
     (a - b).abs() <= tol
 }
+
+/// Approximate equality for f32
+pub fn approx_eq(a: f32, b: f32) -> bool {
+    const ABS_TOL: f32 = 1e-6;
+    const REL_TOL: f32 = 1e-6;
+
+    let diff = (a - b).abs();
+
+    if a == b {
+        true
+    } else if a == 0.0 || b == 0.0 || diff <= ABS_TOL {
+        diff <= ABS_TOL
+    } else {
+        diff <= REL_TOL * f32::max(a.abs(), b.abs())
+    }
+}
+
+pub fn approx_eq_slice(a: &[f32], b: &[f32]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    a.iter().zip(b.iter()).all(|(&x, &y)| approx_eq(x, y))
+}
