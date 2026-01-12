@@ -39,6 +39,10 @@ impl PyShardInfo {
     pub fn payload_schema(&self) -> &HashMap<PyJsonPath, PyPayloadIndexInfo> {
         PyPayloadIndexInfo::wrap_map_ref(&self.0.payload_schema)
     }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
 }
 
 impl PyShardInfo {

@@ -58,3 +58,7 @@ points = shard.retrieve(point_ids=[100500], with_vector=False, with_payload=True
 
 for point in points:
     print(point)
+
+info = shard.info()
+
+print(info)
