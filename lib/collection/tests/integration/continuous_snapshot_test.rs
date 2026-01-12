@@ -115,7 +115,7 @@ async fn test_continuous_snapshot() {
                     CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
                         ids: (0..points_count).map(|i| i.into()).collect(),
                     });
-                let hw_counter = HwMeasurementAcc::disposable();
+                let hw_counter = HwMeasurementAcc::new();
                 collection
                     .update_from_client_simple(
                         delete_points,
@@ -137,7 +137,7 @@ async fn test_continuous_snapshot() {
                         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                             PointInsertOperationsInternal::PointsList(vec![point]),
                         ));
-                    let hw_counter = HwMeasurementAcc::disposable();
+                    let hw_counter = HwMeasurementAcc::new();
                     let insert = collection
                         .update_from_client_simple(
                             insert_points,
@@ -157,7 +157,7 @@ async fn test_continuous_snapshot() {
                         with_payload: None,
                         with_vector: WithVector::Bool(false),
                     };
-                    let hw_counter = HwMeasurementAcc::disposable();
+                    let hw_counter = HwMeasurementAcc::new();
                     let retrieve_result = collection
                         .retrieve(
                             retrieve_point,
@@ -183,7 +183,7 @@ async fn test_continuous_snapshot() {
                             key: None,
                         }),
                     );
-                    let hw_counter = HwMeasurementAcc::disposable();
+                    let hw_counter = HwMeasurementAcc::new();
                     let set_result = collection
                         .update_from_client_simple(
                             set_payload,
@@ -203,7 +203,7 @@ async fn test_continuous_snapshot() {
                         with_payload: Some(true.into()),
                         with_vector: WithVector::Bool(true),
                     };
-                    let hw_counter = HwMeasurementAcc::disposable();
+                    let hw_counter = HwMeasurementAcc::new();
                     let retrieve_result = collection
                         .retrieve(
                             retrieve_point,
