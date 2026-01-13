@@ -16,6 +16,7 @@ workspace = true
 testing = []
 
 [dependencies]
+ahash = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
@@ -42,6 +43,7 @@ walkdir = { workspace = true }
 atomicwrites = { workspace = true }
 parking_lot = { workspace = true, features = ["arc_lock"] }
 serde_json = { workspace = true }
+schnellru = { version = "0.2.4" }
 strum = { workspace = true }
 memory = { path = "../memory" }
 

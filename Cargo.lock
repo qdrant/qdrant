@@ -1270,6 +1270,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "ahash",
  "atomicwrites",
  "bitvec",
  "bytemuck",
@@ -1290,6 +1291,7 @@ dependencies = [
  "rand 0.9.2",
  "rstest",
  "schemars 0.8.22",
+ "schnellru",
  "self_cell",
  "semver",
  "serde",
@@ -2720,6 +2722,12 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+
+[[package]]
+name = "hashbrown"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 
 [[package]]
 name = "hashbrown"
@@ -6214,6 +6222,17 @@ dependencies = [
  "quote",
  "serde_derive_internals",
  "syn 2.0.113",
+]
+
+[[package]]
+name = "schnellru"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "356285bbf17bea63d9e52e96bd18f039672ac92b55b8cb997d6162a2a37d1649"
+dependencies = [
+ "ahash",
+ "cfg-if",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
