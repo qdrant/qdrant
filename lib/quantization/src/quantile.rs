@@ -73,7 +73,7 @@ pub(crate) fn find_quantile_interval<'a>(
 }
 
 pub fn find_interval_per_coordinate<'a>(
-    vector_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+    vector_data: impl Iterator<Item = impl AsRef<[f32]> + Send + Sync + 'a> + Clone,
     dim: usize,
     count: usize,
     quantile: f32,
@@ -100,17 +100,13 @@ fn find_min_max_interval_per_coordinate<'a>(
     let mut result = vec![(f32::MAX, f32::MIN); dim];
 
     let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
-    let selected_vectors = selected_vectors
-        .iter()
-        .map(|v| v.as_ref())
-        .collect::<Vec<&[f32]>>();
 
-    for vector in selected_vectors.iter() {
+    for vector in selected_vectors {
         if stopped.load(Ordering::Relaxed) {
             return Err(EncodingError::Stopped);
         }
 
-        for ((min, max), &value) in result.iter_mut().zip(vector.iter()) {
+        for ((min, max), &value) in result.iter_mut().zip(vector.as_ref().iter()) {
             *min = min.min(value);
             *max = max.max(value);
         }
@@ -126,7 +122,7 @@ fn find_min_max_interval_per_coordinate<'a>(
 }
 
 fn find_interval_per_coordinate_p2<'a>(
-    vector_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+    vector_data: impl Iterator<Item = impl AsRef<[f32]> + Send + Sync + 'a> + Clone,
     dim: usize,
     count: usize,
     quantile: f32,
