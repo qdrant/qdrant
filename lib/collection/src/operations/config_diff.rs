@@ -102,7 +102,7 @@ pub struct CollectionParamsDiff {
     pub on_disk_payload: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[validate(range(min = 0.0, max = 1.0))]
@@ -192,23 +192,6 @@ impl std::hash::Hash for OptimizersConfigDiff {
         flush_interval_sec.hash(state);
         max_optimization_threads.hash(state);
         prevent_unoptimized.hash(state);
-    }
-}
-
-impl PartialEq for OptimizersConfigDiff {
-    fn eq(&self, other: &Self) -> bool {
-        #[expect(deprecated)]
-        let eq_memmap_threshold = self.memmap_threshold == other.memmap_threshold;
-        self.deleted_threshold.map(f64::to_le_bytes)
-            == other.deleted_threshold.map(f64::to_le_bytes)
-            && self.vacuum_min_vector_number == other.vacuum_min_vector_number
-            && self.default_segment_number == other.default_segment_number
-            && self.max_segment_size == other.max_segment_size
-            && eq_memmap_threshold
-            && self.indexing_threshold == other.indexing_threshold
-            && self.flush_interval_sec == other.flush_interval_sec
-            && self.max_optimization_threads == other.max_optimization_threads
-            && self.prevent_unoptimized == other.prevent_unoptimized
     }
 }
 
