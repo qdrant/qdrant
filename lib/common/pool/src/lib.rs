@@ -162,9 +162,10 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         let task_id = self.next_available_priority;
         self.next_available_priority += 1;
 
-        let token = SwitchToken::new(task_pool, wait_for_jobs, task_id);
+        let token = SwitchToken::new(task_pool, wait_for_jobs.clone(), task_id);
         self.ready_to_run_tasks
             .push(RevQueuePair::new(task_id, (None, Box::new(|| task(token)))));
+        wait_for_jobs.notify_one();
     }
 
     fn submit_switch(
