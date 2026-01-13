@@ -143,3 +143,8 @@ print("---- Count ----")
 count = shard.count(CountRequest(exact=True))
 
 print(f"Total points count: {count}")
+
+print("---- info ----")
+
+info = shard.info()
+print(info)

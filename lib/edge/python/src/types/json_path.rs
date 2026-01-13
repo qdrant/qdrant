@@ -11,7 +11,7 @@ use segment::json_path::JsonPath;
 
 use crate::repr::*;
 
-#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[derive(Clone, Debug, Into, Eq, PartialEq, Hash, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyJsonPath(pub JsonPath);
 
@@ -52,3 +52,5 @@ impl Repr for PyJsonPath {
         self.0.to_string().fmt(f)
     }
 }
+
+impl ReprStr for PyJsonPath {}

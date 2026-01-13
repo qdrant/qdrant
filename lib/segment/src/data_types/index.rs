@@ -393,7 +393,7 @@ impl StopwordsInterface {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq,
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Language {

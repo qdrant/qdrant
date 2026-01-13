@@ -269,7 +269,7 @@ mod tests {
         ];
 
         for (language, stopword) in languages {
-            let option = Some(StopwordsInterface::Language(language.clone()));
+            let option = Some(StopwordsInterface::Language(language));
             let filter = StopwordsFilter::new(&option, true);
             assert!(
                 filter.is_stopword(stopword),

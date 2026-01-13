@@ -1,5 +1,6 @@
 pub mod config;
 pub mod count;
+pub mod info;
 pub mod query;
 pub mod repr;
 pub mod scroll;
@@ -19,6 +20,7 @@ use segment::types::*;
 
 use self::config::*;
 use self::count::*;
+use self::info::*;
 use self::query::*;
 use self::scroll::*;
 use self::search::*;
@@ -135,6 +137,12 @@ impl PyShard {
         )?;
         let points = PyRecord::wrap_vec(points);
         Ok(points)
+    }
+
+    pub fn info(&self) -> Result<PyShardInfo> {
+        let info = self.get_shard()?.info();
+        let info = PyShardInfo(info);
+        Ok(info)
     }
 
     // ------- Snapshot related methods -------
