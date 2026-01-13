@@ -374,7 +374,7 @@ pub fn delete_points_by_filter(
         .iter()
         .map(|(segment_id, segment)| {
             (
-                *segment_id,
+                segment_id,
                 segment.get().read().read_filtered(
                     None,
                     None,

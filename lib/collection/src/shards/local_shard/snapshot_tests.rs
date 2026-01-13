@@ -30,7 +30,7 @@ fn test_snapshot_all() {
     let before_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -60,7 +60,7 @@ fn test_snapshot_all() {
     let after_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     assert_eq!(
