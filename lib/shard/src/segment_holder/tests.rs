@@ -536,7 +536,7 @@ fn test_double_proxies() {
     let before_segment_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -610,7 +610,7 @@ fn test_double_proxies() {
     let after_segment_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     // Check that we have one new segment
