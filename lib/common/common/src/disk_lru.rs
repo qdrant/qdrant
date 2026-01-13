@@ -69,7 +69,7 @@ impl Limiter<Key, ()> for ByDisk {
 
     #[inline]
     fn is_over_the_limit(&self, length: usize) -> bool {
-        self.max_items <= length
+        self.max_items < length
     }
 
     #[inline]
@@ -107,5 +107,39 @@ impl Limiter<Key, ()> for ByDisk {
     #[inline]
     fn on_grow(&mut self, _new_memory_usage: usize) -> bool {
         true
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // todo: make smaller test
+    #[test]
+    fn test_lru_memory_usage() {
+        let one_gb = 1024 * 1024 * 1024;
+        let disk_capacity = 100 * one_gb;
+        let page_size = 4096;
+        let num_keys: usize = disk_capacity / page_size;
+
+        let mut lru = Lru::new(disk_capacity, page_size);
+
+        // Insert keys by touching ranges across different file descriptors
+        for i in 0..num_keys {
+            let fd = (i / 1_000_000) as u32; // Spread across multiple file descriptors
+            let page_offset = (i % 1_000_000) * page_size;
+            lru.touch(fd, page_offset..page_offset + page_size);
+        }
+
+        // Check memory usage is under 1GB
+        let memory_usage = dbg!(lru.inner.memory_usage());
+
+        assert!(
+            memory_usage < one_gb,
+            "Memory usage {} bytes exceeds 1GB limit",
+            memory_usage
+        );
+
+        // Verify we have the expected number of entries
+        assert_eq!(lru.inner.len(), num_keys);
     }
 }
