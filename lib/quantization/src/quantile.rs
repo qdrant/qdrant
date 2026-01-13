@@ -130,10 +130,6 @@ fn find_interval_per_coordinate_p2<'a>(
     stopped: &AtomicBool,
 ) -> Result<Vec<(f32, f32)>, EncodingError> {
     let selected_vectors = take_random_vectors(vector_data, count, SAMPLE_SIZE, stopped)?;
-    let selected_vectors = selected_vectors
-        .iter()
-        .map(|v| v.as_ref())
-        .collect::<Vec<&[f32]>>();
 
     let pool = rayon::ThreadPoolBuilder::new()
         .thread_name(|idx| format!("p-square-{idx}"))
@@ -163,6 +159,7 @@ fn find_interval_per_coordinate_p2<'a>(
                         return Err(EncodingError::Stopped);
                     }
 
+                    let vector = vector.as_ref();
                     let value = f64::from(vector[d]);
                     min.push(value);
                     max.push(value);
