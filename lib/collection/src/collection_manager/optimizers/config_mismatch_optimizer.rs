@@ -83,7 +83,7 @@ impl ConfigMismatchOptimizer {
         if self.collection_params.on_disk_payload
             != segment_config.payload_storage_type.is_on_disk()
         {
-            return true; // Skip segments with payload mismatch
+            return true; // Optimize segment due to payload storage mismatch
         }
 
         // Determine whether dense data in segment has mismatch
@@ -154,7 +154,7 @@ impl ConfigMismatchOptimizer {
                         })
                 });
 
-        // Determine whether dense data in segment has mismatch
+        // Determine whether sparse data in segment has mismatch
         let sparse_has_mismatch =
             segment_config
                 .sparse_vector_data
@@ -172,6 +172,7 @@ impl ConfigMismatchOptimizer {
                         SparseIndexType::Mmap => !is_required_on_disk, // Rebuild if we require in RAM
                     }
                 });
+
         sparse_has_mismatch || dense_has_mismatch
     }
 }
