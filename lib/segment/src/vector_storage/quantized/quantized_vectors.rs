@@ -1301,7 +1301,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_scalar<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
@@ -1361,7 +1361,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_scalar_multi<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
