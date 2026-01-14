@@ -6,11 +6,11 @@ use schnellru::{Limiter, LruMap};
 struct Key {
     /// File descriptor
     fd: u32,
-    /// Offset within the file, in `os_page_size` units
+    /// Offset within the file, in `page_size` units
     page: u32,
 }
 
-/// Least Recently Used (LRU) cache implementation.
+/// Least Recently Used (LRU) implementation for tracking sparse chunks of files being stored in a disk cache.
 pub struct Lru {
     inner: LruMap<Key, (), ByDisk, ahash::RandomState>,
 }
@@ -43,9 +43,6 @@ struct ByDisk {
     /// Max number of items that should be cached at any given moment
     max_items: usize,
 
-    /// Capacity of the disk in bytes. Only stored for debugging purposes
-    _max_capacity: usize,
-
     /// OS page size
     page_size: usize,
 }
@@ -56,16 +53,22 @@ impl ByDisk {
         let max_items = disk_capacity / page_size;
         Self {
             max_items,
-            _max_capacity: disk_capacity,
             page_size,
         }
+    }
+
+    /// Estimated maximum capacity of the disk in bytes.
+    fn _max_capacity(&self) -> usize {
+        self.max_items * self.page_size
     }
 }
 
 impl Limiter<Key, ()> for ByDisk {
     type KeyToInsert<'a> = Key;
 
-    type LinkType = usize;
+    // u32 allows us to have 4 * 1024^3 keys.
+    // This is enough to map up to 16TB worth of data, assuming 4KB pages
+    type LinkType = u32;
 
     #[inline]
     fn is_over_the_limit(&self, length: usize) -> bool {
@@ -113,11 +116,10 @@ impl Limiter<Key, ()> for ByDisk {
 mod tests {
     use super::*;
 
-    // todo: make smaller test
     #[test]
     fn test_lru_memory_usage() {
         let one_gb = 1024 * 1024 * 1024;
-        let disk_capacity = 100 * one_gb;
+        let disk_capacity = 10 * one_gb; // 10GB
         let page_size = 4096;
         let num_keys: usize = disk_capacity / page_size;
 
@@ -130,13 +132,11 @@ mod tests {
             lru.touch(fd, page_offset..page_offset + page_size);
         }
 
-        // Check memory usage is under 1GB
-        let memory_usage = dbg!(lru.inner.memory_usage());
-
+        // Check memory usage
+        let memory_usage = lru.inner.memory_usage();
         assert!(
-            memory_usage < one_gb,
-            "Memory usage {} bytes exceeds 1GB limit",
-            memory_usage
+            memory_usage < 100 * 1024 * 1024,
+            "Memory usage {memory_usage} bytes exceeds 100MB limit",
         );
 
         // Verify we have the expected number of entries
