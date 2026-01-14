@@ -48,6 +48,20 @@ enum GroupState {
     Exclusive,
 }
 
+impl GroupState {
+    fn update_state_if_can_progress(state: Option<Self>, mode: OperationMode) -> Option<Self> {
+        match (state, mode) {
+            (None, OperationMode::Shared) => Some(GroupState::Shared(1)),
+            (None, OperationMode::Exclusive) => Some(GroupState::Exclusive),
+            (Some(GroupState::Shared(count)), OperationMode::Shared) => {
+                Some(GroupState::Shared(count + 1))
+            }
+            (Some(_), OperationMode::Exclusive) => None,
+            (Some(GroupState::Exclusive), OperationMode::Shared) => None,
+        }
+    }
+}
+
 pub struct Pool<GroupId> {
     _threads: Vec<JoinHandle<()>>,
     tasks: Arc<Mutex<PoolTasks<GroupId>>>,
@@ -175,7 +189,8 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         task_id: TaskId,
         switch_condvar: Arc<Condvar>,
         condvar: &Condvar,
-    ) {
+    ) -> Option<Arc<Condvar>> {
+        use std::collections::hash_map::Entry;
         let PoolTasks {
             stalled_tasks: waiting_tasks,
             ready_to_run_tasks,
@@ -183,11 +198,19 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         } = self;
 
         let task_group = waiting_tasks.entry(group_id.clone()).or_default();
-        task_group.stalled_tasks.push(RevQueuePair::new(
-            task_id,
-            (mode, StalledTask::Condvar(switch_condvar)),
-        ));
-        task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+        if let Some(new_state) =
+            GroupState::update_state_if_can_progress(task_group.current_mode, mode)
+        {
+            task_group.current_mode = Some(new_state);
+            None
+        } else {
+            task_group.stalled_tasks.push(RevQueuePair::new(
+                task_id,
+                (mode, StalledTask::Condvar(switch_condvar.clone())),
+            ));
+            task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+            Some(switch_condvar)
+        }
     }
 
     fn try_submit_switch(
@@ -243,6 +266,10 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
             condvar,
         );
         if group.is_empty() {
+            assert!(
+                group.current_mode.is_none(),
+                "completing task but group still has running tasks"
+            );
             // Includes both running, queued and waiting tasks.
             stalled_tasks.remove(&task.group_id);
         }
@@ -314,36 +341,26 @@ impl KeyTaskGroup {
 
     fn try_get_next_runnable_task(&mut self) -> Option<(OperationMode, TaskId, Task)> {
         if let Some(&RevQueuePair(_task_id, (mode, ref _task))) = self.stalled_tasks.peek() {
-            let (mode, task_id, task) = match (self.current_mode.as_ref(), mode) {
-                (None, _) => {
-                    // no running tasks, can run anything
-                    let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
-                    self.current_mode = Some(match mode {
-                        OperationMode::Shared => GroupState::Shared(1),
-                        OperationMode::Exclusive => GroupState::Exclusive,
-                    });
-                    (mode, task_id.0, task)
+            if let Some(next_mode) =
+                GroupState::update_state_if_can_progress(self.current_mode, mode)
+            {
+                // can run the next task
+                let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
+                self.current_mode = Some(next_mode);
+                match task {
+                    StalledTask::Function(fn_once) => Some((mode, task_id.0, fn_once)),
+                    StalledTask::Condvar(condvar) => {
+                        condvar.notify_all();
+                        // We've notified the parked thread and it handles both mode and task_id.
+                        None
+                    }
                 }
-                (Some(GroupState::Shared(count)), OperationMode::Shared) => {
-                    // can run another shared task
-                    let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
-                    self.current_mode = Some(GroupState::Shared(count + 1));
-                    (mode, task_id.0, task)
-                }
-                _ => {
-                    // cannot run the next task
-                    return None;
-                }
-            };
-            match task {
-                StalledTask::Function(fn_once) => Some((mode, task_id, fn_once)),
-                StalledTask::Condvar(condvar) => {
-                    condvar.notify_all();
-                    // We've notified the parked thread and it handles both mode and task_id.
-                    None
-                }
+            } else {
+                // Cannot yet run the next task.
+                None
             }
         } else {
+            // No task at all.
             None
         }
     }

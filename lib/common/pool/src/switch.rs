@@ -42,17 +42,15 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> SwitchToken<GroupId> {
                 {
                     let mut task_pool_guard = switch_token_real.task_pool.lock();
 
-                    task_pool_guard.submit_switch(
+                    if let Some(switch_condvar) = task_pool_guard.submit_switch(
                         group.clone(),
                         mode,
                         switch_token_real.task_id,
-                        switching_condvar.clone(),
+                        switching_condvar,
                         &switch_token_real.wait_for_jobs,
-                    );
-
-                    // Actually, it is not needed.  However, a thread may notify incorrect state on completion.
-                    // It can be solved by other means, though.
-                    switching_condvar.wait(&mut task_pool_guard);
+                    ) {
+                        switch_condvar.wait(&mut task_pool_guard);
+                    }
                 }
 
                 let task_guard = TaskCompletionGuard::new(
@@ -125,9 +123,8 @@ pub enum SwitchGuard<'env, GroupId: Clone + Eq + Hash + Send + 'static> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Pool;
-
     use super::*;
+    use crate::Pool;
 
     #[test]
     fn test_switch_1_shared() {
@@ -198,22 +195,123 @@ mod tests {
         let termination_condvar_inner = termination_condvar.clone();
 
         let mut guard = mutex.lock();
-        eprintln!("M: Submiting");
         pool.submit_uncontended(move |mut switch_token| {
             {
-                eprintln!("C: Waiting for the lock");
                 // wait for the main thread to wait on condvar.
                 let _guard = mutex_inner.lock();
-                eprintln!("C: Done waiting for the lock");
             }
-            eprintln!("C: Switching");
             let _guard = switch_token.switch_to(1, OperationMode::Exclusive);
-            eprintln!("C: Switched; notifying");
             termination_condvar_inner.notify_one();
-            eprintln!("C: Terminating.")
         });
-        eprintln!("M: Waiting for the condvar");
         termination_condvar.wait(&mut guard);
-        eprintln!("M: Exiting");
+    }
+
+    #[test]
+    fn test_multiple_switches() {
+        let pool = Pool::<i32>::new(2);
+        let mutex = Arc::new(Mutex::new(()));
+        let mutex_inner = mutex.clone();
+        let termination_condvar = Arc::new(Condvar::new());
+        let termination_condvar_inner = termination_condvar.clone();
+
+        let mut guard = mutex.lock();
+        pool.submit_uncontended(move |mut switch_token| {
+            {
+                let _guard = mutex_inner.lock();
+            }
+            for _ in 0..10 {
+                {
+                    let _guard1 = switch_token.switch_to(1, OperationMode::Shared);
+                }
+                {
+                    let _guard2 = switch_token.switch_to(1, OperationMode::Exclusive);
+                }
+            }
+            termination_condvar_inner.notify_one();
+        });
+
+        termination_condvar.wait(&mut guard);
+    }
+
+    #[test]
+    fn test_multiple_switches_concurrent() {
+        let pool = Pool::<i32>::new(2);
+        let mutex = Arc::new(Mutex::new(()));
+        let mutex1_inner = mutex.clone();
+        let mutex2_inner = mutex.clone();
+        let termination_condvar1 = Arc::new(Condvar::new());
+        let termination_condvar1_inner = termination_condvar1.clone();
+
+        let mut guard = mutex.lock();
+        pool.submit_uncontended(move |mut switch_token| {
+            {
+                let _guard = mutex1_inner.lock();
+            }
+            for _ in 0..10 {
+                {
+                    let _guard1 = switch_token.switch_to(1, OperationMode::Shared);
+                }
+                {
+                    let _guard2 = switch_token.switch_to(1, OperationMode::Exclusive);
+                }
+            }
+            termination_condvar1_inner.notify_one();
+        });
+        pool.submit_uncontended(move |mut switch_token| {
+            {
+                let _guard = mutex2_inner.lock();
+            }
+            for _ in 0..10 {
+                {
+                    let _guard1 = switch_token.switch_to(1, OperationMode::Shared);
+                }
+                {
+                    let _guard2 = switch_token.switch_to(1, OperationMode::Exclusive);
+                }
+            }
+        });
+
+        termination_condvar1.wait(&mut guard);
+    }
+
+    #[test]
+    fn test_multiple_switches_concurrent_2() {
+        let pool = Pool::<i32>::new(2);
+        let mutex = Arc::new(Mutex::new(()));
+        let mutex1_inner = mutex.clone();
+        let mutex2_inner = mutex.clone();
+        let termination_condvar1 = Arc::new(Condvar::new());
+        let termination_condvar1_inner = termination_condvar1.clone();
+
+        let mut guard = mutex.lock();
+        pool.submit_uncontended(move |mut switch_token| {
+            {
+                let _guard = mutex1_inner.lock();
+            }
+            for _ in 0..10 {
+                {
+                    let _guard1 = switch_token.switch_to(2, OperationMode::Shared);
+                }
+                {
+                    let _guard2 = switch_token.switch_to(1, OperationMode::Exclusive);
+                }
+            }
+            termination_condvar1_inner.notify_one();
+        });
+        pool.submit_uncontended(move |mut switch_token| {
+            {
+                let _guard = mutex2_inner.lock();
+            }
+            for _ in 0..10 {
+                {
+                    let _guard1 = switch_token.switch_to(1, OperationMode::Shared);
+                }
+                {
+                    let _guard2 = switch_token.switch_to(2, OperationMode::Exclusive);
+                }
+            }
+        });
+
+        termination_condvar1.wait(&mut guard);
     }
 }

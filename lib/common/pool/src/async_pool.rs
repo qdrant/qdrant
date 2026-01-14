@@ -96,13 +96,9 @@ fn async_wrap1<R: Send + 'static, A>(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-        time::Duration,
-    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
 
     use super::*;
 
