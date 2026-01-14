@@ -160,7 +160,7 @@ pub struct OptimizersConfigDiff {
     pub max_optimization_threads: Option<MaxOptimizationThreads>,
 
     /// If this option is set, service will try to prevent creation of large unoptimized segments.
-    /// When enabled, updates may be delayed if there are unoptimized segments larger than indexing threshold.
+    /// When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
     /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
     /// Using this option may lead to increased delay between submitting an update and its application.
     /// Default is disabled.
