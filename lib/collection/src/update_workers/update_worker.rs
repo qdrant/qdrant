@@ -20,6 +20,8 @@ use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::wal_delta::LockedWal;
 
+const BYTES_IN_KB: usize = 1024;
+
 impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_worker_fn(
@@ -30,7 +32,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-        prevent_unoptimized_threshold: Option<usize>,
+        prevent_unoptimized_threshold_kb: Option<usize>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
     ) {
@@ -50,7 +52,7 @@ impl UpdateWorkers {
                     let update_tracker_clone = update_tracker.clone();
 
                     let operation_result = Self::wait_for_optimization(
-                        prevent_unoptimized_threshold,
+                        prevent_unoptimized_threshold_kb,
                         &segments_clone,
                         optimization_handles.clone(),
                         &mut optimization_finished_receiver,
@@ -133,16 +135,16 @@ impl UpdateWorkers {
     async fn wait_for_optimization(
         // Size of the unoptimized segment to be considered large enough for waiting.
         // If `None`, waiting is disabled.
-        optimization_threshold: Option<usize>,
+        optimization_threshold_kb: Option<usize>,
         segments: &LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
-        let Some(optimization_threshold) = optimization_threshold else {
+        let Some(optimization_threshold_kb) = optimization_threshold_kb else {
             // Waiting is disabled
             return Ok(());
         };
-
+        let optimization_threshold = optimization_threshold_kb.saturating_mul(BYTES_IN_KB);
         loop {
             let locked_segments = segments.clone();
             let can_proceed = tokio::task::spawn_blocking(move || {
