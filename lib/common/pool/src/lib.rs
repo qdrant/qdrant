@@ -72,9 +72,16 @@ pub struct Pool<GroupId> {
 
 impl<GroupId> Drop for Pool<GroupId> {
     fn drop(&mut self) {
-        self.terminate
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.wait_for_jobs_condvar.notify_all();
+        {
+            // While neigher atomic nor condvar use the mutex, it avoids a race condition when the worker threads checks
+            // the terminate flag before it is set, but starts waiting for the condvar after it is notified.
+            //
+            // Actually, we should use a bool inside the PoolTasks instead of the atomic.
+            let _guard = self.tasks.lock();
+            self.terminate
+                .store(true, std::sync::atomic::Ordering::Release);
+            self.wait_for_jobs_condvar.notify_all();
+        }
 
         // TODO should we really wait for threads to finish?
         for thread in self._threads.drain(..) {
@@ -286,6 +293,7 @@ impl<GroupId> Default for PoolTasks<GroupId> {
     }
 }
 
+#[derive(Debug)]
 struct TaskInfo<GroupId> {
     group_id: GroupId,
     // TODO needed only to check correctness.
