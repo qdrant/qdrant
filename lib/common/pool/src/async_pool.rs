@@ -93,3 +93,61 @@ fn async_wrap1<R: Send + 'static, A>(
     };
     (oneshot_receiver, Box::new(oneshot_task))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::Duration,
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_waiting_exclusive() {
+        let pool = AsyncPool::new(2);
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag2 = flag.clone();
+
+        pool.submit(1, OperationMode::Exclusive, move || {
+            std::thread::sleep(Duration::from_millis(100));
+            flag2.store(true, Ordering::SeqCst);
+        })
+        .await
+        .unwrap();
+        assert!(flag.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_waiting_shared() {
+        let pool = AsyncPool::new(2);
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag2 = flag.clone();
+
+        pool.submit(1, OperationMode::Shared, move || {
+            std::thread::sleep(Duration::from_millis(100));
+            flag2.store(true, Ordering::SeqCst);
+        })
+        .await
+        .unwrap();
+        assert!(flag.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_waiting_uncontended() {
+        let pool = AsyncPool::<i32>::new(2);
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag2 = flag.clone();
+
+        pool.submit_uncontended(move |_| {
+            std::thread::sleep(Duration::from_millis(100));
+            flag2.store(true, Ordering::SeqCst);
+        })
+        .await
+        .unwrap();
+        assert!(flag.load(Ordering::SeqCst));
+    }
+}
