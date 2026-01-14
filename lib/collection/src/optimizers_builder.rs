@@ -82,6 +82,14 @@ pub struct OptimizersConfig {
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[serde(default)]
     pub max_optimization_threads: Option<usize>,
+
+    /// If this option is set, service will try to prevent creation of large unoptimized segments.
+    /// When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
+    /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+    /// Using this option may lead to increased delay between submitting an update and its application.
+    /// Default is disabled.
+    #[serde(default)]
+    pub prevent_unoptimized: Option<bool>,
 }
 
 impl OptimizersConfig {
@@ -97,6 +105,7 @@ impl OptimizersConfig {
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
             max_optimization_threads: Some(0),
+            prevent_unoptimized: None,
         }
     }
 
@@ -114,12 +123,16 @@ impl OptimizersConfig {
         }
     }
 
-    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
-        let indexing_threshold_kb = match self.indexing_threshold {
+    pub fn get_indexing_threshold_kb(&self) -> usize {
+        match self.indexing_threshold {
             None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
             Some(0) => usize::MAX,                 // disable vector index
             Some(custom) => custom,
-        };
+        }
+    }
+
+    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
+        let indexing_threshold_kb = self.get_indexing_threshold_kb();
 
         #[expect(deprecated)]
         let memmap_threshold_kb = match self.memmap_threshold {
