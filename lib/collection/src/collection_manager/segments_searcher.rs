@@ -63,7 +63,7 @@ impl SegmentsSearcher {
         let results_len = searches.len();
 
         let mut search_results_per_segment_res = FuturesOrdered::new();
-        for search in searches.into_iter() {
+        for search in searches {
             search_results_per_segment_res.push_back(search);
         }
 

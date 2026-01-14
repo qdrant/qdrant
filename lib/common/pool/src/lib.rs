@@ -63,7 +63,7 @@ impl GroupState {
 }
 
 pub struct Pool<GroupId> {
-    _threads: Vec<JoinHandle<()>>,
+    threads: Vec<JoinHandle<()>>,
     tasks: Arc<Mutex<PoolTasks<GroupId>>>,
     wait_for_jobs_condvar: Arc<Condvar>,
     // TODO make possible using an external termination flag
@@ -84,7 +84,7 @@ impl<GroupId> Drop for Pool<GroupId> {
         }
 
         // TODO should we really wait for threads to finish?
-        for thread in self._threads.drain(..) {
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }
@@ -96,7 +96,7 @@ impl<GroupId> Pool<GroupId> {
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.wait_for_jobs_condvar.notify_all();
 
-        for thread in self._threads.drain(..) {
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }
@@ -121,7 +121,7 @@ impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
             })
             .collect();
         Self {
-            _threads: threads,
+            threads,
             wait_for_jobs_condvar: wait_for_jobs,
             tasks,
             terminate,
@@ -197,7 +197,6 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
         switch_condvar: Arc<Condvar>,
         condvar: &Condvar,
     ) -> Option<Arc<Condvar>> {
-        use std::collections::hash_map::Entry;
         let PoolTasks {
             stalled_tasks: waiting_tasks,
             ready_to_run_tasks,
@@ -235,6 +234,7 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
             ..
         } = self;
 
+        // TODO check task compatibility instead.
         let new_task_group = match waiting_tasks.entry(group_id.clone()) {
             Entry::Occupied(_occupied_entry) => return None,
             Entry::Vacant(vacant_entry) => vacant_entry.insert(Default::default()),

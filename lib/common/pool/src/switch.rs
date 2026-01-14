@@ -22,15 +22,15 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> SwitchToken<GroupId> {
         SwitchToken::Dummy
     }
 
-    pub fn new(
+    pub(crate) fn new(
         task_pool: Arc<Mutex<PoolTasks<GroupId>>>,
         wait_for_jobs: Arc<Condvar>,
         task_id: TaskId,
     ) -> Self {
         SwitchToken::Real(SwitchTokenReal {
-            task_pool: task_pool,
-            wait_for_jobs: wait_for_jobs,
-            task_id: task_id,
+            task_pool,
+            wait_for_jobs,
+            task_id,
         })
     }
 
@@ -111,6 +111,7 @@ impl<GroupId: Clone + Eq + Hash + Send + 'static> SwitchToken<GroupId> {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct SwitchGuardReal<'env, GroupId: Clone + Eq + Hash + Send + 'static> {
     token: &'env SwitchTokenReal<GroupId>,
     task_guard: TaskCompletionGuard<'env, GroupId>,

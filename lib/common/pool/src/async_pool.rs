@@ -85,7 +85,7 @@ fn async_wrap<R: Send + 'static>(
 
 fn async_wrap1<R: Send + 'static, A>(
     task: impl FnOnce(A) -> R + Send + 'static,
-) -> (oneshot::Receiver<R>, impl FnOnce(A) -> () + Send + 'static) {
+) -> (oneshot::Receiver<R>, impl FnOnce(A) + Send + 'static) {
     let (oneshot_sender, oneshot_receiver) = oneshot::channel();
     let oneshot_task = move |a: A| {
         let result = task(a);

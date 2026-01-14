@@ -653,7 +653,7 @@ impl ShardOperation for ForwardProxyShard {
             .query_batch(
                 requests,
                 search_runtime_handle,
-                &search_runtime_pool,
+                search_runtime_pool,
                 timeout,
                 hw_measurement_acc,
             )

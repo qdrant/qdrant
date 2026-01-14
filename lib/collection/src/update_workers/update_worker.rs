@@ -1,4 +1,4 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -55,7 +55,6 @@ impl UpdateWorkers {
                     let update_tracker_clone = update_tracker.clone();
                     // Weak reference to avoid Arc cycling, as the closure contains the pool,
                     // and the pool contains the closure.
-                    let operation_update_pool = Arc::downgrade(&update_pool);
 
                     let operation_result = Self::wait_for_optimization(
                         prevent_unoptimized_threshold_kb,

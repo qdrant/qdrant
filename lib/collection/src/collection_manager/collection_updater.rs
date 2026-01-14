@@ -6,7 +6,6 @@ use pool::SwitchToken;
 use segment::types::SeqNumberType;
 use shard::update::*;
 
-use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::types::{CollectionError, CollectionResult};

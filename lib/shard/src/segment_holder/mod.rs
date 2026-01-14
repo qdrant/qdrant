@@ -8,8 +8,8 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -634,9 +634,9 @@ impl SegmentHolder {
             match segment_opt {
                 None => {}
                 Some(segment_lock) => {
-                    let _guard =
+                    let switch_guard =
                         switch_token.try_switch_to(*segment_id, pool::OperationMode::Exclusive);
-                    if _guard.is_some() {
+                    if switch_guard.is_some() {
                         match segment_lock.try_write() {
                             None => {}
                             Some(mut lock) => {

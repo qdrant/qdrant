@@ -1,6 +1,5 @@
 //! A collection of functions for updating points and payloads stored in segments
 
-use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
