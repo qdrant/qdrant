@@ -16502,7 +16502,7 @@
             "minimum": 0
           },
           "points": {
-            "description": "Total number of points in unoptimized segments.",
+            "description": "Total number of non-deleted points in unoptimized segments.",
             "type": "integer",
             "format": "uint",
             "minimum": 0

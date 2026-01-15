@@ -439,10 +439,12 @@ impl Collection {
             let Some(log) = replica_set.optimizers_log().await else {
                 continue;
             };
+
             let log = log.lock();
             let IndexingProgressViews { ongoing, completed } = log.progress_views();
             pending.merge(&log.pending);
             drop(log);
+
             all_ongoing.extend(ongoing);
             if let Some(all_completed) = all_completed.as_mut() {
                 all_completed.extend(completed);

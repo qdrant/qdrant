@@ -317,7 +317,7 @@ pub struct PendingOptimizations {
     pub optimizations: usize,
     /// Number of unoptimized segments pending optimization.
     pub segments: usize,
-    /// Total number of points in unoptimized segments.
+    /// Total number of non-deleted points in unoptimized segments.
     pub points: usize,
 }
 

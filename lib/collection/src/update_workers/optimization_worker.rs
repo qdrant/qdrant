@@ -10,6 +10,7 @@ use common::panic;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::entry::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
 use shard::locked_segment::LockedSegment;
@@ -286,7 +287,7 @@ impl UpdateWorkers {
                 pending_segments += segment_ids.len();
                 for &segment_id in segment_ids {
                     if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
-                        pending_points += segment.read().total_point_count()
+                        pending_points += segment.read().available_point_count();
                     }
                 }
             }
