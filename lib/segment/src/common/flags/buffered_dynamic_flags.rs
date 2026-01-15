@@ -1,14 +1,63 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use parking_lot::{Mutex, RwLock};
+use roaring::RoaringBitmap;
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+
+#[derive(Debug, Clone)]
+struct PendingBuffer {
+    trues: RoaringBitmap,
+    falses: RoaringBitmap,
+}
+
+impl PendingBuffer {
+    fn new() -> Self {
+        Self {
+            trues: RoaringBitmap::new(),
+            falses: RoaringBitmap::new(),
+        }
+    }
+
+    fn insert(&mut self, id: PointOffsetType, val: bool) {
+        if val {
+            self.falses.remove(id);
+            self.trues.insert(id);
+        } else {
+            self.trues.remove(id);
+            self.falses.insert(id);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.trues.is_empty() && self.falses.is_empty()
+    }
+
+    fn max_id(&self) -> Option<PointOffsetType> {
+        std::cmp::max(self.trues.max(), self.falses.max())
+    }
+
+    fn propage_into_flags(&self, flags: &mut DynamicMmapFlags) {
+        for index in &self.trues {
+            flags.set(index, true);
+        }
+        for index in &self.falses {
+            flags.set(index, false);
+        }
+    }
+
+    // Removes from `buffer` all results that are flushed.
+    // If values in `pending_updates` are changed, do not remove them.
+    fn reconcile(&mut self, persisted: PendingBuffer) {
+        self.trues -= persisted.trues;
+        self.falses -= persisted.falses;
+    }
+}
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
@@ -19,7 +68,7 @@ pub(crate) struct BufferedDynamicFlags {
     storage: Arc<Mutex<DynamicMmapFlags>>,
 
     /// Pending changes to the storage flags.
-    buffer: Arc<RwLock<AHashMap<PointOffsetType, bool>>>,
+    buffer: Arc<RwLock<PendingBuffer>>,
 
     /// Lock to prevent concurrent flush and drop
     is_alive_flush_lock: IsAliveLock,
@@ -27,7 +76,7 @@ pub(crate) struct BufferedDynamicFlags {
 
 impl BufferedDynamicFlags {
     pub fn new(mmap_flags: DynamicMmapFlags) -> Self {
-        let buffer = Arc::new(RwLock::new(AHashMap::new()));
+        let buffer = Arc::new(RwLock::new(PendingBuffer::new()));
         let is_alive_flush_lock = IsAliveLock::new();
         Self {
             storage: Arc::new(Mutex::new(mmap_flags)),
@@ -59,7 +108,7 @@ impl BufferedDynamicFlags {
             buffer_guard.clone()
         };
 
-        let Some(required_len) = updates.keys().max().map(|&max_id| max_id as usize + 1) else {
+        let Some(required_len) = updates.max_id().map(|max_id| max_id as usize + 1) else {
             return Box::new(|| Ok(()));
         };
 
@@ -86,9 +135,8 @@ impl BufferedDynamicFlags {
                 flags_guard.set_len(required_len)?;
             }
 
-            for (&index, &value) in &updates {
-                flags_guard.set(index as usize, value);
-            }
+            // propagate pending updates to storage
+            updates.propage_into_flags(&mut flags_guard);
 
             flags_guard.flusher()()?;
 
@@ -96,22 +144,11 @@ impl BufferedDynamicFlags {
             // We don't touch files from here on and can drop the alive guard
             drop(is_alive_flush_guard);
 
-            reconcile_persisted_buffer(&buffer_arc, updates);
+            buffer_arc.write().reconcile(updates);
 
             Ok(())
         })
     }
-}
-
-/// Removes from `buffer` all results that are flushed.
-/// If values in `pending_updates` are changed, do not remove them.
-fn reconcile_persisted_buffer(
-    buffer: &RwLock<AHashMap<u32, bool>>,
-    persisted: AHashMap<u32, bool>,
-) {
-    buffer
-        .write()
-        .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
 }
 
 #[cfg(test)]
