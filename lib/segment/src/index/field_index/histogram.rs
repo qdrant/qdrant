@@ -39,6 +39,7 @@ impl<T> Point<T> {
 
 impl<T: PartialEq> Eq for Point<T> {}
 
+#[allow(clippy::derive_ord_xor_partial_ord)]
 impl<T: PartialOrd + Copy> Ord for Point<T> {
     fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
         (self.val, self.idx)
