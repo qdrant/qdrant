@@ -270,6 +270,135 @@ def test_reject_rejoin_cluster_same_uri(tmp_path: pathlib.Path, uris_in_env):
         assert cluster_info['peers'][str(broken_peer_id)] == broken_peer_state
 
 
+@pytest.mark.parametrize("clear_storage", [False, True])
+def test_rejoin_cluster_same_peer_id(tmp_path: pathlib.Path, clear_storage: bool):
+    """
+    Test that a peer can rejoin the cluster with the same peer ID via QDRANT__CLUSTER__PEER_ID
+    after being removed from consensus.
+
+    Steps:
+    1. Start 3 cluster nodes with hardcoded peer IDs
+    2. Add 4th node with hardcoded peer ID
+    3. Remove 4th node from consensus via DELETE /cluster/peer/{peer_id} API call
+    4. Stop the 4th node
+    5. Optionally clear storage on disk before restarting
+    6. Restart the 4th node with the same peer ID
+    7. Verify it successfully joined the cluster
+    """
+
+    assert_project_root()
+
+    # Define hardcoded peer IDs for initial 3 peers + 4th peer
+    initial_peer_ids = [100, 101, 102]
+    fourth_peer_id = 103
+    port_seed = 10000
+
+    # Create peer directories for initial 3 peers
+    peer_dirs = make_peer_folders(tmp_path, 3)
+    peer_api_uris = []
+
+    # Start first peer with hardcoded peer ID
+    first_peer_env = {"QDRANT__CLUSTER__PEER_ID": str(initial_peer_ids[0])}
+    first_peer_api_uri, bootstrap_uri = start_first_peer(
+        peer_dirs[0], "peer_0_0_with_id.log", port=port_seed,
+        extra_env=first_peer_env
+    )
+    peer_api_uris.append(first_peer_api_uri)
+
+    # Wait for first peer to be ready
+    wait_peer_added(peer_api_uris[0])
+
+    # Start other 2 peers with their hardcoded peer IDs
+    for i in range(1, 3):
+        peer_env = {"QDRANT__CLUSTER__PEER_ID": str(initial_peer_ids[i])}
+        peer_api_uris.append(
+            start_peer(
+                peer_dirs[i], f"peer_0_{i}_with_id.log", bootstrap_uri,
+                port=port_seed + i * 100, extra_env=peer_env
+            )
+        )
+
+    # Wait for cluster to stabilize
+    wait_all_peers_up(peer_api_uris)
+
+    # Verify all initial peers have the expected peer IDs
+    for i, uri in enumerate(peer_api_uris):
+        cluster_info = get_cluster_info(uri)
+        assert cluster_info['peer_id'] == initial_peer_ids[i]
+
+    # Verify cluster has exactly 3 peers
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert len(cluster_info['peers']) == 3
+
+    # Add 4th node with hardcoded peer ID
+    fourth_peer_dir = make_peer_folder(tmp_path, 3)
+    fourth_peer_env = {"QDRANT__CLUSTER__PEER_ID": str(fourth_peer_id)}
+    fourth_peer_uri = start_peer(
+        fourth_peer_dir, "peer_0_3_with_id.log", bootstrap_uri,
+        port=port_seed + 3 * 100, extra_env=fourth_peer_env
+    )
+    peer_api_uris.append(fourth_peer_uri)
+
+    # Wait for 4th peer to be up
+    wait_all_peers_up([fourth_peer_uri])
+
+    # Verify 4th peer has the expected peer ID
+    fourth_peer_cluster_info = get_cluster_info(fourth_peer_uri)
+    assert fourth_peer_cluster_info['peer_id'] == fourth_peer_id
+
+    # Verify cluster now has 4 peers
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert len(cluster_info['peers']) == 4
+    assert str(fourth_peer_id) in cluster_info['peers']
+
+    # Remove 4th node from consensus via API call
+    remove_peer(peer_api_uris[0], fourth_peer_id)
+
+    # Wait a bit for the removal to propagate
+    sleep(2)
+
+    # Verify cluster now has 3 peers (4th peer removed)
+    cluster_info = get_cluster_info(peer_api_uris[0])
+    assert len(cluster_info['peers']) == 3
+    assert str(fourth_peer_id) not in cluster_info['peers']
+
+    # Stop the 4th node
+    fourth_peer_process = processes.pop()
+    fourth_peer_process.kill()
+
+    # Optionally clear storage on disk before restarting
+    if clear_storage:
+        storage_path = fourth_peer_dir / 'storage'
+        if storage_path.exists():
+            for filename in os.listdir(storage_path):
+                file_path = os.path.join(storage_path, filename)
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+
+    # Restart the 4th node with the same peer ID
+    restarted_fourth_peer_uri = start_peer(
+        fourth_peer_dir, "peer_0_3_restarted_same_id.log", bootstrap_uri,
+        port=port_seed + 3 * 100, extra_env=fourth_peer_env
+    )
+    peer_api_uris[-1] = restarted_fourth_peer_uri
+
+    # Wait for restarted node to be up and ready
+    wait_all_peers_up([restarted_fourth_peer_uri])
+
+    # Verify the restarted peer has the same peer ID
+    restarted_cluster_info = get_cluster_info(restarted_fourth_peer_uri)
+    assert restarted_cluster_info['peer_id'] == fourth_peer_id
+
+    # Verify cluster now has 4 peers again (4th peer rejoined)
+    cluster_info_after = get_cluster_info(peer_api_uris[0])
+    assert len(cluster_info_after['peers']) == 4
+
+    # Verify the peer ID is back in the cluster
+    assert str(fourth_peer_id) in cluster_info_after['peers']
+
+
 def rejoin_cluster_test(
     tmp_path: pathlib.Path,
     start_cluster: Callable[[pathlib.Path, int], tuple[list[str], list[pathlib.Path], str]],
