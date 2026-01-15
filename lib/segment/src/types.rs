@@ -2639,30 +2639,39 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
+        if deserializer.is_human_readable() {
+            let value = serde_json::Value::deserialize(deserializer)?;
 
-        // If any range bound is a string -> treat as datetime range
-        if let Some(obj) = value.as_object() {
-            let keys = ["lt", "gt", "lte", "gte"];
-            let has_string_bound = keys
-                .iter()
-                .any(|k| obj.get(*k).map(|v| v.is_string()).unwrap_or(false));
+            // If any range bound is a string -> treat as datetime range
+            if let Some(obj) = value.as_object() {
+                let keys = ["lt", "gt", "lte", "gte"];
+                let has_string_bound = keys
+                    .iter()
+                    .any(|k| obj.get(*k).map(|v| v.is_string()).unwrap_or(false));
 
-            if has_string_bound {
-                return serde_json::from_value::<Range<DateTimePayloadType>>(value)
-                    .map(RangeInterface::DateTime)
-                    .map_err(serde::de::Error::custom);
+                if has_string_bound {
+                    return serde_json::from_value::<Range<DateTimePayloadType>>(value)
+                        .map(RangeInterface::DateTime)
+                        .map_err(serde::de::Error::custom);
+                }
             }
+
+            // Fallback to existing untagged behavior
+            let parsed = serde_json::from_value::<RangeInterfaceUntagged>(value)
+                .map_err(serde::de::Error::custom)?;
+
+            Ok(match parsed {
+                RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
+                RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
+            })
+        } else {
+            let parsed = RangeInterfaceUntagged::deserialize(deserializer)?;
+
+            Ok(match parsed {
+                RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
+                RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
+            })
         }
-
-        // Fallback to existing untagged behavior
-        let parsed = serde_json::from_value::<RangeInterfaceUntagged>(value)
-            .map_err(serde::de::Error::custom)?;
-
-        Ok(match parsed {
-            RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
-            RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
-        })
     }
 }
 
@@ -3323,59 +3332,63 @@ impl<'de> serde::Deserialize<'de> for Condition {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        let Some(obj) = value.as_object() else {
-            return serde_json::from_value::<ConditionUntagged>(value)
+        if deserializer.is_human_readable() {
+            let value = serde_json::Value::deserialize(deserializer)?;
+            let Some(obj) = value.as_object() else {
+                return serde_json::from_value::<ConditionUntagged>(value)
+                    .map(Condition::from)
+                    .map_err(serde::de::Error::custom);
+            };
+
+            // IMPORTANT: avoid untagged swallowing datetime parse error
+            if obj.contains_key("key") {
+                return serde_json::from_value::<FieldCondition>(value)
+                    .map(Condition::Field)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("is_empty") {
+                return serde_json::from_value::<IsEmptyCondition>(value)
+                    .map(Condition::IsEmpty)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("is_null") {
+                return serde_json::from_value::<IsNullCondition>(value)
+                    .map(Condition::IsNull)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("has_id") {
+                return serde_json::from_value::<HasIdCondition>(value)
+                    .map(Condition::HasId)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("has_vector") {
+                return serde_json::from_value::<HasVectorCondition>(value)
+                    .map(Condition::HasVector)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("nested") {
+                return serde_json::from_value::<NestedCondition>(value)
+                    .map(Condition::Nested)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            if obj.contains_key("filter") {
+                return serde_json::from_value::<Filter>(value)
+                    .map(Condition::Filter)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            serde_json::from_value::<ConditionUntagged>(value)
                 .map(Condition::from)
-                .map_err(serde::de::Error::custom);
-        };
-
-        // IMPORTANT: avoid untagged swallowing datetime parse error
-        if obj.contains_key("key") {
-            return serde_json::from_value::<FieldCondition>(value)
-                .map(Condition::Field)
-                .map_err(serde::de::Error::custom);
+                .map_err(serde::de::Error::custom)
+        } else {
+            ConditionUntagged::deserialize(deserializer).map(Condition::from)
         }
-
-        if obj.contains_key("is_empty") {
-            return serde_json::from_value::<IsEmptyCondition>(value)
-                .map(Condition::IsEmpty)
-                .map_err(serde::de::Error::custom);
-        }
-
-        if obj.contains_key("is_null") {
-            return serde_json::from_value::<IsNullCondition>(value)
-                .map(Condition::IsNull)
-                .map_err(serde::de::Error::custom);
-        }
-
-        if obj.contains_key("has_id") {
-            return serde_json::from_value::<HasIdCondition>(value)
-                .map(Condition::HasId)
-                .map_err(serde::de::Error::custom);
-        }
-
-        if obj.contains_key("has_vector") {
-            return serde_json::from_value::<HasVectorCondition>(value)
-                .map(Condition::HasVector)
-                .map_err(serde::de::Error::custom);
-        }
-
-        if obj.contains_key("nested") {
-            return serde_json::from_value::<NestedCondition>(value)
-                .map(Condition::Nested)
-                .map_err(serde::de::Error::custom);
-        }
-
-        if obj.contains_key("filter") {
-            return serde_json::from_value::<Filter>(value)
-                .map(Condition::Filter)
-                .map_err(serde::de::Error::custom);
-        }
-
-        serde_json::from_value::<ConditionUntagged>(value)
-            .map(Condition::from)
-            .map_err(serde::de::Error::custom)
     }
 }
 
