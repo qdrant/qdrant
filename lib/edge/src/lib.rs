@@ -184,6 +184,26 @@ impl Shard {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    pub fn flush(&self) {
+        self.wal
+            .try_lock()
+            .expect("WAL lock acquired")
+            .flush()
+            .expect("WAL flushed");
+
+        self.segments
+            .try_read()
+            .expect("segment holder lock acquired")
+            .flush_all(true, true)
+            .expect("segments flushed");
+    }
+}
+
+impl Drop for Shard {
+    fn drop(&mut self) {
+        self.flush();
+    }
 }
 
 fn default_wal_options() -> WalOptions {
