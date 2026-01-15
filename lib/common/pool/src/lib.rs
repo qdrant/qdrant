@@ -33,12 +33,6 @@ pub enum StalledTask {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OperationMode {
     Shared,
-    // TODO Actually, Exclusive mode doesn't exists; it is deffered with mode switch for particular group ID mid-flight.
-    // TODO design an API to
-    //      1. check if group is uncontended, and join it
-    //      2. if no uncontended group exists, join any with new priority (now or old?)
-    //
-    //      Also, it worth learning if case 1 every fires on contention (perhaps, on RW contention it is always 2).
     Exclusive,
 }
 
@@ -73,7 +67,7 @@ pub struct Pool<GroupId> {
 impl<GroupId> Drop for Pool<GroupId> {
     fn drop(&mut self) {
         {
-            // While neigher atomic nor condvar use the mutex, it avoids a race condition when the worker threads checks
+            // While neither atomic nor condvar use the mutex, it avoids a race condition when the worker threads checks
             // the terminate flag before it is set, but starts waiting for the condvar after it is notified.
             //
             // Actually, we should use a bool inside the PoolTasks instead of the atomic.
@@ -333,9 +327,7 @@ type ReadyToRunTasks<GroupId> = BinaryHeap<RevQueuePair<TaskId, (Option<TaskInfo
 
 #[derive(Default)]
 struct KeyTaskGroup {
-    // ready_to_run: current_mode != Some(Exclusive)
     current_mode: Option<GroupState>,
-    // it is implicitely ordered by the priority
     stalled_tasks: BinaryHeap<RevQueuePair<TaskId, (OperationMode, StalledTask)>>,
 }
 
