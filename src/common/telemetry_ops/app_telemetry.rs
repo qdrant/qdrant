@@ -21,6 +21,7 @@ impl AppBuildTelemetryCollector {
         }
     }
 }
+
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppFeaturesTelemetry {
     pub debug: bool,
