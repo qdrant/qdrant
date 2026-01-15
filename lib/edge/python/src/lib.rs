@@ -95,6 +95,15 @@ impl PyShard {
         Ok(Self(Some(shard)))
     }
 
+    pub fn flush(&self) -> Result<()> {
+        self.get_shard()?.flush();
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        self.0.take(); // `edge::Shard` is automatically flushed on drop
+    }
+
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
         self.get_shard()?.update(operation.into())?;
         Ok(())
