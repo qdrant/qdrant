@@ -1,11 +1,12 @@
 use std::ops::Range;
+use std::os::fd::BorrowedFd;
 
 use schnellru::{Limiter, LruMap};
 
 #[derive(PartialEq, Hash)]
 struct Key {
     /// File descriptor
-    fd: u32,
+    fd: i32,
     /// Offset within the file, in `page_size` units
     page: u32,
 }
@@ -16,15 +17,14 @@ pub struct Lru {
 }
 
 impl Lru {
-    pub fn new(disk_capacity: usize, os_page_size: usize) -> Self {
-        let limiter = ByDisk::new(disk_capacity, os_page_size);
+    pub fn new(disk_capacity: usize, os_page_size: usize, is_dummy: bool) -> Self {
+        let limiter = ByDisk::new(disk_capacity, os_page_size, is_dummy);
 
         let lru = LruMap::with_hasher(limiter, ahash::RandomState::new());
 
         Self { inner: lru }
     }
-
-    pub fn touch(&mut self, file_descriptor: u32, byte_range: Range<usize>) {
+    pub fn touch(&mut self, file_descriptor: i32, byte_range: Range<usize>) {
         let page_size = self.inner.limiter().page_size;
         let start_page = byte_range.start / page_size;
         let end_page = byte_range.end.div_ceil(page_size);
@@ -45,15 +45,19 @@ struct ByDisk {
 
     /// OS page size
     page_size: usize,
+
+    /// Does not do syscalls do deallocate, useful for tests
+    is_dummy: bool,
 }
 
 impl ByDisk {
     /// Create a new `ByDisk` limiter with the given disk capacity and OS page size.
-    fn new(disk_capacity: usize, page_size: usize) -> Self {
+    fn new(disk_capacity: usize, page_size: usize, is_dummy: bool) -> Self {
         let max_items = disk_capacity / page_size;
         Self {
             max_items,
             page_size,
+            is_dummy,
         }
     }
 
@@ -98,8 +102,27 @@ impl Limiter<Key, ()> for ByDisk {
     }
 
     #[inline]
-    fn on_removed(&mut self, _key: &mut Key, _value: &mut ()) {
+    fn on_removed(&mut self, key: &mut Key, _value: &mut ()) {
         // todo: call fallocate on the key
+        #[cfg(target_os = "linux")]
+        {
+            if !self.is_dummy {
+                use nix::fcntl::{FallocateFlags, fallocate};
+
+                let file = unsafe { BorrowedFd::borrow_raw(key.fd) };
+
+                let flags = FallocateFlags::FALLOC_FL_PUNCH_HOLE;
+                let offset = key.page as i64 * self.page_size as i64;
+                let len = self.page_size as i64;
+
+                match fallocate(file, flags, offset, len) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        log::error!("Disk cache: Failed to punch hole: {err}");
+                    }
+                }
+            }
+        }
     }
 
     #[inline]
@@ -123,11 +146,11 @@ mod tests {
         let page_size = 4096;
         let num_keys: usize = disk_capacity / page_size;
 
-        let mut lru = Lru::new(disk_capacity, page_size);
+        let mut lru = Lru::new(disk_capacity, page_size, true);
 
         // Insert keys by touching ranges across different file descriptors
         for i in 0..num_keys {
-            let fd = (i / 1_000_000) as u32; // Spread across multiple file descriptors
+            let fd = (i / 1_000_000) as i32; // Spread across multiple file descriptors
             let page_offset = (i % 1_000_000) * page_size;
             lru.touch(fd, page_offset..page_offset + page_size);
         }
