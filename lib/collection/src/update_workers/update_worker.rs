@@ -75,7 +75,7 @@ impl UpdateWorkers {
 
                     // submit an uncontended operation to determine a segment, and then switch to contented state.
                     let operation_result = update_pool
-                        .submit_uncontended(move |token| {
+                        .submit_uncontended(move |mut token| {
                             Self::update_worker_internal(
                                 collection_name_clone,
                                 operation,
@@ -86,7 +86,7 @@ impl UpdateWorkers {
                                 update_operation_lock_clone,
                                 update_tracker_clone,
                                 hw_measurements,
-                                token,
+                                &mut token,
                             )
                         })
                         .await;
@@ -203,7 +203,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
-        switch_token: SwitchToken<usize>,
+        switch_token: &mut SwitchToken<usize>,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {

@@ -21,9 +21,8 @@ pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone + Send + 'static>(
             loop {
                 // Both Mutex::lock and Condvar::wait should impose a total ordering per se, so Relaxed ordering here is
                 // sufficient.
-                //
-                // TODO does it apply to `parking_lot` too? (At least it uses Aquire and Release internally.) If not,
-                // the thread may end up waiting for the condvar infinitely.
+                // TODO: as we use the mutex in the code that sets it, we may replace the atomic with a simple flag
+                // inside the `PoolTasks`.
                 if terminate.load(std::sync::atomic::Ordering::Relaxed) {
                     return;
                 }
@@ -37,14 +36,15 @@ pub(crate) fn thread_worker<GroupId: Eq + Hash + Clone + Send + 'static>(
         };
 
         // Even if the task panics, we want to mark it as completed and proceed.
-        // This is a very simple pool!
+        // Just as would parking_lot do with a lock held across a panic.
         let _task_completion_guard = TaskCompletionGuard::new(&tasks, &wait_for_jobs, task_info);
 
-        let _result = task();
         // TODO report the panic if any, or refactor everything, let it panic and create a new thread.
+        task();
 
         if terminate.load(std::sync::atomic::Ordering::Relaxed) {
-            // We might std::mem::forget(task_completion_guard), but leaving it as is is OK too.
+            // We might std::mem::forget(task_completion_guard) to avoid locking the mutex without a need, but leaving
+            // it as is is OK too.
             return;
         }
     }

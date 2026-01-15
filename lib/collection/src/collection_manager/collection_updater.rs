@@ -1,4 +1,4 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
@@ -47,7 +47,7 @@ impl CollectionUpdater {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_counter: &HardwareCounterCell,
-        mut switch_token: SwitchToken<usize>,
+        switch_token: &mut SwitchToken<usize>,
     ) -> CollectionResult<usize> {
         // Use block_in_place here to avoid blocking the current async executor
         let operation_result = tokio::task::block_in_place(|| {
@@ -64,7 +64,7 @@ impl CollectionUpdater {
                         op_num,
                         point_operation,
                         hw_counter,
-                        &mut switch_token,
+                        switch_token,
                     )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
@@ -73,7 +73,7 @@ impl CollectionUpdater {
                         op_num,
                         vector_operation,
                         hw_counter,
-                        &mut switch_token,
+                        switch_token,
                     )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {

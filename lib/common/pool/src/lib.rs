@@ -151,7 +151,7 @@ impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
 
 struct PoolTasks<GroupId> {
     next_available_priority: TaskId,
-    ready_to_run_tasks: BinaryHeap<RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>>,
+    ready_to_run_tasks: ReadyToRunTasks<GroupId>,
     stalled_tasks: HashMap<GroupId, KeyTaskGroup>,
 }
 
@@ -329,6 +329,8 @@ impl<K: Ord, V> Ord for RevQueuePair<K, V> {
     }
 }
 
+type ReadyToRunTasks<GroupId> = BinaryHeap<RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>>;
+
 #[derive(Default)]
 struct KeyTaskGroup {
     // ready_to_run: current_mode != Some(Exclusive)
@@ -377,9 +379,7 @@ impl KeyTaskGroup {
         &mut self,
         complete_task_operation_mode: OperationMode,
         group_id: &GroupId,
-        ready_to_run_tasks: &mut BinaryHeap<
-            RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>,
-        >,
+        ready_to_run_tasks: &mut ReadyToRunTasks<GroupId>,
         condvar: &Condvar,
     ) {
         match self.current_mode.as_mut() {
@@ -405,9 +405,7 @@ impl KeyTaskGroup {
     fn refill_ready_to_run_tasks<GroupId: Clone>(
         &mut self,
         group_id: &GroupId,
-        ready_to_run_tasks: &mut BinaryHeap<
-            RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>,
-        >,
+        ready_to_run_tasks: &mut ReadyToRunTasks<GroupId>,
         condvar: &Condvar,
     ) {
         // the state is checked and updated by the try_get_next_runnable_task call

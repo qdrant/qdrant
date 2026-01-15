@@ -35,7 +35,7 @@ pub fn process_point_operation(
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            let res = upsert_points(
+            let res = upsert_points_in_pool(
                 &segments.read(),
                 op_num,
                 points.iter(),
@@ -224,6 +224,27 @@ pub fn upsert_points<'a, T>(
     op_num: SeqNumberType,
     points: T,
     hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize>
+where
+    T: IntoIterator<Item = &'a PointStructPersisted>,
+{
+    upsert_points_in_pool(
+        segments,
+        op_num,
+        points,
+        hw_counter,
+        &mut SwitchToken::dummy(),
+    )
+}
+
+/// Checks point id in each segment, update point if found.
+/// All not found points are inserted into random segment.
+/// Returns: number of updated points.
+pub fn upsert_points_in_pool<'a, T>(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: T,
+    hw_counter: &HardwareCounterCell,
     switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize>
 where
@@ -321,7 +342,8 @@ pub fn conditional_upsert(
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter, switch_token)?;
+    let upserted_points =
+        upsert_points_in_pool(segments, op_num, points.iter(), hw_counter, switch_token)?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -516,7 +538,7 @@ pub fn sync_points(
     });
 
     // 5. Upsert points which differ from the stored ones
-    let num_replaced = upsert_points(segments, op_num, points_to_update, hw_counter, todo!())?;
+    let num_replaced = upsert_points(segments, op_num, points_to_update, hw_counter)?;
     debug_assert!(
         num_replaced <= num_updated,
         "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})",
@@ -667,6 +689,7 @@ pub fn delete_vectors_by_filter(
 /// Batch size when modifying payload
 const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
+#[inline]
 pub fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -674,6 +697,26 @@ pub fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
     hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize> {
+    set_payload_in_pool(
+        segments,
+        op_num,
+        payload,
+        points,
+        key,
+        hw_counter,
+        &mut SwitchToken::dummy(),
+    )
+}
+
+pub fn set_payload_in_pool(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    payload: &Payload,
+    points: &[PointIdType],
+    key: &Option<JsonPath>,
+    hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
 
@@ -692,7 +735,7 @@ pub fn set_payload(
                 })
             },
             hw_counter,
-            todo!(),
+            switch_token,
         )?;
 
         check_unprocessed_points(chunk, &updated_points)?;
@@ -755,7 +798,7 @@ pub fn delete_payload(
                 )
             },
             hw_counter,
-            todo!(),
+            &mut SwitchToken::dummy(),
         )?;
 
         check_unprocessed_points(batch, &updated_points)?;
@@ -800,7 +843,7 @@ pub fn clear_payload(
             |_, _, payload| payload.0.clear(),
             |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
-            todo!(),
+            &mut SwitchToken::dummy(),
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
@@ -847,7 +890,7 @@ pub fn overwrite_payload(
             },
             |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
-            todo!(),
+            &mut SwitchToken::dummy(),
         )?;
 
         total_updated_points += updated_points.len();

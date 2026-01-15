@@ -724,7 +724,7 @@ impl LocalShard {
                 newest_clocks.advance_clock(clock_tag);
             }
 
-            let dummy_token = SwitchToken::dummy();
+            let mut dummy_token = SwitchToken::dummy();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
@@ -734,7 +734,7 @@ impl LocalShard {
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
-                dummy_token,
+                &mut dummy_token,
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
