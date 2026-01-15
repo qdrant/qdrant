@@ -82,6 +82,9 @@ impl DateTimeWrapper {
 }
 
 impl<'de> Deserialize<'de> for DateTimePayloadType {
+    /// Parses RFC3339 datetime strings used in REST/JSON `datetime_range` filters.
+    /// Returns a clear user-facing error when the format is invalid.
+    /// Example accepted value: `2014-01-01T00:00:00Z`.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -2629,6 +2632,9 @@ enum RangeInterfaceUntagged {
 }
 
 impl<'de> serde::Deserialize<'de> for RangeInterface {
+    /// Parses range bounds, treating string bounds as RFC3339 datetimes for REST/JSON `datetime_range` filters.
+    /// Preserves clear user-facing errors when datetime formats are invalid.
+    /// Example accepted datetime bound: `2014-01-01T00:00:00Z`.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -3310,6 +3316,9 @@ impl From<ConditionUntagged> for Condition {
 }
 
 impl<'de> serde::Deserialize<'de> for Condition {
+    /// Dispatches conditions explicitly so datetime parsing errors from REST/JSON filters stay visible.
+    /// Returns readable RFC3339 errors instead of generic untagged enum messages.
+    /// Example accepted datetime value: `2014-01-01T00:00:00Z`.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
