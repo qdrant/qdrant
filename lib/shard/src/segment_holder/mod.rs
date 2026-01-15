@@ -142,7 +142,8 @@ impl SegmentHolder {
     /// Iterate over all segments, which can be updated.
     /// That includes normal segments + pending updates segment (if exists).
     pub fn iter_updatable(&self) -> impl Iterator<Item = (SegmentId, &LockedSegment)> {
-        self.iter().chain(self.pending_updates_segment.iter_updatable())
+        self.iter()
+            .chain(self.pending_updates_segment.iter_updatable())
     }
 
     /// Iterate over segments, which can be scheduled for optimization.
