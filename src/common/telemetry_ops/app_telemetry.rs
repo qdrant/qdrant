@@ -21,13 +21,6 @@ impl AppBuildTelemetryCollector {
         }
     }
 }
-
-impl Default for AppBuildTelemetryCollector {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppFeaturesTelemetry {
     pub debug: bool,
