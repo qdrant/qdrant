@@ -20,7 +20,7 @@ impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
         let mut manifest = SnapshotManifest::default();
 
-        for (_, segment) in self.iter() {
+        for (_, segment) in self.iter_updatable() {
             let segment_manifest = segment.get().read().get_segment_manifest()?;
             manifest.add(segment_manifest);
         }

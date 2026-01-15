@@ -888,7 +888,7 @@ mod tests {
             // Ensure segment is not on disk
             locked_holder
                 .read()
-                .iter_original()
+                .iter_optimizable()
                 .map(|(_, segment)| segment.read())
                 .filter(|segment| segment.total_point_count() > 0)
                 .for_each(|segment| {
@@ -964,7 +964,7 @@ mod tests {
         // Ensure new segment is on disk now
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {

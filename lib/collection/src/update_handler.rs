@@ -314,7 +314,7 @@ impl UpdateHandler {
         let segments = self.segments.read();
         let mut planner = OptimizationPlanner::new(
             segments.running_optimizations.count(),
-            segments.iter_original(),
+            segments.iter_optimizable(),
         );
         let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
             optimizer.plan_optimizations(&mut planner);

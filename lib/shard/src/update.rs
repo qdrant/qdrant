@@ -371,7 +371,7 @@ pub fn delete_points_by_filter(
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     let mut points_to_delete: AHashMap<_, _> = segments
-        .iter()
+        .iter_updatable()
         .map(|(segment_id, segment)| {
             (
                 segment_id,
@@ -440,7 +440,7 @@ pub fn sync_points(
     let sync_points: AHashSet<_> = points.iter().map(|p| p.id).collect();
     // 1. Retrieve existing points for a range
     let stored_point_ids: AHashSet<_> = segments
-        .iter()
+        .iter_updatable()
         .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
         .collect();
     // 2. Remove points, which are not present in the sync operation
