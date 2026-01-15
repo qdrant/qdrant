@@ -304,6 +304,34 @@ pub struct OptimizationsResponse {
     //        empty vec when `?completed=true` but no completed optimizations.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed: Option<Vec<ProgressTree>>,
+    /// Estimation of pending optimizations.
+    pub pending: PendingOptimizations,
+}
+
+/// Estimation of pending optimizations
+#[derive(Debug, Default, Clone, Serialize, JsonSchema)]
+pub struct PendingOptimizations {
+    /// Number of pending optimizations.
+    /// Each optimization will take one or more unoptimized segments and produce
+    /// one optimized segment.
+    pub optimizations: usize,
+    /// Number of unoptimized segments pending optimization.
+    pub segments: usize,
+    /// Total number of non-deleted points in unoptimized segments.
+    pub points: usize,
+}
+
+impl PendingOptimizations {
+    pub fn merge(&mut self, other: &PendingOptimizations) {
+        let PendingOptimizations {
+            optimizations,
+            segments,
+            points,
+        } = self;
+        *optimizations += other.optimizations;
+        *segments += other.segments;
+        *points += other.points;
+    }
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
