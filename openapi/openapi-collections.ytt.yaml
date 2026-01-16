@@ -212,6 +212,46 @@ paths:
           schema:
             $ref: "#/components/schemas/WriteOrdering"
       responses: #@ response(reference("UpdateResult"))
+  /collections/{collection_name}/debug:
+    post:
+      tags:
+        - Collections
+      summary: Execute staging operation
+      description: Execute staging-only operation for testing and debugging. Available only when the staging feature is enabled.
+      operationId: staging_operation
+      requestBody:
+        description: Staging operation to execute
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StagingOperations"
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: wait
+          in: query
+          description: "If true, wait for changes to actually happen"
+          required: false
+          schema:
+            type: boolean
+        - name: ordering
+          in: query
+          description: "define ordering guarantees for the operation"
+          required: false
+          schema:
+            $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/cluster:
     get:

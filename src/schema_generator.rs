@@ -29,6 +29,8 @@ use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
 use storage::types::ClusterStatus;
+#[cfg(feature = "staging")]
+use shard::operations::staging::StagingOperations;
 
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
@@ -100,6 +102,8 @@ struct AllDefinitions {
     bo: ShardKeysResponse,
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
+    #[cfg(feature = "staging")]
+    br: StagingOperations,
 }
 
 fn save_schema<T: JsonSchema>() {
