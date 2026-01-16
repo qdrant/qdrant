@@ -7,17 +7,6 @@ from openapi.helpers.helpers import request_with_validation
 @pytest.fixture(autouse=True)
 def setup(collection_name):
     drop_collection(collection_name)
-    yield
-    drop_collection(collection_name=collection_name)
-
-
-def test_collection_setup(collection_name="test_collection"):
-    response = request_with_validation(
-        api=f"/collections/{collection_name}",
-        method="DELETE",
-        path_params={"collection_name": collection_name},
-    )
-    assert response.ok
 
     response = request_with_validation(
         api=f"/collections/{collection_name}",
@@ -28,10 +17,13 @@ def test_collection_setup(collection_name="test_collection"):
 
     assert response.ok
 
+    yield
+    drop_collection(collection_name=collection_name)
+
 
 def test_wait_timeout_ack(collection_name="test_collection"):
     response = request_with_validation(
-        api=f"/collections/{collection_name}/debug",
+        api="/collections/{collection_name}/debug",
         method="POST",
         path_params={"collection_name": collection_name},
         body={"delay": {"duration_sec": 15.0}},
@@ -39,7 +31,7 @@ def test_wait_timeout_ack(collection_name="test_collection"):
     assert response.ok and response.json()["result"]["status"] == "acknowledged"
 
     response = request_with_validation(
-        api=f"/collections/{collection_name}/wait",
+        api="/collections/{collection_name}/wait",
         method="POST",
         path_params={"collection_name": collection_name},
         query_params={"wait": "true", "timeout": 1},
@@ -58,7 +50,7 @@ def test_wait_timeout_ack(collection_name="test_collection"):
 
 def test_wait_timeout_completed(collection_name="test_collection"):
     response = request_with_validation(
-        api=f"/collections/{collection_name}/debug",
+        api="/collections/{collection_name}/debug",
         method="POST",
         path_params={"collection_name": collection_name},
         query_params={"wait": "true"},
@@ -67,7 +59,7 @@ def test_wait_timeout_completed(collection_name="test_collection"):
     assert response.ok and response.json()["result"]["status"] == "completed"
 
     response = request_with_validation(
-        api=f"/collections/{collection_name}/wait",
+        api="/collections/{collection_name}/wait",
         method="POST",
         path_params={"collection_name": collection_name},
         query_params={"wait": "true", "timeout": 5},
@@ -86,7 +78,7 @@ def test_wait_timeout_completed(collection_name="test_collection"):
 
 def test_wait_timeout_twice(collection_name="test_collection"):
     response = request_with_validation(
-        api=f"/collections/{collection_name}/debug",
+        api="/collections/{collection_name}/debug",
         method="POST",
         path_params={"collection_name": collection_name},
         query_params={"wait": "true", "timeout": 5},
@@ -95,7 +87,7 @@ def test_wait_timeout_twice(collection_name="test_collection"):
     assert response.ok and response.json()["result"]["status"] == "wait_timeout"
 
     response = request_with_validation(
-        api=f"/collections/{collection_name}/wait",
+        api="/collections/{collection_name}/wait",
         method="POST",
         path_params={"collection_name": collection_name},
         query_params={"wait": "true", "timeout": 1},
