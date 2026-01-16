@@ -392,6 +392,23 @@ impl CollectionParams {
         }
     }
 
+    pub fn check_vector_exists(&self, vector_name: &VectorName) -> CollectionResult<()> {
+        match self.vectors.get_params(vector_name) {
+            Some(_params) => Ok(()),
+            None => {
+                if self
+                    .sparse_vectors
+                    .as_ref()
+                    .map(|sparse_vectors| sparse_vectors.contains_key(vector_name))
+                    .unwrap_or(false)
+                {
+                    return Ok(());
+                }
+                Err(self.missing_vector_error(vector_name))
+            }
+        }
+    }
+
     fn get_vector_params_mut(
         &mut self,
         vector_name: &VectorName,

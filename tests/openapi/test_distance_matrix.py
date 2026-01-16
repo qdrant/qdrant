@@ -11,6 +11,19 @@ def setup(on_disk_vectors, collection_name):
     drop_collection(collection_name=collection_name)
 
 
+def test_wrong_vector_name(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/matrix/pairs",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "sample": 10,
+            "limit": 2,
+            "using": "wrong_vector_name",
+        },
+    )
+    assert response.status_code == 400
+
 def test_search_matrix_pairs(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search/matrix/pairs",
