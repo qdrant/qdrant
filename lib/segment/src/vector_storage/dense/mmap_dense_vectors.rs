@@ -213,7 +213,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) {
         for (idx, point) in points.enumerate() {
-            let vector = self.get_vector::<Random>(point);
+            let vector = self.get_vector::<Sequential>(point);
             callback(idx, point, vector);
         }
     }
