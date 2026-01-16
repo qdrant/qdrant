@@ -32,10 +32,10 @@ def load_new_shard():
         payload_storage_type=PayloadStorageType.InRamMmap,
     )
 
-    return Shard(DATA_DIRECTORY, config)
+    return EdgeShard(DATA_DIRECTORY, config)
 
 
-def fill_dummy_data(shard: Shard):
+def fill_dummy_data(shard: EdgeShard):
     shard.update(UpdateOperation.upsert_points([
         Point(1, [0.05, 0.61, 0.76, 0.74], {"color": "red", "city": ["Moscow", "Berlin"]}),
         Point(2, [0.19, 0.81, 0.75, 0.11], {"color": "red", "city": "Mexico"}),

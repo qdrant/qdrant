@@ -5,9 +5,9 @@ use segment::common::operation_error::OperationResult;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::{SnapshotMergePlan, SnapshotUtils};
 
-use crate::Shard;
+use crate::EdgeShard;
 
-impl Shard {
+impl EdgeShard {
     pub fn unpack_snapshot(snapshot_path: &Path, target_path: &Path) -> OperationResult<()> {
         SnapshotUtils::unpack_snapshot(snapshot_path, target_path)
     }
@@ -60,6 +60,6 @@ impl Shard {
             fs::remove_dir_all(&delete_dir)?;
         }
 
-        Shard::load(shard_path, None)
+        EdgeShard::load(shard_path, None)
     }
 }

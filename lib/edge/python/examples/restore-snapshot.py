@@ -39,9 +39,9 @@ if os.path.exists(recovered_path):
     print("Removing existing recovered shard directory...")
     shutil.rmtree(recovered_path)
 
-Shard.unpack_snapshot(snapshot_path, recovered_path)
+EdgeShard.unpack_snapshot(snapshot_path, recovered_path)
 
-shard = Shard(recovered_path, None)
+shard = EdgeShard(recovered_path, None)
 
 points = shard.retrieve(point_ids=[1, 2, 3], with_vector=False, with_payload=True)
 
