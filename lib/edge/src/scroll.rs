@@ -14,10 +14,10 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::scroll::ScrollRequestInternal;
 
-use super::Shard;
+use super::EdgeShard;
 use crate::DEFAULT_EDGE_TIMEOUT;
 
-impl Shard {
+impl EdgeShard {
     pub fn scroll(
         &self,
         request: ScrollRequestInternal,

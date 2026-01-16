@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use segment::types::{PayloadIndexInfo, PayloadKeyType};
 
-use super::Shard;
+use super::EdgeShard;
 
 #[derive(Clone, Debug)]
 pub struct ShardInfo {
@@ -20,7 +20,7 @@ pub struct ShardInfo {
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
 
-impl Shard {
+impl EdgeShard {
     pub fn info(&self) -> ShardInfo {
         let mut segments_count = 0;
         let mut points_count = 0;

@@ -53,7 +53,7 @@ print(expected_points)
 
 # Re-load edge shard from disk, assert points are available
 del edge
-edge = Shard(DATA_DIRECTORY, None)
+edge = EdgeShard(DATA_DIRECTORY, None)
 
 points = edge.scroll(ScrollRequest(limit=5, with_vector=True, with_payload=True))
 print(points)

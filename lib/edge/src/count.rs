@@ -5,9 +5,9 @@ use segment::common::operation_error::OperationResult;
 use segment::index::field_index::EstimationMerge;
 use shard::count::CountRequestInternal;
 
-use super::Shard;
+use super::EdgeShard;
 
-impl Shard {
+impl EdgeShard {
     pub fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
         let CountRequestInternal { filter, exact } = request;
 

@@ -5,9 +5,9 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use shard::operations::CollectionUpdateOperations;
 use shard::update::*;
 
-use crate::Shard;
+use crate::EdgeShard;
 
-impl Shard {
+impl EdgeShard {
     pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
         let mut wal = self.wal.lock();
 

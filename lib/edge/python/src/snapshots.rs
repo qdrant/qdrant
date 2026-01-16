@@ -1,15 +1,15 @@
 use std::mem;
 use std::path::PathBuf;
 
-use edge::Shard;
+use edge::EdgeShard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::files::{clear_data, move_data};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tempfile::Builder;
 
-use crate::PyShard;
+use crate::PyEdgeShard;
 
-impl PyShard {
+impl PyEdgeShard {
     pub fn _update_from_snapshot(
         &mut self,
         snapshot_path: PathBuf,
@@ -25,7 +25,7 @@ impl PyShard {
 
         // A place where we can temporarily unpack the snapshot
         let unpack_dir = Builder::new().tempdir_in(tmp_dir)?;
-        edge::Shard::unpack_snapshot(&snapshot_path, unpack_dir.path())?;
+        edge::EdgeShard::unpack_snapshot(&snapshot_path, unpack_dir.path())?;
 
         let snapshot_manifest = SnapshotManifest::load_from_snapshot(unpack_dir.path(), None)?;
 
@@ -43,7 +43,7 @@ impl PyShard {
             clear_data(&shard_path)?;
             move_data(unpack_dir.path(), &shard_path)?;
 
-            let shard = Shard::load(&shard_path, None)?;
+            let shard = EdgeShard::load(&shard_path, None)?;
 
             self.0 = Some(shard);
 
@@ -61,7 +61,7 @@ impl PyShard {
 
         drop(shard);
 
-        let new_shard = Shard::recover_partial_snapshot(
+        let new_shard = EdgeShard::recover_partial_snapshot(
             &shard_path,
             &current_manifest,
             unpack_dir.path(),
