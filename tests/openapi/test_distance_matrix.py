@@ -19,7 +19,7 @@ def test_wrong_vector_name(collection_name):
         body={
             "sample": 10,
             "limit": 2,
-            "vector_name": "wrong_vector_name",
+            "using": "wrong_vector_name",
         },
     )
     assert response.status_code == 400
