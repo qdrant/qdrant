@@ -6,9 +6,7 @@ from openapi.helpers.helpers import request_with_validation
 
 @pytest.fixture(autouse=True)
 def setup(collection_name):
-    test_wait_timeout_ack(collection_name)
-    test_wait_timeout_completed(collection_name)
-    test_wait_timeout_twice(collection_name)
+    drop_collection(collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
