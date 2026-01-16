@@ -9,7 +9,7 @@ def setup(collection_name):
     drop_collection(collection_name)
 
     response = request_with_validation(
-        api=f"/collections/{collection_name}",
+        api="/collections/{collection_name}",
         method="PUT",
         path_params={"collection_name": collection_name},
         body={"sparse_vectors": {"text": {}}},
@@ -21,7 +21,7 @@ def setup(collection_name):
     drop_collection(collection_name=collection_name)
 
 
-def test_wait_timeout_ack(collection_name="test_collection"):
+def test_wait_timeout_ack(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/debug",
         method="POST",
@@ -48,7 +48,7 @@ def test_wait_timeout_ack(collection_name="test_collection"):
     assert response.ok and response.json()["result"]["status"] == "wait_timeout"
 
 
-def test_wait_timeout_completed(collection_name="test_collection"):
+def test_wait_timeout_completed(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/debug",
         method="POST",
@@ -76,7 +76,7 @@ def test_wait_timeout_completed(collection_name="test_collection"):
     assert response.ok and response.json()["result"]["status"] == "wait_timeout"
 
 
-def test_wait_timeout_twice(collection_name="test_collection"):
+def test_wait_timeout_twice(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/debug",
         method="POST",
