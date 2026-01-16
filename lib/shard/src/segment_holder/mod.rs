@@ -783,6 +783,47 @@ impl SegmentHolder {
         Ok(read_points)
     }
 
+    /// Provides an entry point of reading multiple points in all segments.
+    ///
+    pub fn read_points_many<F>(
+        &self,
+        ids: &[PointIdType],
+        is_stopped: &AtomicBool,
+        mut f: F,
+    ) -> OperationResult<usize>
+    where
+        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<usize>,
+    {
+        // We must go over non-appendable segments first, then go over appendable segments after
+        // Points may be moved from non-appendable to appendable, because we don't lock all
+        // segments together read ordering is very important here!
+        //
+        // Consider the following sequence:
+        //
+        // 1. Read-lock non-appendable segment A
+        // 2. Atomic move from A to B
+        // 3. Read-lock appendable segment B
+        //
+        // We are guaranteed to read all data consistently, and don't lose any points
+        let segments = self.non_appendable_then_appendable_segments();
+
+        let mut read_points = 0;
+        for segment in segments {
+            let segment_arc = segment.get();
+            let read_segment = segment_arc.read();
+            let segment_point_ids: Vec<PointIdType> = ids
+                .iter()
+                .cloned()
+                .stop_if(is_stopped)
+                .filter(|id| read_segment.has_point(*id))
+                .collect();
+            if !segment_point_ids.is_empty() {
+                read_points += f(&segment_point_ids, &read_segment)?;
+            }
+        }
+        Ok(read_points)
+    }
+
     /// Create a new appendable segment and add it to the segment holder.
     ///
     /// The segment configuration is sourced from the given collection parameters.

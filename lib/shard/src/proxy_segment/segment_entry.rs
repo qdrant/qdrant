@@ -304,6 +304,36 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
+    fn vectors(
+        &self,
+        vector_names: &VectorName,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Option<VectorInternal>>> {
+        let (non_deleted_offsets, non_deleted_positions): (Vec<_>, Vec<_>) = point_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(pos, &point_id)| {
+                if self.deleted_points.contains_key(&point_id) {
+                    None
+                } else {
+                    Some((point_id, pos))
+                }
+            })
+            .unzip();
+
+        let mut result = vec![None; point_ids.len()];
+        let fetched_vectors = self.wrapped_segment.get().read().vectors(
+            vector_names,
+            &non_deleted_offsets,
+            hw_counter,
+        )?;
+        for (fetched_vector, pos) in fetched_vectors.into_iter().zip(non_deleted_positions) {
+            result[pos] = fetched_vector;
+        }
+        Ok(result)
+    }
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
@@ -329,6 +359,36 @@ impl SegmentEntry for ProxySegment {
             }
         }
         Ok(result)
+    }
+
+    fn all_vectors_many(
+        &self,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<NamedVectors<'_>>> {
+        let mut results = vec![NamedVectors::default(); point_ids.len()];
+        let wrapped = self.wrapped_segment.get();
+        let wrapped_guard = wrapped.read();
+        let config = wrapped_guard.config();
+        let vector_names: Vec<_> = config
+            .vector_data
+            .keys()
+            .chain(config.sparse_vector_data.keys())
+            .cloned()
+            .collect();
+
+        // Must drop wrapped guard to prevent self-deadlock in `vector()` function below
+        drop(wrapped_guard);
+
+        for vector_name in vector_names {
+            let vectors = self.vectors(&vector_name, point_ids, hw_counter)?;
+            for (pos, vector_opt) in vectors.into_iter().enumerate() {
+                if let Some(vector) = vector_opt {
+                    results[pos].insert(vector_name.clone(), vector);
+                }
+            }
+        }
+        Ok(results)
     }
 
     fn payload(

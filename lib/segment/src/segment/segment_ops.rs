@@ -420,6 +420,61 @@ impl Segment {
         }
     }
 
+    /// Retrieve multiple vectors by internal ID
+    pub(super) fn vectors_by_offsets(
+        &self,
+        vector_name: &VectorName,
+        point_offsets: &[PointOffsetType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Option<VectorInternal>>> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        let vector_data = &self
+            .vector_data
+            .get(vector_name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        let vector_storage = vector_data.vector_storage.borrow();
+        let largest_offset = point_offsets.iter().max().cloned().unwrap_or(0);
+        if vector_storage.total_vector_count() <= largest_offset as usize {
+            return Err(OperationError::InconsistentStorage {
+                description: format!(
+                    "Vector storage '{}' is inconsistent, total_vector_count: {}, point_offset: {}",
+                    vector_name,
+                    vector_storage.total_vector_count(),
+                    largest_offset
+                ),
+            });
+        }
+        let id_tracker = self.id_tracker.borrow();
+
+        let mut result = vec![None; point_offsets.len()];
+
+        let (non_deleted_offsets, non_deleted_positions): (Vec<_>, Vec<_>) = point_offsets
+            .iter()
+            .enumerate()
+            .filter_map(|(pos, &point_offset)| {
+                let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
+                let is_point_deleted = id_tracker.is_deleted_point(point_offset);
+                if !is_vector_deleted && !is_point_deleted {
+                    Some((point_offset, pos))
+                } else {
+                    None
+                }
+            })
+            .unzip();
+
+        let vectors = vector_storage.get_vectors::<Random>(&non_deleted_offsets);
+        let vectors_size = vectors.iter().map(|vec| vec.estimate_size_in_bytes()).sum();
+        if vector_storage.is_on_disk() {
+            hw_counter.vector_io_read().incr_delta(vectors_size);
+        }
+
+        for (vector, pos) in vectors.into_iter().zip(non_deleted_positions) {
+            result[pos] = Some(vector.to_owned());
+        }
+
+        Ok(result)
+    }
+
     pub(super) fn all_vectors_by_offset(
         &self,
         point_offset: PointOffsetType,

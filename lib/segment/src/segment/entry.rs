@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::TelemetryDetail;
+use common::types::{PointOffsetType, TelemetryDetail};
 use io::safe_delete::safe_delete_with_suffix;
 
 use super::Segment;
@@ -326,6 +326,21 @@ impl SegmentEntry for Segment {
         Ok(vector_opt)
     }
 
+    fn vectors(
+        &self,
+        vector_names: &VectorName,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Option<VectorInternal>>> {
+        let internal_ids_res: Result<Vec<PointOffsetType>, _> = point_ids
+            .iter()
+            .map(|&point_id| self.lookup_internal_id(point_id))
+            .collect();
+        let internal_ids = internal_ids_res?;
+        let vectors = self.vectors_by_offsets(vector_names, &internal_ids, hw_counter)?;
+        Ok(vectors)
+    }
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
@@ -335,6 +350,23 @@ impl SegmentEntry for Segment {
         for vector_name in self.vector_data.keys() {
             if let Some(vec) = self.vector(vector_name, point_id, hw_counter)? {
                 result.insert(vector_name.clone(), vec);
+            }
+        }
+        Ok(result)
+    }
+
+    fn all_vectors_many(
+        &self,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<NamedVectors<'_>>> {
+        let mut result = vec![NamedVectors::default(); point_ids.len()];
+        for vector_name in self.vector_data.keys() {
+            let vectors = self.vectors(vector_name, point_ids, hw_counter)?;
+            for (i, vector_opt) in vectors.into_iter().enumerate() {
+                if let Some(vec) = vector_opt {
+                    result[i].insert(vector_name.clone(), vec);
+                }
             }
         }
         Ok(result)

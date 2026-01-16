@@ -133,11 +133,24 @@ pub trait SegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
+    fn vectors(
+        &self,
+        vector_names: &VectorName,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Option<VectorInternal>>>;
+
     fn all_vectors(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
+
+    fn all_vectors_many(
+        &self,
+        point_ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<NamedVectors<'_>>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
