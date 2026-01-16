@@ -27,7 +27,7 @@ use shard::wal::SerdeWal;
 use wal::WalOptions;
 
 #[derive(Debug)]
-pub struct Shard {
+pub struct EdgeShard {
     path: PathBuf,
     config: SegmentConfig,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
@@ -37,7 +37,7 @@ pub struct Shard {
 const WAL_PATH: &str = "wal";
 const SEGMENTS_PATH: &str = "segments";
 
-impl Shard {
+impl EdgeShard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
 
@@ -200,7 +200,7 @@ impl Shard {
     }
 }
 
-impl Drop for Shard {
+impl Drop for EdgeShard {
     fn drop(&mut self) {
         self.flush();
     }

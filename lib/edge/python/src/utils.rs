@@ -1,10 +1,10 @@
-use edge::Shard;
+use edge::EdgeShard;
 use segment::common::operation_error::OperationError;
 
 use crate::{PyError, PyShard};
 
 impl PyShard {
-    pub fn get_shard(&self) -> Result<&Shard, PyError> {
+    pub fn get_shard(&self) -> Result<&EdgeShard, PyError> {
         if let Some(shard) = &self.0 {
             Ok(shard)
         } else {

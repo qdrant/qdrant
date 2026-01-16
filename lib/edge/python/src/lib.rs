@@ -84,14 +84,14 @@ mod qdrant_edge {
 
 #[pyclass(name = "Shard")]
 #[derive(Debug)]
-pub struct PyShard(Option<edge::Shard>);
+pub struct PyShard(Option<edge::EdgeShard>);
 
 #[pymethods]
 impl PyShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
-        let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
+        let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
         Ok(Self(Some(shard)))
     }
 
@@ -158,7 +158,7 @@ impl PyShard {
 
     #[staticmethod]
     pub fn unpack_snapshot(snapshot_path: PathBuf, target_path: PathBuf) -> Result<()> {
-        edge::Shard::unpack_snapshot(&snapshot_path, &target_path)?;
+        edge::EdgeShard::unpack_snapshot(&snapshot_path, &target_path)?;
         Ok(())
     }
 
