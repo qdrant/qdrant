@@ -156,6 +156,12 @@ impl Collection {
             return Ok(Default::default());
         }
 
+        self.collection_config
+            .read()
+            .await
+            .params
+            .check_vector_exists(&using)?;
+
         // make sure the vector is present in the point
         let has_vector = Filter::new_must(Condition::HasVector(HasVectorCondition::from(
             using.clone(),
