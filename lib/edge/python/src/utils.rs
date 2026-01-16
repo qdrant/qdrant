@@ -1,9 +1,9 @@
 use edge::EdgeShard;
 use segment::common::operation_error::OperationError;
 
-use crate::{PyError, PyShard};
+use crate::{PyEdgeShard, PyError};
 
-impl PyShard {
+impl PyEdgeShard {
     pub fn get_shard(&self) -> Result<&EdgeShard, PyError> {
         if let Some(shard) = &self.0 {
             Ok(shard)

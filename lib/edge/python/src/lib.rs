@@ -30,7 +30,7 @@ use self::update::*;
 #[pymodule]
 mod qdrant_edge {
     #[pymodule_export]
-    use super::PyShard;
+    use super::PyEdgeShard;
     #[pymodule_export]
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
@@ -82,12 +82,12 @@ mod qdrant_edge {
     use super::update::PyUpdateOperation;
 }
 
-#[pyclass(name = "Shard")]
+#[pyclass(name = "EdgeShard")]
 #[derive(Debug)]
-pub struct PyShard(Option<edge::EdgeShard>);
+pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
-impl PyShard {
+impl PyEdgeShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {

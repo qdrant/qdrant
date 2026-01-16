@@ -7,9 +7,9 @@ use shard::files::{clear_data, move_data};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tempfile::Builder;
 
-use crate::PyShard;
+use crate::PyEdgeShard;
 
-impl PyShard {
+impl PyEdgeShard {
     pub fn _update_from_snapshot(
         &mut self,
         snapshot_path: PathBuf,
