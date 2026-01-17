@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::mem::{self, MaybeUninit, size_of, transmute};
+use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,6 +14,7 @@ use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::{self, MULTI_MMAP_IS_SUPPORTED};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
+use zerocopy::FromBytes;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
@@ -86,8 +87,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
-        let deleted_mmap = mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global, false)
-            .describe("Open mmap deleted for writing")?;
+        let deleted_mmap = if mmap_ops::read_only_mode_enabled() {
+            mmap_ops::open_read_mmap(deleted_path, AdviceSetting::Global, false)
+                .describe("Open mmap deleted for reading")?
+        } else {
+            mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global, false)
+                .describe("Open mmap deleted for writing")?
+        };
 
         // Advise kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
@@ -154,7 +160,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             &self.mmap
         };
         let byte_slice = &mmap[offset..(offset + self.raw_size())];
-        let arr: &[T] = unsafe { transmute(byte_slice) };
+        let arr: &[T] = <T>::ref_cast_slice(byte_slice);
         &arr[0..self.dim]
     }
 
@@ -189,6 +195,9 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     ///
     /// Returns true if the key was not deleted before, and it is now deleted.
     pub fn delete(&mut self, key: PointOffsetType) -> bool {
+        if mmap_ops::read_only_mode_enabled() {
+            return false;
+        }
         let is_deleted = !self.deleted.replace(key as usize, true);
         if is_deleted {
             self.deleted_count += 1;

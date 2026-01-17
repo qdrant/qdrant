@@ -42,11 +42,19 @@ impl Page {
     /// Flushes outstanding memory map modifications to disk.
     pub(crate) fn flush(&self) -> std::io::Result<()> {
         match self {
-            Page::ReadOnly { .. } => {
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq: _,
+            } => {
                 // Read-only pages don't need flushing
                 Ok(())
             }
-            Page::ReadWrite { mmap, .. } => mmap.flush(),
+            Page::ReadWrite {
+                path: _,
+                mmap,
+                _mmap_seq: _,
+            } => mmap.flush(),
         }
     }
 
@@ -182,8 +190,16 @@ impl Page {
         let value_end = value_start + value_size;
 
         match self {
-            Page::ReadOnly { .. } => value_size,
-            Page::ReadWrite { mmap, .. } => {
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq: _,
+            } => value_size,
+            Page::ReadWrite {
+                path: _,
+                mmap,
+                _mmap_seq: _,
+            } => {
                 // only write what fits in the page
                 let unwritten_tail = value_end.saturating_sub(mmap.len());
 
@@ -225,13 +241,21 @@ impl Page {
             )
         } else {
             match self {
-                Page::ReadOnly { mmap, .. } => Self::read_value_with_generic_storage(
+                Page::ReadOnly {
+                    path: _,
+                    mmap,
+                    _mmap_seq: _,
+                } => Self::read_value_with_generic_storage(
                     mmap,
                     block_offset,
                     length,
                     block_size_bytes,
                 ),
-                Page::ReadWrite { mmap, .. } => Self::read_value_with_generic_storage(
+                Page::ReadWrite {
+                    path: _,
+                    mmap,
+                    _mmap_seq: _,
+                } => Self::read_value_with_generic_storage(
                     mmap,
                     block_offset,
                     length,
@@ -290,14 +314,22 @@ impl Page {
     /// Block until all pages are populated.
     pub fn populate(&self) {
         match self {
-            Page::ReadOnly { _mmap_seq, .. } =>
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq,
+            } =>
             {
                 #[expect(clippy::used_underscore_binding)]
                 if let Some(mmap_seq) = _mmap_seq {
                     mmap_seq.populate();
                 }
             }
-            Page::ReadWrite { _mmap_seq, .. } =>
+            Page::ReadWrite {
+                path: _,
+                mmap: _,
+                _mmap_seq,
+            } =>
             {
                 #[expect(clippy::used_underscore_binding)]
                 if let Some(mmap_seq) = _mmap_seq {
@@ -310,8 +342,16 @@ impl Page {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
         match self {
-            Page::ReadOnly { path, .. } => clear_disk_cache(path),
-            Page::ReadWrite { path, .. } => clear_disk_cache(path),
+            Page::ReadOnly {
+                path,
+                mmap: _,
+                _mmap_seq: _,
+            } => clear_disk_cache(path),
+            Page::ReadWrite {
+                path,
+                mmap: _,
+                _mmap_seq: _,
+            } => clear_disk_cache(path),
         }?;
         Ok(())
     }

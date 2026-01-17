@@ -105,6 +105,24 @@ impl LocalShard {
                     // Avoid locking WAL in this case
                     Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
                 }
+                (true, None, true) | (true, None, false) => {
+                    // Writable mode but no WAL provided - copy from disk if available
+                    let wal_path = Self::wal_path(&shard_path);
+                    if wal_path.exists() {
+                        Self::copy_wal_from_disk(&wal_path, &tar_c)
+                    } else if lock_wal {
+                        Err(CollectionError::bad_request(format!(
+                            "Cannot create complete snapshot: WAL is required but missing: {}",
+                            wal_path.display()
+                        )))
+                    } else {
+                        log::debug!(
+                            "Skipping WAL snapshot because WAL path is missing: {}",
+                            wal_path.display()
+                        );
+                        Ok(())
+                    }
+                }
                 (false, Some(wal), false) => Self::snapshot_empty_wal(wal, &temp_path, &tar_c),
                 (false, Some(_), true) => {
                     log::warn!(
@@ -123,7 +141,8 @@ impl LocalShard {
                         )))
                     }
                 }
-                _ => {
+                (false, None, true) | (false, None, false) => {
+                    // Read-only mode with no WAL - copy from disk if available
                     let wal_path = Self::wal_path(&shard_path);
                     if wal_path.exists() {
                         Self::copy_wal_from_disk(&wal_path, &tar_c)
