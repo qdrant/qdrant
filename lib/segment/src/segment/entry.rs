@@ -89,7 +89,13 @@ impl SegmentEntry for Segment {
         internal_results
             .into_iter()
             .map(|internal_result| {
-                self.process_search_result(internal_result, with_payload, with_vector, &hw_counter)
+                self.process_search_result(
+                    internal_result,
+                    with_payload,
+                    with_vector,
+                    &hw_counter,
+                    &vector_query_context.is_stopped(),
+                )
             })
             .collect()
     }
@@ -114,7 +120,13 @@ impl SegmentEntry for Segment {
             hw_counter,
         )?;
 
-        self.process_search_result(internal_results, &false.into(), &false.into(), hw_counter)
+        self.process_search_result(
+            internal_results,
+            &false.into(),
+            &false.into(),
+            hw_counter,
+            is_stopped,
+        )
     }
 
     fn upsert_point(
