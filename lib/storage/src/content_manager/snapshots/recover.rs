@@ -103,6 +103,7 @@ async fn _do_recover_from_snapshot(
     let pass = new_unchecked_verification_pass();
 
     let toc = dispatcher.toc(&access, &pass);
+    toc.ensure_write_allowed("recover from snapshots")?;
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -335,29 +336,30 @@ async fn _do_recover_from_snapshot(
                     // Snapshot is the source of truth, we need to remove all other replicas
                     activate_shard(toc, &collection, this_peer_id, shard_id).await?;
 
-                    let replicas_to_keep = state.config.params.replication_factor.get() - 1;
-                    let mut replicas_to_remove = other_active_replicas
-                        .len()
-                        .saturating_sub(replicas_to_keep as usize);
+                    let replicas_to_keep = state
+                        .config
+                        .params
+                        .replication_factor
+                        .get()
+                        .saturating_sub(1) as usize;
+                    let mut replicas_kept = 0;
 
                     for (peer_id, _) in other_active_replicas {
-                        if replicas_to_remove > 0 {
-                            // Keep this replica
-                            replicas_to_remove -= 1;
-
-                            // Don't need more replicas, remove this one
-                            toc.request_remove_replica(
-                                collection_pass.to_string(),
-                                *shard_id,
-                                *peer_id,
-                            )?;
-                        } else {
+                        if replicas_kept < replicas_to_keep {
+                            // Keep this replica, but mark it dead to force resync from snapshot.
+                            replicas_kept += 1;
                             toc.send_set_replica_state_proposal(
                                 collection_pass.to_string(),
                                 *peer_id,
                                 *shard_id,
                                 ReplicaState::Dead,
                                 None,
+                            )?;
+                        } else {
+                            toc.request_remove_replica(
+                                collection_pass.to_string(),
+                                *shard_id,
+                                *peer_id,
                             )?;
                         }
                     }

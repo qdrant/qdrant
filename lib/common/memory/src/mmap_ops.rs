@@ -1,5 +1,6 @@
 use std::mem::{align_of, size_of};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, OnceLock};
 use std::{io, mem, ptr};
 
@@ -51,18 +52,87 @@ pub static MULTI_MMAP_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
 /// If multi-mmap support is checked at Qdrant startup, the result is stored in this cell.
 pub static MULTI_MMAP_SUPPORT_CHECK_RESULT: OnceLock<bool> = OnceLock::new();
 
+static READ_ONLY_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Sets the global read-only mode for memory-mapped file operations.
+///
+/// When enabled, file operations are restricted:
+/// - Existing files cannot be resized
+/// - New files cannot be created
+/// - Write mmaps return a permission denied error
+///
+/// This should typically be set once at application startup before other threads
+/// perform file operations.
+pub fn set_read_only_mode(read_only: bool) {
+    READ_ONLY_MODE.store(read_only, Ordering::Release);
+}
+
+fn is_read_only_mode() -> bool {
+    READ_ONLY_MODE.load(Ordering::Acquire)
+}
+
+/// Returns whether read-only mode is currently enabled.
+pub fn read_only_mode_enabled() -> bool {
+    is_read_only_mode()
+}
+
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
     if path.exists() {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            // Don't truncate because we explicitly set the length later
-            .truncate(false)
-            .open(path)?;
-        file.set_len(length as u64)?;
-
-        Ok(file)
+        if is_read_only_mode() {
+            let file = OpenOptions::new().read(true).open(path)?;
+            let actual_len = file.metadata()?.len();
+            if actual_len != length as u64 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "File {path:?} has length {actual_len} but expected {length} (cannot modify in read-only mode)"
+                    ),
+                ));
+            }
+            Ok(file)
+        } else {
+            // Try to open with write permissions first
+            match OpenOptions::new()
+                .read(true)
+                .write(true)
+                // Don't truncate because we explicitly set the length later
+                .truncate(false)
+                .open(path)
+            {
+                Ok(file) => {
+                    let actual_len = file.metadata()?.len();
+                    if actual_len != length as u64 {
+                        // Try to set length, but if we get permission denied (read-only filesystem),
+                        // propagate the error
+                        file.set_len(length as u64)?;
+                    }
+                    Ok(file)
+                }
+                Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
+                    // If we get permission denied (e.g., read-only filesystem),
+                    // try opening in read-only mode and check length
+                    let file = OpenOptions::new().read(true).open(path)?;
+                    let actual_len = file.metadata()?.len();
+                    if actual_len != length as u64 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            format!(
+                                "File {path:?} has length {actual_len} but expected {length} (cannot modify on read-only filesystem)"
+                            ),
+                        ));
+                    }
+                    Ok(file)
+                }
+                Err(err) => Err(err),
+            }
+        }
     } else {
+        if is_read_only_mode() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("Read-only mode forbids creating {path:?}"),
+            ));
+        }
         let temp_path = path.with_extension(TEMP_FILE_EXTENSION);
         {
             // create temporary file with the required length
@@ -84,11 +154,24 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
 }
 
 pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<Mmap> {
-    let file = OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .open(path)?;
+    let file = if is_read_only_mode() {
+        OpenOptions::new().read(true).open(path)?
+    } else {
+        match OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
+                // If we get permission denied (e.g., read-only filesystem),
+                // try opening in read-only mode
+                OpenOptions::new().read(true).open(path)?
+            }
+            Err(err) => return Err(err),
+        }
+    };
 
     let mmap = unsafe { Mmap::map(&file)? };
 
@@ -103,9 +186,29 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
     Ok(mmap)
 }
 
+/// Opens a write-oriented memory map.
+///
+/// # Read-only mode
+///
+/// When read-only mode is enabled, this function returns a permission denied error
+/// if the file does not exist. If the file already exists, it opens it in read-only mode.
 pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<MmapMut> {
-    let file = OpenOptions::new().read(true).write(true).open(path)?;
+    if is_read_only_mode() {
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("Read-only mode forbids creating {path:?}"),
+            ));
+        }
+        // For existing files, open in read-only mode and return an error since we can't return MmapMut
+        // ideally the caller should use open_read_mmap for existing files
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("Read-only mode forbids write mapping {path:?}"),
+        ));
+    }
 
+    let file = OpenOptions::new().read(true).write(true).open(path)?;
     let mmap = unsafe { MmapMut::map_mut(&file)? };
 
     // Populate before advising

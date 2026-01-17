@@ -44,6 +44,9 @@ const BATCH_SIZE: usize = 10;
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
 
 const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
+const READ_ONLY_QUEUE_PROXY_ERROR: &str =
+    "Cannot create queue proxy shard in read-only mode: WAL is not available";
+const READ_ONLY_WAL_TRANSFER_ERROR: &str = "Cannot transfer WAL batch in read-only mode";
 
 /// QueueProxyShard shard
 ///
@@ -70,15 +73,34 @@ impl QueueProxyShard {
     /// Queue proxy the given local shard and point to the remote shard.
     ///
     /// This starts queueing all new updates on the local shard at the point of creation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shard WAL is read-only.
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
-        }
+    ) -> Result<Self, (LocalShard, CollectionError)> {
+        let wal = match wrapped_shard.wal.as_writable_wal() {
+            Some(wal) => wal.clone(),
+            None => {
+                return Err((
+                    wrapped_shard,
+                    CollectionError::bad_request(READ_ONLY_QUEUE_PROXY_ERROR),
+                ));
+            }
+        };
+        let start_from = wal.lock().await.last_index() + 1;
+        Self::new_from_version(
+            wrapped_shard,
+            remote_shard,
+            wal_keep_from,
+            start_from,
+            progress,
+        )
+        .await
     }
 
     /// Queue proxy the given local shard and point to the remote shard, from a specific WAL version.
@@ -92,6 +114,7 @@ impl QueueProxyShard {
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
     /// `version` is too old or too new, queue proxy creation is rejected.
+    /// This also fails if the shard WAL is read-only.
     pub async fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
@@ -103,9 +126,7 @@ impl QueueProxyShard {
         let Some(wal) = wrapped_shard.wal.as_writable_wal() else {
             return Err((
                 wrapped_shard,
-                CollectionError::service_error(
-                    "Cannot create queue proxy shard in read-only mode: WAL is not available",
-                ),
+                CollectionError::bad_request(READ_ONLY_QUEUE_PROXY_ERROR),
             ));
         };
         let wal = wal.clone();
@@ -472,26 +493,6 @@ struct Inner {
 }
 
 impl Inner {
-    pub async fn new(
-        wrapped_shard: LocalShard,
-        remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
-        progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        let wal = wrapped_shard
-            .wal
-            .as_writable_wal()
-            .expect("Cannot create queue proxy inner without writable WAL");
-        let start_from = wal.lock().await.last_index() + 1;
-        Self::new_from_version(
-            wrapped_shard,
-            remote_shard,
-            wal_keep_from,
-            start_from,
-            progress,
-        )
-    }
-
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
@@ -560,7 +561,7 @@ impl Inner {
                 .wrapped_shard
                 .wal
                 .as_writable_wal()
-                .expect("Queue proxy requires writable WAL");
+                .ok_or_else(|| CollectionError::bad_request(READ_ONLY_WAL_TRANSFER_ERROR))?;
             let wal_guard = wal.lock().await;
             let items_left = (wal_guard.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;

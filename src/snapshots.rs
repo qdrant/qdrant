@@ -62,8 +62,10 @@ pub fn recover_snapshots(
             }
             info!("Overwriting collection {collection_name}");
         }
-        let collection_temp_path =
-            temp_dir.map_or_else(|| collection_path.with_extension("tmp"), PathBuf::from);
+        let collection_temp_path = temp_dir.map_or_else(
+            || collection_path.with_extension("tmp"),
+            |t| t.join(format!("{collection_name}.tmp")),
+        );
         if let Err(err) = Collection::restore_snapshot(
             snapshot_path,
             &collection_temp_path,
@@ -139,6 +141,12 @@ pub fn recover_full_snapshot(
     }
 
     // Remove temporary directory
-    fs::remove_dir_all(&snapshot_temp_path).unwrap();
+    if let Err(err) = fs::remove_dir_all(&snapshot_temp_path) {
+        log::warn!(
+            "Failed to remove temporary snapshot directory {}: {}",
+            snapshot_temp_path.display(),
+            err
+        );
+    }
     recovered_collection
 }

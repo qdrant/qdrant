@@ -706,7 +706,7 @@ impl SegmentBuilder {
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
-        match load_segment(&destination_path, stopped)? {
+        match load_segment(&destination_path, stopped, false)? {
             LoadSegmentOutcome::Loaded(loaded_segment) => Ok(loaded_segment),
             LoadSegmentOutcome::Skipped => Err(OperationError::service_error(format!(
                 "Segment loading error: {}",

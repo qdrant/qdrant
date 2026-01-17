@@ -10,6 +10,7 @@ use common::types::PointOffsetType;
 use delegate::delegate;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
+use memory::mmap_ops::read_only_mode_enabled;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -157,7 +158,12 @@ impl MutableGeoMapIndex {
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(path).map_err(|err| {
+            let open_result = if read_only_mode_enabled() {
+                Gridstore::open_read_only(path)
+            } else {
+                Gridstore::open(path)
+            };
+            open_result.map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable geo index on gridstore: {err}"
                 ))

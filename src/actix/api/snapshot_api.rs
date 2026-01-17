@@ -415,7 +415,7 @@ async fn stream_shard_snapshot(
     .await?)
 }
 
-// TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
+// TODO: Consider POST for non-idempotent recovery and align verbs with collection-level endpoints.
 #[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
@@ -450,7 +450,6 @@ async fn recover_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
-// TODO: `POST` (same as `upload_snapshot`) or `PUT`!?
 #[post("/collections/{collection}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
     dispatcher: web::Data<Dispatcher>,
@@ -474,6 +473,9 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         // TODO: Run this check before the multipart blob is uploaded
+        dispatcher
+            .toc(&access, &pass)
+            .ensure_write_allowed("recover from snapshots")?;
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);

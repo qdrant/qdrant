@@ -9,6 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
+use memory::mmap_ops::read_only_mode_enabled;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
 #[cfg(feature = "rocksdb")]
@@ -314,7 +315,12 @@ where
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(path).map_err(|err| {
+            let open_result = if read_only_mode_enabled() {
+                Gridstore::open_read_only(path)
+            } else {
+                Gridstore::open(path)
+            };
+            open_result.map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to open mutable numeric index on gridstore: {err}"
                 ))

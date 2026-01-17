@@ -852,7 +852,7 @@ impl ShardHolder {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         read_only: bool,
-    ) {
+    ) -> CollectionResult<()> {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
         let (shard_ids_list, shard_id_to_key_mapping) = match self.sharding_method {
@@ -883,7 +883,11 @@ impl ShardHolder {
             // Validate that shard exists on disk
             let shard_path = check_shard_path(collection_path, shard_id)
                 .await
-                .expect("Failed to check shard path");
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Failed to check shard path for {collection_id}:{shard_id}: {err}"
+                    ))
+                })?;
 
             // Load replica set
             let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
@@ -923,18 +927,27 @@ impl ShardHolder {
                 replica_set
                     .set_replica_state(local_peer_id, ReplicaState::Active)
                     .await
-                    .expect("Failed to set local shard state");
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "Failed to set local shard state for {collection_id}:{shard_id}: {err}"
+                        ))
+                    })?;
+            } else if not_distributed && is_local && is_initializing && read_only {
+                log::debug!(
+                    "Local shard {collection_id}:{} stuck in Initializing state, skipping state change due to read-only mode",
+                    replica_set.shard_id,
+                );
             }
             let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
-            self.add_shard(shard_id, replica_set, shard_key)
-                .await
-                .unwrap();
+            self.add_shard(shard_id, replica_set, shard_key).await?;
         }
 
         // If resharding, rebuild the hash rings because they'll be messed up
         if self.resharding_state.read().is_some() {
             self.rebuild_rings();
         }
+
+        Ok(())
     }
 
     pub fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {

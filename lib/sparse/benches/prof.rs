@@ -1,3 +1,5 @@
+#![cfg(not(target_os = "windows"))]
+
 use std::io::Write;
 use std::os::raw::c_int;
 use std::path::Path;

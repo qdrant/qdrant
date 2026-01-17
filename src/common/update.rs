@@ -1029,7 +1029,7 @@ pub async fn update(
             match shard_id {
                 Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
                 None => {
-                    debug_assert!(false, "Sync operation is supposed to select shard directly");
+                    log::warn!("Sync operation is supposed to select shard directly");
                     ShardSelectorInternal::Empty
                 }
             }

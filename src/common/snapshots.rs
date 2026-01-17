@@ -29,6 +29,7 @@ pub async fn create_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
+    toc.ensure_write_allowed("create snapshots")?;
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
     let collection = toc.get_collection(&collection_pass).await?;
@@ -55,6 +56,7 @@ pub async fn stream_shard_snapshot(
     shard_id: ShardId,
     manifest: Option<SnapshotManifest>,
 ) -> Result<SnapshotStream, StorageError> {
+    toc.ensure_write_allowed("create snapshots")?;
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
 
@@ -119,6 +121,7 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
+    toc.ensure_write_allowed("delete snapshots")?;
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
     let collection = toc.get_collection(&collection_pass).await?;
@@ -151,6 +154,7 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
     api_key: Option<String>,
 ) -> Result<(), StorageError> {
+    toc.ensure_write_allowed("recover from snapshots")?;
     let collection_pass = access
         .check_global_access(AccessRequirements::new().manage())?
         .issue_pass(&collection_name)
@@ -270,7 +274,12 @@ pub async fn recover_shard_snapshot_impl(
         .await?;
 
     let state = collection.state().await;
-    let shard_info = state.shards.get(&shard).unwrap(); // TODO: Handle `unwrap`?..
+    let shard_info = state.shards.get(&shard).ok_or_else(|| {
+        StorageError::bad_input(format!(
+            "Shard {shard} not found in collection '{}' after recovery",
+            collection.name()
+        ))
+    })?;
 
     // TODO: Unify (and de-duplicate) "recovered shard state notification" logic in `_do_recover_from_snapshot` with this one!
 

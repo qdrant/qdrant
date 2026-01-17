@@ -342,11 +342,22 @@ impl Shard {
         match wal.resolve_wal_delta(recovery_point).await {
             Ok(Some(version)) => {
                 // Get last index through wal_version method
-                let last_index = wal.wal_version().await.unwrap_or(Some(0)).unwrap_or(0);
-                log::debug!(
-                    "Resolved WAL delta from {version}, which counts {} records",
-                    last_index.saturating_sub(version),
-                );
+                match wal.wal_version().await {
+                    Ok(Some(last_index)) => {
+                        log::debug!(
+                            "Resolved WAL delta from {version}, which counts {} records",
+                            last_index.saturating_sub(version),
+                        );
+                    }
+                    Ok(None) => {
+                        log::debug!("Resolved WAL delta from {version}, current version unknown");
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Resolved WAL delta from {version}, but failed to get current version: {err}"
+                        );
+                    }
+                }
                 Ok(Some(version))
             }
 

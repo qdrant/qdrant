@@ -25,7 +25,7 @@ use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_workers::UpdateWorkers;
-use crate::wal_delta::LockedWal;
+use crate::wal_delta::{LockedWal, ReadOnlyWal, RecoverableWal, WalMode};
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -95,8 +95,8 @@ pub struct UpdateHandler {
     /// Sender to stop flush worker
     flush_stop: Option<oneshot::Sender<()>>,
     runtime_handle: Handle,
-    /// WAL, required for operations (None in read-only mode)
-    wal: Option<LockedWal>,
+    /// WAL mode (writable or read-only)
+    wal: WalMode,
     /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
     /// This is used when other bits of code still depend on information in the WAL, such as the
     /// queue proxy shard.
@@ -143,6 +143,21 @@ impl UpdateHandler {
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> UpdateHandler {
+        // Build WalMode from Option<LockedWal> and clock maps
+        let wal_mode = if let Some(locked_wal) = wal {
+            WalMode::Writable(RecoverableWal::new(
+                locked_wal,
+                clocks.newest_clocks().clone(),
+                clocks.oldest_clocks().clone(),
+            ))
+        } else {
+            WalMode::ReadOnly(ReadOnlyWal::new(
+                None,
+                clocks.newest_clocks().clone(),
+                clocks.oldest_clocks().clone(),
+            ))
+        };
+
         UpdateHandler {
             collection_name,
             shared_storage_config,
@@ -157,7 +172,7 @@ impl UpdateHandler {
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
-            wal,
+            wal: wal_mode,
             wal_keep_from: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
@@ -172,6 +187,15 @@ impl UpdateHandler {
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
+
+        // In read-only mode, spawn lightweight worker that handles signals but rejects writes
+        if !self.wal.supports_writable_operations() {
+            log::debug!("Read-only mode: spawning lightweight update worker");
+            self.update_worker = Some(self.runtime_handle.spawn(
+                UpdateWorkers::read_only_update_worker_fn(update_receiver, tx),
+            ));
+            return;
+        }
 
         self.optimizer_worker = Some(self.runtime_handle.spawn(
             UpdateWorkers::optimization_worker_fn(

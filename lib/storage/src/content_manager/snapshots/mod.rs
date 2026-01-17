@@ -35,10 +35,11 @@ pub async fn do_delete_full_snapshot(
 ) -> Result<bool, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
 
-    // All checks should've been done at this point.
+    // Access checks done; validate write permissions before proceeding.
     let pass = new_unchecked_verification_pass();
 
     let toc = dispatcher.toc(&access, &pass);
+    toc.ensure_write_allowed("delete snapshots")?;
 
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir =
@@ -62,10 +63,11 @@ pub async fn do_delete_collection_snapshot(
     let collection_pass = access
         .check_collection_access(collection_name, AccessRequirements::new().write().extras())?;
 
-    // All checks should've been done at this point.
+    // Access checks done; validate write permissions before proceeding.
     let pass = new_unchecked_verification_pass();
 
     let toc = dispatcher.toc(&access, &pass);
+    toc.ensure_write_allowed("delete snapshots")?;
 
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
@@ -98,9 +100,10 @@ pub async fn do_create_full_snapshot(
 ) -> Result<SnapshotDescription, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
 
-    // All checks should've been done at this point.
+    // Access checks done; validate write permissions before proceeding.
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&access, &pass).clone();
+    toc.ensure_write_allowed("create snapshots")?;
 
     let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, access).await }).await??;
     Ok(res)

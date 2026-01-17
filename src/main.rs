@@ -11,6 +11,7 @@ mod tonic;
 mod tracing;
 
 use std::io::Error;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -196,7 +197,9 @@ fn main() -> anyhow::Result<()> {
         log::info!("Starting in READ-ONLY mode - no write operations will be allowed");
     }
 
-    remove_started_file_indicator();
+    if !args.read_only {
+        remove_started_file_indicator();
+    }
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
@@ -253,8 +256,12 @@ fn main() -> anyhow::Result<()> {
     } else if !Path::new(&settings.storage.storage_path).exists() {
         return Err(anyhow::anyhow!(
             "Storage directory does not exist at {}. Cannot start in read-only mode.",
-            settings.storage.storage_path
+            settings.storage.storage_path.display()
         ));
+    } else {
+        log::warn!(
+            "Read-only mode does not validate storage flush state; ensure data is cleanly shut down"
+        );
     }
 
     // Check if the filesystem is compatible with Qdrant

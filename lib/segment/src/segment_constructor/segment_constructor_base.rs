@@ -704,7 +704,11 @@ impl LoadSegmentOutcome {
     }
 }
 
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSegmentOutcome> {
+pub fn load_segment(
+    path: &Path,
+    stopped: &AtomicBool,
+    read_only: bool,
+) -> OperationResult<LoadSegmentOutcome> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -734,6 +738,12 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSe
             return Err(OperationError::service_error(format!(
                 "Data version {stored_version} is newer than application version {app_version}. \
                 Please upgrade the application. Compatibility is not guaranteed."
+            )));
+        }
+
+        if read_only {
+            return Err(OperationError::service_error(format!(
+                "Cannot migrate segment in read-only mode ({stored_version} -> {app_version})"
             )));
         }
 

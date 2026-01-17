@@ -31,7 +31,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
-use crate::wal_delta::LockedWal;
+use crate::wal_delta::WalMode;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -45,7 +45,7 @@ impl UpdateWorkers {
         sender: Sender<OptimizerSignal>,
         mut receiver: Receiver<OptimizerSignal>,
         segments: LockedSegmentHolder,
-        wal: Option<LockedWal>,
+        wal: WalMode,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
@@ -485,32 +485,32 @@ impl UpdateWorkers {
     /// If so - attempts to re-apply all failed operations.
     async fn try_recover(
         segments: LockedSegmentHolder,
-        wal: Option<LockedWal>,
+        wal: WalMode,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
-        match first_failed_operation_option {
-            None => {}
-            Some(first_failed_op) => {
-                if let Some(wal) = wal {
-                    let wal_lock = wal.lock().await;
-                    for (op_num, operation) in wal_lock.read(first_failed_op) {
-                        CollectionUpdater::update(
-                            &segments,
-                            op_num,
-                            operation.operation,
-                            update_operation_lock.clone(),
-                            update_tracker.clone(),
-                            &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
-                        )?;
-                    }
-                } else {
-                    log::warn!("Cannot recover from failed operation in read-only mode");
-                }
+        let mut recovered_count = 0;
+        if let Some(first_failed_op) = first_failed_operation_option {
+            let wal_entries = wal.read_entries_from(first_failed_op).await;
+            if wal_entries.is_empty() && !wal.supports_writable_operations() {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot recover from failed operation {first_failed_op} in read-only mode"
+                )));
             }
-        };
-        Ok(0)
+            for (op_num, operation) in wal_entries {
+                CollectionUpdater::update(
+                    &segments,
+                    op_num,
+                    operation.operation,
+                    update_operation_lock.clone(),
+                    update_tracker.clone(),
+                    &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
+                )?;
+                recovered_count += 1;
+            }
+        }
+        Ok(recovered_count)
     }
 }

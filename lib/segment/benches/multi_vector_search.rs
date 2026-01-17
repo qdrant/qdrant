@@ -140,6 +140,10 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
     hnsw_index
 }
 
+#[cfg(target_os = "windows")]
+criterion_group!(benches, multi_vector_search_benchmark);
+
+#[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));

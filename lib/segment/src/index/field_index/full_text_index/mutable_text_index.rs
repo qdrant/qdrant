@@ -86,6 +86,7 @@ impl MutableFullTextIndex {
         config: TextIndexParams,
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
+        use memory::mmap_ops::read_only_mode_enabled;
         let store = if create_if_missing {
             Gridstore::open_or_create(path, GRIDSTORE_OPTIONS).map_err(|err| {
                 OperationError::service_error(format!(
@@ -93,11 +94,19 @@ impl MutableFullTextIndex {
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open mutable full text index on gridstore: {err}"
-                ))
-            })?
+            if read_only_mode_enabled() {
+                Gridstore::open_read_only(path).map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable full text index on gridstore: {err}"
+                    ))
+                })?
+            } else {
+                Gridstore::open(path).map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable full text index on gridstore: {err}"
+                    ))
+                })?
+            }
         } else {
             // Files don't exist, cannot load
             return Ok(None);

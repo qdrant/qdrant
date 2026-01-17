@@ -105,12 +105,18 @@ impl TableOfContent {
         consensus_proposal_sender: Option<OperationSender>,
         read_only: bool,
     ) -> Self {
+        memory::mmap_ops::set_read_only_mode(read_only);
         let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
         if !read_only {
             fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
             if let Some(path) = storage_config.temp_path.as_deref() {
                 fs::create_dir_all(path).expect("Can't create temporary files directory");
             }
+        } else if !collections_path.exists() {
+            panic!(
+                "Collections directory does not exist at {} - cannot start in read-only mode without existing data",
+                collections_path.display()
+            );
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
@@ -140,34 +146,36 @@ impl TableOfContent {
                 Self::collection_snapshots_path(&storage_config.snapshots_path, &collection_name);
 
             log::info!("Loading collection: {collection_name}");
-            let collection = general_runtime.block_on(Collection::load(
-                collection_name.clone(),
-                this_peer_id,
-                &collection_path,
-                &collection_snapshots_path,
-                storage_config
-                    .to_shared_storage_config(is_distributed)
-                    .into(),
-                channel_service.clone(),
-                Self::change_peer_from_state_callback(
-                    consensus_proposal_sender.clone(),
+            let collection = general_runtime
+                .block_on(Collection::load(
                     collection_name.clone(),
-                    ReplicaState::Dead,
-                ),
-                Self::request_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Self::abort_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Some(search_runtime.handle().clone()),
-                Some(update_runtime.handle().clone()),
-                optimizer_resource_budget.clone(),
-                storage_config.optimizers_overwrite.clone(),
-                read_only,
-            ));
+                    this_peer_id,
+                    &collection_path,
+                    &collection_snapshots_path,
+                    storage_config
+                        .to_shared_storage_config(is_distributed)
+                        .into(),
+                    channel_service.clone(),
+                    Self::change_peer_from_state_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                        ReplicaState::Dead,
+                    ),
+                    Self::request_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Self::abort_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Some(search_runtime.handle().clone()),
+                    Some(update_runtime.handle().clone()),
+                    optimizer_resource_budget.clone(),
+                    storage_config.optimizers_overwrite.clone(),
+                    read_only,
+                ))
+                .unwrap_or_else(|err| panic!("Failed to load collection {collection_name}: {err}"));
 
             collections.insert(collection_name.clone(), collection);
         }
@@ -228,6 +236,16 @@ impl TableOfContent {
         self.read_only
     }
 
+    pub fn ensure_write_allowed(&self, operation: &str) -> Result<(), StorageError> {
+        if self.read_only {
+            return Err(StorageError::forbidden(format!(
+                "Cannot {operation} in read-only mode"
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Return `true` if service is working in distributed mode.
     pub fn is_distributed(&self) -> bool {
         self.consensus_proposal_sender.is_some()
@@ -244,8 +262,7 @@ impl TableOfContent {
     }
 
     pub async fn all_collections_access(&self, access: &Access) -> Vec<CollectionPass<'static>> {
-        self.all_collections_with_access_requirements(access, AccessRequirements::new())
-            .await
+        self.all_collections(access).await
     }
 
     async fn all_collections_with_access_requirements(
@@ -437,6 +454,7 @@ impl TableOfContent {
         collection_name: String,
         shard_id: ShardId,
     ) -> Result<(), StorageError> {
+        self.ensure_write_allowed("initiate shard transfers")?;
         // TODO: Ensure cancel safety!
 
         log::info!("Initiating receiving shard {collection_name}:{shard_id}");
@@ -451,6 +469,7 @@ impl TableOfContent {
     }
 
     pub fn request_snapshot(&self) -> Result<(), StorageError> {
+        self.ensure_write_allowed("request snapshots")?;
         self.get_consensus_proposal_sender()?
             .send(ConsensusOperations::request_snapshot())?;
 
@@ -463,6 +482,7 @@ impl TableOfContent {
         value: serde_json::Value,
         wait: bool,
     ) -> Result<(), StorageError> {
+        self.ensure_write_allowed("update cluster metadata")?;
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
 
         if wait {
@@ -502,6 +522,7 @@ impl TableOfContent {
     ///
     /// Transfers whehre this peer is the source or the target will be cancelled.
     pub async fn cancel_related_transfers(&self, reason: &str) -> Result<(), StorageError> {
+        self.ensure_write_allowed("cancel shard transfers")?;
         let collections = self.collections.read().await;
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             for collection in collections.values() {
@@ -638,6 +659,7 @@ impl TableOfContent {
     }
 
     async fn create_collection_path(&self, collection_name: &str) -> Result<PathBuf, StorageError> {
+        self.ensure_write_allowed("create collections")?;
         let path = self.get_collection_path(collection_name);
 
         if path.exists() {

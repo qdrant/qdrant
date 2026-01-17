@@ -54,7 +54,8 @@ impl LocalShard {
         lock_wal: bool, // aka save_wal
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
-        let wal = self.wal.as_writable_wal().cloned();
+        let wal = self.wal.wal_for_read().cloned();
+        let wal_is_writable = self.wal.supports_writable_operations();
 
         if !lock_wal {
             // If we are not allowed to lock WAL, we still need to make sure that all
@@ -94,21 +95,50 @@ impl LocalShard {
                 update_lock,
             )?;
 
-            match (wal, lock_wal) {
-                (Some(wal), true) => {
-                    // snapshot all shard's WAL
+            match (wal_is_writable, wal, lock_wal) {
+                (true, Some(wal), true) => {
+                    // Snapshot all shard's WAL
                     Self::snapshot_wal(wal, &tar_c)
                 }
-                (Some(wal), false) => {
+                (true, Some(wal), false) => {
                     // Create empty WAL compatible with stored data
                     // Avoid locking WAL in this case
                     Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
                 }
-                (None, _) => {
-                    // In read-only mode, copy WAL files from disk if they exist
-                    // We don't have a WAL to lock anyway
+                (false, Some(wal), false) => Self::snapshot_empty_wal(wal, &temp_path, &tar_c),
+                (false, Some(_), true) => {
+                    log::warn!(
+                        "Cannot lock read-only WAL for shard {} when snapshotting; copying from disk instead",
+                        shard_path.display()
+                    );
                     let wal_path = Self::wal_path(&shard_path);
-                    Self::copy_wal_from_disk(&wal_path, &tar_c)
+                    if wal_path.exists() {
+                        Self::copy_wal_from_disk(&wal_path, &tar_c)
+                    } else {
+                        // In read-only mode with lock_wal=true, we need a complete snapshot
+                        // If WAL doesn't exist, we cannot create a valid snapshot
+                        Err(CollectionError::bad_request(format!(
+                            "Cannot create complete snapshot for shard {}: WAL is required but missing in read-only mode",
+                            shard_path.display()
+                        )))
+                    }
+                }
+                _ => {
+                    let wal_path = Self::wal_path(&shard_path);
+                    if wal_path.exists() {
+                        Self::copy_wal_from_disk(&wal_path, &tar_c)
+                    } else if lock_wal {
+                        Err(CollectionError::bad_request(format!(
+                            "Cannot create complete snapshot: WAL is required but missing: {}",
+                            wal_path.display()
+                        )))
+                    } else {
+                        log::debug!(
+                            "Skipping WAL snapshot because WAL path is missing: {}",
+                            wal_path.display()
+                        );
+                        Ok(())
+                    }
                 }
             }
         });
@@ -176,13 +206,26 @@ impl LocalShard {
     /// Copy WAL files from disk in read-only mode
     ///
     /// In read-only mode we don't have a WAL handle, so we copy files directly from disk.
-    /// If save_wal is true, we copy the actual WAL files.
-    /// If save_wal is false, we create an empty WAL compatible with the stored data.
+    /// This function copies all WAL segment files from the WAL directory, skipping the
+    /// `.wal` sentinel file used for locking.
     ///
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
     fn copy_wal_from_disk(wal_path: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+        // Check if WAL directory exists
+        if !wal_path.exists() {
+            log::debug!("WAL directory does not exist: {}", wal_path.display());
+            return Ok(());
+        }
+
+        if !wal_path.is_dir() {
+            return Err(CollectionError::service_error(format!(
+                "WAL path is not a directory: {}",
+                wal_path.display()
+            )));
+        }
+
         let tar = tar.descend(Path::new(WAL_PATH))?;
         for entry in fs::read_dir(wal_path).map_err(|err| {
             CollectionError::service_error(format!("Can't read WAL directory: {err}",))
@@ -313,6 +356,7 @@ where
     log::trace!("Applying function on all proxied shard segments");
     let mut result = Ok(());
     let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
+    let mut unproxied_segment_ids_set = std::collections::HashSet::with_capacity(proxies.len());
 
     // Proxied segments are sorted by flush ordering, important because the operation we apply
     // might explicitly flush segments
@@ -327,8 +371,7 @@ where
             }
             // All segments to snapshot should be proxy, warn if this is not the case
             LockedSegment::Original(segment) => {
-                debug_assert!(
-                    false,
+                log::warn!(
                     "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
                 );
                 // Call provided function on segment
@@ -359,12 +402,13 @@ where
                 Ok(lock) => {
                     segments_lock = lock;
                     unproxied_segment_ids.push(*segment_id);
+                    unproxied_segment_ids_set.insert(*segment_id);
                 }
                 Err(lock) => segments_lock = lock,
             }
         }
     }
-    proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
+    proxies.retain(|(id, _)| !unproxied_segment_ids_set.contains(id));
 
     // Unproxy all segments
     // Always do this to prevent leaving proxy segments behind

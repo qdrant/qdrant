@@ -32,6 +32,7 @@ impl AliasMapping {
 pub struct AliasPersistence {
     data_path: PathBuf,
     alias_mapping: AliasMapping,
+    read_only: bool,
 }
 
 impl AliasPersistence {
@@ -56,11 +57,13 @@ impl AliasPersistence {
         Ok(AliasPersistence {
             data_path,
             alias_mapping,
+            read_only: false,
         })
     }
 
     /// Open alias persistence in read-only mode.
     /// Does not create directories or files if they don't exist.
+    /// Mutating methods return a forbidden error.
     pub fn open_read_only(dir_path: &Path) -> Result<Self, StorageError> {
         let data_path = Self::get_config_path(dir_path);
         let alias_mapping = if data_path.exists() {
@@ -72,6 +75,7 @@ impl AliasPersistence {
         Ok(AliasPersistence {
             data_path,
             alias_mapping,
+            read_only: true,
         })
     }
 
@@ -80,12 +84,14 @@ impl AliasPersistence {
     }
 
     pub fn insert(&mut self, alias: String, collection_name: String) -> Result<(), StorageError> {
+        self.ensure_write_allowed("create aliases")?;
         self.alias_mapping.0.insert(alias, collection_name);
         self.alias_mapping.save(&self.data_path)?;
         Ok(())
     }
 
     pub fn remove(&mut self, alias: &str) -> Result<Option<String>, StorageError> {
+        self.ensure_write_allowed("remove aliases")?;
         let output = self.alias_mapping.0.remove(alias);
 
         if output.is_some() {
@@ -97,6 +103,7 @@ impl AliasPersistence {
 
     /// Removes all aliases for a given collection.
     pub fn remove_collection(&mut self, collection_name: &str) -> Result<(), StorageError> {
+        self.ensure_write_allowed("remove collection aliases")?;
         let prev_len = self.alias_mapping.0.len();
 
         self.alias_mapping.0.retain(|_, v| v != collection_name);
@@ -113,6 +120,7 @@ impl AliasPersistence {
         old_alias_name: &str,
         new_alias_name: String,
     ) -> Result<(), StorageError> {
+        self.ensure_write_allowed("rename aliases")?;
         match self.get(old_alias_name) {
             None => Err(StorageError::NotFound {
                 description: format!("Alias {old_alias_name} does not exists!"),
@@ -128,13 +136,12 @@ impl AliasPersistence {
     }
 
     pub fn collection_aliases(&self, collection_name: &str) -> Vec<String> {
-        let mut result = vec![];
-        for (alias, target_collection) in self.alias_mapping.0.iter() {
-            if collection_name == target_collection {
-                result.push(alias.clone());
-            }
-        }
-        result
+        self.alias_mapping
+            .0
+            .iter()
+            .filter(|(_, target_collection)| *target_collection == collection_name)
+            .map(|(alias, _)| alias.clone())
+            .collect()
     }
 
     pub fn state(&self) -> &AliasMapping {
@@ -142,6 +149,7 @@ impl AliasPersistence {
     }
 
     pub fn apply_state(&mut self, alias_mapping: AliasMapping) -> Result<(), StorageError> {
+        self.ensure_write_allowed("apply alias state")?;
         self.alias_mapping = alias_mapping;
         self.alias_mapping.save(&self.data_path)?;
         Ok(())
@@ -149,5 +157,14 @@ impl AliasPersistence {
 
     pub fn check_alias_exists(&self, alias: &str) -> bool {
         self.alias_mapping.0.contains_key(alias)
+    }
+
+    fn ensure_write_allowed(&self, operation: &str) -> Result<(), StorageError> {
+        if self.read_only {
+            return Err(StorageError::forbidden(format!(
+                "Cannot {operation} in read-only alias storage"
+            )));
+        }
+        Ok(())
     }
 }

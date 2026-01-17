@@ -492,6 +492,7 @@ impl TableOfContent {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = access.check_point_op(collection_name, &operation.operation)?;
+        self.ensure_write_allowed("write points")?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.

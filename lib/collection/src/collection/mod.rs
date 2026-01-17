@@ -202,6 +202,12 @@ impl Collection {
         })
     }
 
+    /// Load a collection from disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `read_only` - Open without a writable WAL; write operations are rejected and storage
+    ///   migrations are blocked.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         collection_id: CollectionId,
@@ -218,49 +224,49 @@ impl Collection {
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
         read_only: bool,
-    ) -> Self {
+    ) -> CollectionResult<Self> {
         let start_time = std::time::Instant::now();
-        let stored_version = CollectionVersion::load(path)
-            .expect("Can't read collection version")
-            .expect("Collection version is not found");
+        let stored_version = CollectionVersion::load(path).map_err(|err| {
+            CollectionError::service_error(format!("Can't read collection version: {err}"))
+        })?;
+        let stored_version = stored_version
+            .ok_or_else(|| CollectionError::service_error("Collection version is not found"))?;
 
         let app_version = CollectionVersion::current();
 
         if stored_version > app_version {
-            panic!("Collection version is greater than application version");
+            return Err(CollectionError::service_error(format!(
+                "Collection version {stored_version} is greater than application version {app_version}"
+            )));
         }
 
         if stored_version != app_version {
             if Self::can_upgrade_storage(&stored_version, &app_version) {
                 if read_only {
-                    panic!(
-                        "Collection version {stored_version} differs from app version {app_version}, but cannot migrate in read-only mode"
-                    );
+                    return Err(CollectionError::service_error(format!(
+                        "Collection version {stored_version} differs from app version {app_version}, but migration is required and disabled in read-only mode"
+                    )));
                 } else {
                     log::info!("Migrating collection {stored_version} -> {app_version}");
-                    CollectionVersion::save(path)
-                        .unwrap_or_else(|err| panic!("Can't save collection version {err}"));
                 }
             } else {
                 log::error!("Cannot upgrade version {stored_version} to {app_version}.");
-                panic!(
+                return Err(CollectionError::service_error(format!(
                     "Cannot upgrade version {stored_version} to {app_version}. Try to use older version of Qdrant first.",
-                );
+                )));
             }
         }
 
-        let collection_config = CollectionConfigInternal::load(path).unwrap_or_else(|err| {
-            panic!(
-                "Can't read collection config due to {}\nat {}",
-                err,
-                path.to_str().unwrap(),
-            )
-        });
+        let collection_config = CollectionConfigInternal::load(path).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't read collection config due to {err}\nat {}",
+                path.display(),
+            ))
+        })?;
         collection_config.validate_and_warn();
 
         let sharding_method = collection_config.params.sharding_method.unwrap_or_default();
-        let mut shard_holder =
-            ShardHolder::new(path, sharding_method).expect("Can not create shard holder");
+        let mut shard_holder = ShardHolder::new(path, sharding_method)?;
 
         let mut effective_optimizers_config = collection_config.optimizer_config.clone();
 
@@ -270,10 +276,7 @@ impl Collection {
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
-        let payload_index_schema = Arc::new(
-            Self::load_payload_index_schema(path)
-                .expect("Can't load or initialize payload index schema"),
-        );
+        let payload_index_schema = Arc::new(Self::load_payload_index_schema(path)?);
 
         shard_holder
             .load_shards(
@@ -292,7 +295,20 @@ impl Collection {
                 optimizer_resource_budget.clone(),
                 read_only,
             )
-            .await;
+            .await?;
+
+        // Save version immediately after successful load, before creating shared holder.
+        // Note: shard loading can perform persistent changes; a save failure here leaves
+        // disk state updated with an old version marker, so future restarts may re-run
+        // migrations if they are not fully idempotent.
+        if stored_version != app_version {
+            CollectionVersion::save(path).map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't save collection version after successful shard load: {err}. \
+                     System may be in inconsistent state."
+                ))
+            })?;
+        }
 
         let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
@@ -300,7 +316,7 @@ impl Collection {
             Self::estimate_collection_size_stats(&shared_shard_holder).await,
         );
 
-        Self {
+        Ok(Self {
             id: collection_id.clone(),
             shards_holder: shared_shard_holder,
             collection_config: shared_collection_config,
@@ -323,7 +339,7 @@ impl Collection {
             optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
-        }
+        })
     }
 
     pub async fn stop_gracefully(self) {
@@ -386,7 +402,9 @@ impl Collection {
     pub async fn full_flush_all_local_shards(&self) {
         let shards_holder = self.shards_holder.read().await;
         for (_shard_id, replica_set) in shards_holder.get_shards() {
-            replica_set.full_flush().await;
+            if replica_set.has_local_shard().await {
+                replica_set.full_flush().await;
+            }
         }
     }
 

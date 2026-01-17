@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
-use memmap2::MmapMut;
+use memmap2::{Mmap, MmapMut};
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
+    create_and_ensure_length, open_read_mmap, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
 use smallvec::SmallVec;
 
@@ -16,6 +16,42 @@ pub type BlockOffset = u32;
 pub type PageId = u32;
 
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
+
+/// A wrapper around mmap that can be either read-only or read-write
+#[derive(Debug)]
+enum TrackerMmap {
+    ReadOnly(Mmap),
+    ReadWrite(MmapMut),
+}
+
+impl std::ops::Deref for TrackerMmap {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            TrackerMmap::ReadOnly(mmap) => mmap.deref(),
+            TrackerMmap::ReadWrite(mmap) => mmap.deref(),
+        }
+    }
+}
+
+impl TrackerMmap {
+    fn flush(&self) -> std::io::Result<()> {
+        match self {
+            TrackerMmap::ReadOnly(_mmap) => {
+                // Read-only mmaps don't need flushing since they're not modified
+                Ok(())
+            }
+            TrackerMmap::ReadWrite(mmap) => mmap.flush(),
+        }
+    }
+
+    fn populate(&self) {
+        match self {
+            TrackerMmap::ReadOnly(mmap) => mmap.populate(),
+            TrackerMmap::ReadWrite(mmap) => mmap.populate(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
@@ -164,6 +200,7 @@ impl PointerUpdates {
 }
 
 #[derive(Debug, Default, Clone)]
+#[repr(C)]
 struct TrackerHeader {
     next_pointer_offset: u32,
 }
@@ -175,7 +212,9 @@ pub struct Tracker {
     /// Header of the file
     header: TrackerHeader,
     /// Mmap of the file
-    mmap: MmapMut,
+    mmap: TrackerMmap,
+    /// Whether this tracker is in read-only mode
+    read_only: bool,
     /// Updates that haven't been flushed
     ///
     /// When flushing, these updates get written into the mmap and flushed at once.
@@ -211,7 +250,8 @@ impl Tracker {
         let mut page_tracker = Self {
             path,
             header,
-            mmap,
+            mmap: TrackerMmap::ReadWrite(mmap),
+            read_only: false,
             pending_updates,
             next_pointer_offset: 0,
         };
@@ -236,7 +276,34 @@ impl Tracker {
             next_pointer_offset: header.next_pointer_offset,
             path,
             header: header.clone(),
-            mmap,
+            mmap: TrackerMmap::ReadWrite(mmap),
+            read_only: false,
+            pending_updates,
+        })
+    }
+
+    /// Open an existing PageTracker at the given path in read-only mode
+    /// If the file does not exist, return None
+    ///
+    /// In read-only mode, write operations will panic if called.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let path = Self::tracker_file_name(path);
+        if !path.exists() {
+            return Err(GridstoreError::service_error(format!(
+                "Tracker file does not exist: {}",
+                path.display()
+            )));
+        }
+        // In read-only mode, open with read-only mmap
+        let mmap = open_read_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
+        let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
+        let pending_updates = AHashMap::new();
+        Ok(Self {
+            next_pointer_offset: header.next_pointer_offset,
+            path,
+            header: header.clone(),
+            mmap: TrackerMmap::ReadOnly(mmap),
+            read_only: true,
             pending_updates,
         })
     }
@@ -266,10 +333,13 @@ impl Tracker {
                         old_pointers.push(old_pointer);
                     }
 
-                    self.persist_pointer(point_offset, Some(new_pointer));
+                    self.persist_pointer(point_offset, Some(new_pointer))
+                        .map_err(std::io::Error::other)?
                 }
                 // Write to empty the pointer
-                None => self.persist_pointer(point_offset, None),
+                None => self
+                    .persist_pointer(point_offset, None)
+                    .map_err(std::io::Error::other)?,
             }
 
             // Mark all old pointers for removal to free its blocks
@@ -317,14 +387,26 @@ impl Tracker {
 
     /// Write the current page header to the memory map
     fn write_header(&mut self) {
-        self.mmap[0..size_of::<TrackerHeader>()].copy_from_slice(transmute_to_u8(&self.header));
+        if self.read_only {
+            panic!("Cannot write to tracker in read-only mode");
+        }
+        if let TrackerMmap::ReadWrite(mmap) = &mut self.mmap {
+            mmap[0..size_of::<TrackerHeader>()].copy_from_slice(transmute_to_u8(&self.header));
+        }
     }
 
     /// Save the mapping at the given offset
     /// The file is resized if necessary
-    fn persist_pointer(&mut self, point_offset: PointOffset, pointer: Option<ValuePointer>) {
+    fn persist_pointer(
+        &mut self,
+        point_offset: PointOffset,
+        pointer: Option<ValuePointer>,
+    ) -> crate::Result<()> {
+        if self.read_only {
+            panic!("Cannot write to tracker in read-only mode");
+        }
         if pointer.is_none() && point_offset as usize >= self.mmap.len() {
-            return;
+            return Ok(());
         }
 
         let point_offset = point_offset as usize;
@@ -334,14 +416,20 @@ impl Tracker {
 
         // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
-            self.mmap.flush().unwrap();
+            self.mmap.flush().map_err(GridstoreError::Io)?;
             let new_size = end_offset.next_power_of_two();
-            create_and_ensure_length(&self.path, new_size).unwrap();
-            self.mmap = open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
-                .unwrap();
+            create_and_ensure_length(&self.path, new_size).map_err(GridstoreError::Io)?;
+            self.mmap = TrackerMmap::ReadWrite(
+                open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
+                    .map_err(GridstoreError::Io)?,
+            );
         }
 
-        self.mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
+        if let TrackerMmap::ReadWrite(mmap) = &mut self.mmap {
+            mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
+        }
+
+        Ok(())
     }
 
     #[cfg(test)]
@@ -402,6 +490,9 @@ impl Tracker {
     }
 
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
+        if self.read_only {
+            panic!("Cannot modify tracker in read-only mode");
+        }
         self.pending_updates
             .entry(point_offset)
             .or_default()
@@ -411,6 +502,9 @@ impl Tracker {
 
     /// Unset the value at the given point offset and return its previous value
     pub fn unset(&mut self, point_offset: PointOffset) -> Option<ValuePointer> {
+        if self.read_only {
+            panic!("Cannot modify tracker in read-only mode");
+        }
         let pointer_opt = self.get(point_offset);
 
         if let Some(pointer) = pointer_opt {

@@ -65,6 +65,8 @@ impl Shard {
             OperationError::service_error(format!("failed to read segments directory: {err}"))
         })?;
 
+        const READ_ONLY_SEGMENT_LOAD: bool = false; // Allow migrations and repairs during load.
+
         let mut segments = SegmentHolder::default();
 
         for entry in segments_dir {
@@ -96,7 +98,12 @@ impl Shard {
                 continue;
             }
 
-            let segment = load_segment(&segment_path, &AtomicBool::new(false)).map_err(|err| {
+            let segment = load_segment(
+                &segment_path,
+                &AtomicBool::new(false),
+                READ_ONLY_SEGMENT_LOAD,
+            )
+            .map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to load segment {}: {err}",
                     segment_path.display(),

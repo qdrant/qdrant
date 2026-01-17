@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::SystemTime;
+
 use api::rest::SearchRequestInternal;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::CollectionUpdateOperations;
@@ -9,6 +13,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequestInternal;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use fs_err as fs;
 use segment::types::{Distance, WithPayloadInterface};
 use tempfile::Builder;
 
@@ -86,7 +91,7 @@ async fn test_read_only_mode() {
 
         let hw_acc = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_ops, true, WriteOrdering::default(), hw_acc)
+            .update_from_client_simple(insert_ops, true, None, WriteOrdering::default(), hw_acc)
             .await
             .unwrap();
 
@@ -152,6 +157,25 @@ async fn test_read_only_mode() {
     let count = count_result.unwrap();
     assert_eq!(count.count, 3, "Should have 3 points");
 
+    // Test 3: Write operations should fail
+    let insert_ops = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+            id: 4.into(),
+            vector: VectorStructPersisted::Single(vec![0.0, 0.0, 0.0, 1.0]),
+            payload: None,
+        }]),
+    ));
+
+    let hw_acc = HwMeasurementAcc::new();
+    let write_result = read_only_collection
+        .update_from_client_simple(insert_ops, true, None, WriteOrdering::default(), hw_acc)
+        .await;
+
+    assert!(
+        write_result.is_err(),
+        "Write operations should fail in read-only mode"
+    );
+
     read_only_collection.stop_gracefully().await;
 }
 
@@ -159,6 +183,30 @@ async fn test_read_only_mode() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_read_only_no_file_modification() {
     let _ = env_logger::builder().is_test(true).try_init();
+
+    fn collect_file_mtimes(
+        path: &std::path::Path,
+    ) -> std::io::Result<HashMap<PathBuf, SystemTime>> {
+        let mut mtimes = HashMap::new();
+        let mut stack = vec![path.to_path_buf()];
+
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                let metadata = entry.metadata()?;
+                if metadata.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if metadata.is_file() {
+                    mtimes.insert(path, metadata.modified()?);
+                }
+            }
+        }
+
+        Ok(mtimes)
+    }
 
     let collection_dir = Builder::new()
         .prefix("test_read_only_no_mod")
@@ -204,9 +252,27 @@ async fn test_read_only_no_file_modification() {
         collection.stop_gracefully().await;
     }
 
+    let file_mtimes_before = collect_file_mtimes(collection_path).unwrap();
+
     // Load in read-only mode - should not panic or fail
     let read_only_collection =
         load_local_collection_read_only("test".to_string(), collection_path, &snapshots_path).await;
+
+    let file_mtimes_after = collect_file_mtimes(collection_path).unwrap();
+    assert_eq!(
+        file_mtimes_before.len(),
+        file_mtimes_after.len(),
+        "File set changed in read-only mode"
+    );
+    for (path, original_mtime) in file_mtimes_before {
+        let current_mtime = file_mtimes_after
+            .get(&path)
+            .unwrap_or_else(|| panic!("File {path:?} was removed in read-only mode"));
+        assert_eq!(
+            original_mtime, *current_mtime,
+            "File {path:?} was modified in read-only mode"
+        );
+    }
 
     // Verify it loads successfully
     let local_shards = read_only_collection.get_local_shards().await;

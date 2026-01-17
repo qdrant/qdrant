@@ -1245,7 +1245,7 @@ mod tests {
 
         // Load once and drop.
         {
-            load_segment(&full_segment_path, &AtomicBool::new(false)).unwrap();
+            load_segment(&full_segment_path, &AtomicBool::new(false), false).unwrap();
         }
 
         // Check that index type has been written to disk again.

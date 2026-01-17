@@ -5,6 +5,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
+use memory::mmap_ops::read_only_mode_enabled;
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -37,6 +38,11 @@ impl MmapPayloadStorage {
         if path.exists() {
             Self::open(path, populate)
         } else {
+            if read_only_mode_enabled() {
+                return Err(OperationError::validation_error(
+                    "Cannot create mmap payload storage in read-only mode",
+                ));
+            }
             // create folder if it does not exist
             fs::create_dir_all(&path).map_err(|_| {
                 OperationError::service_error("Failed to create mmap payload storage directory")
@@ -46,9 +52,11 @@ impl MmapPayloadStorage {
     }
 
     fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let storage = Gridstore::open(path).map_err(|err| {
-            OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
-        })?;
+        let storage = if read_only_mode_enabled() {
+            Gridstore::open_read_only(path)?
+        } else {
+            Gridstore::open(path)?
+        };
 
         if populate {
             storage.populate()?;
@@ -58,6 +66,11 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf, populate: bool) -> OperationResult<Self> {
+        if read_only_mode_enabled() {
+            return Err(OperationError::validation_error(
+                "Cannot create new mmap payload storage in read-only mode",
+            ));
+        }
         let storage = Gridstore::new(path, StorageOptions::default())?;
 
         if populate {

@@ -131,6 +131,7 @@ where
     /// not exist. If false and files don't exist, the load function will indicate nothing could be
     /// loaded.
     pub fn open_gridstore(path: PathBuf, create_if_missing: bool) -> OperationResult<Option<Self>> {
+        use memory::mmap_ops::read_only_mode_enabled;
         let store = if create_if_missing {
             let options = default_gridstore_options(N::gridstore_block_size());
             Gridstore::open_or_create(path, options).map_err(|err| {
@@ -139,11 +140,19 @@ where
                 ))
             })?
         } else if path.exists() {
-            Gridstore::open(path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to open mutable map index on gridstore: {err}"
-                ))
-            })?
+            if read_only_mode_enabled() {
+                Gridstore::open_read_only(path).map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable map index on gridstore: {err}"
+                    ))
+                })?
+            } else {
+                Gridstore::open(path).map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to open mutable map index on gridstore: {err}"
+                    ))
+                })?
+            }
         } else {
             // Files don't exist, cannot load
             return Ok(None);
