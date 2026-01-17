@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::ScrollRequestInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
+use shard::scroll::ScrollRequestInternal;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;

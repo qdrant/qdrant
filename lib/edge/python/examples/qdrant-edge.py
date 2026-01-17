@@ -69,13 +69,8 @@ shard.update(UpdateOperation.upsert_points([
 print("---- Query ----")
 
 result = shard.query(QueryRequest(
-    prefetches = [],
     query = Query.Nearest([6.0, 9.0, 4.0, 2.0]),
-    filter = None,
-    score_threshold = None,
     limit = 10,
-    offset = 0,
-    params = None,
     with_vector = True,
     with_payload = True,
 ))
@@ -88,13 +83,9 @@ print("---- Search ----")
 
 points = shard.search(SearchRequest(
     query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
-    filter=None,
-    params=None,
     limit=10,
-    offset=0,
     with_vector=True,
     with_payload=True,
-    score_threshold=None,
 ))
 
 for point in points:
@@ -119,12 +110,9 @@ search_filter = Filter(
 points = shard.search(SearchRequest(
     query=Query.Nearest([1.0, 1.0, 1.0, 1.0]),
     filter=search_filter,
-    params=None,
     limit=10,
-    offset=0,
     with_vector=True,
     with_payload=True,
-    score_threshold=None,
 ))
 
 for point in points:
@@ -137,3 +125,26 @@ points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
 
 for point in points:
     print(point)
+
+print("---- Scroll ----")
+
+scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2))
+for point in scroll_result:
+    print(point)
+
+while next_offset is not None:
+    print(f"--- Next scroll (offset = {next_offset})---")
+    scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2, offset=next_offset))
+    for point in scroll_result:
+        print(point)
+
+print("---- Count ----")
+
+count = shard.count(CountRequest(exact=True))
+
+print(f"Total points count: {count}")
+
+print("---- info ----")
+
+info = shard.info()
+print(info)

@@ -1,3 +1,6 @@
+pub mod with_payload;
+pub mod with_vector;
+
 use std::fmt;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
@@ -8,6 +11,8 @@ use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::vector_storage::query::*;
 use shard::query::query_enum::QueryEnum;
 
+pub use self::with_payload::*;
+pub use self::with_vector::*;
 use crate::repr::*;
 use crate::types::*;
 

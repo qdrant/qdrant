@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -10,13 +9,15 @@ use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
-use tokio::sync::{Mutex as TokioMutex, oneshot};
+use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizationPlanner, SegmentOptimizer,
+};
 use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -106,6 +107,12 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
+
+    /// If specified, this threshold (in kilobytes) configures a max size of unoptimized segment
+    /// which can still be updated. If there are unoptimized segments larger than this threshold,
+    /// updates will be blocked until those segments are optimized.
+    prevent_unoptimized_threshold_kb: Option<usize>,
+
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
@@ -138,6 +145,7 @@ impl UpdateHandler {
         wal: Option<LockedWal>,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
+        prevent_unoptimized_threshold_kb: Option<usize>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
@@ -177,6 +185,7 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            prevent_unoptimized_threshold_kb,
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
@@ -187,6 +196,9 @@ impl UpdateHandler {
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
+
+        // Optimization notifier is triggered when a new optimization is finished
+        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
 
         // In read-only mode, spawn lightweight worker that handles signals but rejects writes
         if !self.wal.supports_writable_operations() {
@@ -213,6 +225,7 @@ impl UpdateHandler {
                 self.payload_index_schema.clone(),
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
+                optimization_finished_sender,
             ),
         ));
 
@@ -221,6 +234,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
             update_receiver,
@@ -229,6 +243,9 @@ impl UpdateHandler {
             segments,
             scroll_read_lock,
             update_tracker,
+            self.prevent_unoptimized_threshold_kb,
+            self.optimization_handles.clone(),
+            optimization_finished_receiver,
         )));
 
         let segments = self.segments.clone();
@@ -318,11 +335,14 @@ impl UpdateHandler {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
 
-        let excluded_ids = HashSet::<_>::default();
+        let segments = self.segments.read();
+        let mut planner = OptimizationPlanner::new(
+            segments.running_optimizations.count(),
+            segments.iter_original(),
+        );
         let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
-            let nonoptimal_segment_ids =
-                optimizer.check_condition(self.segments.clone(), &excluded_ids);
-            !nonoptimal_segment_ids.is_empty()
+            optimizer.plan_optimizations(&mut planner);
+            !planner.scheduled().is_empty()
         });
 
         (has_triggered_any_optimizers, has_suboptimal_optimizers)

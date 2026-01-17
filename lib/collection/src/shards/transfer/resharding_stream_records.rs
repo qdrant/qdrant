@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
+use shard::count::CountRequestInternal;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::hash_ring::HashRingRouter;
-use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;

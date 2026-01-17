@@ -319,11 +319,16 @@ impl Settings {
         // Using HMAC-SHA256, recommended secret size is 32 bytes
         const JWT_RECOMMENDED_SECRET_LENGTH: usize = 256 / 8;
 
-        let all_keys_are_empty = self.service.api_key.clone().unwrap_or_default().is_empty()
+        let all_keys_are_empty = self
+            .service
+            .api_key
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
             && self
                 .service
                 .alt_api_key
-                .clone()
+                .as_deref()
                 .unwrap_or_default()
                 .is_empty();
 

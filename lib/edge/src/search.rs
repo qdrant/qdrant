@@ -10,9 +10,9 @@ use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use crate::{DEFAULT_EDGE_TIMEOUT, Shard};
+use crate::{DEFAULT_EDGE_TIMEOUT, EdgeShard};
 
-impl Shard {
+impl EdgeShard {
     /// This method is DEPRECATED and should be replaced with query.
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
         let is_stopped_guard = StoppingGuard::new();
@@ -21,7 +21,7 @@ impl Shard {
             &searches,
             DEFAULT_FULL_SCAN_THRESHOLD,
             &is_stopped_guard,
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::disposable_edge(),
             |vector_name| {
                 self.config
                     .sparse_vector_data

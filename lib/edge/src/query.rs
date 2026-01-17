@@ -21,10 +21,10 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::Shard;
+use super::EdgeShard;
 use crate::DEFAULT_EDGE_TIMEOUT;
 
-impl Shard {
+impl EdgeShard {
     pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
@@ -50,7 +50,7 @@ impl Shard {
                 root_plan,
                 &mut search_results,
                 &mut scroll_results,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?;
 
             scored_points_batch.push(scored_points)

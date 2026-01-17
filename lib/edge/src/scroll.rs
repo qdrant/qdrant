@@ -12,11 +12,67 @@ use segment::types::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::scroll::ScrollRequestInternal;
 
-use super::Shard;
+use super::EdgeShard;
 use crate::DEFAULT_EDGE_TIMEOUT;
 
-impl Shard {
+impl EdgeShard {
+    pub fn scroll(
+        &self,
+        request: ScrollRequestInternal,
+    ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
+        let ScrollRequestInternal {
+            offset,
+            limit,
+            filter,
+            with_payload,
+            with_vector,
+            order_by,
+        } = request;
+
+        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
+        let with_payload = with_payload.unwrap_or(ScrollRequestInternal::default_with_payload());
+
+        match order_by.map(OrderBy::from) {
+            None => {
+                let limit_plus_one = limit.saturating_add(1);
+                let mut records = self.scroll_by_id(
+                    offset,
+                    limit_plus_one,
+                    &with_payload,
+                    &with_vector,
+                    filter.as_ref(),
+                    HwMeasurementAcc::disposable_edge(),
+                )?;
+                let next_offset = if records.len() > limit {
+                    let last_record = records.pop().unwrap();
+                    Some(last_record.id)
+                } else {
+                    None
+                };
+                Ok((records, next_offset))
+            }
+
+            Some(order_by) => {
+                if offset.is_some() {
+                    return Err(OperationError::validation_error(
+                        "Offset is not supported when ordering by field",
+                    ));
+                }
+                let records = self.scroll_by_field(
+                    limit,
+                    &with_payload,
+                    &with_vector,
+                    filter.as_ref(),
+                    &order_by,
+                    HwMeasurementAcc::disposable_edge(),
+                )?;
+                Ok((records, None))
+            }
+        }
+    }
+
     pub fn query_scroll(
         &self,
         request: &QueryScrollRequestInternal,
@@ -36,7 +92,7 @@ impl Shard {
                 with_payload,
                 with_vector,
                 filter.as_ref(),
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
             ScrollOrder::ByField(order_by) => self.scroll_by_field(
                 *limit,
@@ -44,14 +100,14 @@ impl Shard {
                 with_vector,
                 filter.as_ref(),
                 order_by,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
             ScrollOrder::Random => self.scroll_randomly(
                 *limit,
                 with_payload,
                 with_vector,
                 filter.as_ref(),
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?,
         };
 

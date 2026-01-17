@@ -1,5 +1,6 @@
+use shard::count::CountRequestInternal;
+
 use crate::operations::generalizer::Generalizer;
-use crate::operations::types::CountRequestInternal;
 
 impl Generalizer for CountRequestInternal {
     fn remove_details(&self) -> Self {

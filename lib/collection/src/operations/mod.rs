@@ -53,6 +53,10 @@ impl SplitByShard for CollectionUpdateOperations {
             operation @ CollectionUpdateOperations::FieldIndexOperation(_) => {
                 OperationToShard::to_all(operation)
             }
+            #[cfg(feature = "staging")]
+            operation @ CollectionUpdateOperations::StagingOperation(_) => {
+                OperationToShard::to_all(operation)
+            }
         }
     }
 }

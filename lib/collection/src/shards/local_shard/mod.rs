@@ -15,6 +15,7 @@ pub(super) mod updaters;
 mod snapshot_tests;
 
 mod drop;
+pub mod indexed_only;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod wal_ops;
@@ -44,7 +45,7 @@ use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
-use segment::index::field_index::CardinalityEstimation;
+use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
@@ -245,6 +246,11 @@ impl LocalShard {
         let update_tracker = UpdateTracker::default();
 
         let update_wal = if read_only { None } else { locked_wal.clone() };
+        let prevent_unoptimized_threshold_kb = config
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default()
+            .then(|| config.optimizer_config.get_indexing_threshold_kb());
         let mut update_handler = UpdateHandler::new(
             collection_name.clone(),
             shared_storage_config.clone(),
@@ -258,6 +264,7 @@ impl LocalShard {
             update_wal,
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
+            prevent_unoptimized_threshold_kb,
             clocks.clone(),
             shard_path.into(),
             scroll_read_lock.clone(),
@@ -909,14 +916,7 @@ impl LocalShard {
                         .read() // blocking sync lock
                         .estimate_point_count(filter.as_ref(), &hw_counter)
                 })
-                .fold(CardinalityEstimation::exact(0), |acc, x| {
-                    CardinalityEstimation {
-                        primary_clauses: vec![],
-                        min: acc.min + x.min,
-                        exp: acc.exp + x.exp,
-                        max: acc.max + x.max,
-                    }
-                })
+                .merge_independent()
         });
         let cardinality = AbortOnDropHandle::new(cardinality).await?;
         Ok(cardinality)

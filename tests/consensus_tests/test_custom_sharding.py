@@ -366,3 +366,51 @@ def try_search_random(peer_url: str, cancel: threading.Event):
         time.sleep(0.05)
 
     return True
+
+def test_no_shards_payload_index(tmp_path: pathlib.Path):
+    """
+    Test that only payload index creation is allowed on custom sharded collections without shard keys.
+    """
+    assert_project_root()
+
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    # Create collection with custom sharding but don't create any shard keys
+    create_collection_with_custom_sharding(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICAS)
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
+
+    wait_for_peer_metadata(peer_api_uris[0])
+
+    # Verify collection has no shard keys
+    info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    assert len(info.get('local_shards', [])) == 0
+
+    # Verify collection info can be retrieved correctly (tests CollectionInfo.empty with payload_schema)
+    collection_info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
+    assert collection_info["payload_schema"] == {}
+
+    # Try to upsert points without shard key - should be rejected
+    r = requests.put(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points?wait=true",
+        json={
+            "points": [
+                {"id": 1, "vector": [0.1, 0.2, 0.3, 0.4], "payload": {"name": "test1"}},
+                {"id": 2, "vector": [0.2, 0.3, 0.4, 0.5], "payload": {"name": "test2"}},
+            ]
+        }
+    )
+    assert r.status_code == 400, f"Expected upsert to be rejected, got status {r.status_code}: {r.text}"
+    assert r.json()["status"]["error"] == "Wrong input: Shard key not specified"
+
+    # Payload index creation without shard key - should be accepted
+    create_field_index(
+        peer_api_uris[0],
+        collection=COLLECTION_NAME,
+        field_name="test_field",
+        field_schema="keyword"
+    )
+
+    # Verify the payload index was created by checking collection info
+    collection_info = get_collection_info(peer_api_uris[0], COLLECTION_NAME)
+    assert "payload_schema" in collection_info
+    assert "test_field" in collection_info["payload_schema"]

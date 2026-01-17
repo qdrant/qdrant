@@ -1459,14 +1459,14 @@ impl PointInsertOperations {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, Default, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MaxOptimizationThreadsSetting {
     #[default]
     Auto,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(untagged)]
 pub enum MaxOptimizationThreads {
     Setting(MaxOptimizationThreadsSetting),

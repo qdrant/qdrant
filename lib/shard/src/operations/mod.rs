@@ -20,6 +20,9 @@ pub enum CollectionUpdateOperations {
     VectorOperation(vector_ops::VectorOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
+    /// Staging-only operations for testing and debugging purposes
+    #[cfg(feature = "staging")]
+    StagingOperation(staging::StagingOperations),
 }
 
 impl CollectionUpdateOperations {
@@ -43,6 +46,8 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(op) => op.point_ids(),
             Self::PayloadOperation(op) => op.point_ids(),
             Self::FieldIndexOperation(_) => None,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => None,
         }
     }
 
@@ -58,12 +63,12 @@ impl CollectionUpdateOperations {
                 PointOperations::SyncPoints(op) => {
                     Some(op.points.iter().map(|point| point.id).collect())
                 }
-                #[cfg(feature = "staging")]
-                PointOperations::TestDelay(_) => None,
             },
             Self::VectorOperation(_) => None,
             Self::PayloadOperation(_) => None,
             Self::FieldIndexOperation(_) => None,
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => None,
         }
     }
 
@@ -76,6 +81,8 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(op) => op.retain_point_ids(filter),
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
+            #[cfg(feature = "staging")]
+            Self::StagingOperation(_) => (),
         }
     }
 }

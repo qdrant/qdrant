@@ -125,7 +125,7 @@ async fn fixture() -> Collection {
             None,
             WriteOrdering::Weak,
             None,
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to insert points");
@@ -168,7 +168,7 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::new(),
             )
             .await
             .expect("failed to query")
@@ -225,7 +225,7 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::new(),
             )
             .await
             .expect("failed to query")

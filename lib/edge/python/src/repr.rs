@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 pub use edge_py_codegen::pyclass_repr;
@@ -88,13 +88,19 @@ impl<T: Repr> Repr for Vec<T> {
     }
 }
 
-impl<K: AsRef<str>, V: Repr, S> Repr for HashMap<K, V, S> {
+impl<K: Repr + ReprStr, V: Repr, S> Repr for HashMap<K, V, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.map(self)
     }
 }
 
 impl<T: Repr, S> Repr for HashSet<T, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.set(self)
+    }
+}
+
+impl<T: Repr> Repr for BTreeSet<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.set(self)
     }
@@ -139,6 +145,13 @@ impl Repr for serde_json::Map<String, serde_json::Value> {
         f.map(self)
     }
 }
+
+pub trait ReprStr {}
+
+impl<T: ReprStr> ReprStr for &T {}
+
+impl ReprStr for str {}
+impl ReprStr for String {}
 
 pub trait WriteExt: fmt::Write {
     fn class<T: PyTypeInfo>(&mut self, fields: &[(&str, &dyn Repr)]) -> fmt::Result {
@@ -193,20 +206,14 @@ pub trait WriteExt: fmt::Write {
 
     fn map<K, V>(&mut self, map: impl IntoIterator<Item = (K, V)>) -> fmt::Result
     where
-        K: AsRef<str>,
+        K: Repr + ReprStr,
         V: Repr,
     {
         write!(self, "{{")?;
 
         let mut separator = "";
         for (key, value) in map {
-            write!(
-                self,
-                "{separator}{}: {}",
-                ReprFmt(key.as_ref()),
-                ReprFmt(value)
-            )?;
-
+            write!(self, "{separator}{}: {}", ReprFmt(key), ReprFmt(value))?;
             separator = ", ";
         }
 

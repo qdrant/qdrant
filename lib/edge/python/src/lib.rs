@@ -1,11 +1,14 @@
 pub mod config;
+pub mod count;
+pub mod info;
 pub mod query;
 pub mod repr;
+pub mod scroll;
 pub mod search;
-mod snapshots;
+pub mod snapshots;
 pub mod types;
 pub mod update;
-mod utils;
+pub mod utils;
 
 use std::path::PathBuf;
 
@@ -16,7 +19,10 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::count::*;
+use self::info::*;
 use self::query::*;
+use self::scroll::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -24,7 +30,7 @@ use self::update::*;
 #[pymodule]
 mod qdrant_edge {
     #[pymodule_export]
-    use super::PyShard;
+    use super::PyEdgeShard;
     #[pymodule_export]
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
@@ -44,13 +50,16 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::config::{PyPayloadStorageType, PySegmentConfig};
     #[pymodule_export]
+    use super::count::PyCountRequest;
+    #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
     };
     #[pymodule_export]
+    use super::scroll::PyScrollRequest;
+    #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyPayloadSelectorInterface, PyQuantizationSearchParams,
-        PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
@@ -64,7 +73,8 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::query::{
         PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
-        PyNaiveFeedbackCoefficients, PyQueryInterface, PyRecommendQuery,
+        PyNaiveFeedbackCoefficients, PyPayloadSelectorInterface, PyQueryInterface,
+        PyRecommendQuery,
     };
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
@@ -72,16 +82,26 @@ mod qdrant_edge {
     use super::update::PyUpdateOperation;
 }
 
-#[pyclass(name = "Shard")]
+#[pyclass(name = "EdgeShard")]
 #[derive(Debug)]
-pub struct PyShard(Option<edge::Shard>);
+pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
-impl PyShard {
+impl PyEdgeShard {
     #[new]
+    #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
-        let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
+        let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
         Ok(Self(Some(shard)))
+    }
+
+    pub fn flush(&self) -> Result<()> {
+        self.get_shard()?.flush();
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        self.0.take(); // `edge::Shard` is automatically flushed on drop
     }
 
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
@@ -101,6 +121,17 @@ impl PyShard {
         Ok(points)
     }
 
+    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<(Vec<PyRecord>, Option<PyPointId>)> {
+        let (points, next_offset) = self.get_shard()?.scroll(scroll.into())?;
+        let points = PyRecord::wrap_vec(points);
+        Ok((points, next_offset.map(PyPointId)))
+    }
+
+    pub fn count(&self, count: PyCountRequest) -> Result<usize> {
+        let points_count = self.get_shard()?.count(count.into())?;
+        Ok(points_count)
+    }
+
     pub fn retrieve(
         &self,
         point_ids: Vec<PyPointId>,
@@ -117,11 +148,17 @@ impl PyShard {
         Ok(points)
     }
 
+    pub fn info(&self) -> Result<PyShardInfo> {
+        let info = self.get_shard()?.info();
+        let info = PyShardInfo(info);
+        Ok(info)
+    }
+
     // ------- Snapshot related methods -------
 
     #[staticmethod]
     pub fn unpack_snapshot(snapshot_path: PathBuf, target_path: PathBuf) -> Result<()> {
-        edge::Shard::unpack_snapshot(&snapshot_path, &target_path)?;
+        edge::EdgeShard::unpack_snapshot(&snapshot_path, &target_path)?;
         Ok(())
     }
 

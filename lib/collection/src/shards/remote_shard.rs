@@ -34,7 +34,9 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use semver::Version;
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tonic::Status;
@@ -52,8 +54,8 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountRequestInternal,
-    CountResult, PointRequestInternal, ScrollRequestInternal, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountResult,
+    PointRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
@@ -308,11 +310,6 @@ impl RemoteShard {
                         )?;
                         Update::Sync(request)
                     }
-                    #[cfg(feature = "staging")]
-                    PointOperations::TestDelay(_) => {
-                        // Staging test delay operations should not be forwarded to remote shards
-                        continue;
-                    }
                 },
                 CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
                     VectorOperations::UpdateVectors(update_operation) => {
@@ -443,6 +440,11 @@ impl RemoteShard {
                             Update::DeleteFieldIndex(request)
                         }
                     }
+                }
+                #[cfg(feature = "staging")]
+                CollectionUpdateOperations::StagingOperation(_) => {
+                    // Staging operations should not be forwarded to remote shards
+                    continue;
                 }
             };
             updates.push(UpdateOperation {
@@ -607,22 +609,6 @@ impl RemoteShard {
                     })
                     .await?
                     .into_inner()
-                }
-                #[cfg(feature = "staging")]
-                PointOperations::TestDelay(op) => {
-                    // TODO: Add gRPC support to forward staging operations to remote shards
-                    // For now, staging test delay operations only execute on local shards
-                    let delay = std::time::Duration::from_secs_f64(op.duration.into_inner());
-                    log::debug!(
-                        "TestDelay: skipping remote shard {} (duration: {delay:?})",
-                        self.id
-                    );
-                    timer.set_success(true);
-                    return Ok(UpdateResult {
-                        operation_id: None,
-                        status: crate::operations::types::UpdateStatus::Completed,
-                        clock_tag: operation.clock_tag,
-                    });
                 }
             },
             CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
@@ -814,6 +800,27 @@ impl RemoteShard {
                     .into_inner()
                 }
             },
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(staging_op) => {
+                // TODO: Add gRPC support to forward staging operations to remote shards
+                // For now, staging operations only execute on local shards
+                match staging_op {
+                    shard::operations::staging::StagingOperations::Delay(delay_op) => {
+                        let delay =
+                            std::time::Duration::from_secs_f64(delay_op.duration_sec.into_inner());
+                        log::debug!(
+                            "StagingOperation::Delay: skipping remote shard {} (duration: {delay:?})",
+                            self.id
+                        );
+                    }
+                }
+                timer.set_success(true);
+                return Ok(UpdateResult {
+                    operation_id: None,
+                    status: crate::operations::types::UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                });
+            }
         };
 
         if let Some(hw_usage) = point_operation_response.hardware_usage {

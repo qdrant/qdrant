@@ -1,8 +1,10 @@
+pub mod count;
+pub mod info;
 pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
-mod snapshots;
+pub mod snapshots;
 pub mod update;
 
 use std::num::NonZero;
@@ -25,7 +27,7 @@ use shard::wal::SerdeWal;
 use wal::WalOptions;
 
 #[derive(Debug)]
-pub struct Shard {
+pub struct EdgeShard {
     path: PathBuf,
     config: SegmentConfig,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
@@ -35,7 +37,7 @@ pub struct Shard {
 const WAL_PATH: &str = "wal";
 const SEGMENTS_PATH: &str = "segments";
 
-impl Shard {
+impl EdgeShard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
 
@@ -188,6 +190,26 @@ impl Shard {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn flush(&self) {
+        self.wal
+            .try_lock()
+            .expect("WAL lock acquired")
+            .flush()
+            .expect("WAL flushed");
+
+        self.segments
+            .try_read()
+            .expect("segment holder lock acquired")
+            .flush_all(true, true)
+            .expect("segments flushed");
+    }
+}
+
+impl Drop for EdgeShard {
+    fn drop(&mut self) {
+        self.flush();
     }
 }
 

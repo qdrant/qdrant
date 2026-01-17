@@ -5,9 +5,9 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use shard::operations::CollectionUpdateOperations;
 use shard::update::*;
 
-use crate::Shard;
+use crate::EdgeShard;
 
-impl Shard {
+impl EdgeShard {
     pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
         let mut wal = self.wal.lock();
 
@@ -40,6 +40,14 @@ impl Shard {
                     operation_id,
                     &index_operation,
                     &hw_counter,
+                )
+            }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(staging_operation) => {
+                shard::update::process_staging_operation(
+                    &self.segments,
+                    operation_id,
+                    staging_operation,
                 )
             }
         };

@@ -12,6 +12,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
 use shard::query::*;
+use shard::scroll::OrderByInterface;
 
 use super::*;
 use crate::repr::*;
@@ -24,28 +25,41 @@ pub struct PyQueryRequest(ShardQueryRequest);
 #[pymethods]
 impl PyQueryRequest {
     #[new]
+    #[pyo3(signature = (
+        limit,
+        offset = None,
+        query = None,
+        prefetches = None,
+        with_vector = None,
+        with_payload = None,
+        filter = None,
+        score_threshold = None,
+        params = None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
+        limit: usize,
+        offset: Option<usize>,
         query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
+        with_vector: Option<PyWithVector>,
+        with_payload: Option<PyWithPayload>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
-        limit: usize,
-        offset: usize,
         params: Option<PySearchParams>,
-        with_vector: PyWithVector,
-        with_payload: PyWithPayload,
     ) -> Self {
         Self(ShardQueryRequest {
-            prefetches: PyPrefetch::peel_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
+            limit,
+            offset: offset.unwrap_or(0),
+            with_vector: with_vector.map(WithVector::from).unwrap_or_default(),
+            with_payload: with_payload
+                .map(WithPayloadInterface::from)
+                .unwrap_or_default(),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
-            limit,
-            offset,
             params: params.map(SearchParams::from),
-            with_vector: WithVector::from(with_vector),
-            with_payload: WithPayloadInterface::from(with_payload),
         })
     }
 
@@ -127,18 +141,26 @@ pub struct PyPrefetch(ShardPrefetch);
 #[pymethods]
 impl PyPrefetch {
     #[new]
+    #[pyo3(signature = (
+        limit,
+        query = None,
+        prefetches = None,
+        params = None,
+        filter = None,
+        score_threshold = None,
+    ))]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
-        query: Option<PyScoringQuery>,
         limit: usize,
+        query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
         params: Option<PySearchParams>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(ShardPrefetch {
-            prefetches: PyPrefetch::peel_vec(prefetches),
-            query: query.map(ScoringQuery::from),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
+            query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
@@ -340,6 +362,7 @@ pub struct PyOrderBy(OrderBy);
 #[pymethods]
 impl PyOrderBy {
     #[new]
+    #[pyo3(signature = (key, direction = None, start_from = None))]
     pub fn new(
         key: PyJsonPath,
         direction: Option<PyDirection>,
@@ -382,6 +405,18 @@ impl PyOrderBy {
             direction: _,
             start_from: _,
         } = self.0;
+    }
+}
+
+impl From<OrderByInterface> for PyOrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        Self(OrderBy::from(order_by))
+    }
+}
+
+impl From<PyOrderBy> for OrderByInterface {
+    fn from(order_by: PyOrderBy) -> Self {
+        OrderByInterface::Struct(OrderBy::from(order_by))
     }
 }
 
@@ -548,11 +583,12 @@ pub struct PyMmr(MmrInternal);
 #[pymethods]
 impl PyMmr {
     #[new]
+    #[pyo3(signature = (vector, lambda, candidates_limit, using = None))]
     pub fn new(
         vector: PyNamedVectorInternal,
-        using: Option<String>,
         lambda: f32,
         candidates_limit: usize,
+        using: Option<String>,
     ) -> Self {
         let mmr = MmrInternal {
             vector: VectorInternal::from(vector),

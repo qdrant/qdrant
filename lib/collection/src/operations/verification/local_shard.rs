@@ -1,5 +1,7 @@
+use shard::scroll::ScrollRequestInternal;
+
 use super::StrictModeVerification;
-use crate::operations::types::{PointRequestInternal, ScrollRequestInternal};
+use crate::operations::types::PointRequestInternal;
 
 impl StrictModeVerification for ScrollRequestInternal {
     fn query_limit(&self) -> Option<usize> {

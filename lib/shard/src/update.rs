@@ -56,16 +56,25 @@ pub fn process_point_operation(
             )?;
             Ok(deleted + new + updated)
         }
-        #[cfg(feature = "staging")]
-        PointOperations::TestDelay(operation) => {
-            operation.execute();
+    }
+}
 
-            // This operation doesn't directly affect segment/point versions, so we bump it here
-            segments.read().bump_max_segment_version_overwrite(op_num);
-
-            Ok(0)
+#[cfg(feature = "staging")]
+pub fn process_staging_operation(
+    segments: &RwLock<SegmentHolder>,
+    op_num: SeqNumberType,
+    operation: crate::operations::staging::StagingOperations,
+) -> OperationResult<usize> {
+    match operation {
+        crate::operations::staging::StagingOperations::Delay(delay_op) => {
+            delay_op.execute();
         }
     }
+
+    // This operation doesn't directly affect segment/point versions, so we bump it here
+    segments.read().bump_max_segment_version_overwrite(op_num);
+
+    Ok(0)
 }
 
 pub fn process_vector_operation(
@@ -365,7 +374,7 @@ pub fn delete_points_by_filter(
         .iter()
         .map(|(segment_id, segment)| {
             (
-                *segment_id,
+                segment_id,
                 segment.get().read().read_filtered(
                     None,
                     None,
