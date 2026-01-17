@@ -1,6 +1,7 @@
 use api::conversions::json::payload_to_proto;
 use api::grpc::conversions::convert_shard_key_to_grpc;
 use segment::data_types::order_by::OrderValue;
+use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal};
 use segment::types::{Payload, PointIdType, ShardKey, VectorName};
 
@@ -42,6 +43,23 @@ impl RecordInternal {
             }
             Some(VectorStructInternal::Named(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,
+        }
+    }
+}
+
+impl From<SegmentRecord> for RecordInternal {
+    fn from(record: SegmentRecord) -> Self {
+        let SegmentRecord {
+            id,
+            payload,
+            vectors,
+        } = record;
+        Self {
+            id,
+            payload,
+            vector: vectors.map(VectorStructInternal::from),
+            shard_key: None,
+            order_value: None,
         }
     }
 }

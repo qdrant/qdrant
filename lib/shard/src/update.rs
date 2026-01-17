@@ -13,7 +13,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    SeqNumberType, VectorNameBuf,
+    SeqNumberType, VectorNameBuf, WithPayload, WithVector,
 };
 
 use crate::operations::FieldIndexOperations;
@@ -455,31 +455,37 @@ pub fn sync_points(
     let mut points_to_update: Vec<_> = Vec::new();
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
-    let _num_updated =
-        segments.read_points(existing_point_ids.as_slice(), &is_stopped, |id, segment| {
-            let all_vectors = match segment.all_vectors(id, hw_counter) {
-                Ok(v) => v,
-                Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
-                Err(e) => return Err(e),
-            };
-            let payload = segment.payload(id, hw_counter)?;
-            let point = id_to_point.get(&id).unwrap();
-            if point.get_vectors() != all_vectors {
-                points_to_update.push(*point);
-                Ok(true)
-            } else {
-                let payload_match = match point.payload {
-                    Some(ref p) => p == &payload,
-                    None => Payload::default() == payload,
-                };
-                if !payload_match {
+    let _num_updated = segments.read_points(
+        existing_point_ids.as_slice(),
+        &is_stopped,
+        |ids, segment| {
+            let with_vector = WithVector::Bool(true);
+            let with_payload = WithPayload::from(true);
+            let stored_records =
+                segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
+            let mut updated = 0;
+
+            let mut missing_record_ids: AHashSet<PointIdType> =
+                stored_records.iter().map(|record| record.id).collect();
+
+            for stored_record in stored_records {
+                missing_record_ids.remove(&stored_record.id);
+                let point = id_to_point.get(&stored_record.id).unwrap();
+                if !point.is_equal_to(&stored_record) {
                     points_to_update.push(*point);
-                    Ok(true)
-                } else {
-                    Ok(false)
+                    updated += 1;
                 }
             }
-        })?;
+
+            for missing_id in missing_record_ids {
+                let point = id_to_point.get(&missing_id).unwrap();
+                points_to_update.push(*point);
+                updated += 1;
+            }
+
+            Ok(updated)
+        },
+    )?;
 
     // 4. Select new points
     let num_updated = points_to_update.len();

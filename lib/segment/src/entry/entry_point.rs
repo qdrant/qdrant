@@ -13,6 +13,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -133,26 +134,25 @@ pub trait SegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
-    fn vectors(
-        &self,
-        vector_names: &VectorName,
-        point_ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
-        callback: impl FnMut(PointIdType, VectorInternal),
-    ) -> OperationResult<()>;
-
     fn all_vectors(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
 
-    fn all_vectors_many(
+    /// Reads Records from the segment, according to specified selectors and a list of point ids.
+    ///
+    /// WARNING:
+    /// This function may return fewer records than requested, if some points are not found.
+    /// Order of returned records is not guaranteed to match order of requested point ids.
+    fn retrieve(
         &self,
         point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
-        callback: impl FnMut(PointIdType, VectorNameBuf, VectorInternal),
-    ) -> OperationResult<()>;
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<SegmentRecord>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

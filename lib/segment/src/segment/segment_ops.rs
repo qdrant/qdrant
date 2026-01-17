@@ -434,38 +434,32 @@ impl Segment {
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_storage = vector_data.vector_storage.borrow();
-
-        // ToDo: check for `vector_storage.total_vector_count() <= largest_offset`
-        // let largest_offset = point_offsets.iter().max().cloned().unwrap_or(0);
-        // if vector_storage.total_vector_count() <= largest_offset as usize {
-        //     return Err(OperationError::InconsistentStorage {
-        //         description: format!(
-        //             "Vector storage '{}' is inconsistent, total_vector_count: {}, point_offset: {}",
-        //             vector_name,
-        //             vector_storage.total_vector_count(),
-        //             largest_offset
-        //         ),
-        //     });
-        // }
+        let total_vectors = vector_storage.total_vector_count();
 
         let id_tracker = self.id_tracker.borrow();
         let non_deleted_offsets = point_offsets.into_iter().filter(|&point_offset| {
+            if total_vectors <= point_offset as usize {
+                debug_assert!(
+                    false,
+                    "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}, external_id: {:?}",
+                    total_vectors, point_offset, id_tracker.external_id(point_offset)
+                );
+                return false;
+            }
+
             let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
             let is_point_deleted = id_tracker.is_deleted_point(point_offset);
             !is_vector_deleted && !is_point_deleted
         });
 
-        vector_storage.read_vectors::<Random>(
-            non_deleted_offsets,
-            |point_offset, cow_vector| {
-                if vector_storage.is_on_disk() {
-                    hw_counter
-                        .vector_io_read()
-                        .incr_delta(cow_vector.estimate_size_in_bytes());
-                }
-                callback(point_offset, cow_vector.to_owned());
-            },
-        );
+        vector_storage.read_vectors::<Random>(non_deleted_offsets, |point_offset, cow_vector| {
+            if vector_storage.is_on_disk() {
+                hw_counter
+                    .vector_io_read()
+                    .incr_delta(cow_vector.estimate_size_in_bytes());
+            }
+            callback(point_offset, cow_vector.to_owned());
+        });
 
         Ok(())
     }

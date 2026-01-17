@@ -14,6 +14,7 @@ use schemars::JsonSchema;
 use segment::common::operation_error::OperationError;
 use segment::common::utils::unordered_hash_unique;
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{
     BatchVectorStructInternal, DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal,
     VectorStructInternal,
@@ -524,6 +525,54 @@ impl PointStructPersisted {
             }
         }
         named_vectors
+    }
+
+    pub fn is_equal_to(&self, segment_record: &SegmentRecord) -> bool {
+        let SegmentRecord {
+            id,
+            vectors,
+            payload,
+        } = segment_record;
+
+        if &self.id != id {
+            return false;
+        }
+
+        let self_vectors = self.get_vectors().into_owned_map();
+
+        if let Some(segment_vectors) = vectors {
+            if self_vectors.len() != segment_vectors.len() {
+                return false;
+            }
+            for (name, vec) in segment_vectors {
+                if self_vectors.get(name) != Some(vec) {
+                    return false;
+                }
+            }
+        } else if !self_vectors.is_empty() {
+            return false;
+        }
+
+        match (&self.payload, payload) {
+            (Some(self_payload), Some(segment_payload)) => {
+                if self_payload != segment_payload {
+                    return false;
+                }
+            }
+            (None, Some(segment_payload)) => {
+                if !segment_payload.is_empty() {
+                    return false;
+                }
+            }
+            (Some(self_payload), None) => {
+                if !self_payload.is_empty() {
+                    return false;
+                }
+            }
+            (None, None) => {}
+        }
+
+        true
     }
 }
 
