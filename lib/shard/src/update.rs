@@ -461,26 +461,17 @@ pub fn sync_points(
         |ids, segment| {
             let with_vector = WithVector::Bool(true);
             let with_payload = WithPayload::from(true);
+            // Since we retrieve points, which we already know exist, we expect all of them to be found
             let stored_records =
                 segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
             let mut updated = 0;
 
-            let mut missing_record_ids: AHashSet<PointIdType> =
-                stored_records.iter().map(|record| record.id).collect();
-
             for stored_record in stored_records {
-                missing_record_ids.remove(&stored_record.id);
                 let point = id_to_point.get(&stored_record.id).unwrap();
                 if !point.is_equal_to(&stored_record) {
                     points_to_update.push(*point);
                     updated += 1;
                 }
-            }
-
-            for missing_id in missing_record_ids {
-                let point = id_to_point.get(&missing_id).unwrap();
-                points_to_update.push(*point);
-                updated += 1;
             }
 
             Ok(updated)

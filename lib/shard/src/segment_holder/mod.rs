@@ -15,12 +15,12 @@ use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
+use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
@@ -774,10 +774,10 @@ impl SegmentHolder {
             let read_segment = segment_arc.read();
             let segment_point_ids: Vec<PointIdType> = ids
                 .iter()
-                .cloned()
-                .stop_if(is_stopped)
+                .copied()
                 .filter(|id| read_segment.has_point(*id))
                 .collect();
+            check_stopped(is_stopped)?;
             if !segment_point_ids.is_empty() {
                 read_points += f(&segment_point_ids, &read_segment)?;
             }

@@ -55,6 +55,7 @@ pub fn retrieve_blocking(
             &hw_counter,
             is_stopped,
         )? {
+            // We expect all points to be found since we already checked their versions
             point_records.insert(record.id, RecordInternal::from(record));
             applied += 1;
         }
