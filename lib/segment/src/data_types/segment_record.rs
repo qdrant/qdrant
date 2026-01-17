@@ -13,7 +13,7 @@ impl SegmentRecord {
     pub fn empty(id: PointIdType) -> Self {
         Self {
             id,
-            vectors: None,
+            vectors: Some(NamedVectorsOwned::default()),
             payload: None,
         }
     }

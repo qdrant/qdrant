@@ -401,7 +401,15 @@ impl SegmentEntry for Segment {
                     )?;
                 }
             }
-            WithVector::Bool(false) => {}
+            WithVector::Bool(false) => {
+                // Do not display empty `vectors: {}` if disabled
+                for &point_id in point_ids {
+                    let point_record = records
+                        .entry(point_id)
+                        .or_insert_with(|| SegmentRecord::empty(point_id));
+                    point_record.vectors = None;
+                }
+            }
             WithVector::Selector(selector) => {
                 for vector_name in selector {
                     self.read_vectors(
