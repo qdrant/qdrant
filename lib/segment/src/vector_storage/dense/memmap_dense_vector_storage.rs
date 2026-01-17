@@ -188,17 +188,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .expect("Vector not found")
     }
 
-    fn get_vectors<P: AccessPattern>(&self, keys: &[PointOffsetType]) -> Vec<CowVector<'_>> {
+    fn read_vectors<P: AccessPattern>(
+        &self,
+        keys: impl IntoIterator<Item = PointOffsetType>,
+        mut callback: impl FnMut(PointOffsetType, CowVector<'_>),
+    ) {
         // Create a result vec of the appropriate size
-        let mut result: Vec<CowVector<'_>> = vec![CowVector::default(); keys.len()];
         self.mmap_store
             .as_ref()
             .unwrap()
-            .read_vectors_async(keys.iter().copied(), |idx, _, vector| {
-                result[idx] = CowVector::from(T::slice_to_float_cow(Cow::Owned(vector.to_vec())));
+            .read_vectors_async(keys.into_iter(), |_pos, key, vector| {
+                let cow_vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+                callback(key, cow_vector);
             })
             .unwrap();
-        result
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

@@ -24,6 +24,8 @@ pub fn retrieve_blocking(
     let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
     let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
 
+    let mut point_vectors: AHashMap<PointIdType, NamedVectors> = Default::default();
+
     let hw_counter = hw_measurement_acc.get_counter_cell();
 
     let Some(segments_guard) = segments.try_read_for(timeout) else {
@@ -31,37 +33,11 @@ pub fn retrieve_blocking(
     };
 
     segments_guard.read_points_many(points, is_stopped, |ids, segment| {
-        let vectors: Vec<_> = match with_vector {
-            WithVector::Bool(true) => segment
-                .all_vectors_many(ids, &hw_counter)?
-                .into_iter()
-                .map(VectorStructInternal::from)
-                .map(Some)
-                .collect(),
-            WithVector::Bool(false) => vec![None; ids.len()],
-            WithVector::Selector(selector) => {
-                let mut vectors = vec![NamedVectors::default(); ids.len()];
-
-                for vector_name in selector {
-                    let fetched_vectors = segment.vectors(vector_name, ids, &hw_counter)?;
-                    for (i, vector_opt) in fetched_vectors.into_iter().enumerate() {
-                        if let Some(vector) = vector_opt {
-                            vectors[i].insert(vector_name.clone(), vector);
-                        }
-                    }
-                }
-
-                vectors
-                    .into_iter()
-                    .map(VectorStructInternal::from)
-                    .map(Some)
-                    .collect()
-            }
-        };
+        let mut newer_version_points: Vec<_> = Vec::with_capacity(ids.len());
 
         let mut applied = 0;
 
-        for (&id, vector) in ids.iter().zip(vectors) {
+        for &id in ids {
             let version = segment.point_version(id).ok_or_else(|| {
                 OperationError::service_error(format!("No version for point {id}"))
             })?;
@@ -72,7 +48,40 @@ pub fn retrieve_blocking(
                 applied += 1;
                 continue;
             }
+            newer_version_points.push(id);
+            *version_entry.or_default() = version;
+        }
 
+        match with_vector {
+            WithVector::Bool(true) => segment.all_vectors_many(
+                &newer_version_points,
+                &hw_counter,
+                |point_id, vector_name, vector| {
+                    point_vectors
+                        .entry(point_id)
+                        .or_default()
+                        .insert(vector_name, vector);
+                },
+            )?,
+            WithVector::Bool(false) => {}
+            WithVector::Selector(selector) => {
+                for vector_name in selector {
+                    segment.vectors(
+                        vector_name,
+                        &newer_version_points,
+                        &hw_counter,
+                        |point_id, vector| {
+                            point_vectors
+                                .entry(point_id)
+                                .or_default()
+                                .insert(vector_name.to_owned(), vector);
+                        },
+                    )?;
+                }
+            }
+        };
+
+        for id in newer_version_points {
             point_records.insert(
                 id,
                 RecordInternal {
@@ -86,13 +95,11 @@ pub fn retrieve_blocking(
                     } else {
                         None
                     },
-                    vector,
+                    vector: point_vectors.remove(&id).map(VectorStructInternal::from),
                     shard_key: None,
                     order_value: None,
                 },
             );
-            *version_entry.or_default() = version;
-
             applied += 1;
         }
 

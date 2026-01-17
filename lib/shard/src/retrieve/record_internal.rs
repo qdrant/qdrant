@@ -22,6 +22,16 @@ pub struct RecordInternal {
 }
 
 impl RecordInternal {
+    pub fn new_empty(id: PointIdType) -> Self {
+        Self {
+            id,
+            payload: None,
+            vector: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
     pub fn get_vector_by_name(&self, name: &VectorName) -> Option<VectorRef<'_>> {
         match &self.vector {
             Some(VectorStructInternal::Single(vector)) => {

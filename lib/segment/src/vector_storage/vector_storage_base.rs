@@ -90,13 +90,14 @@ pub trait VectorStorage {
 
     /// Get multiple vectors by the given keys
     /// Potentially optimized for internal parallel reads.
-    fn get_vectors<P: AccessPattern>(&self, keys: &[PointOffsetType]) -> Vec<CowVector<'_>> {
-        // This is a naive implementation, which should be optimized in specific storages.
-        let mut result = Vec::with_capacity(keys.len());
-        for &key in keys {
-            result.push(self.get_vector::<P>(key));
+    fn read_vectors<P: AccessPattern>(
+        &self,
+        keys: impl IntoIterator<Item = PointOffsetType>,
+        mut callback: impl FnMut(PointOffsetType, CowVector<'_>),
+    ) {
+        for key in keys {
+            callback(key, self.get_vector::<P>(key));
         }
-        result
     }
 
     /// Get the vector by the given key if it exists
@@ -995,49 +996,61 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vectors<P: AccessPattern>(&self, keys: &[PointOffsetType]) -> Vec<CowVector<'_>> {
+    fn read_vectors<P: AccessPattern>(
+        &self,
+        keys: impl IntoIterator<Item = PointOffsetType>,
+        callback: impl FnMut(PointOffsetType, CowVector<'_>),
+    ) {
         match self {
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::DenseSimple(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::DenseSimpleByte(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseVolatile(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::DenseVolatileByte(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableInRam(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::DenseVolatileHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseMemmap(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseMemmapByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableInRam(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::SparseSimple(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::SparseVolatile(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::SparseMmap(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::SparseSimple(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::SparseVolatile(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::SparseMmap(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::MultiDenseSimple(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.read_vectors::<P>(keys, callback),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.get_vectors::<P>(keys),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.get_vectors::<P>(keys),
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                v.read_vectors::<P>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                v.read_vectors::<P>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.read_vectors::<P>(keys, callback),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => {
+                v.read_vectors::<P>(keys, callback)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => {
+                v.read_vectors::<P>(keys, callback)
+            }
         }
     }
 

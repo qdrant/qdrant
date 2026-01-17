@@ -138,7 +138,8 @@ pub trait SegmentEntry: SnapshotEntry {
         vector_names: &VectorName,
         point_ids: &[PointIdType],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<Option<VectorInternal>>>;
+        callback: impl FnMut(PointIdType, VectorInternal),
+    ) -> OperationResult<()>;
 
     fn all_vectors(
         &self,
@@ -150,7 +151,8 @@ pub trait SegmentEntry: SnapshotEntry {
         &self,
         point_ids: &[PointIdType],
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<NamedVectors<'_>>>;
+        callback: impl FnMut(PointIdType, VectorNameBuf, VectorInternal),
+    ) -> OperationResult<()>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
