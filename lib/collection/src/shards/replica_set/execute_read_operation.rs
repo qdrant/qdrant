@@ -224,15 +224,21 @@ impl ShardReplicaSet {
             1
         };
 
-        let read_fan_out_factor: usize = self
-            .collection_config
-            .read()
-            .await
-            .params
-            .read_fan_out_factor
-            .unwrap_or(default_fan_out)
-            .try_into()
-            .expect("u32 can be converted into usize");
+        let (read_fan_out_factor, fan_out_delay) = {
+            let guard = self.collection_config.read().await;
+            let params = &guard.params;
+
+            let read_fan_out_factor =
+                params.read_fan_out_factor.unwrap_or(default_fan_out) as usize;
+            let read_fan_out_delay = params.read_fan_out_delay_ms.and_then(|delay| {
+                if delay == 0 {
+                    None
+                } else {
+                    Some(tokio::time::Duration::from_millis(delay))
+                }
+            });
+            (read_fan_out_factor, read_fan_out_delay)
+        };
 
         let initial_concurrent_operations = required_successful_results + read_fan_out_factor;
 
@@ -257,6 +263,19 @@ impl ShardReplicaSet {
 
         tokio::pin!(update_watcher);
 
+        let fan_out_delay_sleep = async move {
+            match fan_out_delay {
+                Some(delay) => tokio::time::sleep(delay).await,
+                None => future::pending().await,
+            }
+        };
+
+        let fan_out_delay_sleep = fan_out_delay_sleep.fuse();
+
+        tokio::pin!(fan_out_delay_sleep);
+
+        let mut is_fan_out_delay_resolved = false;
+
         loop {
             let result;
 
@@ -276,6 +295,12 @@ impl ShardReplicaSet {
                 }
 
                 _ = &mut update_watcher, if local_is_readable && !is_local_operation_resolved => {
+                    pending_operations.extend(operations.next());
+                    continue;
+                }
+
+                _ = &mut fan_out_delay_sleep, if !is_fan_out_delay_resolved => {
+                    is_fan_out_delay_resolved = true;
                     pending_operations.extend(operations.next());
                     continue;
                 }

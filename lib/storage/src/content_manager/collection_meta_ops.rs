@@ -443,6 +443,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             replication_factor,
             write_consistency_factor,
             read_fan_out_factor: _,
+            read_fan_out_delay_ms: _,
             on_disk_payload,
             sparse_vectors,
         } = params;

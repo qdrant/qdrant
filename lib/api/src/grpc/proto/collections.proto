@@ -550,6 +550,8 @@ message CollectionParams {
   optional ShardingMethod sharding_method = 9;
   // Configuration for sparse vectors
   optional SparseVectorConfig sparse_vectors_config = 10;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 11;
 }
 
 message CollectionParamsDiff {
@@ -561,6 +563,8 @@ message CollectionParamsDiff {
   optional bool on_disk_payload = 3;
   // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional uint32 read_fan_out_factor = 4;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 5;
 }
 
 message CollectionConfig {
