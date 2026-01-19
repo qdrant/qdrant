@@ -1924,19 +1924,18 @@
             }
           },
           {
-            "name": "completed",
+            "name": "with",
             "in": "query",
-            "description": "Also include completed operations in the response.",
+            "description": "Comma-separated list of optional fields to include in the response.\nPossible values: queued, completed, idle_segments.",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "string"
             }
           },
           {
             "name": "completed_limit",
             "in": "query",
-            "description": "Maximum number of completed optimizations to return. Ignored if completed is false.",
+            "description": "Maximum number of completed optimizations to return.\nIgnored if `completed` is not in the `with` parameter.",
             "required": false,
             "schema": {
               "type": "integer",
@@ -16468,27 +16467,132 @@
         "description": "Optimizations progress for the collection",
         "type": "object",
         "required": [
-          "ongoing",
-          "pending"
+          "running",
+          "summary"
         ],
         "properties": {
-          "ongoing": {
-            "description": "Ongoing optimizations from newest to oldest.",
+          "summary": {
+            "$ref": "#/components/schemas/OptimizationsSummary"
+          },
+          "running": {
+            "description": "Currently running optimizations.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProgressTree"
+              "$ref": "#/components/schemas/Optimization"
             }
           },
-          "completed": {
-            "description": "Completed optimizations from newest to oldest.",
+          "queued": {
+            "description": "An estimated queue of pending optimizations. Requires `?with=queued`.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProgressTree"
+              "$ref": "#/components/schemas/PendingOptimization"
             },
             "nullable": true
           },
-          "pending": {
-            "$ref": "#/components/schemas/PendingOptimizations"
+          "completed": {
+            "description": "Completed optimizations. Requires `?with=completed`. Limited by `?completed_limit=N`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Optimization"
+            },
+            "nullable": true
+          },
+          "idle_segments": {
+            "description": "Segments that don't require optimization. Requires `?with=idle_segments`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "OptimizationsSummary": {
+        "type": "object",
+        "required": [
+          "idle_segments",
+          "queued_optimizations",
+          "queued_points",
+          "queued_segments"
+        ],
+        "properties": {
+          "queued_optimizations": {
+            "description": "Number of pending optimizations in the queue. Each optimization will take one or more unoptimized segments and produce one optimized segment.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "queued_segments": {
+            "description": "Number of unoptimized segments in the queue.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "queued_points": {
+            "description": "Number of points in unoptimized segments in the queue.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "idle_segments": {
+            "description": "Number of segments that don't require optimization.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "Optimization": {
+        "type": "object",
+        "required": [
+          "optimizer",
+          "progress",
+          "segments",
+          "status",
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "description": "Unique identifier of the optimization process.\n\nAfter the optimization is complete, a new segment will be created with this UUID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "optimizer": {
+            "description": "Name of the optimizer that performed this optimization.",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrackerStatus"
+          },
+          "segments": {
+            "description": "Segments being optimized.\n\nAfter the optimization is complete, these segments will be replaced by the new optimized segment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            }
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ProgressTree"
+          }
+        }
+      },
+      "OptimizationSegmentInfo": {
+        "type": "object",
+        "required": [
+          "points_count",
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "description": "Unique identifier of the segment.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "points_count": {
+            "description": "Number of non-deleted points in the segment.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
@@ -16544,32 +16648,23 @@
           }
         }
       },
-      "PendingOptimizations": {
-        "description": "Estimation of pending optimizations",
+      "PendingOptimization": {
         "type": "object",
         "required": [
-          "optimizations",
-          "points",
+          "optimizer",
           "segments"
         ],
         "properties": {
-          "optimizations": {
-            "description": "Number of pending optimizations. Each optimization will take one or more unoptimized segments and produce one optimized segment.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
+          "optimizer": {
+            "description": "Name of the optimizer that scheduled this optimization.",
+            "type": "string"
           },
           "segments": {
-            "description": "Number of unoptimized segments pending optimization.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          },
-          "points": {
-            "description": "Total number of non-deleted points in unoptimized segments.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
+            "description": "Segments that will be optimized.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            }
           }
         }
       },

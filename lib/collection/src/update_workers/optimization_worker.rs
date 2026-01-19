@@ -304,6 +304,7 @@ impl UpdateWorkers {
                         Some(TrackerSegmentInfo {
                             id,
                             uuid: segment.segment_uuid(),
+                            points_count: segment.available_point_count(),
                         })
                     })
                     .collect_vec()

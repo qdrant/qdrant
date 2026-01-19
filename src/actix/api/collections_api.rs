@@ -4,6 +4,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
+use collection::operations::types::{CollectionError, OptimizationsRequestOptions};
 use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
@@ -231,13 +232,45 @@ async fn update_collection_cluster(
     process_response(response, timing, None)
 }
 
-#[derive(Deserialize, Copy, Clone, Validate)]
+#[derive(Deserialize, Clone, Validate)]
 struct OptimizationsParam {
-    completed: Option<bool>,
+    with: Option<String>,
     completed_limit: Option<u64>,
 }
 
 const DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT: u64 = 16;
+
+impl TryFrom<&OptimizationsParam> for OptimizationsRequestOptions {
+    type Error = CollectionError;
+
+    fn try_from(
+        params: &OptimizationsParam,
+    ) -> Result<OptimizationsRequestOptions, CollectionError> {
+        let OptimizationsParam {
+            with,
+            completed_limit,
+        } = params;
+        let completed_limit =
+            completed_limit.unwrap_or(DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT) as usize;
+        let mut options = OptimizationsRequestOptions {
+            queued: false,
+            completed_limit: None,
+            idle_segments: false,
+        };
+        for field in with.as_deref().unwrap_or("").split(',') {
+            match field {
+                "" => (),
+                "queued" => options.queued = true,
+                "completed" => options.completed_limit = Some(completed_limit),
+                "idle_segments" => options.idle_segments = true,
+                _ => Err(CollectionError::bad_input(format!(
+                    "Unknown field in 'with' parameter: {field}"
+                )))?,
+            }
+        }
+        Ok(options)
+    }
+}
 
 #[get("/collections/{name}/optimizations")]
 fn get_optimizations(
@@ -246,13 +279,8 @@ fn get_optimizations(
     ActixAccess(access): ActixAccess,
     params: Query<OptimizationsParam>,
 ) -> impl Future<Output = HttpResponse> {
-    let completed_limit = params.completed.unwrap_or(false).then(|| {
-        params
-            .completed_limit
-            .unwrap_or(DEFAULT_OPTIMIZATIONS_COMPLETED_LIMIT) as usize
-    });
-
     helpers::time(async move {
+        let options = OptimizationsRequestOptions::try_from(&params.into_inner())?;
         let pass = new_unchecked_verification_pass();
         let collection_pass =
             access.check_collection_access(&collection.name, AccessRequirements::new())?;
@@ -260,7 +288,7 @@ fn get_optimizations(
             .toc(&access, &pass)
             .get_collection(&collection_pass)
             .await?
-            .optimizations(completed_limit)
+            .optimizations(options)
             .await?)
     })
 }

@@ -39,13 +39,12 @@ use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{
-    CollectionError, CollectionResult, PendingOptimizations, UpdateResult, UpdateStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
+use crate::shards::local_shard::LocalShardOptimizations;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -1348,11 +1347,9 @@ impl ShardReplicaSet {
         local.as_ref().and_then(|shard| shard.optimizers_log())
     }
 
-    pub async fn pending_optimizations(&self) -> Option<PendingOptimizations> {
+    pub async fn optimizations(&self) -> Option<LocalShardOptimizations> {
         let local = self.local.read().await;
-        local
-            .as_ref()
-            .and_then(|shard| shard.pending_optimizations())
+        local.as_ref().and_then(|shard| shard.optimizations())
     }
 }
 

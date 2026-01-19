@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use shard::segment_holder::SegmentId;
 use uuid::Uuid;
 
+use crate::operations::types::{Optimization, OptimizationSegmentInfo};
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
@@ -25,12 +26,6 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct IndexingProgressViews {
-    pub ongoing: Vec<ProgressView>,
-    pub completed: Vec<ProgressView>,
 }
 
 impl TrackerLog {
@@ -75,18 +70,8 @@ impl TrackerLog {
             .collect()
     }
 
-    pub fn progress_views(&self) -> IndexingProgressViews {
-        let mut ongoing = Vec::new();
-        let mut completed = Vec::new();
-        for tracker in self.descriptions.iter().rev() {
-            let state = tracker.state.lock();
-            if state.status.is_running() {
-                ongoing.push(tracker.progress_view.clone());
-            } else {
-                completed.push(tracker.progress_view.clone());
-            }
-        }
-        IndexingProgressViews { ongoing, completed }
+    pub fn iter(&self) -> impl Iterator<Item = &Tracker> {
+        self.descriptions.iter()
     }
 }
 
@@ -109,6 +94,18 @@ pub struct Tracker {
 pub struct TrackerSegmentInfo {
     pub id: SegmentId,
     pub uuid: Uuid,
+    pub points_count: usize,
+}
+
+impl From<&TrackerSegmentInfo> for OptimizationSegmentInfo {
+    fn from(value: &TrackerSegmentInfo) -> Self {
+        let TrackerSegmentInfo {
+            id: _,
+            uuid,
+            points_count,
+        } = *value;
+        OptimizationSegmentInfo { uuid, points_count }
+    }
 }
 
 impl Tracker {
@@ -147,6 +144,16 @@ impl Tracker {
             status: state.status.clone(),
             start_at: self.progress_view.started_at(),
             end_at: state.end_at,
+        }
+    }
+
+    pub fn to_optimization(&self) -> Optimization {
+        Optimization {
+            optimizer: self.name,
+            uuid: self.uuid,
+            segments: self.segments.iter().map(|s| s.into()).collect(),
+            status: self.state.lock().status.clone(),
+            progress: self.progress_view.snapshot("Segment Optimizing"),
         }
     }
 }
