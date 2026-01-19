@@ -88,12 +88,12 @@ pub trait SegmentOptimizer {
     fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
         let segments = segments.read();
 
-        let mut planner = OptimizationPlanner::new(0, segments.iter_original());
+        let mut planner = OptimizationPlanner::new(0, segments.iter_optimizable());
         self.plan_optimizations(&mut planner);
         let result = planner.into_scheduled_for_test();
 
         // Verify consistency: re-planning with remaining segments should match tail
-        let mut remaining: BTreeMap<_, _> = segments.iter_original().collect();
+        let mut remaining: BTreeMap<_, _> = segments.iter_optimizable().collect();
         for (i, batch) in result.iter().enumerate() {
             for &id in batch {
                 remaining.remove(&id);

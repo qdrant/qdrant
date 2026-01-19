@@ -485,7 +485,7 @@ mod tests {
         // Update working segment ID
         segment_id = locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .find(|(_, segment)| segment.read().total_point_count() > 0)
             .unwrap()
             .0;
@@ -553,7 +553,7 @@ mod tests {
         // Ensure deleted points and vectors are stored properly before optimizing
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
@@ -588,7 +588,7 @@ mod tests {
         // Ensure deleted points and vectors are optimized
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {

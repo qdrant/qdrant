@@ -1,4 +1,5 @@
 mod flush;
+mod pending_updates;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
+use crate::segment_holder::pending_updates::PendingUpdatesSegment;
 
 pub type SegmentId = usize;
 
@@ -58,6 +60,34 @@ pub struct SegmentHolder {
     /// Keep segments sorted by their ID for deterministic iteration order
     appendable_segments: BTreeMap<SegmentId, LockedSegment>,
     non_appendable_segments: BTreeMap<SegmentId, LockedSegment>,
+
+    /// State of the pending updates for this group of segments.
+    ///
+    /// On update operations:
+    /// - If pending_updates_state = [`PendingUpdatesSegment::Empty`] - no effect on any operations
+    /// - If pending_updates_state = [`PendingUpdatesSegment::Used`]
+    ///     - Update operations use only `pending_updates` segment as a destination
+    ///     - CoW Operations do not remove points from the original segment
+    ///     - Delete operations are executed in all segments as well as `pending_updates` segment
+    ///     - Payload operations are executed on all segments as well as `pending_updates` segment
+    /// - If pending_updates_state = [`PendingUpdatesSegment::Optimizing`]
+    ///     - All updates are postponed, including deletes and payload indexing
+    ///
+    /// For search operations - search operations never use the `pending_updates` segment
+    ///
+    /// For Flush
+    ///  - Pending updates segment is flushed like a regular appendable segment
+    ///
+    /// For Snapshots
+    ///  - Pending segment is added to the snapshot like a regular segment
+    ///
+    /// For Optimizations
+    ///  - Pending segment is _excluded_ from regular optimizations
+    ///
+    /// On restart:
+    ///  - ????
+    ///
+    pub pending_updates_segment: PendingUpdatesSegment,
 
     /// Source for unique (virtual) IDs for newly added segments
     id_source: AtomicUsize,
@@ -99,7 +129,7 @@ impl Drop for SegmentHolder {
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl SegmentHolder {
-    /// Iterate over all segments with their IDs
+    /// Iterate over all segments with their IDs, except pending.
     ///
     /// Appendable first, then non-appendable.
     pub fn iter(&self) -> impl Iterator<Item = (SegmentId, &LockedSegment)> {
@@ -109,8 +139,16 @@ impl SegmentHolder {
             .map(|(id, segment)| (*id, segment))
     }
 
-    /// Iterate over all non-proxy segments with their IDs
-    pub fn iter_original(&self) -> impl Iterator<Item = (SegmentId, &Arc<RwLock<Segment>>)> {
+    /// Iterate over all segments, which can be updated.
+    /// That includes normal segments + pending updates segment (if exists).
+    pub fn iter_updatable(&self) -> impl Iterator<Item = (SegmentId, &LockedSegment)> {
+        self.iter()
+            .chain(self.pending_updates_segment.iter_updatable())
+    }
+
+    /// Iterate over segments, which can be scheduled for optimization.
+    /// That includes original non-pending segments only.
+    pub fn iter_optimizable(&self) -> impl Iterator<Item = (SegmentId, &Arc<RwLock<Segment>>)> {
         self.iter().filter_map(|(id, segment)| match segment {
             LockedSegment::Original(original) => Some((id, original)),
             LockedSegment::Proxy(_) => None,
@@ -257,6 +295,7 @@ impl SegmentHolder {
         self.appendable_segments
             .get(&id)
             .or_else(|| self.non_appendable_segments.get(&id))
+            .or_else(|| self.pending_updates_segment.get_locked_segment_by_id(id))
     }
 
     pub fn has_appendable_segment(&self) -> bool {
@@ -383,7 +422,7 @@ impl SegmentHolder {
         // Find in which segments latest point versions are located, mark older points for deletion
         let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SmallVec<[SegmentId; 1]>)> =
             AHashMap::with_capacity(ids.len());
-        for (segment_id, segment) in self.iter() {
+        for (segment_id, segment) in self.iter_updatable() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
@@ -462,7 +501,7 @@ impl SegmentHolder {
         F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
-        for (_id, segment) in self.iter() {
+        for (_id, segment) in self.iter_updatable() {
             let is_applied = f(&segment.get().read())?;
             processed_segments += usize::from(is_applied);
         }
@@ -495,7 +534,7 @@ impl SegmentHolder {
 
             // It is important to iterate over all segments for each batch
             // to avoid blocking of a single segment with sequential updates
-            for (segment_id, segment) in self.iter() {
+            for (segment_id, segment) in self.iter_updatable() {
                 did_apply |= f(&mut segment.get().write(), segment_id)?;
             }
 

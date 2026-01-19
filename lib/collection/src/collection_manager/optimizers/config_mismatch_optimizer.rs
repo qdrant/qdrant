@@ -385,7 +385,7 @@ mod tests {
         // Ensure new segment has changed HNSW config
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
@@ -556,7 +556,7 @@ mod tests {
         // Ensure new segment has changed HNSW config
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
@@ -736,7 +736,7 @@ mod tests {
         // Ensure new segment has changed quantization config
         locked_holder
             .read()
-            .iter_original()
+            .iter_optimizable()
             .map(|(_, segment)| segment.read())
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {

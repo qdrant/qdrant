@@ -282,7 +282,7 @@ impl UpdateWorkers {
             let segments = segments.read();
             let mut planner = OptimizationPlanner::new(
                 segments.running_optimizations.count(),
-                segments.iter_original(),
+                segments.iter_optimizable(),
             );
             for optimizer in optimizers.iter() {
                 planner.set_optimizer(Arc::clone(optimizer));
