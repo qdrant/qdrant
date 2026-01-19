@@ -35,12 +35,10 @@ impl PyVectorDataConfig {
 #[pymethods]
 impl PyVectorDataConfig {
     #[new]
-    #[pyo3(signature = (size, distance, storage_type, index, quantization_config=None, multivector_config=None, datatype=None))]
+    #[pyo3(signature = (size, distance, quantization_config=None, multivector_config=None, datatype=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
-        storage_type: PyVectorStorageType,
-        index: PyIndexes,
         quantization_config: Option<PyQuantizationConfig>,
         multivector_config: Option<PyMultiVectorConfig>,
         datatype: Option<PyVectorStorageDatatype>,
@@ -48,8 +46,8 @@ impl PyVectorDataConfig {
         Self(VectorDataConfig {
             size,
             distance: Distance::from(distance),
-            storage_type: VectorStorageType::from(storage_type),
-            index: Indexes::from(index),
+            storage_type: VectorStorageType::InRamChunkedMmap,
+            index: Indexes::Plain {},
             quantization_config: quantization_config.map(QuantizationConfig::from),
             multivector_config: multivector_config.map(MultiVectorConfig::from),
             datatype: datatype.map(VectorStorageDatatype::from),
