@@ -68,14 +68,15 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
 };
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
-    check_sparse_compatible_with_segment_config,
+    CollectionError, CollectionResult, OptimizersStatus, PendingOptimizations, ShardInfoInternal,
+    ShardStatus, check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
@@ -985,6 +986,27 @@ impl LocalShard {
 
     pub fn optimizers_log(&self) -> Arc<ParkingMutex<TrackerLog>> {
         Arc::clone(&self.optimizers_log)
+    }
+
+    /// Call [`plan_optimizations`] and return summary.
+    pub fn pending_optimizations(&self) -> PendingOptimizations {
+        let segments = self.segments.read();
+        let scheduled = plan_optimizations(&segments, &self.optimizers);
+        let mut pending_segments = 0;
+        let mut points = 0;
+        for (_, segment_ids) in scheduled.iter() {
+            pending_segments += segment_ids.len();
+            for &segment_id in segment_ids {
+                if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
+                    points += segment.read().available_point_count();
+                }
+            }
+        }
+        PendingOptimizations {
+            optimizations: scheduled.len(),
+            segments: pending_segments,
+            points,
+        }
     }
 
     /// Get the recovery point for the current shard

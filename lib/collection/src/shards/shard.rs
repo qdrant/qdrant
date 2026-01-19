@@ -16,7 +16,9 @@ use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
-use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
+use crate::operations::types::{
+    CollectionError, CollectionResult, OptimizersStatus, PendingOptimizations,
+};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
@@ -246,6 +248,16 @@ impl Shard {
         };
 
         Some(optimizers_log)
+    }
+
+    pub fn pending_optimizations(&self) -> Option<PendingOptimizations> {
+        Some(match self {
+            Self::Local(local_shard) => local_shard.pending_optimizations(),
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.pending_optimizations(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.pending_optimizations(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.pending_optimizations(),
+            Self::Dummy(_) => return None,
+        })
     }
 
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {

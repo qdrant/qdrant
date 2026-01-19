@@ -10,10 +10,8 @@ use common::panic;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
-use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -25,12 +23,12 @@ use tokio::time::timeout;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, OptimizerThresholds,
+    OptimizerThresholds, plan_optimizations,
 };
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
-use crate::operations::types::{CollectionError, CollectionResult, PendingOptimizations};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
@@ -275,43 +273,8 @@ impl UpdateWorkers {
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        let scheduled;
-        let mut pending_segments = 0;
-        let mut pending_points = 0;
-        {
-            let segments = segments.read();
-            let mut planner = OptimizationPlanner::new(
-                segments.running_optimizations.count(),
-                segments.iter_original(),
-            );
-            for optimizer in optimizers.iter() {
-                planner.set_optimizer(Arc::clone(optimizer));
-                optimizer.plan_optimizations(&mut planner);
-            }
-            scheduled = planner.into_scheduled();
-
-            for (_, segment_ids) in &scheduled {
-                pending_segments += segment_ids.len();
-                for &segment_id in segment_ids {
-                    if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
-                        pending_points += segment.read().available_point_count();
-                    }
-                }
-            }
-        }
-
-        optimizers_log.lock().pending = PendingOptimizations {
-            optimizations: scheduled.len(),
-            segments: pending_segments,
-            points: pending_points,
-        };
-
+        let scheduled = plan_optimizations(&segments.read(), &optimizers);
         for (optimizer, segments_to_merge) in scheduled {
-            let Some(optimizer) = optimizer else {
-                debug_assert!(false);
-                continue;
-            };
-
             // Return early if we reached the optimization job limit
             if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
                 log::trace!("Reached optimization job limit, postponing other optimizations");

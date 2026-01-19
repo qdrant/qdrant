@@ -9,8 +9,6 @@ use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 
 use super::holders::segment_holder::SegmentId;
-use crate::operations::types::PendingOptimizations;
-
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
@@ -26,7 +24,6 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
-    pub pending: PendingOptimizations,
 }
 
 #[derive(Clone, Debug, Default)]
