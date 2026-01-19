@@ -239,7 +239,7 @@ impl CollectionsTelemetry {
 
             total_optimizations_running.push(gauge(
                 collection.count_optimizers_running() as f64,
-                &[("id", &collection.id)],
+                &[("collection", &collection.id)],
             ));
 
             let min_max_active_replicas = collection
@@ -300,7 +300,7 @@ impl CollectionsTelemetry {
 
             points_per_collection.push(gauge(
                 collection.count_points() as f64,
-                &[("id", &collection.id)],
+                &[("collection", &collection.id)],
             ));
 
             for (vec_name, count) in collection.count_points_per_vector() {
@@ -328,7 +328,7 @@ impl CollectionsTelemetry {
             for (name, vector_size) in points_excluded_from_index_only {
                 indexed_only_excluded.push(gauge(
                     vector_size as f64,
-                    &[("id", &collection.id), ("vector", name)],
+                    &[("collection", &collection.id), ("vector", name)],
                 ))
             }
 
@@ -357,11 +357,11 @@ impl CollectionsTelemetry {
 
             shard_transfers_in.push(gauge(
                 f64::from(incoming_transfers),
-                &[("id", &collection.id)],
+                &[("collection", &collection.id)],
             ));
             shard_transfers_out.push(gauge(
                 f64::from(outgoing_transfers),
-                &[("id", &collection.id)],
+                &[("collection", &collection.id)],
             ));
         }
 
@@ -372,18 +372,18 @@ impl CollectionsTelemetry {
                 snapshot_telemetry
                     .running_snapshot_recovery
                     .unwrap_or_default() as f64,
-                &[("id", id)],
+                &[("collection", id)],
             ));
             snapshots_creation_running.push(gauge(
                 snapshot_telemetry.running_snapshots.unwrap_or_default() as f64,
-                &[("id", id)],
+                &[("collection", id)],
             ));
 
             snapshots_created_total.push(counter(
                 snapshot_telemetry
                     .total_snapshot_creations
                     .unwrap_or_default() as f64,
-                &[("id", id)],
+                &[("collection", id)],
             ));
         }
 
@@ -642,6 +642,29 @@ impl MetricsProvider for WebApiTelemetry {
                 );
             }
         }
+        for (collection_name, endpoints) in &self.per_collection_responses {
+            for (endpoint, responses) in endpoints {
+                let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                    continue;
+                };
+                // Endpoint must be whitelisted
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
+                for (status, stats) in responses {
+                    builder.add(
+                        stats,
+                        &[
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                            ("collection", collection_name),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
+            }
+        }
         builder.build(prefix, "rest", metrics);
     }
 }
@@ -658,6 +681,25 @@ impl MetricsProvider for GrpcTelemetry {
                 continue;
             }
             builder.add(stats, &[("endpoint", endpoint.as_str())], true);
+        }
+        for (collection_name, endpoints) in &self.per_collection_responses {
+            for (endpoint, stats) in endpoints {
+                // Endpoint must be whitelisted
+                if GRPC_ENDPOINT_WHITELIST
+                    .binary_search(&endpoint.as_str())
+                    .is_err()
+                {
+                    continue;
+                }
+                builder.add(
+                    stats,
+                    &[
+                        ("endpoint", endpoint.as_str()),
+                        ("collection", collection_name),
+                    ],
+                    true,
+                );
+            }
         }
         builder.build(prefix, "grpc", metrics);
     }
@@ -708,7 +750,9 @@ impl HardwareTelemetry {
     fn make_metric_counters<F: Fn(&HardwareUsage) -> usize>(&self, f: F) -> Vec<Metric> {
         self.collection_data
             .iter()
-            .map(|(collection_id, hw_usage)| counter(f(hw_usage) as f64, &[("id", collection_id)]))
+            .map(|(collection_id, hw_usage)| {
+                counter(f(hw_usage) as f64, &[("collection", collection_id)])
+            })
             .collect()
     }
 }

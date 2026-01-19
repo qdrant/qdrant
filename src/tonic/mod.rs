@@ -146,6 +146,7 @@ pub fn init(
             .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
+                settings.service.record_per_collection.unwrap_or(false),
             ))
             .option_layer({
                 AuthKeys::try_create(
@@ -230,8 +231,11 @@ pub fn init_internal(
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
-            let qdrant_internal_service =
-                QdrantInternalService::new(telemetry_collector, settings, consensus_state.clone());
+            let qdrant_internal_service = QdrantInternalService::new(
+                telemetry_collector,
+                settings.clone(),
+                consensus_state.clone(),
+            );
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service =
@@ -262,6 +266,7 @@ pub fn init_internal(
                 .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     tonic_telemetry_collector,
+                    settings.service.record_per_collection.unwrap_or(false),
                 ))
                 .into_inner();
 

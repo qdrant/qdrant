@@ -28,6 +28,7 @@ use super::validate;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
+use crate::common::telemetry_ops::telemetry_context::CollectionName;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_access;
@@ -59,6 +60,11 @@ impl PointsService {
     }
 }
 
+fn attach_collection<T>(mut response: Response<T>, name: String) -> Response<T> {
+    response.extensions_mut().insert(CollectionName(name));
+    response
+}
+
 #[tonic::async_trait]
 impl Points for PointsService {
     async fn upsert(
@@ -74,7 +80,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -85,7 +92,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(PointsOperationResponse::from))
+        .map(|resp| attach_collection(resp.map(PointsOperationResponse::from), collection_name))
     }
 
     async fn delete(
@@ -97,7 +104,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         delete(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -107,7 +115,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(PointsOperationResponse::from))
+        .map(|resp| attach_collection(resp.map(PointsOperationResponse::from), collection_name))
     }
 
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
@@ -115,8 +123,9 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let inner_request = request.into_inner();
-        let hw_metrics = self
-            .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
+        let collection_name = inner_request.collection_name.clone();
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         get(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -126,6 +135,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
+        .map(|resp| attach_collection(resp, collection_name))
     }
 
     async fn update_vectors(
@@ -143,7 +153,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -154,7 +165,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(PointsOperationResponse::from))
+        .map(|resp| attach_collection(resp.map(PointsOperationResponse::from), collection_name))
     }
 
     async fn delete_vectors(
@@ -165,10 +176,9 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        let hw_metrics = self.get_request_collection_hw_usage_counter(
-            request.get_ref().collection_name.clone(),
-            None,
-        );
+        let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         delete_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -178,7 +188,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn set_payload(
@@ -191,7 +201,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         set_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -201,7 +212,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn overwrite_payload(
@@ -214,7 +225,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         overwrite_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -224,7 +236,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn delete_payload(
@@ -237,7 +249,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         delete_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -247,7 +260,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn clear_payload(
@@ -260,7 +273,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         clear_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -270,7 +284,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn update_batch(
@@ -286,7 +300,8 @@ impl Points for PointsService {
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         update_batch(
             &self.dispatcher,
@@ -297,6 +312,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
+        .map(|resp| attach_collection(resp, collection_name))
     }
 
     async fn create_field_index(
@@ -308,7 +324,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), wait);
 
         create_field_index(
             self.dispatcher.clone(),
@@ -318,7 +335,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn delete_field_index(
@@ -329,6 +346,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let collection_name = request.get_ref().collection_name.clone();
         delete_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
@@ -336,7 +354,7 @@ impl Points for PointsService {
             access,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| attach_collection(resp.map(Into::into), collection_name))
     }
 
     async fn search(
@@ -347,7 +365,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         let res = search(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -358,7 +377,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn search_batch(
@@ -403,7 +422,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn search_groups(
@@ -413,7 +432,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let res = search_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -423,7 +443,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn scroll(
@@ -435,9 +455,10 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         let inner_request = request.into_inner();
+        let collection_name = inner_request.collection_name.clone();
 
-        let hw_metrics = self
-            .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -447,6 +468,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
+        .map(|resp| attach_collection(resp, collection_name))
     }
 
     async fn recommend(
@@ -456,7 +478,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -465,7 +488,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn recommend_batch(
@@ -495,7 +518,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn recommend_groups(
@@ -505,7 +528,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         let res = recommend_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -515,7 +539,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn discover(
@@ -526,7 +550,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
 
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let res = discover(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -535,7 +560,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn discover_batch(
@@ -564,7 +589,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn count(
@@ -575,7 +600,8 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let res = count(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -585,7 +611,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn query(
@@ -598,7 +624,8 @@ impl Points for PointsService {
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let inference_params = InferenceParams::new(inference_token, timeout);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         let res = query(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -610,7 +637,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn query_batch(
@@ -645,7 +672,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
 
     async fn query_groups(
@@ -658,7 +685,8 @@ impl Points for PointsService {
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let inference_params = InferenceParams::new(inference_token, timeout);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
 
         let res = query_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -670,7 +698,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        Ok(res)
+        Ok(attach_collection(res, collection_name))
     }
     async fn facet(
         &self,
@@ -678,10 +706,9 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_metrics = self.get_request_collection_hw_usage_counter(
-            request.get_ref().collection_name.clone(),
-            None,
-        );
+        let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -689,6 +716,7 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
+        .map(|resp| attach_collection(resp, collection_name))
     }
 
     async fn search_matrix_pairs(
@@ -699,7 +727,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -714,7 +743,11 @@ impl Points for PointsService {
             usage: Usage::from_hardware_usage(hw_metrics.to_grpc_api()).into_non_empty(),
         };
 
-        Ok(Response::new(pairs_response))
+        let mut response = Response::new(pairs_response);
+        response
+            .extensions_mut()
+            .insert(CollectionName(collection_name));
+        Ok(response)
     }
 
     async fn search_matrix_offsets(
@@ -725,7 +758,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -740,6 +774,10 @@ impl Points for PointsService {
             usage: Usage::from_hardware_usage(hw_metrics.to_grpc_api()).into_non_empty(),
         };
 
-        Ok(Response::new(offsets_response))
+        let mut response = Response::new(offsets_response);
+        response
+            .extensions_mut()
+            .insert(CollectionName(collection_name));
+        Ok(response)
     }
 }

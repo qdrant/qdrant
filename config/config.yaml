@@ -302,6 +302,11 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
+  # Record per-collection metrics.
+  # If enabled, metrics will be grouped by collection name.
+  # Warning: this might significantly increase the amount of metrics.
+  record_per_collection: true
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
