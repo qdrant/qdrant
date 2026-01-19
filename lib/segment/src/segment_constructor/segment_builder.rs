@@ -295,8 +295,12 @@ impl SegmentBuilder {
             return Err(OperationError::service_error("Too many segments to update"));
         }
 
-        let mut points_to_insert = Vec::new();
         let locked_id_trackers = segments.iter().map(|s| s.id_tracker.borrow()).collect_vec();
+        let max_point_count = locked_id_trackers
+            .iter()
+            .map(|id_tracker| id_tracker.available_point_count())
+            .max();
+        let mut points_to_insert = Vec::with_capacity(max_point_count.unwrap_or_default());
         for_each_unique_point(locked_id_trackers.iter().map(|i| i.deref()), |item| {
             points_to_insert.push(PointData {
                 external_id: CompactExtendedPointId::from(item.external_id),
