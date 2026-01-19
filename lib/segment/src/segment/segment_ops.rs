@@ -417,8 +417,8 @@ impl Segment {
             if total_vectors <= point_offset as usize {
                 debug_assert!(
                     false,
-                    "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}, external_id: {:?}",
-                    total_vectors, point_offset, id_tracker.external_id(point_offset)
+                    "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
+                    id_tracker.external_id(point_offset),
                 );
                 return false;
             }
