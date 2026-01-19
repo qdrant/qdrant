@@ -381,7 +381,11 @@ pub trait SegmentOptimizer {
     /// # Result
     ///
     /// Original segments are pushed into `segments`, proxies removed.
-    fn unwrap_proxy(&self, segments: &LockedSegmentHolder, proxy_ids: &[SegmentId]) {
+    fn unwrap_proxy(
+        &self,
+        segments: &LockedSegmentHolder,
+        proxy_ids: &[SegmentId],
+    ) -> CollectionResult<()> {
         let mut segments_lock = segments.write();
         for &proxy_id in proxy_ids {
             if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
@@ -393,11 +397,12 @@ pub trait SegmentOptimizer {
                     }
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        segments_lock.swap_new(wrapped_segment, &[proxy_id]);
+                        segments_lock.replace(proxy_id, wrapped_segment)?;
                     }
                 }
             }
         }
+        Ok(())
     }
 
     /// Function to wrap slow part of optimization. Performs proxy rollback in case of cancellation.
@@ -720,11 +725,9 @@ pub trait SegmentOptimizer {
                 }
 
                 let locked_proxy = LockedSegment::from(proxy);
-                proxy_ids.push(
-                    write_segments
-                        .swap_new_locked(locked_proxy.clone(), &[idx])
-                        .0,
-                );
+                write_segments.replace(idx, locked_proxy.clone())?;
+
+                proxy_ids.push(idx);
                 locked_proxies.push(locked_proxy);
             }
 
@@ -754,7 +757,7 @@ pub trait SegmentOptimizer {
             Err(err) => {
                 // Properly cancel optimization on all error kinds
                 // Unwrap proxies and add temp segment to holder
-                self.unwrap_proxy(&segments, &proxy_ids);
+                self.unwrap_proxy(&segments, &proxy_ids)?;
                 return Err(err);
             }
         };

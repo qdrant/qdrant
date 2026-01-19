@@ -221,15 +221,6 @@ impl SegmentHolder {
         (new_id, self.remove(remove_ids))
     }
 
-    pub fn swap_new_locked(
-        &mut self,
-        segment: LockedSegment,
-        remove_ids: &[SegmentId],
-    ) -> (SegmentId, Vec<LockedSegment>) {
-        let new_id = self.add_new_locked(segment);
-        (new_id, self.remove(remove_ids))
-    }
-
     /// Replace an existing segment
     ///
     /// # Arguments
