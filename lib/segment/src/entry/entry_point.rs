@@ -243,11 +243,12 @@ pub trait SegmentEntry: SnapshotEntry {
 
     /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        self.vector_names()
-            .into_iter()
-            .map(|vector_name| self.available_vectors_size_in_bytes(&vector_name))
-            .collect::<OperationResult<Vec<_>>>()
-            .map(|sizes| sizes.into_iter().max().unwrap_or_default())
+        let mut max_size = 0;
+        for vector_name in self.vector_names() {
+            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
+            max_size = std::cmp::max(max_size, inner_size);
+        }
+        Ok(max_size)
     }
 
     /// Get segment type
