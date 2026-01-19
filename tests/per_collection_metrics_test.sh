@@ -56,7 +56,7 @@ METRICS=$(curl -s "http://$QDRANT_HOST/metrics")
 echo "Verifying per-collection metrics..."
 
 # Check for existence of collection label in rest responses
-if echo "$METRICS" | grep -q "rest_responses_total{.*collection=\"$COLLECTION_NAME\""; then
+if echo "$METRICS" | grep -q "rest_responses_total{.*collection=\"$COLLECTION_NAME\".*}"; then
   echo "Found per-collection rest_responses_total"
 else
   echo "Failed to find per-collection rest_responses_total"
