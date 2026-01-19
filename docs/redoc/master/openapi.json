@@ -7065,6 +7065,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "read_fan_out_delay_ms": {
+            "description": "Define number of milliseconds to wait before attempting to read from another replica. This setting can help to reduce latency spikes in case of occasional slow replicas. Default is 0, which means delayed fan out request is disabled.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.\n\nDefault: true",
             "default": true,
@@ -10594,6 +10601,13 @@
             "description": "Fan-out every read request to these many additional remote nodes (and return first available response)",
             "type": "integer",
             "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
+          "read_fan_out_delay_ms": {
+            "description": "Delay in milliseconds before sending read requests to remote nodes",
+            "type": "integer",
+            "format": "uint64",
             "minimum": 0,
             "nullable": true
           },

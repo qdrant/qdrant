@@ -303,6 +303,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             write_consistency_factor,
             read_fan_out_factor,
             on_disk_payload,
+            read_fan_out_delay_ms,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -319,6 +320,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                 })
                 .transpose()?,
             read_fan_out_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
         })
     }
@@ -429,6 +431,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             vectors,
             shard_number,
             replication_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
             write_consistency_factor,
             read_fan_out_factor,
@@ -496,6 +499,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                                 .collect(),
                         }
                     }),
+                    read_fan_out_delay_ms,
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
@@ -1815,6 +1819,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         read_fan_out_factor,
                         sharding_method,
                         sparse_vectors_config,
+                        read_fan_out_delay_ms,
                     } = params;
                     CollectionParams {
                         vectors: match vectors_config {
@@ -1871,6 +1876,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         sharding_method: sharding_method
                             .map(sharding_method_from_proto)
                             .transpose()?,
+                        read_fan_out_delay_ms,
                     }
                 }
             },
