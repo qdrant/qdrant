@@ -85,10 +85,18 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
     /// Parses RFC3339 datetime strings used in REST/JSON `datetime_range` filters.
     /// Returns a clear user-facing error when the format is invalid.
     /// Example accepted value: `2014-01-01T00:00:00Z`.
+    ///
+    /// For binary formats (CBOR/MessagePack/WAL), delegates to chrono's deserializer
+    /// which handles timestamps and other non-string representations.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
+        if !deserializer.is_human_readable() {
+            return chrono::DateTime::<chrono::Utc>::deserialize(deserializer)
+                .map(DateTimePayloadType::from);
+        }
+
         let str_datetime: Cow<'de, str> = Cow::deserialize(deserializer)?;
 
         match DateTimePayloadType::from_str(str_datetime.as_ref()) {
