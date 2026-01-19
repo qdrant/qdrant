@@ -553,26 +553,10 @@ impl PointStructPersisted {
             return false;
         }
 
-        match (&self.payload, payload) {
-            (Some(self_payload), Some(segment_payload)) => {
-                if self_payload != segment_payload {
-                    return false;
-                }
-            }
-            (None, Some(segment_payload)) => {
-                if !segment_payload.is_empty() {
-                    return false;
-                }
-            }
-            (Some(self_payload), None) => {
-                if !self_payload.is_empty() {
-                    return false;
-                }
-            }
-            (None, None) => {}
-        }
-
-        true
+        // Check if payloads are equal, empty and non-existent payloads are considered equal
+        let self_payload = self.payload.as_ref().filter(|p| !p.is_empty());
+        let segment_payload = payload.as_ref().filter(|p| !p.is_empty());
+        self_payload == segment_payload
     }
 }
 
