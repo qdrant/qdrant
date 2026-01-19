@@ -26,6 +26,10 @@ impl PyEdgeConfig {
     #[new]
     #[pyo3(signature = (vector_data, sparse_vector_data=None))]
     pub fn new(
+        #[pyo3(from_py_with = vector_data_config_helper)]
+        // `vector_data_config_helper` accepts either
+        // - a single default vector config: `VectorDataConfig(...)`
+        // - or a map of named vector configs: `{ "": VectorDataConfig(...), "named_vector": VectorDataConfig(...) }`
         vector_data: HashMap<String, PyVectorDataConfig>,
         sparse_vector_data: Option<HashMap<String, PySparseVectorDataConfig>>,
     ) -> Self {
@@ -112,4 +116,26 @@ impl From<PyPayloadStorageType> for PayloadStorageType {
             PyPayloadStorageType::InRamMmap => PayloadStorageType::InRamMmap,
         }
     }
+}
+
+fn vector_data_config_helper(
+    config: &Bound<'_, PyAny>,
+) -> PyResult<HashMap<String, PyVectorDataConfig>> {
+    #[derive(FromPyObject)]
+    enum Helper {
+        Default(PyVectorDataConfig),
+        Explicit(HashMap<String, PyVectorDataConfig>),
+    }
+
+    let config = match config.extract()? {
+        Helper::Default(default) => {
+            let mut config = HashMap::new();
+            config.insert("".into(), default);
+            config
+        }
+
+        Helper::Explicit(config) => config,
+    };
+
+    Ok(config)
 }
