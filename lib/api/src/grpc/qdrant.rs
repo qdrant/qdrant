@@ -12580,7 +12580,10 @@ pub struct CollectionTelemetry {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
-    /// Shard transfers in progress
+    /// Shards information
+    #[prost(message, repeated, tag = "4")]
+    pub shards: ::prost::alloc::vec::Vec<ReplicaSetTelemetry>,
+    /// Shard (replica) transfers in progress
     #[prost(message, repeated, tag = "5")]
     pub transfers: ::prost::alloc::vec::Vec<ShardTransferTelemetry>,
     /// Resharding(s) in progress
@@ -12692,6 +12695,86 @@ pub mod shard_clean_status_telemetry {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicaSetTelemetry {
+    /// Shard ID
+    #[prost(uint32, tag = "1")]
+    pub id: u32,
+    /// Optional shard key for custom sharding
+    #[prost(message, optional, tag = "2")]
+    pub key: ::core::option::Option<ShardKey>,
+    /// Local shard information
+    #[prost(message, optional, tag = "3")]
+    pub local: ::core::option::Option<LocalShardTelemetry>,
+    /// Remote shards
+    #[prost(message, repeated, tag = "4")]
+    pub remote: ::prost::alloc::vec::Vec<RemoteShardTelemetry>,
+    #[prost(map = "uint64, enumeration(ReplicaState)", tag = "5")]
+    pub replica_states: ::std::collections::HashMap<u64, i32>,
+    /// Snapshot operations telemetry
+    #[prost(message, optional, tag = "6")]
+    pub partial_snapshot: ::core::option::Option<PartialSnapshotTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LocalShardTelemetry {
+    /// Optimization status
+    #[prost(enumeration = "ShardStatus", optional, tag = "3")]
+    pub status: ::core::option::Option<i32>,
+    /// Total optimized points
+    #[prost(uint64, tag = "4")]
+    pub total_optimized_points: u64,
+    /// Estimated vectors size in bytes
+    #[prost(uint64, optional, tag = "5")]
+    pub vectors_size_bytes: ::core::option::Option<u64>,
+    /// Estimated payloads size in bytes
+    #[prost(uint64, optional, tag = "6")]
+    pub payloads_size_bytes: ::core::option::Option<u64>,
+    /// Approximate number of points
+    #[prost(uint64, optional, tag = "7")]
+    pub num_points: ::core::option::Option<u64>,
+    /// Approximate number of vectors
+    #[prost(uint64, optional, tag = "8")]
+    pub num_vectors: ::core::option::Option<u64>,
+    /// Approximate number of vectors by vector name
+    #[prost(map = "string, uint64", tag = "9")]
+    pub num_vectors_by_name: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        u64,
+    >,
+    /// Number of vectors excluded from search if `indexed_only` is used
+    #[prost(map = "string, uint64", tag = "12")]
+    pub indexed_only_excluded_vectors: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        u64,
+    >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoteShardTelemetry {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartialSnapshotTelemetry {
+    /// Number of ongoing snapshot creation requests
+    #[prost(uint64, tag = "1")]
+    pub ongoing_create_snapshot_requests: u64,
+    /// Whether the shard is recovering
+    #[prost(bool, tag = "2")]
+    pub is_recovering: bool,
+    /// Last successful recovery timestamp
+    #[prost(uint64, tag = "3")]
+    pub recovery_timestamp: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
@@ -12793,6 +12876,45 @@ impl ReshardingStage {
             "MIGRATING_POINTS" => Some(Self::MigratingPoints),
             "READ_HASH_RING_COMMITTED" => Some(Self::ReadHashRingCommitted),
             "WRITE_HASH_RING_COMMITTED" => Some(Self::WriteHashRingCommitted),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardStatus {
+    /// Shard is completely ready for requests
+    Green = 0,
+    /// Shard is available, but some segments are under optimization
+    Yellow = 1,
+    /// Shard is available, but some segments are pending optimization
+    Grey = 2,
+    /// Something is not OK:
+    ///
+    /// * some operations failed and was not recovered
+    Red = 3,
+}
+impl ShardStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardStatus::Green => "GREEN",
+            ShardStatus::Yellow => "YELLOW",
+            ShardStatus::Grey => "GREY",
+            ShardStatus::Red => "RED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GREEN" => Some(Self::Green),
+            "YELLOW" => Some(Self::Yellow),
+            "GREY" => Some(Self::Grey),
+            "RED" => Some(Self::Red),
             _ => None,
         }
     }

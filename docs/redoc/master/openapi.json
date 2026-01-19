@@ -12442,7 +12442,6 @@
       "LocalShardTelemetry": {
         "type": "object",
         "required": [
-          "optimizations",
           "total_optimized_points"
         ],
         "properties": {
@@ -12512,7 +12511,14 @@
             "nullable": true
           },
           "optimizations": {
-            "$ref": "#/components/schemas/OptimizerTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizerTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "async_scorer": {
             "type": "boolean",
@@ -13243,9 +13249,8 @@
       "RemoteShardTelemetry": {
         "type": "object",
         "required": [
-          "searches",
-          "shard_id",
-          "updates"
+          "peer_id",
+          "shard_id"
         ],
         "properties": {
           "shard_id": {
@@ -13256,14 +13261,27 @@
           "peer_id": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "updates": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -16569,6 +16587,14 @@
             "description": "Collection name",
             "type": "string"
           },
+          "shards": {
+            "description": "Shards topology",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistributedShardTelemetry"
+            },
+            "nullable": true
+          },
           "reshardings": {
             "description": "Ongoing resharding operations",
             "type": "array",
@@ -16584,6 +16610,135 @@
               "$ref": "#/components/schemas/ShardTransferInfo"
             },
             "nullable": true
+          }
+        }
+      },
+      "DistributedShardTelemetry": {
+        "type": "object",
+        "required": [
+          "id",
+          "replicas"
+        ],
+        "properties": {
+          "id": {
+            "description": "Shard ID",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "key": {
+            "description": "Optional shard key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "replicas": {
+            "description": "Replica information",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistributedReplicaTelemetry"
+            }
+          }
+        }
+      },
+      "DistributedReplicaTelemetry": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "state"
+        ],
+        "properties": {
+          "peer_id": {
+            "description": "Peer ID hosting this replica",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReplicaState"
+          },
+          "status": {
+            "description": "Shard status",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardStatus"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "total_optimized_points": {
+            "description": "Total optimized points",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "vectors_size_bytes": {
+            "description": "Estimated vectors size in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "payloads_size_bytes": {
+            "description": "Estimated payloads size in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_points": {
+            "description": "Approximate number of points",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors": {
+            "description": "Approximate number of vectors",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors_by_name": {
+            "description": "Approximate number of vectors by name",
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "nullable": true
+          },
+          "shard_cleaning_status": {
+            "description": "Shard cleaning task status. After a resharding, a cleanup task is performed to remove outdated points from this shard.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "partial_snapshot": {
+            "description": "Partial snapshot telemetry",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartialSnapshotTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
