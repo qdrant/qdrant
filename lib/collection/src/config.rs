@@ -120,7 +120,7 @@ pub struct CollectionParams {
     pub read_fan_out_factor: Option<u32>,
     /// Define number of milliseconds to wait before attempting to read from another replica.
     /// This setting can help to reduce latency spikes in case of occasional slow replicas.
-    /// Default is 0, which means, that no additional request is sent.
+    /// Default is 0, which means delayed fan out request is disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub read_fan_out_delay_ms: Option<u64>,

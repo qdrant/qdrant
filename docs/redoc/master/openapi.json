@@ -7066,7 +7066,7 @@
             "nullable": true
           },
           "read_fan_out_delay_ms": {
-            "description": "Define number of milliseconds to wait before attempting to read from another replica. This setting can help to reduce latency spikes in case of occasional slow replicas. Default is 0, which means, that no additional request is sent.",
+            "description": "Define number of milliseconds to wait before attempting to read from another replica. This setting can help to reduce latency spikes in case of occasional slow replicas. Default is 0, which means delayed fan out request is disabled.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0,
