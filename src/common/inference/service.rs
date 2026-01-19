@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::hash::Hash;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -12,7 +11,6 @@ use common::defaults::APP_USER_AGENT;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
-use reqwest::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
