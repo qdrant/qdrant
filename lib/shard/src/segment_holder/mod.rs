@@ -15,12 +15,12 @@ use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
+use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
@@ -735,6 +735,8 @@ impl SegmentHolder {
         Ok(applied_points)
     }
 
+    /// Provides an entry point of reading multiple points in all segments.
+    ///
     pub fn read_points<F>(
         &self,
         ids: &[PointIdType],
@@ -742,7 +744,7 @@ impl SegmentHolder {
         mut f: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<usize>,
     {
         // We must go over non-appendable segments first, then go over appendable segments after
         // Points may be moved from non-appendable to appendable, because we don't lock all
@@ -761,14 +763,14 @@ impl SegmentHolder {
         for segment in segments {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
-            let points = ids
+            let segment_point_ids: Vec<PointIdType> = ids
                 .iter()
-                .cloned()
-                .stop_if(is_stopped)
-                .filter(|id| read_segment.has_point(*id));
-            for point in points {
-                let is_ok = f(point, &read_segment)?;
-                read_points += usize::from(is_ok);
+                .copied()
+                .filter(|id| read_segment.has_point(*id))
+                .collect();
+            check_stopped(is_stopped)?;
+            if !segment_point_ids.is_empty() {
+                read_points += f(&segment_point_ids, &read_segment)?;
             }
         }
         Ok(read_points)

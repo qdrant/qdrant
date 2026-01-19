@@ -5,8 +5,6 @@ use std::time::Duration;
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{PointIdType, SeqNumberType, WithPayload, WithVector};
 
 use crate::retrieve::record_internal::RecordInternal;
@@ -30,57 +28,39 @@ pub fn retrieve_blocking(
         return Err(OperationError::timeout(timeout, "retrieve points"));
     };
 
-    segments_guard.read_points(points, is_stopped, |id, segment| {
-        let version = segment
-            .point_version(id)
-            .ok_or_else(|| OperationError::service_error(format!("No version for point {id}")))?;
+    segments_guard.read_points(points, is_stopped, |ids, segment| {
+        let mut newer_version_points: Vec<_> = Vec::with_capacity(ids.len());
 
-        // If we already have the latest point version, keep that and continue
-        let version_entry = point_version.entry(id);
-        if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
-            return Ok(true);
+        let mut applied = 0;
+
+        for &id in ids {
+            let version = segment.point_version(id).ok_or_else(|| {
+                OperationError::service_error(format!("No version for point {id}"))
+            })?;
+
+            // If we already have the latest point version, keep that and continue
+            let version_entry = point_version.entry(id);
+            if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
+                applied += 1;
+                continue;
+            }
+            newer_version_points.push(id);
+            *version_entry.or_default() = version;
         }
 
-        point_records.insert(
-            id,
-            RecordInternal {
-                id,
-                payload: if with_payload.enable {
-                    if let Some(selector) = &with_payload.payload_selector {
-                        Some(selector.process(segment.payload(id, &hw_counter)?))
-                    } else {
-                        Some(segment.payload(id, &hw_counter)?)
-                    }
-                } else {
-                    None
-                },
-                vector: {
-                    match with_vector {
-                        WithVector::Bool(true) => {
-                            let vectors = segment.all_vectors(id, &hw_counter)?;
-                            Some(VectorStructInternal::from(vectors))
-                        }
-                        WithVector::Bool(false) => None,
-                        WithVector::Selector(vector_names) => {
-                            let mut selected_vectors = NamedVectors::default();
-                            for vector_name in vector_names {
-                                if let Some(vector) =
-                                    segment.vector(vector_name, id, &hw_counter)?
-                                {
-                                    selected_vectors.insert(vector_name.clone(), vector);
-                                }
-                            }
-                            Some(VectorStructInternal::from(selected_vectors))
-                        }
-                    }
-                },
-                shard_key: None,
-                order_value: None,
-            },
-        );
-        *version_entry.or_default() = version;
+        for record in segment.retrieve(
+            &newer_version_points,
+            with_payload,
+            with_vector,
+            &hw_counter,
+            is_stopped,
+        )? {
+            // We expect all points to be found since we already checked their versions
+            point_records.insert(record.id, RecordInternal::from(record));
+            applied += 1;
+        }
 
-        Ok(true)
+        Ok(applied)
     })?;
 
     Ok(point_records)

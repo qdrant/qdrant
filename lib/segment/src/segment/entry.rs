@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use io::safe_delete::safe_delete_with_suffix;
@@ -19,6 +20,7 @@ use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{
     FormulaContext, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
+use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -87,7 +89,13 @@ impl SegmentEntry for Segment {
         internal_results
             .into_iter()
             .map(|internal_result| {
-                self.process_search_result(internal_result, with_payload, with_vector, &hw_counter)
+                self.process_search_result(
+                    internal_result,
+                    with_payload,
+                    with_vector,
+                    &hw_counter,
+                    &vector_query_context.is_stopped(),
+                )
             })
             .collect()
     }
@@ -112,7 +120,13 @@ impl SegmentEntry for Segment {
             hw_counter,
         )?;
 
-        self.process_search_result(internal_results, &false.into(), &false.into(), hw_counter)
+        self.process_search_result(
+            internal_results,
+            &false.into(),
+            &false.into(),
+            hw_counter,
+            is_stopped,
+        )
     }
 
     fn upsert_point(
@@ -347,6 +361,87 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id, hw_counter)
+    }
+
+    fn retrieve(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<SegmentRecord>> {
+        let mut records = AHashMap::with_capacity(point_ids.len());
+
+        let mut update_record_vector =
+            |vector_name: &VectorNameBuf,
+             point_id: PointIdType,
+             vector_internal: VectorInternal| {
+                let point_record = records
+                    .entry(point_id)
+                    .or_insert_with(|| SegmentRecord::empty(point_id));
+
+                point_record
+                    .vectors
+                    .get_or_insert_with(NamedVectorsOwned::default)
+                    .push((vector_name.clone(), vector_internal));
+            };
+
+        match with_vector {
+            WithVector::Bool(true) => {
+                for vector_name in self.vector_data.keys() {
+                    self.read_vectors(
+                        vector_name,
+                        point_ids,
+                        hw_counter,
+                        is_stopped,
+                        |point_id, vec| {
+                            update_record_vector(vector_name, point_id, vec);
+                        },
+                    )?;
+                }
+            }
+            WithVector::Bool(false) => {
+                // Do not display empty `vectors: {}` if disabled
+                for &point_id in point_ids {
+                    let point_record = records
+                        .entry(point_id)
+                        .or_insert_with(|| SegmentRecord::empty(point_id));
+                    point_record.vectors = None;
+                }
+            }
+            WithVector::Selector(selector) => {
+                for vector_name in selector {
+                    self.read_vectors(
+                        vector_name,
+                        point_ids,
+                        hw_counter,
+                        is_stopped,
+                        |point_id, vec| {
+                            update_record_vector(vector_name, point_id, vec);
+                        },
+                    )?;
+                }
+            }
+        }
+
+        for &point_id in point_ids {
+            let payload = if with_payload.enable {
+                if let Some(selector) = &with_payload.payload_selector {
+                    Some(selector.process(self.payload(point_id, hw_counter)?))
+                } else {
+                    Some(self.payload(point_id, hw_counter)?)
+                }
+            } else {
+                None
+            };
+            let point_record = records
+                .entry(point_id)
+                .or_insert_with(|| SegmentRecord::empty(point_id));
+            point_record.payload = payload;
+        }
+
+        Ok(records.into_values().collect())
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {

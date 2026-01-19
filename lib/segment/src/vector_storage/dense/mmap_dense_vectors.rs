@@ -46,7 +46,7 @@ pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     _mmap_seq: Option<Arc<Mmap>>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Mutex<Option<UringReader<T>>>,
+    uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -112,14 +112,14 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             num_vectors,
             mmap: mmap.into(),
             _mmap_seq: mmap_seq,
-            uring_reader: Mutex::new(uring_reader),
+            uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
         })
     }
 
     pub fn has_async_reader(&self) -> bool {
-        self.uring_reader.lock().is_some()
+        self.uring_reader.is_some()
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -207,27 +207,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self.deleted
     }
 
-    #[cfg(target_os = "linux")]
-    fn process_points_uring(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) -> OperationResult<()> {
-        self.uring_reader
-            .lock()
-            .as_mut()
-            .expect("io_uring reader should be initialized")
-            .read_stream(points, callback)
-    }
-
-    #[cfg(not(target_os = "linux"))]
     fn process_points_simple(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) {
         for (idx, point) in points.enumerate() {
-            let vector = self.get_vector::<Random>(point);
+            let vector = self.get_vector::<Sequential>(point);
             callback(idx, point, vector);
         }
     }
@@ -240,16 +226,22 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        #[cfg(target_os = "linux")]
-        {
-            self.process_points_uring(points, callback)
+        match &self.uring_reader {
+            None => self.process_points_simple(points, callback),
+            Some(uring_reader) => {
+                #[cfg(target_os = "linux")]
+                {
+                    let mut uring_guard = uring_reader.lock();
+                    uring_guard.read_stream(points, callback)?;
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    // On non-Linux platforms, just use synchronous processing
+                    self.process_points_simple(points, callback);
+                }
+            }
         }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            self.process_points_simple(points, callback);
-            Ok(())
-        }
+        Ok(())
     }
 
     pub fn populate(&self) {
