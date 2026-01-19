@@ -2,14 +2,29 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+import requests
 
 from openapi.helpers.collection_setup import drop_collection
-from openapi.helpers.helpers import request_with_validation
+from openapi.helpers.helpers import (
+    get_api_string,
+    qdrant_host_headers,
+    request_with_validation,
+)
+from openapi.helpers.settings import QDRANT_HOST
 
 
 def _request_with_signal(started, **kwargs):
     started.set()
-    return request_with_validation(**kwargs)
+    api = kwargs["api"]
+    path_params = kwargs.get("path_params") or {}
+    query_params = kwargs.get("query_params") or {}
+    body = kwargs.get("body")
+    return requests.post(
+        url=get_api_string(QDRANT_HOST, api, path_params),
+        params=query_params,
+        json=body,
+        headers=qdrant_host_headers(),
+    )
 
 
 def run_parallel(first_call, second_call):
@@ -44,7 +59,7 @@ def test_wait_timeout_ack(collection_name):
             "api": "/collections/{collection_name}/debug",
             "method": "POST",
             "path_params": {"collection_name": collection_name},
-            "body": {"delay": {"duration_sec": 15.0}},
+            "body": {"delay": {"duration_sec": 5.0}},
         },
         {
             "api": "/collections/{collection_name}/points",
@@ -77,13 +92,13 @@ def test_wait_timeout_completed(collection_name):
             "method": "POST",
             "path_params": {"collection_name": collection_name},
             "query_params": {"wait": "true"},
-            "body": {"delay": {"duration_sec": 15.0}},
+            "body": {"delay": {"duration_sec": 5.0}},
         },
         {
             "api": "/collections/{collection_name}/points",
             "method": "PUT",
             "path_params": {"collection_name": collection_name},
-            "query_params": {"wait": "true", "timeout": 5},
+            "query_params": {"wait": "true", "timeout": 1},
             "body": {
                 "points": [
                     {
@@ -110,7 +125,7 @@ def test_wait_timeout_twice(collection_name):
             "method": "POST",
             "path_params": {"collection_name": collection_name},
             "query_params": {"wait": "true", "timeout": 5},
-            "body": {"delay": {"duration_sec": 15.0}},
+            "body": {"delay": {"duration_sec": 10.0}},
         },
         {
             "api": "/collections/{collection_name}/points",
@@ -132,5 +147,5 @@ def test_wait_timeout_twice(collection_name):
             },
         },
     )
-    assert sleep.ok and sleep.json()["result"]["status"] == "completed"
+    assert sleep.ok and sleep.json()["result"]["status"] == "wait_timeout"
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"

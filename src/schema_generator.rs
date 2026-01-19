@@ -25,8 +25,6 @@ use collection::operations::vector_ops::DeleteVectors;
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde::Serialize;
-#[cfg(feature = "staging")]
-use shard::operations::staging::StagingOperations;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
@@ -102,8 +100,6 @@ struct AllDefinitions {
     bo: ShardKeysResponse,
     bp: OptimizationsResponse,
     bq: DistributedTelemetryData,
-    #[cfg(feature = "staging")]
-    br: StagingOperations,
 }
 
 fn save_schema<T: JsonSchema>() {
