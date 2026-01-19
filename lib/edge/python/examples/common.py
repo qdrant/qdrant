@@ -17,12 +17,10 @@ def load_new_shard():
 
     # Load Qdrant Edge shard
     config = EdgeConfig(
-        vector_data={
-            "": VectorDataConfig(
-                size=4,
-                distance=Distance.Dot
-            ),
-        }
+        VectorDataConfig(
+            size=4,
+            distance=Distance.Dot
+        )
     )
 
     return EdgeShard(DATA_DIRECTORY, config)
