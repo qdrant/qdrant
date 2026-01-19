@@ -747,18 +747,15 @@ impl SegmentEntry for Segment {
                 Ok(()) => {}
 
                 // Return early to avoid updating persisted version
-                Err(err) => {
-                    return match err {
-                        // Flush was cancelled, bypass
-                        OperationError::Cancelled { description } => {
-                            log::debug!("Segment flush cancelled: {description}");
-                            Ok(())
-                        }
-                        // Propagate other errors
-                        _ => Err(err),
-                    };
+                // Flush was cancelled, bypass
+                Err(OperationError::Cancelled { description }) => {
+                    log::debug!("Segment flush cancelled: {description}");
+                    return Ok(());
                 }
-            };
+
+                // Propagate other errors
+                Err(err) => return Err(err),
+            }
 
             let mut current_persisted_version_guard = persisted_version.lock();
             let persisted_version_value_opt = *current_persisted_version_guard;
