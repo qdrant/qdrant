@@ -3330,50 +3330,28 @@ impl From<ConditionUntagged> for Condition {
 }
 
 impl<'de> serde::Deserialize<'de> for Condition {
-    /// Dispatches conditions explicitly so datetime parsing errors from REST/JSON filters stay visible.
-    /// Returns readable RFC3339 errors instead of generic untagged enum messages.
+    /// Deserializes Condition with special handling for FieldCondition to preserve
+    /// readable RFC3339 datetime parse errors. Other variants use ConditionUntagged
+    /// for compiler-level safety when new variants are added.
     /// Example accepted datetime value: `2014-01-01T00:00:00Z`.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        // Routes JSON to a specific Condition variant by detecting a discriminating key.
-        // IMPORTANT: FieldCondition must be first to surface datetime parse errors.
-        // Using untagged enum directly would swallow these errors.
-        macro_rules! try_condition {
-            ($obj:expr, $value:expr, [$(($key:literal, $Type:ty, $Variant:ident)),+ $(,)?]) => {
-                $(
-                    if $obj.contains_key($key) {
-                        return serde_json::from_value::<$Type>($value)
-                            .map(Condition::$Variant)
-                            .map_err(serde::de::Error::custom);
-                    }
-                )+
-            };
-        }
-
         if deserializer.is_human_readable() {
             let value = serde_json::Value::deserialize(deserializer)?;
-            let Some(obj) = value.as_object() else {
-                return serde_json::from_value::<ConditionUntagged>(value)
-                    .map(Condition::from)
+
+            // Special case: FieldCondition first to surface datetime parse errors.
+            // Untagged enum would swallow these errors with generic message.
+            if let Some(obj) = value.as_object()
+                && obj.contains_key("key")
+            {
+                return serde_json::from_value::<FieldCondition>(value)
+                    .map(Condition::Field)
                     .map_err(serde::de::Error::custom);
-            };
+            }
 
-            // Order matters: FieldCondition first for datetime error visibility
-            try_condition!(
-                obj,
-                value,
-                [
-                    ("key", FieldCondition, Field),
-                    ("is_empty", IsEmptyCondition, IsEmpty),
-                    ("is_null", IsNullCondition, IsNull),
-                    ("has_id", HasIdCondition, HasId),
-                    ("has_vector", HasVectorCondition, HasVector),
-                    ("nested", NestedCondition, Nested),
-                ]
-            );
-
+            // All other variants handled by ConditionUntagged (compiler-safe)
             serde_json::from_value::<ConditionUntagged>(value)
                 .map(Condition::from)
                 .map_err(serde::de::Error::custom)
