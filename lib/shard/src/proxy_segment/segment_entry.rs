@@ -13,6 +13,7 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -344,6 +345,28 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .payload(point_id, hw_counter)
         }
+    }
+
+    fn retrieve(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<SegmentRecord>> {
+        let filtered_point_ids: Vec<PointIdType> = point_ids
+            .iter()
+            .copied()
+            .filter(|id| !self.deleted_points.contains_key(id))
+            .collect();
+        self.wrapped_segment.get().read().retrieve(
+            &filtered_point_ids,
+            with_payload,
+            with_vector,
+            hw_counter,
+            is_stopped,
+        )
     }
 
     /// Not implemented for proxy
