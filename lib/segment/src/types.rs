@@ -94,8 +94,7 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
         match DateTimePayloadType::from_str(str_datetime.as_ref()) {
             Ok(datetime) => Ok(datetime),
             Err(_) => Err(serde::de::Error::custom(format!(
-                "'{}' does not match accepted datetime format (RFC3339). Example: 2014-01-01T00:00:00Z",
-                str_datetime
+                "'{str_datetime}' does not match accepted datetime format (RFC3339). Example: 2014-01-01T00:00:00Z"
             ))),
         }
     }
@@ -3330,6 +3329,21 @@ impl<'de> serde::Deserialize<'de> for Condition {
     where
         D: serde::Deserializer<'de>,
     {
+        // Routes JSON to a specific Condition variant by detecting a discriminating key.
+        // IMPORTANT: FieldCondition must be first to surface datetime parse errors.
+        // Using untagged enum directly would swallow these errors.
+        macro_rules! try_condition {
+            ($obj:expr, $value:expr, [$(($key:literal, $Type:ty, $Variant:ident)),+ $(,)?]) => {
+                $(
+                    if $obj.contains_key($key) {
+                        return serde_json::from_value::<$Type>($value)
+                            .map(Condition::$Variant)
+                            .map_err(serde::de::Error::custom);
+                    }
+                )+
+            };
+        }
+
         if deserializer.is_human_readable() {
             let value = serde_json::Value::deserialize(deserializer)?;
             let Some(obj) = value.as_object() else {
@@ -3338,42 +3352,19 @@ impl<'de> serde::Deserialize<'de> for Condition {
                     .map_err(serde::de::Error::custom);
             };
 
-            // IMPORTANT: avoid untagged swallowing datetime parse error
-            if obj.contains_key("key") {
-                return serde_json::from_value::<FieldCondition>(value)
-                    .map(Condition::Field)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            if obj.contains_key("is_empty") {
-                return serde_json::from_value::<IsEmptyCondition>(value)
-                    .map(Condition::IsEmpty)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            if obj.contains_key("is_null") {
-                return serde_json::from_value::<IsNullCondition>(value)
-                    .map(Condition::IsNull)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            if obj.contains_key("has_id") {
-                return serde_json::from_value::<HasIdCondition>(value)
-                    .map(Condition::HasId)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            if obj.contains_key("has_vector") {
-                return serde_json::from_value::<HasVectorCondition>(value)
-                    .map(Condition::HasVector)
-                    .map_err(serde::de::Error::custom);
-            }
-
-            if obj.contains_key("nested") {
-                return serde_json::from_value::<NestedCondition>(value)
-                    .map(Condition::Nested)
-                    .map_err(serde::de::Error::custom);
-            }
+            // Order matters: FieldCondition first for datetime error visibility
+            try_condition!(
+                obj,
+                value,
+                [
+                    ("key", FieldCondition, Field),
+                    ("is_empty", IsEmptyCondition, IsEmpty),
+                    ("is_null", IsNullCondition, IsNull),
+                    ("has_id", HasIdCondition, HasId),
+                    ("has_vector", HasVectorCondition, HasVector),
+                    ("nested", NestedCondition, Nested),
+                ]
+            );
 
             serde_json::from_value::<ConditionUntagged>(value)
                 .map(Condition::from)
