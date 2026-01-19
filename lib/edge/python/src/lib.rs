@@ -48,7 +48,7 @@ mod qdrant_edge {
         PyPlainIndexConfig, PyVectorDataConfig, PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::config::{PyPayloadStorageType, PySegmentConfig};
+    use super::config::{PyEdgeConfig, PyPayloadStorageType};
     #[pymodule_export]
     use super::count::PyCountRequest;
     #[pymodule_export]
@@ -90,7 +90,7 @@ pub struct PyEdgeShard(Option<edge::EdgeShard>);
 impl PyEdgeShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
-    pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
+    pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
         let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
         Ok(Self(Some(shard)))
     }

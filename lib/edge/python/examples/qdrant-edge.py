@@ -148,3 +148,13 @@ print("---- info ----")
 
 info = shard.info()
 print(info)
+
+print("---- Close and reopen shard ----")
+
+shard.close()
+
+reopened_shard = EdgeShard(DATA_DIRECTORY)
+
+info = reopened_shard.info()
+
+print(info)

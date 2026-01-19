@@ -36,15 +36,11 @@ impl PySparseVectorDataConfig {
 #[pymethods]
 impl PySparseVectorDataConfig {
     #[new]
-    #[pyo3(signature = (index, storage_type, modifier = None))]
-    pub fn new(
-        index: PySparseIndexConfig,
-        storage_type: PySparseVectorStorageType,
-        modifier: Option<PyModifier>,
-    ) -> Self {
+    #[pyo3(signature = (index, modifier = None))]
+    pub fn new(index: PySparseIndexConfig, modifier: Option<PyModifier>) -> Self {
         Self(SparseVectorDataConfig {
             index: SparseIndexConfig::from(index),
-            storage_type: SparseVectorStorageType::from(storage_type),
+            storage_type: SparseVectorStorageType::Mmap,
             modifier: modifier.map(Modifier::from),
         })
     }
@@ -99,14 +95,13 @@ pub struct PySparseIndexConfig(SparseIndexConfig);
 #[pymethods]
 impl PySparseIndexConfig {
     #[new]
-    #[pyo3(signature = (index_type, full_scan_threshold = None, datatype = None))]
+    #[pyo3(signature = (full_scan_threshold = None, datatype = None))]
     pub fn new(
-        index_type: PySparseIndexType,
         full_scan_threshold: Option<usize>,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
         Self(SparseIndexConfig {
-            index_type: SparseIndexType::from(index_type),
+            index_type: SparseIndexType::MutableRam,
             full_scan_threshold,
             datatype: datatype.map(VectorStorageDatatype::from),
         })
