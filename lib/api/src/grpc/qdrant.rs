@@ -1311,6 +1311,9 @@ pub struct CollectionParams {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "10")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// Define number of milliseconds to wait before attempting to read from another replica.
+    #[prost(uint64, optional, tag = "11")]
+    pub read_fan_out_delay_ms: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1331,6 +1334,9 @@ pub struct CollectionParamsDiff {
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
     #[prost(uint32, optional, tag = "4")]
     pub read_fan_out_factor: ::core::option::Option<u32>,
+    /// Define number of milliseconds to wait before attempting to read from another replica.
+    #[prost(uint64, optional, tag = "5")]
+    pub read_fan_out_delay_ms: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
