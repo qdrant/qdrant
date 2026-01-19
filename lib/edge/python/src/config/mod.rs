@@ -15,24 +15,26 @@ pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
 use crate::repr::*;
 
-#[pyclass(name = "SegmentConfig")]
+#[pyclass(name = "EdgeConfig")]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PySegmentConfig(SegmentConfig);
+pub struct PyEdgeConfig(SegmentConfig);
 
 #[pyclass_repr]
 #[pymethods]
-impl PySegmentConfig {
+impl PyEdgeConfig {
     #[new]
+    #[pyo3(signature = (vector_data, sparse_vector_data=None))]
     pub fn new(
         vector_data: HashMap<String, PyVectorDataConfig>,
-        sparse_vector_data: HashMap<String, PySparseVectorDataConfig>,
-        payload_storage_type: PyPayloadStorageType,
+        sparse_vector_data: Option<HashMap<String, PySparseVectorDataConfig>>,
     ) -> Self {
         Self(SegmentConfig {
             vector_data: PyVectorDataConfig::peel_map(vector_data),
-            sparse_vector_data: PySparseVectorDataConfig::peel_map(sparse_vector_data),
-            payload_storage_type: PayloadStorageType::from(payload_storage_type),
+            sparse_vector_data: PySparseVectorDataConfig::peel_map(
+                sparse_vector_data.unwrap_or_default(),
+            ),
+            payload_storage_type: PayloadStorageType::Mmap,
         })
     }
 
@@ -56,7 +58,7 @@ impl PySegmentConfig {
     }
 }
 
-impl PySegmentConfig {
+impl PyEdgeConfig {
     fn _getters(self) {
         // Every field should have a getter method
         let SegmentConfig {

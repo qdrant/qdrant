@@ -16,20 +16,13 @@ def load_new_shard():
     os.makedirs(DATA_DIRECTORY)
 
     # Load Qdrant Edge shard
-    config = SegmentConfig(
+    config = EdgeConfig(
         vector_data={
             "": VectorDataConfig(
                 size=4,
-                distance=Distance.Dot,
-                storage_type=VectorStorageType.ChunkedMmap,
-                index=PlainIndexConfig(),
-                quantization_config=None,
-                multivector_config=None,
-                datatype=None,
+                distance=Distance.Dot
             ),
-        },
-        sparse_vector_data={},
-        payload_storage_type=PayloadStorageType.InRamMmap,
+        }
     )
 
     return EdgeShard(DATA_DIRECTORY, config)
