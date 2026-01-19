@@ -219,16 +219,7 @@ impl InferenceService {
 
         let mut request = request.json(&request_body);
         if let Some(api_keys) = ext_api_keys {
-            let headers = api_keys
-                .into_inner()
-                .into_iter()
-                .map(|(k, v)| {
-                    let k = HeaderName::from_str(k.as_api_key()).expect("invalid header key");
-                    let v = HeaderValue::from_str(&v).expect("invalid header value");
-                    (k, v)
-                })
-                .collect();
-            request = request.headers(headers);
+            request = request.headers(api_keys.into());
         }
 
         let response = request.send().await;

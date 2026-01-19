@@ -1,79 +1,39 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::str::FromStr;
 
 use actix_web::FromRequest;
 use actix_web::http::header::HeaderMap;
 use futures::future::{Ready, ready};
 
-const PROVIDERS: [Provider; 4] = [
-    Provider::OpenAI,
-    Provider::JinaAI,
-    Provider::Cohere,
-    Provider::OpenRouter,
-];
+pub const EMBEDDING_API_KEY_HEADER_SUFFIX: &str = "-api-key";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum Provider {
-    OpenAI,
-    JinaAI,
-    Cohere,
-    OpenRouter,
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct ApiKeys {
+    pub keys: HashMap<String, String>,
 }
-
-impl Provider {
-    pub fn as_api_key(&self) -> &str {
-        match self {
-            Self::OpenAI => "openai-api-key",
-            Self::JinaAI => "jina-api-key",
-            Self::Cohere => "cohere-api-key",
-            Self::OpenRouter => "openrouter-api-key",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct ApiKeys(pub Option<HashMap<Provider, String>>);
 
 impl ApiKeys {
-    pub fn into_inner(self) -> HashMap<Provider, String> {
-        self.0.unwrap_or_default()
-    }
+    fn from_headers(headers: &HeaderMap) -> ApiKeys {
+        let mut api_keys = Self::default();
 
-    pub fn get(&self, p: Provider) -> Option<&str> {
-        self.0.as_ref()?.get(&p).map(String::as_str)
-    }
-
-    fn from_fn<F>(f: F) -> Self
-    where
-        F: Fn(&str) -> Option<String>,
-    {
-        let mut map = HashMap::<Provider, String>::new();
-
-        for p in PROVIDERS {
-            if let Some(v) = f(p.as_api_key()) {
-                map.insert(p, v);
+        for (k, v) in headers {
+            if k.as_str().ends_with(EMBEDDING_API_KEY_HEADER_SUFFIX)
+                && let Some(v) = v.to_str().ok()
+            {
+                api_keys.keys.insert(k.to_string(), v.to_string());
             }
         }
 
-        Self((!map.is_empty()).then_some(map))
+        api_keys
     }
 
     pub fn from_http_headers(headers: &HeaderMap) -> Self {
-        Self::from_fn(|key| {
-            headers
-                .get(key)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_owned())
-        })
+        Self::from_headers(headers)
     }
 
     pub fn from_grpc_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
-        Self::from_fn(|key| {
-            metadata
-                .get(key)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_owned())
-        })
+        Self::from_headers(&metadata.clone().into_headers().into())
     }
 }
 
@@ -91,4 +51,18 @@ impl FromRequest for ApiKeys {
 
 pub fn extract_api_key(metadata: &tonic::metadata::MetadataMap) -> ApiKeys {
     ApiKeys::from_grpc_metadata(metadata)
+}
+
+impl From<ApiKeys> for reqwest::header::HeaderMap {
+    fn from(api_keys: ApiKeys) -> Self {
+        let mut headers = reqwest::header::HeaderMap::new();
+
+        for (k, v) in api_keys.keys {
+            let k = reqwest::header::HeaderName::from_str(&k).expect("invalid header key");
+            let v = reqwest::header::HeaderValue::from_str(&v).expect("invalid header value");
+            headers.insert(k, v);
+        }
+
+        headers
+    }
 }
