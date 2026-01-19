@@ -65,12 +65,12 @@ fi
 
 # Check for existence of collection label in collection_points
 # Note: collection_points uses 'collection' label now (updated in metrics.rs)
-if echo "$METRICS" | grep -q "collection_points{.*collection=\"$COLLECTION_NAME\""; then
+if echo "$METRICS" | grep -q "collection_points{.*collection=\"$COLLECTION_NAME\".*}"; then
   echo "Found per-collection collection_points"
 else
   echo "Failed to find per-collection collection_points"
   # Fallback check if it still uses 'id' (debugging)
-  if echo "$METRICS" | grep -q "collection_points{.*id=\"$COLLECTION_NAME\""; then
+  if echo "$METRICS" | grep -q "collection_points{.*id=\"$COLLECTION_NAME\".*}"; then
      echo "Found collection_points with 'id' label instead of 'collection'"
   fi
   exit 1
