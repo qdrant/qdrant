@@ -53,9 +53,9 @@ class EdgeShard:
     """
 
     def __init__(
-        self,
-        path: str,
-        config: Optional["EdgeConfig"] = None,
+            self,
+            path: str,
+            config: Optional["EdgeConfig"] = None,
     ) -> None:
         """
         Load or create a Qdrant Edge shard.
@@ -108,7 +108,7 @@ class EdgeShard:
         ...
 
     def scroll(
-        self, scroll: "ScrollRequest"
+            self, scroll: "ScrollRequest"
     ) -> Tuple[List["Record"], Optional[PointId]]:
         """
         Scroll through points in the shard.
@@ -134,10 +134,10 @@ class EdgeShard:
         ...
 
     def retrieve(
-        self,
-        point_ids: List[PointId],
-        with_payload: Optional[WithPayloadType] = None,
-        with_vector: Optional[WithVectorType] = None,
+            self,
+            point_ids: List[PointId],
+            with_payload: Optional[WithPayloadType] = None,
+            with_vector: Optional[WithVectorType] = None,
     ) -> List["Record"]:
         """
         Retrieve specific points by their IDs.
@@ -182,9 +182,9 @@ class EdgeShard:
         ...
 
     def update_from_snapshot(
-        self,
-        snapshot_path: str,
-        tmp_dir: Optional[str] = None,
+            self,
+            snapshot_path: str,
+            tmp_dir: Optional[str] = None,
     ) -> None:
         """
         Update the shard from a snapshot.
@@ -205,9 +205,9 @@ class EdgeConfig:
     """Configuration for creating a new Qdrant Edge shard."""
 
     def __init__(
-        self,
-        vector_data: Union["VectorDataConfig", Dict[str, "VectorDataConfig"]],
-        sparse_vector_data: Optional[Dict[str, "SparseVectorDataConfig"]] = None,
+            self,
+            vector_data: Union["VectorDataConfig", Dict[str, "VectorDataConfig"]],
+            sparse_vector_data: Optional[Dict[str, "SparseVectorDataConfig"]] = None,
     ) -> None:
         """
         Create an EdgeConfig.
@@ -239,12 +239,12 @@ class VectorDataConfig:
     """Configuration for dense vector storage."""
 
     def __init__(
-        self,
-        size: int,
-        distance: "Distance",
-        quantization_config: Optional[QuantizationConfigType] = None,
-        multivector_config: Optional["MultiVectorConfig"] = None,
-        datatype: Optional["VectorStorageDatatype"] = None,
+            self,
+            size: int,
+            distance: "Distance",
+            quantization_config: Optional[QuantizationConfigType] = None,
+            multivector_config: Optional["MultiVectorConfig"] = None,
+            datatype: Optional["VectorStorageDatatype"] = None,
     ) -> None:
         """
         Create a VectorDataConfig.
@@ -298,9 +298,9 @@ class SparseVectorDataConfig:
     """Configuration for sparse vector storage."""
 
     def __init__(
-        self,
-        index: "SparseIndexConfig",
-        modifier: Optional["Modifier"] = None,
+            self,
+            index: "SparseIndexConfig",
+            modifier: Optional["Modifier"] = None,
     ) -> None:
         """
         Create a SparseVectorDataConfig.
@@ -331,9 +331,9 @@ class SparseIndexConfig:
     """Configuration for sparse vector index."""
 
     def __init__(
-        self,
-        full_scan_threshold: Optional[int] = None,
-        datatype: Optional["VectorStorageDatatype"] = None,
+            self,
+            full_scan_threshold: Optional[int] = None,
+            datatype: Optional["VectorStorageDatatype"] = None,
     ) -> None:
         """
         Create a SparseIndexConfig.
@@ -372,13 +372,13 @@ class HnswIndexConfig:
     """Configuration for HNSW index."""
 
     def __init__(
-        self,
-        m: int,
-        ef_construct: int,
-        full_scan_threshold: int,
-        on_disk: Optional[bool] = None,
-        payload_m: Optional[int] = None,
-        inline_storage: Optional[bool] = None,
+            self,
+            m: int,
+            ef_construct: int,
+            full_scan_threshold: int,
+            on_disk: Optional[bool] = None,
+            payload_m: Optional[int] = None,
+            inline_storage: Optional[bool] = None,
     ) -> None:
         """
         Create an HnswIndexConfig.
@@ -451,10 +451,10 @@ class ScalarQuantizationConfig:
     """Configuration for scalar quantization."""
 
     def __init__(
-        self,
-        type: "ScalarType",
-        quantile: Optional[float] = None,
-        always_ram: Optional[bool] = None,
+            self,
+            type: "ScalarType",
+            quantile: Optional[float] = None,
+            always_ram: Optional[bool] = None,
     ) -> None:
         """
         Create a ScalarQuantizationConfig.
@@ -486,9 +486,9 @@ class ProductQuantizationConfig:
     """Configuration for product quantization."""
 
     def __init__(
-        self,
-        compression: "CompressionRatio",
-        always_ram: Optional[bool] = None,
+            self,
+            compression: "CompressionRatio",
+            always_ram: Optional[bool] = None,
     ) -> None:
         """
         Create a ProductQuantizationConfig.
@@ -514,10 +514,10 @@ class BinaryQuantizationConfig:
     """Configuration for binary quantization."""
 
     def __init__(
-        self,
-        always_ram: Optional[bool] = None,
-        encoding: Optional["BinaryQuantizationEncoding"] = None,
-        query_encoding: Optional["BinaryQuantizationQueryEncoding"] = None,
+            self,
+            always_ram: Optional[bool] = None,
+            encoding: Optional["BinaryQuantizationEncoding"] = None,
+            query_encoding: Optional["BinaryQuantizationQueryEncoding"] = None,
     ) -> None:
         """
         Create a BinaryQuantizationConfig.
@@ -686,10 +686,10 @@ class Point:
     """A point with ID, vector(s), and optional payload."""
 
     def __init__(
-        self,
-        id: PointId,
-        vector: Vector,
-        payload: Optional[Payload] = None,
+            self,
+            id: PointId,
+            vector: Vector,
+            payload: Optional[Payload] = None,
     ) -> None:
         """
         Create a Point.
@@ -875,16 +875,16 @@ class QueryRequest:
     """Request for query operation."""
 
     def __init__(
-        self,
-        limit: int,
-        offset: Optional[int] = None,
-        query: Optional[ScoringQueryType] = None,
-        prefetches: Optional[List["Prefetch"]] = None,
-        with_vector: Optional[WithVectorType] = None,
-        with_payload: Optional[WithPayloadType] = None,
-        filter: Optional["Filter"] = None,
-        score_threshold: Optional[float] = None,
-        params: Optional["SearchParams"] = None,
+            self,
+            limit: int,
+            offset: Optional[int] = None,
+            query: Optional[ScoringQueryType] = None,
+            prefetches: Optional[List["Prefetch"]] = None,
+            with_vector: Optional[WithVectorType] = None,
+            with_payload: Optional[WithPayloadType] = None,
+            filter: Optional["Filter"] = None,
+            score_threshold: Optional[float] = None,
+            params: Optional["SearchParams"] = None,
     ) -> None:
         """
         Create a QueryRequest.
@@ -952,13 +952,13 @@ class Prefetch:
     """A prefetch stage for multi-stage queries."""
 
     def __init__(
-        self,
-        limit: int,
-        query: Optional[ScoringQueryType] = None,
-        prefetches: Optional[List["Prefetch"]] = None,
-        params: Optional["SearchParams"] = None,
-        filter: Optional["Filter"] = None,
-        score_threshold: Optional[float] = None,
+            self,
+            limit: int,
+            query: Optional[ScoringQueryType] = None,
+            prefetches: Optional[List["Prefetch"]] = None,
+            params: Optional["SearchParams"] = None,
+            filter: Optional["Filter"] = None,
+            score_threshold: Optional[float] = None,
     ) -> None:
         """
         Create a Prefetch stage.
@@ -1008,15 +1008,15 @@ class SearchRequest:
     """Request for search operation."""
 
     def __init__(
-        self,
-        query: "Query",
-        limit: int,
-        offset: Optional[int] = None,
-        filter: Optional["Filter"] = None,
-        params: Optional["SearchParams"] = None,
-        with_vector: Optional[WithVectorType] = None,
-        with_payload: Optional[WithPayloadType] = None,
-        score_threshold: Optional[float] = None,
+            self,
+            query: "Query",
+            limit: int,
+            offset: Optional[int] = None,
+            filter: Optional["Filter"] = None,
+            params: Optional["SearchParams"] = None,
+            with_vector: Optional[WithVectorType] = None,
+            with_payload: Optional[WithPayloadType] = None,
+            score_threshold: Optional[float] = None,
     ) -> None:
         """
         Create a SearchRequest.
@@ -1078,13 +1078,13 @@ class ScrollRequest:
     """Request for scroll operation."""
 
     def __init__(
-        self,
-        offset: Optional[PointId] = None,
-        limit: Optional[int] = None,
-        filter: Optional["Filter"] = None,
-        with_payload: Optional[WithPayloadType] = None,
-        with_vector: Optional[WithVectorType] = None,
-        order_by: Optional["OrderBy"] = None,
+            self,
+            offset: Optional[PointId] = None,
+            limit: Optional[int] = None,
+            filter: Optional["Filter"] = None,
+            with_payload: Optional[WithPayloadType] = None,
+            with_vector: Optional[WithVectorType] = None,
+            order_by: Optional["OrderBy"] = None,
     ) -> None:
         """
         Create a ScrollRequest.
@@ -1134,9 +1134,9 @@ class CountRequest:
     """Request for count operation."""
 
     def __init__(
-        self,
-        exact: bool = True,
-        filter: Optional["Filter"] = None,
+            self,
+            exact: bool = True,
+            filter: Optional["Filter"] = None,
     ) -> None:
         """
         Create a CountRequest.
@@ -1162,12 +1162,12 @@ class SearchParams:
     """Parameters for search operations."""
 
     def __init__(
-        self,
-        hnsw_ef: Optional[int] = None,
-        exact: bool = False,
-        quantization: Optional["QuantizationSearchParams"] = None,
-        indexed_only: bool = False,
-        acorn: Optional["AcornSearchParams"] = None,
+            self,
+            hnsw_ef: Optional[int] = None,
+            exact: bool = False,
+            quantization: Optional["QuantizationSearchParams"] = None,
+            indexed_only: bool = False,
+            acorn: Optional["AcornSearchParams"] = None,
     ) -> None:
         """
         Create SearchParams.
@@ -1211,10 +1211,10 @@ class QuantizationSearchParams:
     """Parameters for quantization during search."""
 
     def __init__(
-        self,
-        ignore: bool = False,
-        rescore: Optional[bool] = None,
-        oversampling: Optional[float] = None,
+            self,
+            ignore: bool = False,
+            rescore: Optional[bool] = None,
+            oversampling: Optional[float] = None,
     ) -> None:
         """
         Create QuantizationSearchParams.
@@ -1246,9 +1246,9 @@ class AcornSearchParams:
     """Parameters for Acorn filtered search."""
 
     def __init__(
-        self,
-        enable: bool = False,
-        max_selectivity: Optional[float] = None,
+            self,
+            enable: bool = False,
+            max_selectivity: Optional[float] = None,
     ) -> None:
         """
         Create AcornSearchParams.
@@ -1280,42 +1280,42 @@ class Query(Enum):
 
     @staticmethod
     def Nearest(
-        query: NamedVector, using: Optional[str] = None
+            query: NamedVector, using: Optional[str] = None
     ) -> "Query":
         """Create a nearest neighbor query."""
         ...
 
     @staticmethod
     def RecommendBestScore(
-        query: "RecommendQuery", using: Optional[str] = None
+            query: "RecommendQuery", using: Optional[str] = None
     ) -> "Query":
         """Create a recommend query using best score."""
         ...
 
     @staticmethod
     def RecommendSumScores(
-        query: "RecommendQuery", using: Optional[str] = None
+            query: "RecommendQuery", using: Optional[str] = None
     ) -> "Query":
         """Create a recommend query using sum of scores."""
         ...
 
     @staticmethod
     def Discover(
-        query: "DiscoverQuery", using: Optional[str] = None
+            query: "DiscoverQuery", using: Optional[str] = None
     ) -> "Query":
         """Create a discover query."""
         ...
 
     @staticmethod
     def Context(
-        query: "ContextQuery", using: Optional[str] = None
+            query: "ContextQuery", using: Optional[str] = None
     ) -> "Query":
         """Create a context query."""
         ...
 
     @staticmethod
     def FeedbackNaive(
-        query: "FeedbackNaiveQuery", using: Optional[str] = None
+            query: "FeedbackNaiveQuery", using: Optional[str] = None
     ) -> "Query":
         """Create a feedback naive query."""
         ...
@@ -1339,10 +1339,10 @@ class OrderBy:
     """Order results by a payload field."""
 
     def __init__(
-        self,
-        key: JsonPath,
-        direction: Optional[Direction] = None,
-        start_from: Optional[StartFromType] = None,
+            self,
+            key: JsonPath,
+            direction: Optional[Direction] = None,
+            start_from: Optional[StartFromType] = None,
     ) -> None:
         """
         Create an OrderBy.
@@ -1374,11 +1374,11 @@ class Mmr:
     """Maximal Marginal Relevance for result diversification."""
 
     def __init__(
-        self,
-        vector: NamedVector,
-        lambda_: float,
-        candidates_limit: int,
-        using: Optional[str] = None,
+            self,
+            vector: NamedVector,
+            lambda_: float,
+            candidates_limit: int,
+            using: Optional[str] = None,
     ) -> None:
         """
         Create an MMR query.
@@ -1394,6 +1394,11 @@ class Mmr:
     @property
     def vector(self) -> NamedVector:
         """Query vector."""
+        ...
+
+    @property
+    def lambda_(self) -> float:
+        """Balance between relevance and diversity."""
         ...
 
     @property
@@ -1413,9 +1418,9 @@ class RecommendQuery:
     """Query for recommendation based on positive and negative examples."""
 
     def __init__(
-        self,
-        positives: List[NamedVector],
-        negatives: List[NamedVector],
+            self,
+            positives: List[NamedVector],
+            negatives: List[NamedVector],
     ) -> None:
         """
         Create a RecommendQuery.
@@ -1441,9 +1446,9 @@ class DiscoverQuery:
     """Query for discovery using a target and context pairs."""
 
     def __init__(
-        self,
-        target: NamedVector,
-        pairs: List["ContextPair"],
+            self,
+            target: NamedVector,
+            pairs: List["ContextPair"],
     ) -> None:
         """
         Create a DiscoverQuery.
@@ -1487,9 +1492,9 @@ class ContextPair:
     """A positive/negative pair for context-based queries."""
 
     def __init__(
-        self,
-        positive: NamedVector,
-        negative: NamedVector,
+            self,
+            positive: NamedVector,
+            negative: NamedVector,
     ) -> None:
         """
         Create a ContextPair.
@@ -1515,10 +1520,10 @@ class FeedbackNaiveQuery:
     """Query using naive feedback approach."""
 
     def __init__(
-        self,
-        target: NamedVector,
-        feedback: List["FeedbackItem"],
-        strategy: "NaiveFeedbackStrategy",
+            self,
+            target: NamedVector,
+            feedback: List["FeedbackItem"],
+            strategy: "NaiveFeedbackStrategy",
     ) -> None:
         """
         Create a FeedbackNaiveQuery.
@@ -1609,9 +1614,9 @@ class Formula:
     """A scoring formula for custom ranking."""
 
     def __init__(
-        self,
-        formula: ExpressionType,
-        defaults: Optional[Dict[str, Any]] = None,
+            self,
+            formula: ExpressionType,
+            defaults: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Create a Formula.
@@ -1673,9 +1678,9 @@ class Expression(Enum):
 
     @staticmethod
     def Div(
-        left: "Expression",
-        right: "Expression",
-        by_zero_default: Optional[float] = None,
+            left: "Expression",
+            right: "Expression",
+            by_zero_default: Optional[float] = None,
     ) -> "Expression":
         """Create a division expression."""
         ...
@@ -1712,11 +1717,11 @@ class Expression(Enum):
 
     @staticmethod
     def Decay(
-        kind: DecayKind,
-        x: "Expression",
-        target: Optional["Expression"] = None,
-        midpoint: Optional[float] = None,
-        scale: Optional[float] = None,
+            kind: DecayKind,
+            x: "Expression",
+            target: Optional["Expression"] = None,
+            midpoint: Optional[float] = None,
+            scale: Optional[float] = None,
     ) -> "Expression":
         """Create a decay expression."""
         ...
@@ -1731,11 +1736,11 @@ class Filter:
     """Filter conditions for queries."""
 
     def __init__(
-        self,
-        must: Optional[List[ConditionType]] = None,
-        should: Optional[List[ConditionType]] = None,
-        must_not: Optional[List[ConditionType]] = None,
-        min_should: Optional["MinShould"] = None,
+            self,
+            must: Optional[List[ConditionType]] = None,
+            should: Optional[List[ConditionType]] = None,
+            must_not: Optional[List[ConditionType]] = None,
+            min_should: Optional["MinShould"] = None,
     ) -> None:
         """
         Create a Filter.
@@ -1773,9 +1778,9 @@ class MinShould:
     """Minimum number of should conditions that must match."""
 
     def __init__(
-        self,
-        conditions: List[ConditionType],
-        min_count: int,
+            self,
+            conditions: List[ConditionType],
+            min_count: int,
     ) -> None:
         """
         Create a MinShould.
@@ -1801,16 +1806,16 @@ class FieldCondition:
     """Condition on a payload field."""
 
     def __init__(
-        self,
-        key: JsonPath,
-        match: Optional[MatchType] = None,
-        range: Optional[RangeType] = None,
-        geo_bounding_box: Optional["GeoBoundingBox"] = None,
-        geo_radius: Optional["GeoRadius"] = None,
-        geo_polygon: Optional["GeoPolygon"] = None,
-        values_count: Optional["ValuesCount"] = None,
-        is_empty: Optional[bool] = None,
-        is_null: Optional[bool] = None,
+            self,
+            key: JsonPath,
+            match: Optional[MatchType] = None,
+            range: Optional[RangeType] = None,
+            geo_bounding_box: Optional["GeoBoundingBox"] = None,
+            geo_radius: Optional["GeoRadius"] = None,
+            geo_polygon: Optional["GeoPolygon"] = None,
+            values_count: Optional["ValuesCount"] = None,
+            is_empty: Optional[bool] = None,
+            is_null: Optional[bool] = None,
     ) -> None:
         """
         Create a FieldCondition.
@@ -2092,11 +2097,11 @@ class RangeFloat:
     """Range condition for float values."""
 
     def __init__(
-        self,
-        gte: Optional[float] = None,
-        gt: Optional[float] = None,
-        lte: Optional[float] = None,
-        lt: Optional[float] = None,
+            self,
+            gte: Optional[float] = None,
+            gt: Optional[float] = None,
+            lte: Optional[float] = None,
+            lt: Optional[float] = None,
     ) -> None:
         """
         Create a RangeFloat.
@@ -2134,11 +2139,11 @@ class RangeDateTime:
     """Range condition for datetime values."""
 
     def __init__(
-        self,
-        gte: Optional[str] = None,
-        gt: Optional[str] = None,
-        lte: Optional[str] = None,
-        lt: Optional[str] = None,
+            self,
+            gte: Optional[str] = None,
+            gt: Optional[str] = None,
+            lte: Optional[str] = None,
+            lt: Optional[str] = None,
     ) -> None:
         """
         Create a RangeDateTime.
@@ -2176,11 +2181,11 @@ class ValuesCount:
     """Condition on count of values in array field."""
 
     def __init__(
-        self,
-        lt: Optional[int] = None,
-        gt: Optional[int] = None,
-        lte: Optional[int] = None,
-        gte: Optional[int] = None,
+            self,
+            lt: Optional[int] = None,
+            gt: Optional[int] = None,
+            lte: Optional[int] = None,
+            gte: Optional[int] = None,
     ) -> None:
         """
         Create a ValuesCount.
@@ -2295,9 +2300,9 @@ class GeoPolygon:
     """A geographic polygon."""
 
     def __init__(
-        self,
-        exterior: List[GeoPoint],
-        interiors: Optional[List[List[GeoPoint]]] = None,
+            self,
+            exterior: List[GeoPoint],
+            interiors: Optional[List[List[GeoPoint]]] = None,
     ) -> None:
         """
         Create a GeoPolygon.
@@ -2348,8 +2353,8 @@ class UpdateOperation:
 
     @staticmethod
     def upsert_points(
-        points: List[Point],
-        condition: Optional[Filter] = None,
+            points: List[Point],
+            condition: Optional[Filter] = None,
     ) -> "UpdateOperation":
         """
         Insert or update points.
@@ -2382,8 +2387,8 @@ class UpdateOperation:
 
     @staticmethod
     def update_vectors(
-        point_vectors: List[PointVectors],
-        condition: Optional[Filter] = None,
+            point_vectors: List[PointVectors],
+            condition: Optional[Filter] = None,
     ) -> "UpdateOperation":
         """
         Update vectors of existing points.
@@ -2396,8 +2401,8 @@ class UpdateOperation:
 
     @staticmethod
     def delete_vectors(
-        point_ids: List[PointId],
-        vector_names: List[str],
+            point_ids: List[PointId],
+            vector_names: List[str],
     ) -> "UpdateOperation":
         """
         Delete specific vectors from points.
@@ -2410,8 +2415,8 @@ class UpdateOperation:
 
     @staticmethod
     def delete_vectors_by_filter(
-        filter: Filter,
-        vector_names: List[str],
+            filter: Filter,
+            vector_names: List[str],
     ) -> "UpdateOperation":
         """
         Delete vectors from points matching a filter.
@@ -2424,9 +2429,9 @@ class UpdateOperation:
 
     @staticmethod
     def set_payload(
-        point_ids: List[PointId],
-        payload: Payload,
-        key: Optional[str] = None,
+            point_ids: List[PointId],
+            payload: Payload,
+            key: Optional[str] = None,
     ) -> "UpdateOperation":
         """
         Set payload fields on points.
@@ -2440,9 +2445,9 @@ class UpdateOperation:
 
     @staticmethod
     def set_payload_by_filter(
-        filter: Filter,
-        payload: Payload,
-        key: Optional[str] = None,
+            filter: Filter,
+            payload: Payload,
+            key: Optional[str] = None,
     ) -> "UpdateOperation":
         """
         Set payload on points matching a filter.
@@ -2456,8 +2461,8 @@ class UpdateOperation:
 
     @staticmethod
     def delete_payload(
-        point_ids: List[PointId],
-        keys: List[str],
+            point_ids: List[PointId],
+            keys: List[str],
     ) -> "UpdateOperation":
         """
         Delete payload fields from points.
@@ -2470,8 +2475,8 @@ class UpdateOperation:
 
     @staticmethod
     def delete_payload_by_filter(
-        filter: Filter,
-        keys: List[str],
+            filter: Filter,
+            keys: List[str],
     ) -> "UpdateOperation":
         """
         Delete payload fields from points matching a filter.
@@ -2504,9 +2509,9 @@ class UpdateOperation:
 
     @staticmethod
     def overwrite_payload(
-        point_ids: List[PointId],
-        payload: Payload,
-        key: Optional[str] = None,
+            point_ids: List[PointId],
+            payload: Payload,
+            key: Optional[str] = None,
     ) -> "UpdateOperation":
         """
         Overwrite entire payload on points.
@@ -2520,9 +2525,9 @@ class UpdateOperation:
 
     @staticmethod
     def overwrite_payload_by_filter(
-        filter: Filter,
-        payload: Payload,
-        key: Optional[str] = None,
+            filter: Filter,
+            payload: Payload,
+            key: Optional[str] = None,
     ) -> "UpdateOperation":
         """
         Overwrite payload on points matching a filter.
