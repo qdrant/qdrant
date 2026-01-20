@@ -979,6 +979,7 @@ pub struct OptimizationPlanner<'a> {
     running: usize,
 
     /// This goes into [`Self::scheduled`].
+    /// Should be set before calling [`Self::plan`].
     optimizer: Option<Arc<Optimizer>>,
 }
 
@@ -999,21 +1000,7 @@ impl<'a> OptimizationPlanner<'a> {
         &self.remaining
     }
 
-    /// Should set called before calling [`Self::plan`] if you want the
-    /// optimizer to be attached to [`Self::scheduled`].
-    pub fn set_optimizer(&mut self, optimizer: Arc<Optimizer>) {
-        self.optimizer = Some(optimizer);
-    }
-
-    pub fn scheduled(&self) -> &Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)> {
-        &self.scheduled
-    }
-
-    pub fn into_scheduled(self) -> Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)> {
-        self.scheduled
-    }
-
-    /// Like [`Self::into_scheduled`], but drops the optimizers.
+    /// Returns [`Self::scheduled`], but without `Option<Arc<Optimizer>>` part.
     #[cfg(test)]
     pub fn into_scheduled_for_test(self) -> Vec<Vec<SegmentId>> {
         self.scheduled
@@ -1037,4 +1024,28 @@ impl<'a> OptimizationPlanner<'a> {
         }
         self.scheduled.push((self.optimizer.clone(), segments));
     }
+}
+
+/// Plans optimizations for the given segments and optimizers.
+///
+/// Returns a list of scheduled optimizations, each containing the
+/// corresponding optimizer and a batch of segment IDs to be optimized.
+pub fn plan_optimizations(
+    segments: &SegmentHolder,
+    optimizers: &[Arc<Optimizer>],
+) -> Vec<(Arc<Optimizer>, Vec<SegmentId>)> {
+    let mut planner = OptimizationPlanner::new(
+        segments.running_optimizations.count(),
+        segments.iter_original(),
+    );
+    for optimizer in optimizers {
+        planner.optimizer = Some(Arc::clone(optimizer));
+        optimizer.plan_optimizations(&mut planner);
+    }
+    planner
+        .scheduled
+        .into_iter()
+        .inspect(|(optimizer, _segments)| debug_assert!(optimizer.is_some()))
+        .filter_map(|(optimizer, segments)| Some((optimizer?, segments)))
+        .collect()
 }
