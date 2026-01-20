@@ -447,7 +447,7 @@ fn bench_single_thread_latency(c: &mut Criterion) {
                 }
 
                 b.iter(|| {
-                    for key in prefill_keys.iter().take(OPS_PER_ITER) {
+                    for key in prefill_keys.iter().cycle().take(OPS_PER_ITER) {
                         black_box(cache.get(key));
                     }
                 });
@@ -480,7 +480,7 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 
     // Benchmark: Concurrent get-or-insert under Zipf distribution
     // This measures how each cache handles the common pattern of:
-    // "get if exists, otherwise compute and insert"
+    // "get if exists, otherwise fetch and insert"
     for cache_name in CACHE_NAMES {
         group.bench_with_input(
             BenchmarkId::new("get_or_insert", cache_name),
@@ -497,7 +497,6 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
                             let keys = thread_keys.clone();
                             thread::spawn(move || {
                                 for (i, key) in keys.iter().enumerate() {
-                                    // Simulate get-or-insert: if key exists, get it; otherwise insert
                                     let value = (t * OPS_PER_THREAD + i) as u32;
                                     black_box(cache.get_or_insert(*key, value));
                                 }
@@ -523,8 +522,8 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 // =============================================================================
 
 fn bench_all(c: &mut Criterion) {
-    test_memory_usage();
-    test_hit_ratio();
+    // test_memory_usage();
+    // test_hit_ratio();
 
     bench_single_thread_latency(c);
     bench_multi_thread_latency(c);
