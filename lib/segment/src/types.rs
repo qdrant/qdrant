@@ -4069,9 +4069,63 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(err.contains("RFC3339"), "err was: {}", err);
-        assert!(err.contains("2014-01-01T00:00:00BAD"), "err was: {}", err);
-        assert!(err.contains("Example"), "err was: {}", err);
+        assert!(err.contains("RFC3339"), "err was: {err}");
+        assert!(err.contains("2014-01-01T00:00:00BAD"), "err was: {err}");
+        assert!(err.contains("Example"), "err was: {err}");
+    }
+
+    /// Regression test: DateTimePayloadType binary serialization roundtrip.
+    /// Ensures the `!is_human_readable()` path in DateTimePayloadType::deserialize works.
+    #[test]
+    fn test_datetime_payload_type_binary_roundtrip() {
+        let original = DateTimePayloadType::from_str("2024-06-15T12:30:45Z").unwrap();
+
+        // rmp-serde uses non-human-readable format
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: DateTimePayloadType = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(original, restored);
+    }
+
+    /// Regression test: RangeInterface with datetime binary roundtrip.
+    /// Ensures the RangeInterface datetime deserialization works in binary.
+    #[test]
+    fn test_range_interface_datetime_binary_roundtrip() {
+        let dt_gte = DateTimePayloadType::from_str("2024-01-01T00:00:00Z").unwrap();
+        let dt_lte = DateTimePayloadType::from_str("2024-12-31T23:59:59Z").unwrap();
+
+        let range = RangeInterface::DateTime(Range {
+            lt: None,
+            gt: None,
+            gte: Some(dt_gte),
+            lte: Some(dt_lte),
+        });
+
+        // rmp-serde uses non-human-readable format
+        let binary = rmp_serde::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(range, restored);
+    }
+
+    /// Regression test: Non-FieldCondition JSON deserialization uses ConditionUntagged fallback.
+    /// Ensures compiler-safe handling of other Condition variants.
+    #[test]
+    fn test_condition_json_fallback_to_untagged() {
+        // IsEmptyCondition (no "key" field at top level, uses "is_empty" instead)
+        let is_empty_json = r#"{"is_empty": {"key": "optional_field"}}"#;
+        let condition: Condition = serde_json::from_str(is_empty_json).unwrap();
+        assert!(matches!(condition, Condition::IsEmpty(_)));
+
+        // HasIdCondition
+        let has_id_json = r#"{"has_id": [1, 2, 3]}"#;
+        let condition: Condition = serde_json::from_str(has_id_json).unwrap();
+        assert!(matches!(condition, Condition::HasId(_)));
+
+        // Nested Filter
+        let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
+        let condition: Condition = serde_json::from_str(nested_json).unwrap();
+        assert!(matches!(condition, Condition::Nested(_)));
     }
 
     #[test]
