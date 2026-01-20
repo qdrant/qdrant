@@ -9,8 +9,6 @@ use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use shard::segment_holder::SegmentId;
 
-use crate::operations::types::PendingOptimizations;
-
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
