@@ -13750,9 +13750,6 @@
           },
           {
             "$ref": "#/components/schemas/ReplicatePointsOperation"
-          },
-          {
-            "$ref": "#/components/schemas/TestSlowDownOperation"
           }
         ]
       },
@@ -14120,37 +14117,6 @@
           },
           "to_shard_key": {
             "$ref": "#/components/schemas/ShardKey"
-          }
-        }
-      },
-      "TestSlowDownOperation": {
-        "type": "object",
-        "required": [
-          "test_slow_down"
-        ],
-        "properties": {
-          "test_slow_down": {
-            "$ref": "#/components/schemas/TestSlowDown"
-          }
-        }
-      },
-      "TestSlowDown": {
-        "type": "object",
-        "properties": {
-          "peer_id": {
-            "description": "Target peer ID to execute the sleep on. If not specified, the operation will be executed on all peers.",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "duration": {
-            "description": "Duration of the sleep in seconds (default: 1.0, max: 300.0).",
-            "default": 1,
-            "type": "number",
-            "format": "double",
-            "maximum": 300,
-            "minimum": 0
           }
         }
       },
