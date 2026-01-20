@@ -212,7 +212,7 @@ bytemuck = { version = "1.24.0", features = [
     "transparentwrapper_extra",
 ] }
 bytes = "1.11.0"
-chrono = { version = "0.4.42", features = ["serde"] }
+chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.54", features = ["derive", "env"] }
 criterion = "0.8.1"
 data-encoding = "2.9.0"
