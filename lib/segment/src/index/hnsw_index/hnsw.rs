@@ -492,7 +492,7 @@ impl HNSWIndex {
 
             if !ids.is_empty() {
                 pool.install(|| {
-                    ids.par_chunks(128).try_for_each(|chunk| {
+                    ids.par_chunks(64).try_for_each(|chunk| {
                         for id in chunk {
                             insert_point(*id)?
                         }
