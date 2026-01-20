@@ -4,3 +4,10 @@ requires = ["maturin>=1.0,<2.0"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# Include stub files and PEP 561 marker in the wheel for IDE support
+include = [
+    { path = "qdrant_edge.pyi", format = "sdist" },
+    { path = "qdrant_edge.pyi", format = "wheel" },
+    { path = "py.typed", format = "sdist" },
+    { path = "py.typed", format = "wheel" },
+]
