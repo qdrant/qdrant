@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use shard::segment_holder::SegmentId;
+use uuid::Uuid;
 
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
@@ -99,7 +100,7 @@ pub struct Tracker {
     /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
     /// Segment UUIDs being optimized
-    pub segment_uuids: Vec<String>,
+    pub segment_uuids: Vec<Uuid>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
@@ -113,7 +114,7 @@ impl Tracker {
     pub fn start(
         name: impl Into<String>,
         segment_ids: Vec<SegmentId>,
-        segment_uuids: Vec<String>,
+        segment_uuids: Vec<Uuid>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
@@ -158,7 +159,7 @@ pub struct TrackerTelemetry {
     /// Segment UUIDs being optimized.
     /// Refers to same segments as in `segment_ids`, but trackable across
     /// restarts, and reflect their directory name.
-    pub segment_uuids: Vec<String>,
+    pub segment_uuids: Vec<Uuid>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer

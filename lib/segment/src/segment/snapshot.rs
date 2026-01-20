@@ -69,7 +69,7 @@ impl SnapshotEntry for Segment {
                         ))
                     })?;
 
-                let tar = tar.descend(Path::new(&segment_id))?;
+                let tar = tar.descend(Path::new(&segment_id.to_string()))?;
                 tar.blocking_append_data(
                     &updated_manifest_json,
                     &Path::new("files").join(SEGMENT_MANIFEST_FILE_NAME),
@@ -102,7 +102,7 @@ impl SnapshotEntry for Segment {
                 })??;
             }
             SnapshotFormat::Streamable => {
-                let tar = tar.descend(Path::new(&segment_id))?;
+                let tar = tar.descend(Path::new(&segment_id.to_string()))?;
                 snapshot_files(self, temp_path, &tar, include_if)?;
             }
         }

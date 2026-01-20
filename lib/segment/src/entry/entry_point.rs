@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use uuid::Uuid;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -267,7 +268,7 @@ pub trait SegmentEntry: SnapshotEntry {
     }
 
     /// Get segment uuid
-    fn segment_uuid(&self) -> String;
+    fn segment_uuid(&self) -> Uuid;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;

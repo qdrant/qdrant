@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::budget::ResourcePermit;
-use common::progress_tracker::ProgressTracker;
 use common::tar_ext;
 use fs_err as fs;
 use fs_err::File;
@@ -11,7 +9,6 @@ use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::snapshot_entry::SnapshotEntry as _;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::load_segment;
@@ -22,6 +19,7 @@ use segment::types::{
     SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
 };
 use tempfile::Builder;
+use uuid::Uuid;
 
 /// This test tests snapshotting and restoring a segment with all on-disk components.
 #[rstest]
@@ -134,23 +132,13 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment_builder_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment_builder = SegmentBuilder::new(
-        segment_base_dir.path(),
         segment_builder_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
     )
     .unwrap();
     segment_builder.update(&[&segment], &false.into()).unwrap();
-    let mut rng = rand::rng();
-    let segment = segment_builder
-        .build(
-            ResourcePermit::dummy(num_rayon_threads(0) as u32),
-            &false.into(),
-            &mut rng,
-            &HardwareCounterCell::new(),
-            ProgressTracker::new_for_test(),
-        )
-        .unwrap();
+    let segment = segment_builder.build_for_test(segment_base_dir.path());
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -207,9 +195,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
-        .unwrap()
-        .unwrap();
+    let restored_segment =
+        load_segment(&entry.path(), Uuid::nil(), &AtomicBool::new(false)).unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

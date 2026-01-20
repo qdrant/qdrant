@@ -27,6 +27,7 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use uuid::Uuid;
 
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
 use crate::collection_manager::holders::segment_holder::{
@@ -364,7 +365,6 @@ pub trait SegmentOptimizer {
         };
 
         Ok(SegmentBuilder::new(
-            self.segments_path(),
             self.temp_path(),
             &optimized_config,
             self.hnsw_global_config(),
@@ -548,8 +548,15 @@ pub trait SegmentOptimizer {
         drop(progress_wait_permit);
 
         let mut rng = rand::rng();
-        let mut optimized_segment: Segment =
-            segment_builder.build(indexing_permit, stopped, &mut rng, hw_counter, progress)?;
+        let mut optimized_segment = segment_builder.build(
+            self.segments_path(),
+            Uuid::new_v4(),
+            indexing_permit,
+            stopped,
+            &mut rng,
+            hw_counter,
+            progress,
+        )?;
 
         // Delete points
         let deleted_points_snapshot = self.proxy_deleted_points(proxies);

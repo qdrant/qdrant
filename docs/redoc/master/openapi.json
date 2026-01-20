@@ -12594,7 +12594,8 @@
         ],
         "properties": {
           "uuid": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "segment_type": {
             "$ref": "#/components/schemas/SegmentType"
@@ -13203,7 +13204,8 @@
             "description": "Segment UUIDs being optimized. Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name.",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "status": {

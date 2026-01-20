@@ -15,11 +15,10 @@ use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
-use io::safe_delete::safe_delete_with_suffix;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::SegmentEntry;
-use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
+use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
@@ -98,25 +97,17 @@ impl EdgeShard {
                 continue;
             }
 
-            let segment = load_segment(&segment_path, &AtomicBool::new(false)).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to load segment {}: {err}",
-                    segment_path.display(),
-                ))
-            })?;
-
-            let mut segment = match segment {
-                LoadSegmentOutcome::Loaded(segment) => segment,
-                LoadSegmentOutcome::Skipped => {
-                    safe_delete_with_suffix(&segment_path).map_err(|err| {
-                        OperationError::service_error(format!(
-                            "failed to remove leftover segment: {err}",
-                        ))
-                    })?;
-
-                    continue;
-                }
+            let Some((segment_path, segment_uuid)) = normalize_segment_dir(&segment_path)? else {
+                continue;
             };
+
+            let mut segment = load_segment(&segment_path, segment_uuid, &AtomicBool::new(false))
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to load segment {}: {err}",
+                        segment_path.display(),
+                    ))
+                })?;
 
             if let Some(config) = &config {
                 if !config.is_compatible(segment.config()) {

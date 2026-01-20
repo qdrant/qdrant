@@ -11,6 +11,7 @@ use common::is_alive_lock::IsAliveLock;
 use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use fs_err::File;
+use io::safe_delete::{safe_delete_with_suffix, sync_parent_dir};
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -441,6 +442,7 @@ fn create_segment(
     initial_version: Option<SeqNumberType>,
     version: Option<SeqNumberType>,
     segment_path: &Path,
+    uuid: Uuid,
     config: &SegmentConfig,
     stopped: &AtomicBool,
     create: bool,
@@ -610,23 +612,8 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let uuid = segment_path
-        .file_stem()
-        .and_then(|segment_dir| segment_dir.to_str())
-        .ok_or_else(|| {
-            OperationError::service_error(format!(
-                "failed to extract segment ID from segment path {}",
-                segment_path.display(),
-            ))
-        })?;
-
-    debug_assert!(
-        Uuid::try_parse(uuid).is_ok(),
-        "segment ID {uuid} is not a valid UUID",
-    );
-
     Ok(Segment {
-        uuid: uuid.to_string(),
+        uuid,
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
@@ -704,42 +691,76 @@ fn create_segment_id_tracker(
     )))
 }
 
-/// Outcome of [`load_segment()`].
-#[expect(clippy::large_enum_variant, reason = "Self::Skipped is rarely used")]
-pub enum LoadSegmentOutcome {
-    Loaded(Segment),
-    Skipped,
-}
-
-impl LoadSegmentOutcome {
-    pub fn unwrap(self) -> Segment {
-        match self {
-            LoadSegmentOutcome::Loaded(segment) => segment,
-            LoadSegmentOutcome::Skipped => panic!("Called unwrap on Skipped segment"),
-        }
-    }
-}
-
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSegmentOutcome> {
+/// Normalize segment directory.
+///
+/// Might delete or rename the directory.
+/// Returns `None` if the segment directory was deleted.
+pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uuid)>> {
+    // 1. Delete dirs like `5345474d-454e-54f0-9f98-ba206e616d65.deleted`.
+    // These are leftovers from rename-then-delete approach.
     if path
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext == "deleted")
         .unwrap_or(false)
     {
-        log::warn!("Segment is marked as deleted, skipping: {}", path.display());
-        return Ok(LoadSegmentOutcome::Skipped);
+        log::warn!("Deleting leftover segment: {}", path.display());
+        safe_delete_with_suffix(path).map_err(|err| {
+            OperationError::service_error(format!("failed to delete leftover segment: {err}"))
+        })?;
+        return Ok(None);
     }
 
-    let Some(stored_version) = SegmentVersion::load(path)? else {
-        // Assume segment was not properly saved.
-        // Server might have crashed before saving the segment fully.
-        log::warn!(
-            "Segment version file not found, skipping: {}",
+    // 2. Delete dirs without proper `version.info` file inside.
+    // These segments are not properly saved.
+    // Likely, the server crashed during saving.
+    if SegmentVersion::load(path)?.is_none() {
+        log::warn!("Deleting segment without version file: {}", path.display());
+        safe_delete_with_suffix(path).map_err(|err| {
+            OperationError::service_error(format!("failed to delete leftover segment: {err}"))
+        })?;
+        return Ok(None);
+    }
+
+    // 3. Force directory name to be a valid UUID.
+    // Rename if necessary.
+    let file_name = path
+        .file_name()
+        .and_then(|fname| fname.to_str())
+        .ok_or_else(|| {
+            OperationError::service_error(format!(
+                "Failed to get segment folder name: {}",
+                path.display()
+            ))
+        })?;
+    match Uuid::try_parse(file_name) {
+        Ok(uuid) => Ok(Some((path.to_path_buf(), uuid))),
+        Err(_) => {
+            let segment_uuid = Uuid::new_v4();
+            let new_path = path.with_file_name(segment_uuid.to_string());
+            log::warn!(
+                "Segmant name is not a valid UUID: {}. Renaming to {segment_uuid}",
+                path.display(),
+            );
+            fs::rename(path, &new_path)?;
+            sync_parent_dir(&new_path)?;
+            Ok(Some((new_path, segment_uuid)))
+        }
+    }
+}
+
+/// Load segment from given `path`.
+///
+/// Preferably, the `uuid` should match the last component of `path`.
+/// In production use [`normalize_segment_dir`] to obtain correct path and UUID.
+/// In tests it is acceptable to pass an arbitrary UUID, e.g., [`Uuid::nil()`].
+pub fn load_segment(path: &Path, uuid: Uuid, stopped: &AtomicBool) -> OperationResult<Segment> {
+    let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
+        OperationError::service_error(format!(
+            "Segment version file not found in segment: {}",
             path.display()
-        );
-        return Ok(LoadSegmentOutcome::Skipped);
-    };
+        ))
+    })?;
 
     let app_version = SegmentVersion::current();
 
@@ -778,6 +799,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSe
         segment_state.initial_version,
         segment_state.version,
         path,
+        uuid,
         &segment_state.config,
         stopped,
         false,
@@ -795,11 +817,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<LoadSe
         }
     }
 
-    Ok(LoadSegmentOutcome::Loaded(segment))
-}
-
-pub fn new_segment_path(segments_path: &Path) -> PathBuf {
-    segments_path.join(Uuid::new_v4().to_string())
+    Ok(segment)
 }
 
 /// Build segment instance using given configuration.
@@ -819,18 +837,12 @@ pub fn build_segment(
     config: &SegmentConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
-    let segment_path = new_segment_path(segments_path);
+    let uuid = Uuid::new_v4();
+    let segment_path = segments_path.join(uuid.to_string());
+    let stopped = AtomicBool::new(false);
 
     fs::create_dir_all(&segment_path)?;
-
-    let segment = create_segment(
-        None,
-        None,
-        &segment_path,
-        config,
-        &AtomicBool::new(false),
-        true,
-    )?;
+    let segment = create_segment(None, None, &segment_path, uuid, config, &stopped, true)?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.

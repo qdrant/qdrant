@@ -28,6 +28,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
+use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
@@ -118,7 +119,7 @@ impl SegmentHolder {
     }
 
     /// Get filesystem aligned UUIDs instead of internal segment IDs for reporting in telemetry
-    pub fn segment_uuids(&self, segment_ids: &[SegmentId]) -> Vec<String> {
+    pub fn segment_uuids(&self, segment_ids: &[SegmentId]) -> Vec<Uuid> {
         segment_ids
             .iter()
             .filter_map(|id| {
