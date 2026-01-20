@@ -16,7 +16,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, SegmentOptimizer,
+    SegmentOptimizer, plan_optimizations,
 };
 use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::CollectionUpdateOperations;
@@ -310,17 +310,8 @@ impl UpdateHandler {
     pub(crate) fn check_optimizer_conditions(&self) -> (bool, bool) {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
-
-        let segments = self.segments.read();
-        let mut planner = OptimizationPlanner::new(
-            segments.running_optimizations.count(),
-            segments.iter_original(),
-        );
-        let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
-            optimizer.plan_optimizations(&mut planner);
-            !planner.scheduled().is_empty()
-        });
-
+        let has_suboptimal_optimizers =
+            !plan_optimizations(&self.segments.read(), &self.optimizers).is_empty();
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 
