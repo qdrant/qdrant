@@ -116,26 +116,6 @@ impl SnapshotEntry for Segment {
 }
 
 impl Segment {
-    pub fn segment_id(&self) -> OperationResult<&str> {
-        let id = self
-            .segment_path
-            .file_stem()
-            .and_then(|segment_dir| segment_dir.to_str())
-            .ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "failed to extract segment ID from segment path {}",
-                    self.segment_path.display(),
-                ))
-            })?;
-
-        debug_assert!(
-            Uuid::try_parse(id).is_ok(),
-            "segment ID {id} is not a valid UUID",
-        );
-
-        Ok(id)
-    }
-
     fn _get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
         let segment_id = self.segment_id()?;
         let segment_version = self.version();
@@ -210,7 +190,7 @@ impl Segment {
         }
 
         Ok(SegmentManifest {
-            segment_id: segment_id.to_string(),
+            segment_id,
             segment_version,
             file_versions,
         })
