@@ -219,11 +219,20 @@ impl Collection {
 
         let metadata_required = is_payload_required || with_vectors;
 
-        let sum_limits: usize = requests_batch.iter().map(|s| s.limit).sum();
-        let sum_offsets: usize = requests_batch.iter().map(|s| s.offset).sum();
+        let sum_limits: usize = requests_batch
+            .iter()
+            .fold(0usize, |acc, s| acc.saturating_add(s.limit));
+        let sum_offsets: usize = requests_batch
+            .iter()
+            .fold(0usize, |acc, s| acc.saturating_add(s.offset));
 
         // Number of records we need to retrieve to fill the search result.
-        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
+        let require_transfers = self
+            .shards_holder
+            .read()
+            .await
+            .len()
+            .saturating_mul(sum_limits.saturating_add(sum_offsets));
         // Actually used number of records.
         let used_transfers = sum_limits;
 
