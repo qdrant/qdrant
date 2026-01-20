@@ -610,7 +610,23 @@ fn create_segment(
         SegmentType::Plain
     };
 
+    let uuid = segment_path
+        .file_stem()
+        .and_then(|segment_dir| segment_dir.to_str())
+        .ok_or_else(|| {
+            OperationError::service_error(format!(
+                "failed to extract segment ID from segment path {}",
+                segment_path.display(),
+            ))
+        })?;
+
+    debug_assert!(
+        Uuid::try_parse(uuid).is_ok(),
+        "segment ID {uuid} is not a valid UUID",
+    );
+
     Ok(Segment {
+        uuid: uuid.to_string(),
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),

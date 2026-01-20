@@ -602,6 +602,10 @@ impl SegmentEntry for Segment {
         self.approximate_facet(request, is_stopped, hw_counter)
     }
 
+    fn segment_uuid(&self) -> String {
+        self.uuid.clone()
+    }
+
     fn segment_type(&self) -> SegmentType {
         self.segment_type
     }
@@ -665,6 +669,7 @@ impl SegmentEntry for Segment {
             .unwrap_or(0);
 
         SegmentInfo {
+            uuid: self.segment_uuid(),
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,

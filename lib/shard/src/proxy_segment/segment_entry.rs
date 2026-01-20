@@ -594,6 +594,10 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
+    fn segment_uuid(&self) -> String {
+        self.wrapped_segment.get().read().segment_uuid()
+    }
+
     fn segment_type(&self) -> SegmentType {
         SegmentType::Special
     }
@@ -626,6 +630,7 @@ impl SegmentEntry for ProxySegment {
         let vector_data = wrapped_info.vector_data;
 
         SegmentInfo {
+            uuid: wrapped_info.uuid,
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,

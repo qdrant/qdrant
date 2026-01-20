@@ -287,10 +287,12 @@ impl UpdateWorkers {
                 break;
             }
 
+            let segment_uuids = segments.read().segment_uuids(&segments_to_merge);
+
             log::debug!(
                 "Optimizer '{}' running on segments: {:?}",
                 optimizer.name(),
-                &segments_to_merge
+                &segment_uuids
             );
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
@@ -332,8 +334,11 @@ impl UpdateWorkers {
             let resource_budget = optimizer_resource_budget.clone();
 
             // Track optimizer status
-            let (tracker, progress) =
-                Tracker::start(optimizer.as_ref().name(), segments_to_merge.clone());
+            let (tracker, progress) = Tracker::start(
+                optimizer.as_ref().name(),
+                segments_to_merge.clone(),
+                segment_uuids,
+            );
             let tracker_handle = tracker.handle();
 
             let handle = spawn_stoppable(move |stopped| {
