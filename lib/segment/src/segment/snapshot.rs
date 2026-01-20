@@ -52,7 +52,7 @@ impl SnapshotEntry for Segment {
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
     ) -> OperationResult<()> {
-        let segment_id = self.segment_id()?;
+        let segment_id = self.segment_uuid();
 
         log::debug!("Taking snapshot of segment {segment_id}");
 
