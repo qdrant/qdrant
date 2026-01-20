@@ -583,17 +583,17 @@ pub struct PyMmr(MmrInternal);
 #[pymethods]
 impl PyMmr {
     #[new]
-    #[pyo3(signature = (vector, lambda, candidates_limit, using = None))]
+    #[pyo3(signature = (vector, lambda_, candidates_limit, using = None))]
     pub fn new(
         vector: PyNamedVectorInternal,
-        lambda: f32,
+        lambda_: f32,
         candidates_limit: usize,
         using: Option<String>,
     ) -> Self {
         let mmr = MmrInternal {
             vector: VectorInternal::from(vector),
             using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
-            lambda: OrderedFloat(lambda),
+            lambda: OrderedFloat(lambda_),
             candidates_limit,
         };
 
@@ -611,7 +611,7 @@ impl PyMmr {
     }
 
     #[getter]
-    pub fn lambda(&self) -> f32 {
+    pub fn lambda_(&self) -> f32 {
         self.0.lambda.into_inner()
     }
 
