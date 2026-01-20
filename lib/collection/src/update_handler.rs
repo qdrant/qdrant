@@ -36,11 +36,17 @@ pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
     /// Operation
-    pub operation: CollectionUpdateOperations,
+    pub operation: OperationDataSource,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
     /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
+}
+
+#[derive(Debug)]
+pub enum OperationDataSource {
+    Direct(Box<CollectionUpdateOperations>),
+    FromWal(u64),
 }
 
 /// Signal, used to inform Updater process

@@ -69,6 +69,13 @@ impl RecoverableWal {
         wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
+    pub async fn read_once(
+        &self,
+        op_num: u64,
+    ) -> shard::wal::Result<Option<OperationWithClockTag>> {
+        self.wal.lock().await.read_once(op_num)
+    }
+
     /// Take clocks snapshot because we deactivated our replica
     ///
     /// Does nothing if a snapshot already existed. Returns `true` if a snapshot was taken.

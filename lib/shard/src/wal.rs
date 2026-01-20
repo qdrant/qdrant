@@ -79,6 +79,17 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
+    pub fn read_once(&self, idx: u64) -> Result<Option<R>> {
+        if let Some(entry) = self.wal.entry(idx) {
+            let record: R = serde_cbor::from_slice(&entry)
+                .or_else(|_err| rmp_serde::from_slice(&entry))
+                .expect("Can't deserialize entry, probably corrupted WAL or version mismatch");
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
