@@ -533,22 +533,16 @@ impl SegmentHolder {
     ///
     /// In case of delete operations, we must apply them to all versions of a point. Otherwise
     /// future operations may revive deletions through older point versions.
-    ///
-    /// The `segment_data` function is called no more than once for each segment and its result is
-    /// passed to `point_operation`.
-    pub fn apply_points<T, D, O>(
+    pub fn apply_points<F>(
         &self,
         ids: &[PointIdType],
-        mut segment_data: D,
-        mut point_operation: O,
+        mut point_operation: F,
     ) -> OperationResult<usize>
     where
-        D: FnMut(&dyn SegmentEntry) -> T,
-        O: FnMut(
+        F: FnMut(
             PointIdType,
             SegmentId,
             &mut RwLockWriteGuard<dyn SegmentEntry>,
-            &T,
         ) -> OperationResult<bool>,
     {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
@@ -576,11 +570,9 @@ impl SegmentHolder {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
-            let segment_data = segment_data(write_segment.deref());
 
             for point_id in points {
-                let is_applied =
-                    point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
+                let is_applied = point_operation(point_id, segment_id, &mut write_segment)?;
                 applied_points += usize::from(is_applied);
             }
         }
@@ -651,18 +643,8 @@ impl SegmentHolder {
     /// Apply an operation `point_operation` to a set of points `ids`, and, if necessary, move the
     /// points into appendable segments.
     ///
-    /// Moving is not performed in the following cases:
-    /// - The segment containing the point is appendable.
-    /// - The `update_nonappendable` function returns true for the segment.
-    ///
-    /// Otherwise, the operation is applied to the containing segment in place.
-    ///
-    /// Rationale: non-appendable segments may contain immutable indexes that could be left in an
-    /// inconsistent state after applying the operation. When it's known that the operation will not
-    /// affect the indexes, `update_nonappendable` can return true to avoid moving the points as a
-    /// performance optimization.
-    ///
-    /// It's always safe to pass a closure that always returns false (i.e. `|_| false`).
+    /// If the segment containing the point is appendable, then point is updated in-place without moving.
+    /// If the segment containing the point is immutable, then point is moved to a random appendable segment.
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
     ///
@@ -674,80 +656,70 @@ impl SegmentHolder {
     /// 1. moving a point first and deleting it after is unnecessary overhead.
     /// 2. this leaves older point versions in place, which may accidentally be revived by some
     ///    other operation later.
-    pub fn apply_points_with_conditional_move<F, G, H>(
+    pub fn apply_points_with_conditional_move<F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut point_operation: F,
-        mut point_cow_operation: H,
-        update_nonappendable: G,
+        mut point_cow_operation: G,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
-        G: FnMut(&dyn SegmentEntry) -> bool,
+        for<'n, 'o, 'p> G: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
 
-        let _applied_points_count = self.apply_points(
-            ids,
-            update_nonappendable,
-            |point_id, idx, write_segment, &update_nonappendable| {
-                if let Some(point_version) = write_segment.point_version(point_id)
-                    && point_version >= op_num
-                {
-                    applied_points.insert(point_id);
-                    return Ok(false);
-                }
-
-                let can_apply_operation = !write_segment.is_proxy()
-                    && (update_nonappendable || write_segment.is_appendable());
-
-                let is_applied = if can_apply_operation {
-                    point_operation(point_id, write_segment)?
-                } else {
-                    self.aloha_random_write(
-                        &appendable_segments,
-                        |appendable_idx, appendable_write_segment| {
-                            // If we are moving point from one segment to another,
-                            // we must guarantee, that data in new segment will be persisted before
-                            // deleting point from old segment.
-                            // Do ensure that, we add a flush dependency
-                            self.flush_dependency.lock().add_dependency(
-                                idx,
-                                appendable_idx,
-                                op_num,
-                            );
-
-                            let mut all_vectors =
-                                write_segment.all_vectors(point_id, hw_counter)?;
-                            let mut payload = write_segment.payload(point_id, hw_counter)?;
-
-                            point_cow_operation(point_id, &mut all_vectors, &mut payload);
-
-                            appendable_write_segment.upsert_point(
-                                op_num,
-                                point_id,
-                                all_vectors,
-                                hw_counter,
-                            )?;
-                            appendable_write_segment
-                                .set_full_payload(op_num, point_id, &payload, hw_counter)?;
-
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
-
-                            Ok(true)
-                        },
-                    )?
-                };
+        let _applied_points_count = self.apply_points(ids, |point_id, idx, write_segment| {
+            if let Some(point_version) = write_segment.point_version(point_id)
+                && point_version >= op_num
+            {
                 applied_points.insert(point_id);
-                Ok(is_applied)
-            },
-        )?;
+                return Ok(false);
+            }
+
+            let can_apply_operation = !write_segment.is_proxy() && write_segment.is_appendable();
+
+            let is_applied = if can_apply_operation {
+                point_operation(point_id, write_segment)?
+            } else {
+                self.aloha_random_write(
+                    &appendable_segments,
+                    |appendable_idx, appendable_write_segment| {
+                        // If we are moving point from one segment to another,
+                        // we must guarantee, that data in new segment will be persisted before
+                        // deleting point from old segment.
+                        // Do ensure that, we add a flush dependency
+                        self.flush_dependency
+                            .lock()
+                            .add_dependency(idx, appendable_idx, op_num);
+
+                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
+                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+
+                        point_cow_operation(point_id, &mut all_vectors, &mut payload);
+
+                        appendable_write_segment.upsert_point(
+                            op_num,
+                            point_id,
+                            all_vectors,
+                            hw_counter,
+                        )?;
+                        appendable_write_segment
+                            .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+
+                        write_segment.delete_point(op_num, point_id, hw_counter)?;
+
+                        Ok(true)
+                    },
+                )?
+            };
+            applied_points.insert(point_id);
+            Ok(is_applied)
+        })?;
         Ok(applied_points)
     }
 

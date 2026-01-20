@@ -234,7 +234,6 @@ where
                     *old_payload = payload.clone();
                 }
             },
-            |_| false,
             hw_counter,
         )?;
 
@@ -347,11 +346,9 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
-        let deleted_points = segments.apply_points(
-            batch,
-            |_| (),
-            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
-        )?;
+        let deleted_points = segments.apply_points(batch, |id, _idx, write_segment| {
+            write_segment.delete_point(op_num, id, hw_counter)
+        })?;
 
         total_deleted_points += deleted_points;
     }
@@ -555,7 +552,6 @@ fn update_vectors(
                     owned_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
                 }
             },
-            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -591,7 +587,6 @@ pub fn delete_vectors(
                     owned_vectors.remove_ref(name);
                 }
             },
-            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &modified_points)?;
@@ -644,7 +639,6 @@ pub fn set_payload(
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
             },
-            |_| false,
             hw_counter,
         )?;
 
@@ -700,7 +694,6 @@ pub fn delete_payload(
                     payload.remove(key);
                 }
             },
-            |_| false,
             hw_counter,
         )?;
 
@@ -744,7 +737,6 @@ pub fn clear_payload(
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
             |_, _, payload| payload.0.clear(),
-            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -790,7 +782,6 @@ pub fn overwrite_payload(
             |_, _, old_payload| {
                 *old_payload = payload.clone();
             },
-            |_| false,
             hw_counter,
         )?;
 
