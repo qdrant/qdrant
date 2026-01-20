@@ -649,7 +649,7 @@ impl MetricsProvider for WebApiTelemetry {
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder = OperationDurationMetricsBuilder::default();
-        for (endpoint, stats) in &self.responses {
+        for (endpoint, responses) in &self.responses {
             // Endpoint must be whitelisted
             if GRPC_ENDPOINT_WHITELIST
                 .binary_search(&endpoint.as_str())
@@ -657,7 +657,12 @@ impl MetricsProvider for GrpcTelemetry {
             {
                 continue;
             }
-            builder.add(stats, &[("endpoint", endpoint.as_str())], true);
+            for (status, stats) in responses {
+                builder.add(stats, &[
+                    ("endpoint", endpoint.as_str()),
+                    ("status", &status.to_string()),
+                ], true);
+            }
         }
         builder.build(prefix, "grpc", metrics);
     }
