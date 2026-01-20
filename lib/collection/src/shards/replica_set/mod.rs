@@ -33,6 +33,7 @@ use super::local_shard::LocalShard;
 use super::local_shard::clock_map::RecoveryPoint;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
+use crate::collection::SegmentWorkerPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::collection_size_stats::CollectionSizeStats;
@@ -113,7 +114,9 @@ pub struct ShardReplicaSet {
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
+    update_runtime_pool: Arc<SegmentWorkerPool>,
     search_runtime: Handle,
+    search_runtime_pool: Arc<SegmentWorkerPool>,
     optimizer_resource_budget: ResourceBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
@@ -148,7 +151,9 @@ impl ShardReplicaSet {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         update_runtime: Handle,
+        update_runtime_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
+        search_runtime_pool: Arc<SegmentWorkerPool>,
         optimizer_resource_budget: ResourceBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
@@ -162,6 +167,7 @@ impl ShardReplicaSet {
                 shared_storage_config.clone(),
                 payload_index_schema.clone(),
                 update_runtime.clone(),
+                update_runtime_pool.clone(),
                 search_runtime.clone(),
                 optimizer_resource_budget.clone(),
                 effective_optimizers_config.clone(),
@@ -225,7 +231,9 @@ impl ShardReplicaSet {
             shared_storage_config,
             payload_index_schema,
             update_runtime,
+            update_runtime_pool,
             search_runtime,
+            search_runtime_pool,
             optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
@@ -255,7 +263,9 @@ impl ShardReplicaSet {
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
+        update_runtime_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
+        search_runtime_pool: Arc<SegmentWorkerPool>,
         optimizer_resource_budget: ResourceBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
@@ -307,6 +317,7 @@ impl ShardReplicaSet {
                     payload_index_schema.clone(),
                     true,
                     update_runtime.clone(),
+                    update_runtime_pool.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
                 )
@@ -367,7 +378,9 @@ impl ShardReplicaSet {
             shared_storage_config,
             payload_index_schema,
             update_runtime,
+            update_runtime_pool,
             search_runtime,
+            search_runtime_pool,
             optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
@@ -618,6 +631,7 @@ impl ShardReplicaSet {
             self.shared_storage_config.clone(),
             self.payload_index_schema.clone(),
             self.update_runtime.clone(),
+            self.update_runtime_pool.clone(),
             self.search_runtime.clone(),
             self.optimizer_resource_budget.clone(),
             self.optimizers_config.clone(),
@@ -879,6 +893,7 @@ impl ShardReplicaSet {
                     self.shared_storage_config.clone(),
                     self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
+                    self.update_runtime_pool.clone(),
                     self.search_runtime.clone(),
                     self.optimizer_resource_budget.clone(),
                     self.optimizers_config.clone(),

@@ -1,0 +1,536 @@
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
+use std::hash::Hash;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::thread::JoinHandle;
+
+use parking_lot::{Condvar, Mutex};
+pub use switch::SwitchToken;
+use thread::thread_worker;
+
+#[cfg(feature = "tokio")]
+mod async_pool;
+mod switch;
+mod thread;
+
+#[cfg(feature = "tokio")]
+pub use async_pool::{AsyncPool, AsyncTaskError};
+
+// Defines ordering in which tasks are added.
+// Tasks which added first are executed first unless something blocks them.
+// Smaller task ID means higher priority.
+type TaskId = usize;
+
+// The UnwindSafe bound may be removed if we handle panics with recreating a new thread.
+pub type Task = Box<dyn FnOnce() + Send + 'static>;
+
+pub enum StalledTask {
+    Function(Task),
+    Condvar(Arc<Condvar>),
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum OperationMode {
+    Shared,
+    Exclusive,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum GroupState {
+    Shared(usize), // number of scheduled or running shared tasks
+    Exclusive,
+}
+
+impl GroupState {
+    fn update_state_if_can_progress(state: Option<Self>, mode: OperationMode) -> Option<Self> {
+        match (state, mode) {
+            (None, OperationMode::Shared) => Some(GroupState::Shared(1)),
+            (None, OperationMode::Exclusive) => Some(GroupState::Exclusive),
+            (Some(GroupState::Shared(count)), OperationMode::Shared) => {
+                Some(GroupState::Shared(count + 1))
+            }
+            (Some(_), OperationMode::Exclusive) => None,
+            (Some(GroupState::Exclusive), OperationMode::Shared) => None,
+        }
+    }
+}
+
+pub struct Pool<GroupId> {
+    threads: Vec<JoinHandle<()>>,
+    tasks: Arc<Mutex<PoolTasks<GroupId>>>,
+    wait_for_jobs_condvar: Arc<Condvar>,
+    // TODO make possible using an external termination flag
+    terminate: Arc<AtomicBool>,
+}
+
+impl<GroupId> Drop for Pool<GroupId> {
+    fn drop(&mut self) {
+        {
+            // While neither atomic nor condvar use the mutex, it avoids a race condition when the worker threads checks
+            // the terminate flag before it is set, but starts waiting for the condvar after it is notified.
+            //
+            // Actually, we should use a bool inside the PoolTasks instead of the atomic.
+            let _guard = self.tasks.lock();
+            self.terminate
+                .store(true, std::sync::atomic::Ordering::Release);
+            self.wait_for_jobs_condvar.notify_all();
+        }
+
+        // TODO should we really wait for threads to finish?
+        for thread in self.threads.drain(..) {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl<GroupId> Pool<GroupId> {
+    pub fn terminate(&mut self) {
+        self.terminate
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.wait_for_jobs_condvar.notify_all();
+
+        for thread in self.threads.drain(..) {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl<GroupId: Clone + Hash + Eq + Send + 'static> Pool<GroupId> {
+    pub fn new(threads: usize) -> Self {
+        let wait_for_jobs = Arc::<Condvar>::default();
+        let tasks = Arc::<Mutex<PoolTasks<GroupId>>>::default();
+        let terminate = Arc::<AtomicBool>::default();
+        let threads = (0..threads)
+            .map(|i| {
+                let wait_for_jobs = wait_for_jobs.clone();
+                let tasks = tasks.clone();
+                let terminate = terminate.clone();
+                std::thread::Builder::new()
+                    .name(format!("qdant-pool-worker-{}", i + 1))
+                    .spawn(move || {
+                        thread_worker(wait_for_jobs, tasks, terminate);
+                    })
+                    .expect("failed to spawn thread")
+            })
+            .collect();
+        Self {
+            threads,
+            wait_for_jobs_condvar: wait_for_jobs,
+            tasks,
+            terminate,
+        }
+    }
+
+    pub fn submit(
+        &self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task: impl FnOnce() + Send + 'static,
+    ) {
+        let mut guard = self.tasks.lock();
+        guard.submit(
+            group_id,
+            mode,
+            Box::new(task),
+            self.wait_for_jobs_condvar.as_ref(),
+        );
+    }
+
+    pub fn submit_uncontended(&self, task: impl FnOnce(SwitchToken<GroupId>) + Send + 'static) {
+        let mut guard = self.tasks.lock();
+        guard.submit_uncontended(task, self.tasks.clone(), self.wait_for_jobs_condvar.clone());
+    }
+}
+
+struct PoolTasks<GroupId> {
+    next_available_priority: TaskId,
+    ready_to_run_tasks: ReadyToRunTasks<GroupId>,
+    stalled_tasks: HashMap<GroupId, KeyTaskGroup>,
+}
+
+impl<GroupId: Clone + Eq + Hash + Send + 'static> PoolTasks<GroupId> {
+    fn submit(&mut self, group_id: GroupId, mode: OperationMode, task: Task, condvar: &Condvar) {
+        let task_id = self.next_available_priority;
+        self.next_available_priority += 1;
+
+        let PoolTasks {
+            stalled_tasks: waiting_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        let task_group = waiting_tasks.entry(group_id.clone()).or_default();
+        task_group.stalled_tasks.push(RevQueuePair::new(
+            task_id,
+            (mode, StalledTask::Function(task)),
+        ));
+        task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+    }
+
+    fn submit_uncontended(
+        &mut self,
+        task: impl FnOnce(SwitchToken<GroupId>) + Send + 'static,
+        task_pool: Arc<Mutex<PoolTasks<GroupId>>>,
+        wait_for_jobs: Arc<Condvar>,
+    ) {
+        let task_id = self.next_available_priority;
+        self.next_available_priority += 1;
+
+        let token = SwitchToken::new(task_pool, wait_for_jobs.clone(), task_id);
+        self.ready_to_run_tasks
+            .push(RevQueuePair::new(task_id, (None, Box::new(|| task(token)))));
+        wait_for_jobs.notify_one();
+    }
+
+    fn submit_switch(
+        &mut self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task_id: TaskId,
+        switch_condvar: Arc<Condvar>,
+        condvar: &Condvar,
+    ) -> Option<Arc<Condvar>> {
+        let PoolTasks {
+            stalled_tasks: waiting_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        let task_group = waiting_tasks.entry(group_id.clone()).or_default();
+        if let Some(new_state) =
+            GroupState::update_state_if_can_progress(task_group.current_mode, mode)
+        {
+            task_group.current_mode = Some(new_state);
+            None
+        } else {
+            task_group.stalled_tasks.push(RevQueuePair::new(
+                task_id,
+                (mode, StalledTask::Condvar(switch_condvar.clone())),
+            ));
+            task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+            Some(switch_condvar)
+        }
+    }
+
+    fn try_submit_switch(
+        &mut self,
+        group_id: GroupId,
+        mode: OperationMode,
+        task_id: TaskId,
+        switch_condvar: Arc<Condvar>,
+        condvar: &Condvar,
+    ) -> Option<()> {
+        use std::collections::hash_map::Entry;
+        let PoolTasks {
+            stalled_tasks: waiting_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        // TODO check task compatibility instead.
+        let new_task_group = match waiting_tasks.entry(group_id.clone()) {
+            Entry::Occupied(_occupied_entry) => return None,
+            Entry::Vacant(vacant_entry) => vacant_entry.insert(Default::default()),
+        };
+
+        new_task_group.stalled_tasks.push(RevQueuePair::new(
+            task_id,
+            (mode, StalledTask::Condvar(switch_condvar)),
+        ));
+        new_task_group.refill_ready_to_run_tasks(&group_id, ready_to_run_tasks, condvar);
+
+        Some(())
+    }
+
+    fn get_next_task(&mut self) -> Option<(Option<TaskInfo<GroupId>>, Task)> {
+        self.ready_to_run_tasks
+            .pop()
+            .map(|RevQueuePair(_task_id, (task_info, task))| (task_info, task))
+    }
+
+    fn complete_task(&mut self, task: &TaskInfo<GroupId>, condvar: &Condvar) {
+        let PoolTasks {
+            stalled_tasks,
+            ready_to_run_tasks,
+            ..
+        } = self;
+
+        let group = stalled_tasks
+            .get_mut(&task.group_id)
+            .expect("missing task group");
+        group.complete_task(
+            task.mode,
+            &task.group_id,
+            // refill ready to run tasks if possible
+            ready_to_run_tasks,
+            condvar,
+        );
+        if group.is_empty() {
+            assert!(
+                group.current_mode.is_none(),
+                "completing task but group still has running tasks"
+            );
+            // Includes both running, queued and waiting tasks.
+            stalled_tasks.remove(&task.group_id);
+        }
+    }
+}
+
+impl<GroupId> Default for PoolTasks<GroupId> {
+    fn default() -> Self {
+        Self {
+            next_available_priority: Default::default(),
+            ready_to_run_tasks: Default::default(),
+            stalled_tasks: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TaskInfo<GroupId> {
+    group_id: GroupId,
+    // TODO needed only to check correctness.
+    mode: OperationMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RevQueuePair<K, V>(Reverse<K>, V);
+
+impl<K, V> RevQueuePair<K, V> {
+    fn new(key: K, val: V) -> Self {
+        Self(Reverse(key), val)
+    }
+}
+
+impl<K: PartialEq, V> PartialEq for RevQueuePair<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<K: Eq, V> Eq for RevQueuePair<K, V> {}
+
+impl<K: PartialOrd, V> PartialOrd for RevQueuePair<K, V> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<K: Ord, V> Ord for RevQueuePair<K, V> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+type ReadyToRunTasks<GroupId> = BinaryHeap<RevQueuePair<TaskId, (Option<TaskInfo<GroupId>>, Task)>>;
+
+#[derive(Default)]
+struct KeyTaskGroup {
+    current_mode: Option<GroupState>,
+    stalled_tasks: BinaryHeap<RevQueuePair<TaskId, (OperationMode, StalledTask)>>,
+}
+
+impl KeyTaskGroup {
+    fn is_empty(&self) -> bool {
+        let has_running = match self.current_mode {
+            Some(GroupState::Shared(count)) => count > 0, // TODO can it be 0 here?
+            Some(GroupState::Exclusive) => true,
+            None => false,
+        };
+        self.stalled_tasks.is_empty() && !has_running
+    }
+
+    fn try_get_next_runnable_task(&mut self) -> Option<(OperationMode, TaskId, Task)> {
+        if let Some(&RevQueuePair(_task_id, (mode, ref _task))) = self.stalled_tasks.peek() {
+            if let Some(next_mode) =
+                GroupState::update_state_if_can_progress(self.current_mode, mode)
+            {
+                // can run the next task
+                let RevQueuePair(task_id, (_, task)) = self.stalled_tasks.pop().unwrap();
+                self.current_mode = Some(next_mode);
+                match task {
+                    StalledTask::Function(fn_once) => Some((mode, task_id.0, fn_once)),
+                    StalledTask::Condvar(condvar) => {
+                        condvar.notify_all();
+                        // We've notified the parked thread and it handles both mode and task_id.
+                        None
+                    }
+                }
+            } else {
+                // Cannot yet run the next task.
+                None
+            }
+        } else {
+            // No task at all.
+            None
+        }
+    }
+
+    fn complete_task<GroupId: Clone>(
+        &mut self,
+        complete_task_operation_mode: OperationMode,
+        group_id: &GroupId,
+        ready_to_run_tasks: &mut ReadyToRunTasks<GroupId>,
+        condvar: &Condvar,
+    ) {
+        match self.current_mode.as_mut() {
+            Some(GroupState::Shared(count)) => {
+                assert_eq!(complete_task_operation_mode, OperationMode::Shared);
+                *count = count.checked_sub(1).expect("shared task count underflow");
+                if *count == 0 {
+                    self.current_mode = None;
+                    self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
+                }
+            }
+            Some(GroupState::Exclusive) => {
+                assert_eq!(complete_task_operation_mode, OperationMode::Exclusive);
+                self.current_mode = None;
+                self.refill_ready_to_run_tasks(group_id, ready_to_run_tasks, condvar);
+            }
+            None => {
+                panic!("task_is_complete called when no tasks are running");
+            }
+        }
+    }
+
+    fn refill_ready_to_run_tasks<GroupId: Clone>(
+        &mut self,
+        group_id: &GroupId,
+        ready_to_run_tasks: &mut ReadyToRunTasks<GroupId>,
+        condvar: &Condvar,
+    ) {
+        // the state is checked and updated by the try_get_next_runnable_task call
+        while let Some((mode, task_id, task)) = self.try_get_next_runnable_task() {
+            let task_info = TaskInfo::<GroupId> {
+                group_id: group_id.clone(),
+                mode,
+            };
+            ready_to_run_tasks.push(RevQueuePair::new(task_id, (Some(task_info), task)));
+            condvar.notify_one();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shared_shared() {
+        let condvar = Condvar::new();
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_exclusive_exclusive() {
+        let condvar = Condvar::new();
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_shared_exclusive() {
+        let condvar = Condvar::new();
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_exclusive_shared() {
+        let condvar = Condvar::new();
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.complete_task(&job1.unwrap().0.unwrap(), &condvar);
+
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_some());
+
+        // No more tasks.
+        let job3 = pool_tasks.get_next_task();
+        assert!(job3.is_none());
+    }
+
+    #[test]
+    fn test_shared_exclusive_shared() {
+        let condvar = Condvar::new();
+        let mut pool_tasks = PoolTasks::default();
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+
+        // thread A
+        let job1 = pool_tasks.get_next_task();
+        assert!(job1.is_some());
+
+        pool_tasks.submit(1, OperationMode::Exclusive, Box::new(|| {}), &condvar);
+        // thread B
+        let job2 = pool_tasks.get_next_task();
+        assert!(job2.is_none());
+
+        pool_tasks.submit(1, OperationMode::Shared, Box::new(|| {}), &condvar);
+
+        // thread B
+        let job2_2 = pool_tasks.get_next_task();
+        assert!(job2_2.is_none());
+    }
+}

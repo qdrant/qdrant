@@ -9,6 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
+use pool::SwitchToken;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
@@ -505,6 +506,7 @@ impl UpdateWorkers {
                         update_operation_lock.clone(),
                         update_tracker.clone(),
                         &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
+                        &mut SwitchToken::dummy(),
                     )?;
                 }
             }

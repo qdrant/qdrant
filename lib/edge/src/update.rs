@@ -15,15 +15,20 @@ impl EdgeShard {
         let hw_counter = HardwareCounterCell::disposable();
 
         let result = match operation {
-            CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&self.segments, operation_id, point_operation, &hw_counter)
-            }
+            CollectionUpdateOperations::PointOperation(point_operation) => process_point_operation(
+                &self.segments,
+                operation_id,
+                point_operation,
+                &hw_counter,
+                todo!(),
+            ),
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(
                     &self.segments,
                     operation_id,
                     vector_operation,
                     &hw_counter,
+                    todo!(),
                 )
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {

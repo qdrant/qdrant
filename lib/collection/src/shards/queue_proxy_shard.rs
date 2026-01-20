@@ -27,6 +27,7 @@ use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
 use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
@@ -352,11 +353,18 @@ impl ShardOperation for QueueProxyShard {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.inner_unchecked()
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(
+                request,
+                search_runtime_handle,
+                search_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 
@@ -400,12 +408,19 @@ impl ShardOperation for QueueProxyShard {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
+        search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.inner_unchecked()
             .wrapped_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(
+                requests,
+                search_runtime_handle,
+                search_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 
@@ -704,12 +719,19 @@ impl ShardOperation for Inner {
         &self,
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
+        search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(
+                request,
+                search_runtime_handle,
+                search_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 
@@ -755,12 +777,19 @@ impl ShardOperation for Inner {
         &self,
         request: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
+        search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(
+                request,
+                search_runtime_handle,
+                search_pool,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 

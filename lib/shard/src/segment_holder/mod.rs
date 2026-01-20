@@ -19,6 +19,7 @@ use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use pool::SwitchToken;
 use rand::seq::IndexedRandom;
 use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -555,6 +556,13 @@ impl SegmentHolder {
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
         for (segment_id, points) in to_delete {
+            // TODO switch to modify segment_id, waiting
+            // We have an object passed to the thread:
+            // struct Token {...}
+            //
+            // let _guard = token.switch_to(segment_id, Exclusive);  // waits for with a condvar put in a queue
+            //
+            // What priority does it have? The original should be fine. Though stalled become a heap, not a deque.
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
@@ -614,6 +622,7 @@ impl SegmentHolder {
         &self,
         segment_ids: &[SegmentId],
         mut apply: F,
+        switch_token: &mut SwitchToken<usize>,
     ) -> OperationResult<bool>
     where
         F: FnMut(SegmentId, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -632,9 +641,15 @@ impl SegmentHolder {
             match segment_opt {
                 None => {}
                 Some(segment_lock) => {
-                    match segment_lock.try_write() {
-                        None => {}
-                        Some(mut lock) => return apply(*segment_id, &mut lock),
+                    let switch_guard =
+                        switch_token.try_switch_to(*segment_id, pool::OperationMode::Exclusive);
+                    if switch_guard.is_some() {
+                        match segment_lock.try_write() {
+                            None => {}
+                            Some(mut lock) => {
+                                return apply(*segment_id, &mut lock);
+                            }
+                        }
                     }
                     // save segments for further lock attempts
                     entries.push((*segment_id, segment_lock))
@@ -644,6 +659,9 @@ impl SegmentHolder {
 
         let mut rng = rand::rng();
         let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+
+        // We may wait here despite the pool, but at least it is not worse than without the pool.
+        let _guard = switch_token.switch_to(*segment_id, pool::OperationMode::Exclusive);
         let mut segment_write = segment_lock.write();
         apply(*segment_id, &mut segment_write)
     }
@@ -682,6 +700,7 @@ impl SegmentHolder {
         mut point_cow_operation: H,
         update_nonappendable: G,
         hw_counter: &HardwareCounterCell,
+        switch_token: &mut SwitchToken<usize>,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -742,6 +761,7 @@ impl SegmentHolder {
 
                             Ok(true)
                         },
+                        switch_token,
                     )?
                 };
                 applied_points.insert(point_id);

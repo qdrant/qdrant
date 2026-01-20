@@ -44,6 +44,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use pool::SwitchToken;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
@@ -62,6 +63,7 @@ use tokio_util::task::AbortOnDropHandle;
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
+use crate::collection::SegmentWorkerPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
@@ -223,6 +225,7 @@ impl LocalShard {
         shard_path: &Path,
         clocks: LocalShardClocks,
         update_runtime: Handle,
+        update_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
@@ -259,6 +262,7 @@ impl LocalShard {
             total_optimized_points.clone(),
             optimizer_resource_budget.clone(),
             update_runtime.clone(),
+            update_pool.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
@@ -321,6 +325,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         rebuild_payload_index: bool,
         update_runtime: Handle,
+        update_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
@@ -487,6 +492,7 @@ impl LocalShard {
             shard_path,
             clocks,
             update_runtime,
+            update_pool,
             search_runtime,
         )
         .await;
@@ -518,6 +524,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
+        update_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -532,6 +539,7 @@ impl LocalShard {
             shared_storage_config,
             payload_index_schema,
             update_runtime,
+            update_pool,
             search_runtime,
             optimizer_resource_budget,
             effective_optimizers_config,
@@ -551,6 +559,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
+        update_pool: Arc<SegmentWorkerPool>,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -642,6 +651,7 @@ impl LocalShard {
             shard_path,
             LocalShardClocks::default(),
             update_runtime,
+            update_pool,
             search_runtime,
         )
         .await;
@@ -715,6 +725,8 @@ impl LocalShard {
                 newest_clocks.advance_clock(clock_tag);
             }
 
+            let mut dummy_token = SwitchToken::dummy();
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
                 segments,
@@ -723,6 +735,7 @@ impl LocalShard {
                 self.update_operation_lock.clone(),
                 self.update_tracker.clone(),
                 &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
+                &mut dummy_token,
             ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();

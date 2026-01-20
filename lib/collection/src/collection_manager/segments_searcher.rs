@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
-use futures::stream::FuturesUnordered;
-use futures::{FutureExt, TryStreamExt};
+use futures::TryStreamExt;
+use futures::stream::{FuturesOrdered, FuturesUnordered};
 use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
@@ -28,6 +28,7 @@ use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::holders::segment_holder::LockedSegmentHolder;
+use crate::collection::SegmentWorkerPool;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::config::CollectionConfigInternal;
@@ -52,26 +53,28 @@ pub struct SegmentsSearcher;
 
 impl SegmentsSearcher {
     /// Execute searches in parallel and return results in the same order as the searches were provided
-    async fn execute_searches(
-        searches: Vec<AbortOnDropHandle<SegmentSearchExecutedResult>>,
-    ) -> CollectionResult<(BatchSearchResult, Vec<Vec<bool>>)> {
+    async fn execute_searches<E, Fut>(
+        searches: Vec<Fut>,
+    ) -> CollectionResult<(BatchSearchResult, Vec<Vec<bool>>)>
+    where
+        CollectionError: From<E>,
+        Fut: Future<Output = Result<SegmentSearchExecutedResult, E>> + Unpin,
+    {
         let results_len = searches.len();
 
-        let mut search_results_per_segment_res = FuturesUnordered::new();
-        for (idx, search) in searches.into_iter().enumerate() {
-            // map the result to include the request index for later reordering
-            let result_with_request_index = search.map(move |res| res.map(|s| (idx, s)));
-            search_results_per_segment_res.push(result_with_request_index);
+        let mut search_results_per_segment_res = FuturesOrdered::new();
+        for search in searches {
+            search_results_per_segment_res.push_back(search);
         }
 
-        let mut search_results_per_segment = vec![Vec::new(); results_len];
-        let mut further_searches_per_segment = vec![Vec::new(); results_len];
+        let mut search_results_per_segment = Vec::with_capacity(results_len);
+        let mut further_searches_per_segment = Vec::with_capacity(results_len);
         // process results as they come in and store them in the correct order
-        while let Some((idx, search_result)) = search_results_per_segment_res.try_next().await? {
+        while let Some(search_result) = search_results_per_segment_res.try_next().await? {
             let (search_results, further_searches) = search_result?;
             debug_assert!(search_results.len() == further_searches.len());
-            search_results_per_segment[idx] = search_results;
-            further_searches_per_segment[idx] = further_searches;
+            search_results_per_segment.push(search_results);
+            further_searches_per_segment.push(further_searches);
         }
         Ok((search_results_per_segment, further_searches_per_segment))
     }
@@ -209,7 +212,7 @@ impl SegmentsSearcher {
     pub async fn search(
         segments: LockedSegmentHolder,
         batch_request: Arc<CoreSearchRequestBatch>,
-        runtime_handle: &Handle,
+        runtime_pool: &Arc<SegmentWorkerPool>,
         sampling_enabled: bool,
         query_context: QueryContext,
         timeout: Duration,
@@ -238,11 +241,14 @@ impl SegmentsSearcher {
                 && query_context_arc.available_point_count() > 0;
 
             segments
-                .map(|segment| {
+                .enumerate()
+                .map(|(idx, segment)| {
                     let query_context_arc_segment = query_context_arc.clone();
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
-                    let search = runtime_handle.spawn_blocking({
+                    // TODO idx is not actually stable, but it is OK: worst thing that
+                    // could happen is performance like in the original version.
+                    let search = Box::pin(runtime_pool.submit(idx, pool::OperationMode::Shared, {
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
                             let segment_query_context =
@@ -256,14 +262,16 @@ impl SegmentsSearcher {
                                 timeout,
                             )
                         }
-                    });
+                    }));
 
                     // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
                     // all searches for futures that are already dropped. Not using this allows
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
                     // See: <https://github.com/qdrant/qdrant/pull/7530>
-                    let search = AbortOnDropHandle::new(search);
+                    //
+                    // TODO However, it doesn't work with our pool (yet).
+                    // let search = AbortOnDropHandle::new(search);
 
                     (segment, search)
                 })
@@ -306,27 +314,28 @@ impl SegmentsSearcher {
                     });
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
-                    let handle = runtime_handle.spawn_blocking(move || {
-                        let segment_query_context =
-                            query_context_arc_segment.get_segment_query_context();
+                    let handle =
+                        runtime_pool.submit(*segment_id, pool::OperationMode::Shared, move || {
+                            let segment_query_context =
+                                query_context_arc_segment.get_segment_query_context();
 
-                        search_in_segment(
-                            segment,
-                            partial_batch_request,
-                            false,
-                            &segment_query_context,
-                            timeout,
-                        )
-                    });
+                            search_in_segment(
+                                segment,
+                                partial_batch_request,
+                                false,
+                                &segment_query_context,
+                                timeout,
+                            )
+                        });
 
                     // We MUST wrap the search handle in AbortOnDropHandle to ensure that we skip
                     // all searches for futures that are already dropped. Not using this allows
                     // users to create a humongous queue of search tasks, even though the searches
                     // are already invalidated.
                     // See: <https://github.com/qdrant/qdrant/pull/7530>
-                    let handle = AbortOnDropHandle::new(handle);
+                    // let handle = AbortOnDropHandle::new(handle);
 
-                    res.push(handle);
+                    res.push(Box::pin(handle));
                 }
                 res
             };

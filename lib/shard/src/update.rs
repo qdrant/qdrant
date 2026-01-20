@@ -6,6 +6,7 @@ use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
+use pool::SwitchToken;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
@@ -29,16 +30,27 @@ pub fn process_point_operation(
     op_num: SeqNumberType,
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            let res = upsert_points(&segments.read(), op_num, points.iter(), hw_counter)?;
+            let res = upsert_points_in_pool(
+                &segments.read(),
+                op_num,
+                points.iter(),
+                hw_counter,
+                switch_token,
+            )?;
             Ok(res)
         }
-        PointOperations::UpsertPointsConditional(operation) => {
-            conditional_upsert(&segments.read(), op_num, operation, hw_counter)
-        }
+        PointOperations::UpsertPointsConditional(operation) => conditional_upsert(
+            &segments.read(),
+            op_num,
+            operation,
+            hw_counter,
+            switch_token,
+        ),
         PointOperations::DeletePoints { ids } => {
             delete_points(&segments.read(), op_num, &ids, hw_counter)
         }
@@ -82,21 +94,32 @@ pub fn process_vector_operation(
     op_num: SeqNumberType,
     vector_operation: VectorOperations,
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     match vector_operation {
-        VectorOperations::UpdateVectors(update_vectors) => {
-            update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
-        }
+        VectorOperations::UpdateVectors(update_vectors) => update_vectors_conditional(
+            &segments.read(),
+            op_num,
+            update_vectors,
+            hw_counter,
+            switch_token,
+        ),
         VectorOperations::DeleteVectors(ids, vector_names) => delete_vectors(
             &segments.read(),
             op_num,
             &ids.points,
             &vector_names,
             hw_counter,
+            switch_token,
         ),
-        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-            delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names, hw_counter)
-        }
+        VectorOperations::DeleteVectorsByFilter(filter, vector_names) => delete_vectors_by_filter(
+            &segments.read(),
+            op_num,
+            &filter,
+            &vector_names,
+            hw_counter,
+            switch_token,
+        ),
     }
 }
 
@@ -205,6 +228,28 @@ pub fn upsert_points<'a, T>(
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
+    upsert_points_in_pool(
+        segments,
+        op_num,
+        points,
+        hw_counter,
+        &mut SwitchToken::dummy(),
+    )
+}
+
+/// Checks point id in each segment, update point if found.
+/// All not found points are inserted into random segment.
+/// Returns: number of updated points.
+pub fn upsert_points_in_pool<'a, T>(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    points: T,
+    hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
+) -> OperationResult<usize>
+where
+    T: IntoIterator<Item = &'a PointStructPersisted>,
+{
     let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
@@ -237,6 +282,7 @@ where
             },
             |_| false,
             hw_counter,
+            switch_token,
         )?;
 
         res += updated_points.len();
@@ -279,6 +325,7 @@ pub fn conditional_upsert(
     op_num: SeqNumberType,
     operation: ConditionalInsertOperationInternal,
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     // Find points, which do exist, but don't match the condition.
     // Exclude those points from the upsert operation.
@@ -295,7 +342,8 @@ pub fn conditional_upsert(
 
     points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
+    let upserted_points =
+        upsert_points_in_pool(segments, op_num, points.iter(), hw_counter, switch_token)?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -504,6 +552,7 @@ pub fn update_vectors_conditional(
     op_num: SeqNumberType,
     points: UpdateVectorsOp,
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     let UpdateVectorsOp {
         mut points,
@@ -511,7 +560,7 @@ pub fn update_vectors_conditional(
     } = points;
 
     let Some(filter_condition) = update_filter else {
-        return update_vectors(segments, op_num, points, hw_counter);
+        return update_vectors(segments, op_num, points, hw_counter, switch_token);
     };
 
     let point_ids: Vec<_> = points.iter().map(|point| point.id).collect();
@@ -520,7 +569,7 @@ pub fn update_vectors_conditional(
         select_excluded_by_filter_ids(segments, point_ids, filter_condition, hw_counter)?;
 
     points.retain(|p| !points_to_exclude.contains(&p.id));
-    update_vectors(segments, op_num, points, hw_counter)
+    update_vectors(segments, op_num, points, hw_counter, switch_token)
 }
 
 /// Update the specified named vectors of a point, keeping unspecified vectors intact.
@@ -529,6 +578,7 @@ fn update_vectors(
     op_num: SeqNumberType,
     points: Vec<PointVectorsPersisted>,
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
     let mut points_map: AHashMap<PointIdType, NamedVectors> = AHashMap::new();
@@ -558,6 +608,7 @@ fn update_vectors(
             },
             |_| false,
             hw_counter,
+            switch_token,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
@@ -573,6 +624,7 @@ pub fn delete_vectors(
     points: &[PointIdType],
     vector_names: &[VectorNameBuf],
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -594,6 +646,7 @@ pub fn delete_vectors(
             },
             |_| false,
             hw_counter,
+            switch_token,
         )?;
         check_unprocessed_points(batch, &modified_points)?;
         total_deleted_points += modified_points.len();
@@ -609,10 +662,17 @@ pub fn delete_vectors_by_filter(
     filter: &Filter,
     vector_names: &[VectorNameBuf],
     hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    let vectors_deleted =
-        delete_vectors(segments, op_num, &affected_points, vector_names, hw_counter)?;
+    let vectors_deleted = delete_vectors(
+        segments,
+        op_num,
+        &affected_points,
+        vector_names,
+        hw_counter,
+        switch_token,
+    )?;
 
     if vectors_deleted == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -626,6 +686,7 @@ pub fn delete_vectors_by_filter(
 /// Batch size when modifying payload
 const PAYLOAD_OP_BATCH_SIZE: usize = 32;
 
+#[inline]
 pub fn set_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -633,6 +694,26 @@ pub fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
     hw_counter: &HardwareCounterCell,
+) -> OperationResult<usize> {
+    set_payload_in_pool(
+        segments,
+        op_num,
+        payload,
+        points,
+        key,
+        hw_counter,
+        &mut SwitchToken::dummy(),
+    )
+}
+
+pub fn set_payload_in_pool(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    payload: &Payload,
+    points: &[PointIdType],
+    key: &Option<JsonPath>,
+    hw_counter: &HardwareCounterCell,
+    switch_token: &mut SwitchToken<usize>,
 ) -> OperationResult<usize> {
     let mut total_updated_points = 0;
 
@@ -651,6 +732,7 @@ pub fn set_payload(
                 })
             },
             hw_counter,
+            switch_token,
         )?;
 
         check_unprocessed_points(chunk, &updated_points)?;
@@ -713,6 +795,7 @@ pub fn delete_payload(
                 )
             },
             hw_counter,
+            &mut SwitchToken::dummy(),
         )?;
 
         check_unprocessed_points(batch, &updated_points)?;
@@ -757,6 +840,7 @@ pub fn clear_payload(
             |_, _, payload| payload.0.clear(),
             |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
+            &mut SwitchToken::dummy(),
         )?;
         check_unprocessed_points(batch, &updated_points)?;
         total_updated_points += updated_points.len();
@@ -803,6 +887,7 @@ pub fn overwrite_payload(
             },
             |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
+            &mut SwitchToken::dummy(),
         )?;
 
         total_updated_points += updated_points.len();

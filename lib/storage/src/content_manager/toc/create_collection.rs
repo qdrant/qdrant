@@ -229,7 +229,9 @@ impl TableOfContent {
                 collection_name.to_string(),
             ),
             Some(self.search_runtime.handle().clone()),
+            self.search_pool.clone(),
             Some(self.update_runtime.handle().clone()),
+            self.update_pool.clone(),
             self.optimizer_resource_budget.clone(),
             self.storage_config.optimizers_overwrite.clone(),
         )

@@ -104,10 +104,17 @@ impl ShardReplicaSet {
             |shard| {
                 let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
+                let search_runtime_pool = self.search_runtime_pool.clone();
                 let hw_measurement_acc_clone = hw_measurement_acc.clone();
                 async move {
                     shard
-                        .core_search(request, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .core_search(
+                            request,
+                            &search_runtime,
+                            &search_runtime_pool,
+                            timeout,
+                            hw_measurement_acc_clone,
+                        )
                         .await
                 }
                 .boxed()
@@ -228,10 +235,17 @@ impl ShardReplicaSet {
             |shard| {
                 let requests = Arc::clone(&requests);
                 let search_runtime = self.search_runtime.clone();
+                let search_runtime_pool = self.search_runtime_pool.clone();
                 let hw_measurement_acc_clone = hw_measurement_acc.clone();
                 async move {
                     shard
-                        .query_batch(requests, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .query_batch(
+                            requests,
+                            &search_runtime,
+                            &search_runtime_pool,
+                            timeout,
+                            hw_measurement_acc_clone,
+                        )
                         .await
                 }
                 .boxed()

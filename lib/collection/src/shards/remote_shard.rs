@@ -49,6 +49,7 @@ use super::conversions::{
     internal_update_vectors,
 };
 use super::local_shard::clock_map::RecoveryPoint;
+use crate::collection::SegmentWorkerPool;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
@@ -1124,6 +1125,7 @@ impl ShardOperation for RemoteShard {
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,
         _search_runtime_handle: &Handle,
+        _search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -1293,6 +1295,7 @@ impl ShardOperation for RemoteShard {
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
+        _search_pool: &Arc<SegmentWorkerPool>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
