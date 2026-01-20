@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
@@ -645,11 +644,7 @@ pub fn set_payload(
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
             },
-            |segment| {
-                segment.get_indexed_fields().keys().all(|indexed_path| {
-                    !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
-                })
-            },
+            |_| false,
             hw_counter,
         )?;
 
@@ -705,13 +700,7 @@ pub fn delete_payload(
                     payload.remove(key);
                 }
             },
-            |segment| {
-                iproduct!(segment.get_indexed_fields().keys(), keys).all(
-                    |(indexed_path, path_to_delete)| {
-                        !indexed_path.is_affected_by_value_remove(path_to_delete)
-                    },
-                )
-            },
+            |_| false,
             hw_counter,
         )?;
 
@@ -755,7 +744,7 @@ pub fn clear_payload(
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
             |_, _, payload| payload.0.clear(),
-            |segment| segment.get_indexed_fields().is_empty(),
+            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -801,7 +790,7 @@ pub fn overwrite_payload(
             |_, _, old_payload| {
                 *old_payload = payload.clone();
             },
-            |segment| segment.get_indexed_fields().is_empty(),
+            |_| false,
             hw_counter,
         )?;
 
