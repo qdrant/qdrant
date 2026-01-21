@@ -65,9 +65,7 @@ pub async fn stream_shard_snapshot(
         .running_snapshots
         .measure_scope();
 
-    if let Some(old_manifest) = &manifest
-        && !old_manifest.is_empty()
-    {
+    if let Some(old_manifest) = &manifest {
         let current_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
 
         // If `old_manifest` is *exactly* the same, as `current_manifest`, return specialized error
