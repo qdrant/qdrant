@@ -335,10 +335,10 @@ impl UpdateWorkers {
             let resource_budget = optimizer_resource_budget.clone();
 
             // Track optimizer status
-            let segment_uuid = Uuid::new_v4();
+            let new_segment_uuid = Uuid::new_v4();
             let (tracker, progress) = Tracker::start(
                 optimizer.as_ref().name(),
-                segment_uuid,
+                new_segment_uuid,
                 segments_to_merge.clone(),
                 segment_uuids,
             );
@@ -348,8 +348,8 @@ impl UpdateWorkers {
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     optimizer.as_ref().optimize(
                         segments.clone(),
-                        segment_uuid,
                         segments_to_merge,
+                        new_segment_uuid,
                         permit,
                         resource_budget,
                         stopped,
