@@ -17,6 +17,7 @@ criterion = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 parking_lot = { workspace = true }
+rayon = { workspace = true }
 
 # Compare against these caches
 quick_cache = "0.6"

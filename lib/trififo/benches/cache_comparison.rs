@@ -11,10 +11,10 @@
 //! - Single-threaded latency (insert/get operations)
 //! - Multi-threaded latency (16 threads)
 
+use std::alloc;
 use std::hash::{Hash, Hasher};
 use std::hint::black_box;
 use std::sync::Arc;
-use std::{alloc, thread};
 
 use cap::Cap;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -25,9 +25,9 @@ use rand::distr::{Distribution, Uniform};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Zipf;
+use rayon::prelude::*;
 use schnellru::{ByLength, LruMap};
-use strum::EnumIter;
-use strum::IntoEnumIterator;
+use strum::{EnumIter, IntoEnumIterator};
 
 /// Cache key representing a file descriptor and page offset.
 ///
@@ -500,24 +500,12 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
                 b.iter(|| {
                     let cache = create_cache(name, CACHE_CAPACITY);
 
-                    let handles: Vec<_> = keys
-                        .iter()
-                        .enumerate()
-                        .map(|(t, thread_keys)| {
-                            let cache = Arc::clone(&cache);
-                            let keys = thread_keys.clone();
-                            thread::spawn(move || {
-                                for (i, key) in keys.iter().enumerate() {
-                                    let value = (t * OPS_PER_THREAD + i) as u32;
-                                    black_box(cache.get_or_insert(*key, value));
-                                }
-                            })
-                        })
-                        .collect();
-
-                    for handle in handles {
-                        handle.join().unwrap();
-                    }
+                    keys.par_iter().enumerate().for_each(|(t, thread_keys)| {
+                        for (i, key) in thread_keys.iter().enumerate() {
+                            let value = (t * OPS_PER_THREAD + i) as u32;
+                            black_box(cache.get_or_insert(*key, value));
+                        }
+                    });
 
                     black_box(cache)
                 });
