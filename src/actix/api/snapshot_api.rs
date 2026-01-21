@@ -742,8 +742,8 @@ async fn recover_partial_snapshot_from(
             // Empty snapshot manifest allows us to use partial snapshots even if local shard doesn't exist
             let snapshot_manifest = match collection.get_partial_snapshot_manifest(shard_id).await {
                 Ok(manifest) => manifest,
-                Err(CollectionError::NotFound { what: _ }) => SnapshotManifest::empty(),
-                Err(e) => Err(e)?
+                Err(CollectionError::NotFound { .. }) => SnapshotManifest::empty(),
+                Err(err) => return Err(StorageError::from(err))
             };
 
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
