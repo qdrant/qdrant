@@ -51,10 +51,12 @@ impl LocalShard {
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
-        update_handler.optimizers = new_optimizers;
+        update_handler.optimizers = new_optimizers.clone();
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
+
+        self.optimizers.store(new_optimizers);
 
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 

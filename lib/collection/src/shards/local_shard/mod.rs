@@ -104,7 +104,7 @@ pub struct LocalShard {
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
-    pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
+    pub(super) optimizers: ArcSwap<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     pub(super) total_optimized_points: Arc<AtomicUsize>,
     pub(super) search_runtime: Handle,
@@ -294,7 +294,7 @@ impl LocalShard {
             update_tracker,
             path: shard_path.to_owned(),
             search_runtime,
-            optimizers,
+            optimizers: ArcSwap::new(optimizers),
             optimizers_log,
             total_optimized_points,
             disk_usage_watcher,
@@ -980,7 +980,7 @@ impl LocalShard {
     /// Call [`plan_optimizations`] and return summary.
     pub fn pending_optimizations(&self) -> PendingOptimizations {
         let segments = self.segments.read();
-        let scheduled = plan_optimizations(&segments, &self.optimizers);
+        let scheduled = plan_optimizations(&segments, &self.optimizers.load());
         let mut pending_segments = 0;
         let mut points = 0;
         for (_, segment_ids) in scheduled.iter() {
