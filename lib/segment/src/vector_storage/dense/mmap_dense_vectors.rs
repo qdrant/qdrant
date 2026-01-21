@@ -228,14 +228,17 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     ) -> OperationResult<()> {
         match &self.uring_reader {
             None => self.process_points_simple(points, callback),
+
             #[cfg(target_os = "linux")]
             Some(uring_reader) => {
+                // Use `UringReader` on Linux
                 let mut uring_guard = uring_reader.lock();
                 uring_guard.read_stream(points, callback)?;
             }
+
             #[cfg(not(target_os = "linux"))]
-            Some(_uring_reader) => {
-                // On non-Linux platforms, just use synchronous processing
+            Some(_) => {
+                // Fallback to synchronous processing on non-Linux platforms
                 self.process_points_simple(points, callback);
             }
         }

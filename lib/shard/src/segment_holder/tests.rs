@@ -34,59 +34,58 @@ fn test_add_and_swap() {
         .for_each(|s| s.drop_data().unwrap());
 }
 
-#[rstest::rstest]
-#[case::do_update_nonappendable(true)]
-#[case::dont_update_nonappendable(false)]
-fn test_apply_to_appendable(#[case] update_nonappendable: bool) {
+#[test]
+fn test_apply_to_appendable() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let segment1 = build_segment_1(dir.path());
-    let mut segment2 = build_segment_2(dir.path());
+    let appendable_segment = build_segment_1(dir.path());
 
-    segment2.appendable_flag = false;
+    let mut immutable_segment = build_segment_2(dir.path());
+    immutable_segment.appendable_flag = false;
 
     let mut holder = SegmentHolder::default();
+    let appendable_id = holder.add_new(appendable_segment);
+    let immutable_id = holder.add_new(immutable_segment);
 
-    let sid1 = holder.add_new(segment1);
-    let sid2 = holder.add_new(segment2);
+    let point_ids = [1.into(), 2.into(), 11.into(), 12.into()];
+    let mut updated_in_place = Vec::new();
+    let mut moved_to_appendable = Vec::new();
 
-    let op_num = 100;
-    let mut processed_points: Vec<PointIdType> = vec![];
-    let mut processed_points2: Vec<PointIdType> = vec![];
     holder
         .apply_points_with_conditional_move(
-            op_num,
-            &[1.into(), 2.into(), 11.into(), 12.into()],
+            100,
+            &point_ids,
             |point_id, segment| {
-                processed_points.push(point_id);
+                updated_in_place.push(point_id);
                 assert!(segment.has_point(point_id));
                 Ok(true)
             },
-            |point_id, _, _| processed_points2.push(point_id),
-            |_| update_nonappendable,
+            |point_id, _, _| {
+                moved_to_appendable.push(point_id);
+            },
             &HardwareCounterCell::new(),
         )
         .unwrap();
 
-    assert_eq!(4, processed_points.len() + processed_points2.len());
+    // All points were updated
+    assert_eq!(
+        point_ids.len(),
+        updated_in_place.len() + moved_to_appendable.len()
+    );
 
-    let locked_segment_1 = holder.get(sid1).unwrap().get();
-    let read_segment_1 = locked_segment_1.read();
-    let locked_segment_2 = holder.get(sid2).unwrap().get();
-    let read_segment_2 = locked_segment_2.read();
+    let appendable_segment = holder.get(appendable_id).unwrap().get();
+    let appendable_segment = appendable_segment.read();
 
-    for i in processed_points2.iter() {
-        assert!(read_segment_1.has_point(*i));
+    let immutable_segment = holder.get(immutable_id).unwrap().get();
+    let immutable_segment = immutable_segment.read();
+
+    // All points were moved from immutable into appendable segment
+    for point_id in point_ids {
+        assert!(appendable_segment.has_point(point_id));
     }
 
-    assert!(read_segment_1.has_point(1.into()));
-    assert!(read_segment_1.has_point(2.into()));
-
-    // Points moved or not moved on apply based on appendable flag
-    assert_eq!(read_segment_1.has_point(11.into()), !update_nonappendable);
-    assert_eq!(read_segment_1.has_point(12.into()), !update_nonappendable);
-    assert_eq!(read_segment_2.has_point(11.into()), update_nonappendable);
-    assert_eq!(read_segment_2.has_point(12.into()), update_nonappendable);
+    assert!(!immutable_segment.has_point(11.into()));
+    assert!(!immutable_segment.has_point(12.into()));
 }
 
 /// Test applying points and conditionally moving them if operation versions are off
@@ -186,7 +185,6 @@ fn test_apply_and_move_old_versions(
                 Ok(true)
             },
             |point_id, _, _| processed_points2.push(point_id),
-            |_| false,
             &hw_counter,
         )
         .unwrap();
@@ -274,7 +272,6 @@ fn test_cow_operation() {
                 );
                 payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
             },
-            |_| false,
             &hw_counter,
         )
         .unwrap();
