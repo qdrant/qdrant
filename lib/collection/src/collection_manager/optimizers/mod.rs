@@ -97,6 +97,8 @@ impl TrackerLog {
 pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
     /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
     /// Segment UUIDs being optimized
@@ -113,12 +115,14 @@ impl Tracker {
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
         name: impl Into<String>,
+        uuid: Uuid,
         segment_ids: Vec<SegmentId>,
         segment_uuids: Vec<Uuid>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
             name: name.into(),
+            uuid,
             segment_ids,
             segment_uuids,
             state: Default::default(),
@@ -137,6 +141,7 @@ impl Tracker {
         let state = self.state.lock();
         TrackerTelemetry {
             name: self.name.clone(),
+            uuid: self.uuid,
             segment_ids: self.segment_ids.clone(),
             segment_uuids: self.segment_uuids.clone(),
             status: state.status.clone(),
@@ -152,6 +157,8 @@ pub struct TrackerTelemetry {
     /// Name of the optimizer
     #[anonymize(false)]
     pub name: String,
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
     /// Internal segment IDs being optimized.
     /// These are local and in-memory, meaning that they can refer to different
     /// segments after a service restart.

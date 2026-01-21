@@ -193,6 +193,7 @@ mod tests {
     use serde_json::Value;
     use shard::locked_segment::LockedSegment;
     use tempfile::Builder;
+    use uuid::Uuid;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
@@ -314,6 +315,7 @@ mod tests {
         vacuum_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),
@@ -467,6 +469,7 @@ mod tests {
         let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 vec![segment_id],
                 permit,
                 budget.clone(),
@@ -575,6 +578,7 @@ mod tests {
         let changed = vacuum_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),

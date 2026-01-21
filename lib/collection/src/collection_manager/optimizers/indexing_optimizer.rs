@@ -250,6 +250,7 @@ mod tests {
     use segment::types::{Distance, PayloadSchemaType, SegmentType, VectorNameBuf};
     use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
+    use uuid::Uuid;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
@@ -343,6 +344,7 @@ mod tests {
         index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),
@@ -503,6 +505,7 @@ mod tests {
         index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize[0].clone(),
                 permit,
                 budget.clone(),
@@ -519,6 +522,7 @@ mod tests {
         index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize[0].clone(),
                 permit,
                 budget.clone(),
@@ -649,6 +653,7 @@ mod tests {
         index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),
@@ -771,6 +776,7 @@ mod tests {
             index_optimizer
                 .optimize(
                     locked_holder.clone(),
+                    Uuid::new_v4(),
                     suggested_to_optimize,
                     permit,
                     budget.clone(),
@@ -938,6 +944,7 @@ mod tests {
         let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 vec![segment_id],
                 permit,
                 budget.clone(),

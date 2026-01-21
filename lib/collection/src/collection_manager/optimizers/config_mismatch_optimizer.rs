@@ -246,6 +246,7 @@ mod tests {
         ScalarQuantizationConfig, ScalarType,
     };
     use tempfile::Builder;
+    use uuid::Uuid;
 
     use super::*;
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
@@ -337,6 +338,7 @@ mod tests {
         let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 vec![segment_id],
                 permit,
                 budget.clone(),
@@ -372,6 +374,7 @@ mod tests {
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),
@@ -500,6 +503,7 @@ mod tests {
         let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 vec![segment_id],
                 permit,
                 budget.clone(),
@@ -543,6 +547,7 @@ mod tests {
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),
@@ -677,6 +682,7 @@ mod tests {
         let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 vec![segment_id],
                 permit,
                 budget.clone(),
@@ -723,6 +729,7 @@ mod tests {
         let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_to_optimize,
                 permit,
                 budget.clone(),

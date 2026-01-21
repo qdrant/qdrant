@@ -184,6 +184,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
+    use uuid::Uuid;
 
     use super::*;
     use crate::collection_manager::fixtures::{get_merge_optimizer, random_segment};
@@ -271,6 +272,7 @@ mod tests {
         merge_optimizer
             .optimize(
                 locked_holder.clone(),
+                Uuid::new_v4(),
                 suggested_for_merge,
                 permit,
                 budget,

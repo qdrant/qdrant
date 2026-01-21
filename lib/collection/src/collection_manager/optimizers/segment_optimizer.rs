@@ -422,6 +422,7 @@ pub trait SegmentOptimizer {
     #[allow(clippy::too_many_arguments)]
     fn build_new_segment(
         &self,
+        uuid: Uuid,
         optimizing_segments: &[LockedSegment],
         proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
@@ -550,7 +551,7 @@ pub trait SegmentOptimizer {
         let mut rng = rand::rng();
         let mut optimized_segment = segment_builder.build(
             self.segments_path(),
-            Uuid::new_v4(),
+            uuid,
             indexing_permit,
             stopped,
             &mut rng,
@@ -621,6 +622,7 @@ pub trait SegmentOptimizer {
     fn optimize(
         &self,
         segments: LockedSegmentHolder,
+        uuid: Uuid,
         ids: Vec<SegmentId>,
         permit: ResourcePermit,
         resource_budget: ResourceBudget,
@@ -750,6 +752,7 @@ pub trait SegmentOptimizer {
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
         let result = self.optimize_segment_propagate_changes(
+            uuid,
             &segments,
             &optimizing_segments,
             &locked_proxies,
@@ -870,6 +873,7 @@ pub trait SegmentOptimizer {
     #[allow(clippy::too_many_arguments)]
     fn optimize_segment_propagate_changes<'a>(
         &self,
+        uuid: Uuid,
         segments: &'a LockedSegmentHolder,
         optimizing_segments: &[LockedSegment],
         proxies: &[LockedSegment],
@@ -887,6 +891,7 @@ pub trait SegmentOptimizer {
         // ---- SLOW PART -----
 
         let mut optimized_segment = self.build_new_segment(
+            uuid,
             optimizing_segments,
             proxies,
             permit,

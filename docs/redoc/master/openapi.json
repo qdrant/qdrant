@@ -13184,12 +13184,18 @@
           "segment_ids",
           "segment_uuids",
           "start_at",
-          "status"
+          "status",
+          "uuid"
         ],
         "properties": {
           "name": {
             "description": "Name of the optimizer",
             "type": "string"
+          },
+          "uuid": {
+            "description": "UUID of the upcoming segment being created by the optimizer",
+            "type": "string",
+            "format": "uuid"
           },
           "segment_ids": {
             "description": "Internal segment IDs being optimized. These are local and in-memory, meaning that they can refer to different segments after a service restart.",
