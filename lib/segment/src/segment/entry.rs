@@ -7,6 +7,7 @@ use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use io::safe_delete::safe_delete_with_suffix;
+use uuid::Uuid;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -602,8 +603,8 @@ impl SegmentEntry for Segment {
         self.approximate_facet(request, is_stopped, hw_counter)
     }
 
-    fn segment_uuid(&self) -> String {
-        self.uuid.clone()
+    fn segment_uuid(&self) -> Uuid {
+        self.uuid
     }
 
     fn segment_type(&self) -> SegmentType {

@@ -25,6 +25,7 @@ use io::storage_version::StorageVersion;
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
+use uuid::Uuid;
 
 use self::version_tracker::VersionTracker;
 use crate::common::operation_error::SegmentFailedState;
@@ -63,7 +64,7 @@ impl StorageVersion for SegmentVersion {
 /// - Keeps track of occurred errors
 #[derive(Debug)]
 pub struct Segment {
-    pub uuid: String,
+    pub uuid: Uuid,
     /// Initial version this segment was created at
     pub initial_version: Option<SeqNumberType>,
     /// Latest update operation number, applied to this segment

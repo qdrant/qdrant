@@ -451,7 +451,7 @@ pub struct VectorDataInfo {
 #[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
-    pub uuid: String,
+    pub uuid: Uuid,
     pub segment_type: SegmentType,
     pub num_vectors: usize,
     pub num_points: usize,

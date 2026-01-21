@@ -20,6 +20,7 @@ use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -334,8 +335,10 @@ impl UpdateWorkers {
             let resource_budget = optimizer_resource_budget.clone();
 
             // Track optimizer status
+            let new_segment_uuid = Uuid::new_v4();
             let (tracker, progress) = Tracker::start(
                 optimizer.as_ref().name(),
+                new_segment_uuid,
                 segments_to_merge.clone(),
                 segment_uuids,
             );
@@ -346,6 +349,7 @@ impl UpdateWorkers {
                     optimizer.as_ref().optimize(
                         segments.clone(),
                         segments_to_merge,
+                        new_segment_uuid,
                         permit,
                         resource_budget,
                         stopped,

@@ -231,11 +231,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::ops::Deref;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
-    use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::progress_tracker::ProgressTracker;
     use fs_err as fs;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
@@ -243,7 +240,6 @@ mod tests {
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
@@ -278,7 +274,6 @@ mod tests {
         init();
         let mut holder = SegmentHolder::default();
 
-        let stopped = AtomicBool::new(false);
         let dim1 = 128;
         let dim2 = 256;
 
@@ -336,21 +331,7 @@ mod tests {
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
-        index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &stopped,
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
 
         let infos = locked_holder
             .read()
@@ -387,7 +368,6 @@ mod tests {
 
         let payload_field: JsonPath = "number".parse().unwrap();
 
-        let stopped = AtomicBool::new(false);
         let dim = 256;
 
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -487,10 +467,6 @@ mod tests {
         )
         .unwrap();
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(
@@ -500,33 +476,12 @@ mod tests {
                 vec![middle_segment_id],
             ]),
         );
-        index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize[0].clone(),
-                permit,
-                budget.clone(),
-                &stopped,
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------ Plain -> Indexed payload
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert_eq!(suggested_to_optimize.clone(), vec![vec![middle_segment_id]]);
-        index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize[0].clone(),
-                permit,
-                budget.clone(),
-                &stopped,
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize[0].clone());
 
         // ------- Keep smallest segment without changes
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
@@ -641,22 +596,11 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         index_optimizer.thresholds_config.indexing_threshold_kb = 20;
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert!(suggested_to_optimize.contains(&small_segment_id));
-        index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &stopped,
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
 
         let new_infos2 = locked_holder
             .read()
@@ -703,7 +647,6 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let stopped = AtomicBool::new(false);
         let dim = 256;
 
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -754,9 +697,6 @@ mod tests {
             Default::default(),
         );
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-
         // Index until all segments are indexed
         let mut numer_of_optimizations = 0;
         loop {
@@ -767,18 +707,7 @@ mod tests {
             log::debug!("suggested_to_optimize = {suggested_to_optimize:#?}");
             let suggested_to_optimize = suggested_to_optimize.into_iter().next().unwrap();
 
-            let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-            index_optimizer
-                .optimize(
-                    locked_holder.clone(),
-                    suggested_to_optimize,
-                    permit,
-                    budget.clone(),
-                    &stopped,
-                    ProgressTracker::new_for_test(),
-                    Box::new(|| ()),
-                )
-                .unwrap();
+            index_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
             numer_of_optimizations += 1;
             assert!(numer_of_optimizations <= number_of_segments);
             let number_of_segments = locked_holder.read().len();
@@ -930,22 +859,8 @@ mod tests {
             Default::default(),
         );
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // Use indexing optimizer to build mmap
-        let changed = index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                vec![segment_id],
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
         assert!(
             changed > 0,
             "optimizer should have rebuilt this segment for mmap"

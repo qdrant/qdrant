@@ -179,15 +179,11 @@ impl SegmentOptimizer for VacuumOptimizer {
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
-    use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::progress_tracker::ProgressTracker;
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::index::hnsw_index::num_rayon_threads;
     use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;
@@ -307,21 +303,7 @@ mod tests {
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
-        vacuum_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &AtomicBool::new(false),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        vacuum_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
 
         let after_optimization_segments = locked_holder.read().iter().map(|(x, _)| x).collect_vec();
 
@@ -436,10 +418,6 @@ mod tests {
             inline_storage: None,
         };
 
-        let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
@@ -464,17 +442,7 @@ mod tests {
         );
 
         // Use indexing optimizer to build index for vacuum index test
-        let changed = index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                vec![segment_id],
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -568,21 +536,11 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize = vacuum_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
-        let changed = vacuum_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed =
+            vacuum_optimizer.optimize_for_test(locked_holder.clone(), suggested_to_optimize);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure deleted points and vectors are optimized

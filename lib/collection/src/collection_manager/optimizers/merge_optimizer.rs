@@ -174,15 +174,11 @@ impl SegmentOptimizer for MergeOptimizer {
 mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
-    use std::sync::atomic::AtomicBool;
 
-    use common::budget::ResourceBudget;
-    use common::progress_tracker::ProgressTracker;
     use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
-    use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
 
     use super::*;
@@ -264,21 +260,7 @@ mod tests {
             })
             .collect_vec();
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
-        merge_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_for_merge,
-                permit,
-                budget,
-                &AtomicBool::new(false),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        merge_optimizer.optimize_for_test(locked_holder.clone(), suggested_for_merge);
 
         let after_optimization_segments = locked_holder.read().iter().map(|(x, _)| x).collect_vec();
 
