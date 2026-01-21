@@ -20,6 +20,7 @@ use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::*;
+use uuid::Uuid;
 
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
@@ -594,7 +595,7 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
-    fn segment_uuid(&self) -> String {
+    fn segment_uuid(&self) -> Uuid {
         self.wrapped_segment.get().read().segment_uuid()
     }
 

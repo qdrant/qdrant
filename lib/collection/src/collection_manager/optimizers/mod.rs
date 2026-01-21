@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use shard::segment_holder::SegmentId;
+use uuid::Uuid;
 
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
@@ -96,12 +97,12 @@ impl TrackerLog {
 pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
-    /// Internal segment IDs being optimized
-    /// These are local and in-memory, meaning that they can refer to different segments after a service restart.
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
+    /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
     /// Segment UUIDs being optimized
-    /// Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name
-    pub segment_uuids: Vec<String>,
+    pub segment_uuids: Vec<Uuid>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
@@ -114,12 +115,14 @@ impl Tracker {
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
         name: impl Into<String>,
+        uuid: Uuid,
         segment_ids: Vec<SegmentId>,
-        segment_uuids: Vec<String>,
+        segment_uuids: Vec<Uuid>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
             name: name.into(),
+            uuid,
             segment_ids,
             segment_uuids,
             state: Default::default(),
@@ -138,6 +141,7 @@ impl Tracker {
         let state = self.state.lock();
         TrackerTelemetry {
             name: self.name.clone(),
+            uuid: self.uuid,
             segment_ids: self.segment_ids.clone(),
             segment_uuids: self.segment_uuids.clone(),
             status: state.status.clone(),
@@ -153,10 +157,16 @@ pub struct TrackerTelemetry {
     /// Name of the optimizer
     #[anonymize(false)]
     pub name: String,
-    /// Segment IDs being optimized
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
+    /// Internal segment IDs being optimized.
+    /// These are local and in-memory, meaning that they can refer to different
+    /// segments after a service restart.
     pub segment_ids: Vec<SegmentId>,
-    /// Segment UUIDs being optimized
-    pub segment_uuids: Vec<String>,
+    /// Segment UUIDs being optimized.
+    /// Refers to same segments as in `segment_ids`, but trackable across
+    /// restarts, and reflect their directory name.
+    pub segment_uuids: Vec<Uuid>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer

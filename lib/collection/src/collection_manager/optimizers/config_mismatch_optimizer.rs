@@ -235,12 +235,9 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use common::budget::ResourceBudget;
-    use common::progress_tracker::ProgressTracker;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{
         CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
         ScalarQuantizationConfig, ScalarType,
@@ -329,22 +326,8 @@ mod tests {
             Default::default(),
         );
 
-        let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // Use indexing optimizer to build index for HNSW mismatch test
-        let changed = index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                vec![segment_id],
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -364,22 +347,12 @@ mod tests {
         config_mismatch_optimizer.hnsw_config = changed_hnsw_config;
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+            .optimize_for_test(locked_holder.clone(), suggested_to_optimize);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
@@ -471,10 +444,6 @@ mod tests {
             inline_storage: None,
         };
 
-        let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
@@ -497,17 +466,7 @@ mod tests {
         );
 
         // Use indexing optimizer to build index for HNSW mismatch test
-        let changed = index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                vec![segment_id],
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -535,22 +494,12 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+            .optimize_for_test(locked_holder.clone(), suggested_to_optimize);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
@@ -669,22 +618,8 @@ mod tests {
             Some(quantization_config_collection),
         );
 
-        let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
-
         // Use indexing optimizer to build index for quantization mismatch test
-        let changed = index_optimizer
-            .optimize(
-                locked_holder.clone(),
-                vec![segment_id],
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+        let changed = index_optimizer.optimize_for_test(locked_holder.clone(), vec![segment_id]);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -715,22 +650,12 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_to_optimize = suggested_to_optimize.into_iter().exactly_one().unwrap();
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = config_mismatch_optimizer
-            .optimize(
-                locked_holder.clone(),
-                suggested_to_optimize,
-                permit,
-                budget.clone(),
-                &false.into(),
-                ProgressTracker::new_for_test(),
-                Box::new(|| ()),
-            )
-            .unwrap();
+            .optimize_for_test(locked_holder.clone(), suggested_to_optimize);
         assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed quantization config

@@ -1,4 +1,5 @@
 use std::iter::FromIterator;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
@@ -13,9 +14,10 @@ use segment::data_types::vectors::{
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
+use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::{Condition, Distance, Filter, SearchParams, SegmentType, WithPayload};
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
+use uuid::Uuid;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
 
@@ -204,9 +206,7 @@ fn ordered_deletion_test() {
         segment.segment_path.clone()
     };
 
-    let segment = load_segment(&path, &AtomicBool::new(false))
-        .unwrap()
-        .unwrap();
+    let segment = load_segment(&path, Uuid::nil(), &AtomicBool::new(false)).unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
@@ -224,26 +224,56 @@ fn ordered_deletion_test() {
     assert_eq!(best_match.id, 3.into());
 }
 
-#[test]
-fn skip_deleted_segment() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+mod normalize_segment_dir {
+    use super::*;
 
-    let hw_counter = HardwareCounterCell::new();
+    fn make_segment() -> (TempDir, PathBuf, Uuid) {
+        let tmpdir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let segment = build_segment_1(tmpdir.path());
+        (tmpdir, segment.segment_path.clone(), segment.uuid)
+    }
 
-    let path = {
-        let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
-        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
-        segment.flush(false).unwrap();
-        segment.segment_path.clone()
-    };
+    #[test]
+    fn happy_case() {
+        let (_tmpdir, original_path, original_uuid) = make_segment();
+        let result = normalize_segment_dir(&original_path).unwrap();
+        assert_eq!(Some((original_path, original_uuid)), result);
+    }
 
-    let new_path = path.with_extension("deleted");
-    fs::rename(&path, new_path).unwrap();
+    #[test]
+    fn deleted_suffix_case() {
+        let (tmpdir, original_path, _original_uuid) = make_segment();
+        let deleted_path = original_path.with_extension("deleted");
+        fs::rename(&original_path, &deleted_path).unwrap();
+        assert!(normalize_segment_dir(&deleted_path).unwrap().is_none());
+        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
+    }
 
-    let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
+    #[test]
+    fn missing_version_case() {
+        let (tmpdir, original_path, _original_uuid) = make_segment();
+        fs::remove_file(original_path.join(io::storage_version::VERSION_FILE)).unwrap();
+        assert!(normalize_segment_dir(&original_path).unwrap().is_none());
+        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
+    }
 
-    assert!(matches!(segment, LoadSegmentOutcome::Skipped));
+    #[test]
+    fn non_uuid_case() {
+        let (tmpdir, original_path, original_uuid) = make_segment();
+        let non_uuid_path = original_path.with_file_name("not-an-uuid");
+        fs::rename(&original_path, &non_uuid_path).unwrap();
+        let (normalized_path, normalized_uuid) =
+            normalize_segment_dir(&non_uuid_path).unwrap().unwrap();
+        let expected_path = tmpdir.path().join(normalized_uuid.to_string());
+        assert_ne!(normalized_uuid, original_uuid);
+        assert_eq!(normalized_path, expected_path);
+        assert!(fs::read_dir(&normalized_path).is_ok());
+        assert!(fs::read_dir(&non_uuid_path).is_err());
+
+        // Check idempotency
+        let result = normalize_segment_dir(&normalized_path).unwrap();
+        assert_eq!(Some((normalized_path, normalized_uuid)), result);
+    }
 }
 
 #[test]

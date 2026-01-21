@@ -12594,7 +12594,8 @@
         ],
         "properties": {
           "uuid": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "segment_type": {
             "$ref": "#/components/schemas/SegmentType"
@@ -13183,15 +13184,21 @@
           "segment_ids",
           "segment_uuids",
           "start_at",
-          "status"
+          "status",
+          "uuid"
         ],
         "properties": {
           "name": {
             "description": "Name of the optimizer",
             "type": "string"
           },
+          "uuid": {
+            "description": "UUID of the upcoming segment being created by the optimizer",
+            "type": "string",
+            "format": "uuid"
+          },
           "segment_ids": {
-            "description": "Segment IDs being optimized",
+            "description": "Internal segment IDs being optimized. These are local and in-memory, meaning that they can refer to different segments after a service restart.",
             "type": "array",
             "items": {
               "type": "integer",
@@ -13200,10 +13207,11 @@
             }
           },
           "segment_uuids": {
-            "description": "Segment UUIDs being optimized",
+            "description": "Segment UUIDs being optimized. Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name.",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "status": {

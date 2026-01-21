@@ -41,6 +41,7 @@ use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndex
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
+use uuid::Uuid;
 
 /// Max dimension of sparse vectors used in tests
 const MAX_SPARSE_DIM: usize = 4096;
@@ -634,7 +635,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path, &stopped).unwrap().unwrap();
+    let segment = load_segment(&path, Uuid::nil(), &stopped).unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,

@@ -5,9 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
-use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
 use fs_err as fs;
@@ -205,7 +203,7 @@ impl TestSegments {
 
         // Make mmap segment after inserting the points, but before deleting some of them
         let mut mmap_segment =
-            Self::make_mmap_segment(&mut rng, &base_dir.path().join("mmap"), &plain_segment);
+            Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment);
 
         for _ in 0..points_to_clear {
             opnum += 1;
@@ -280,12 +278,11 @@ impl TestSegments {
         conf
     }
 
-    fn make_mmap_segment(rng: &mut StdRng, path: &Path, plain_segment: &Segment) -> Segment {
+    fn make_mmap_segment(path: &Path, plain_segment: &Segment) -> Segment {
         let stopped = AtomicBool::new(false);
         fs::create_dir(path).unwrap();
 
         let mut builder = SegmentBuilder::new(
-            path,
             &path.with_extension("tmp"),
             &Self::make_simple_config(false),
             &HnswGlobalConfig::default(),
@@ -293,13 +290,9 @@ impl TestSegments {
         .unwrap();
 
         builder.update(&[plain_segment], &stopped).unwrap();
-        let permit = ResourcePermit::dummy(1);
         let hw_counter = HardwareCounterCell::new();
-        let progress = ProgressTracker::new_for_test();
 
-        let mut segment = builder
-            .build(permit, &stopped, rng, &hw_counter, progress)
-            .unwrap();
+        let mut segment = builder.build_for_test(path);
         let opnum = segment.version() + 1;
 
         segment

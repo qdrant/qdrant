@@ -2,7 +2,7 @@ use std::cmp;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -27,7 +27,7 @@ use super::rocksdb_builder::RocksDbBuilder;
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
-    get_vector_storage_path, new_segment_path, open_vector_storage,
+    get_vector_storage_path, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -45,7 +45,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{BatchedVectorReader, PointData};
 use crate::segment_constructor::{
-    LoadSegmentOutcome, VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
+    VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, PayloadFieldSchema, PayloadKeyType,
@@ -65,8 +65,6 @@ pub struct SegmentBuilder {
     segment_config: SegmentConfig,
     hnsw_global_config: HnswGlobalConfig,
 
-    // The path, where fully created segment will be moved
-    destination_path: PathBuf,
     // The temporary segment directory
     temp_dir: TempDir,
     indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
@@ -82,7 +80,6 @@ struct VectorData {
 
 impl SegmentBuilder {
     pub fn new(
-        segments_path: &Path,
         temp_dir: &Path,
         segment_config: &SegmentConfig,
         hnsw_global_config: &HnswGlobalConfig,
@@ -152,8 +149,6 @@ impl SegmentBuilder {
             );
         }
 
-        let destination_path = new_segment_path(segments_path);
-
         Ok(SegmentBuilder {
             version: Default::default(), // default version is 0
             id_tracker,
@@ -161,7 +156,6 @@ impl SegmentBuilder {
             vector_data,
             segment_config: segment_config.clone(),
             hnsw_global_config: hnsw_global_config.clone(),
-            destination_path,
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
@@ -464,15 +458,35 @@ impl SegmentBuilder {
         Ok(true)
     }
 
+    /// Test wrapper for [`SegmentBuilder::build`].
+    #[cfg(feature = "testing")]
+    pub fn build_for_test(self, segments_path: &Path) -> Segment {
+        use crate::index::hnsw_index::num_rayon_threads;
+
+        self.build(
+            segments_path,
+            Uuid::new_v4(),
+            ResourcePermit::dummy(num_rayon_threads(0) as u32),
+            &AtomicBool::new(false),
+            &mut rand::rng(),
+            &HardwareCounterCell::new(),
+            ProgressTracker::new_for_test(),
+        )
+        .unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn build<R: Rng + ?Sized>(
         self,
+        segments_path: &Path,
+        segment_uuid: Uuid,
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
         hw_counter: &HardwareCounterCell,
         progress_segment: ProgressTracker,
     ) -> Result<Segment, OperationError> {
-        let (temp_dir, destination_path) = {
+        let temp_dir = {
             let SegmentBuilder {
                 version,
                 id_tracker,
@@ -480,7 +494,6 @@ impl SegmentBuilder {
                 mut vector_data,
                 segment_config,
                 hnsw_global_config,
-                destination_path,
                 temp_dir,
                 indexed_fields,
                 defragment_keys: _,
@@ -703,20 +716,14 @@ impl SegmentBuilder {
             // After version is saved, segment can be loaded on restart
             SegmentVersion::save(temp_dir.path())?;
             // All temp data is evicted from RAM
-            (temp_dir, destination_path)
+            temp_dir
         };
 
         // Move fully constructed segment into collection directory and load back to RAM
+        let destination_path = segments_path.join(segment_uuid.to_string());
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
-
-        match load_segment(&destination_path, stopped)? {
-            LoadSegmentOutcome::Loaded(loaded_segment) => Ok(loaded_segment),
-            LoadSegmentOutcome::Skipped => Err(OperationError::service_error(format!(
-                "Segment loading error: {}",
-                destination_path.display(),
-            ))),
-        }
+        load_segment(&destination_path, segment_uuid, stopped)
     }
 
     fn update_quantization(

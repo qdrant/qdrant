@@ -41,12 +41,11 @@ use fs_err::tokio as tokio_fs;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
-use io::safe_delete::safe_delete_with_suffix;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
-use segment::segment_constructor::{LoadSegmentOutcome, build_segment, load_segment};
+use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
 };
@@ -381,19 +380,10 @@ impl LocalShard {
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
                 let handle = tokio::task::spawn_blocking(move || {
-                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
-
-                    let mut segment = match segment {
-                        LoadSegmentOutcome::Loaded(segment) => segment,
-                        LoadSegmentOutcome::Skipped => {
-                            safe_delete_with_suffix(&segment_path).map_err(|err| {
-                                CollectionError::service_error(format!(
-                                    "failed to remove leftover segment: {err}",
-                                ))
-                            })?;
-                            return Ok(LoadSegmentOutcome::Skipped);
-                        }
+                    let Some((segment_path, uuid)) = normalize_segment_dir(&segment_path)? else {
+                        return CollectionResult::Ok(None);
                     };
+                    let mut segment = load_segment(&segment_path, uuid, &AtomicBool::new(false))?;
 
                     segment.check_consistency_and_repair()?;
 
@@ -403,7 +393,7 @@ impl LocalShard {
                         )?;
                     }
 
-                    CollectionResult::Ok(LoadSegmentOutcome::Loaded(segment))
+                    CollectionResult::Ok(Some(segment))
                 });
                 AbortOnDropHandle::new(handle)
             })
@@ -412,9 +402,8 @@ impl LocalShard {
         let mut segment_holder = SegmentHolder::default();
 
         while let Some(result) = segment_stream.next().await {
-            let segment = match result?? {
-                LoadSegmentOutcome::Loaded(segment) => segment,
-                LoadSegmentOutcome::Skipped => continue,
+            let Some(segment) = result?? else {
+                continue;
             };
 
             collection_config_read
