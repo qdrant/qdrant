@@ -740,8 +740,6 @@ async fn recover_partial_snapshot_from(
             );
 
             // Empty snapshot manifest allows us to use partial snapshots even if local shard doesn't exist
-            // let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await.unwrap_or_else(|_| SnapshotManifest::empty());
-
             let snapshot_manifest = match collection.get_partial_snapshot_manifest(shard_id).await {
                 Ok(manifest) => manifest,
                 Err(CollectionError::NotFound { what: _ }) => SnapshotManifest::empty(),
