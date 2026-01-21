@@ -650,9 +650,6 @@ pub trait SegmentOptimizer {
             .filter_map(|x| x.cloned())
             .collect();
 
-        // Check that we have enough disk space for optimization
-        self.check_segments_size(&optimizing_segments)?;
-
         // Check if all segments are not under other optimization or some ids are missing
         let all_segments_ok = optimizing_segments.len() == ids.len()
             && optimizing_segments
@@ -663,6 +660,9 @@ pub trait SegmentOptimizer {
             // Cancel the optimization
             return Ok(0);
         }
+
+        // Check that we have enough disk space for optimization
+        self.check_segments_size(&optimizing_segments)?;
 
         check_process_stopped(stopped)?;
 
