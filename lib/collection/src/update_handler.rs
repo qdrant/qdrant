@@ -37,10 +37,9 @@ pub struct OperationData {
     pub op_num: SeqNumberType,
     /// Operation
     pub operation: CollectionUpdateOperations,
-    /// If operation was requested to wait for result
-    pub wait: bool,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
 }
 
