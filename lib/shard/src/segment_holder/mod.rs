@@ -127,7 +127,7 @@ impl SegmentHolder {
                     .map(|segment| segment.get().read().segment_uuid())
                     .or_else(|| {
                         // Shouldn't happen
-                        log::warn!("Failed to get UUID for segment with internal id {id}");
+                        log::warn!("Failed to get segment with internal id {id}");
                         None
                     })
             })
