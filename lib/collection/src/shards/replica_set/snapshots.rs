@@ -322,7 +322,7 @@ impl ShardReplicaSet {
             .await
             .as_ref()
             .ok_or_else(|| {
-                CollectionError::bad_request(format!(
+                CollectionError::not_found(format!(
                     "local shard {}:{} does not exist on peer {}",
                     self.collection_id,
                     self.shard_id,
