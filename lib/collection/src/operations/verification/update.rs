@@ -164,11 +164,13 @@ impl StrictModeVerification for PointInsertOperations {
                 batch: _,
                 shard_key: _,
                 update_filter: _,
+                update_mode: _,
             }) => None,
             PointInsertOperations::PointsList(PointsList {
                 points: _,
                 shard_key: _,
                 update_filter: _,
+                update_mode: _,
             }) => None,
         }
     }

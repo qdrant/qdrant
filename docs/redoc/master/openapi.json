@@ -10858,6 +10858,17 @@
                 "nullable": true
               }
             ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11154,6 +11165,15 @@
           }
         }
       },
+      "UpdateMode": {
+        "description": "Defines the mode of the upsert operation\n\n* `upsert` - default mode, insert new points, update existing points * `insert_only` - only insert new points, do not update existing points * `update_only` - only update existing points, do not insert new points",
+        "type": "string",
+        "enum": [
+          "upsert",
+          "insert_only",
+          "update_only"
+        ]
+      },
       "PointsList": {
         "type": "object",
         "required": [
@@ -11181,6 +11201,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
               },
               {
                 "nullable": true

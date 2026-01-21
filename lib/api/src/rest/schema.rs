@@ -1351,6 +1351,23 @@ pub struct PointStruct {
     pub payload: Option<Payload>,
 }
 
+/// Defines the mode of the upsert operation
+///
+/// * `upsert` - default mode, insert new points, update existing points
+/// * `insert_only` - only insert new points, do not update existing points
+/// * `update_only` - only update existing points, do not insert new points
+#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateMode {
+    // Default mode - insert new points, update existing points
+    #[default]
+    Upsert,
+    // Only insert new points, do not update existing points
+    InsertOnly,
+    // Only update existing points, do not insert new points
+    UpdateOnly,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
 pub struct PointsBatch {
     #[validate(nested)]
@@ -1362,6 +1379,10 @@ pub struct PointsBatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,
+
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_mode: Option<UpdateMode>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -1396,6 +1417,9 @@ pub struct PointsList {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_mode: Option<UpdateMode>,
 }
 
 impl<'de> serde::Deserialize<'de> for PointInsertOperations {

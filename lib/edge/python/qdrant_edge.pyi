@@ -643,6 +643,17 @@ class Modifier(Enum):
     Idf = ...
 
 
+class UpdateMode(Enum):
+    """Defines the mode of the upsert operation."""
+
+    Upsert = ...
+    """Default mode - insert new points, update existing points."""
+    InsertOnly = ...
+    """Only insert new points, do not update existing points."""
+    UpdateOnly = ...
+    """Only update existing points, do not insert new points."""
+
+
 class Direction(Enum):
     """Sort direction."""
 
@@ -2355,6 +2366,7 @@ class UpdateOperation:
     def upsert_points(
             points: List[Point],
             condition: Optional[Filter] = None,
+            update_mode: Optional[UpdateMode] = None,
     ) -> "UpdateOperation":
         """
         Insert or update points.
@@ -2362,6 +2374,10 @@ class UpdateOperation:
         Args:
             points: Points to upsert.
             condition: Optional condition for conditional upsert.
+            update_mode: Optional mode of the upsert operation:
+                - UpdateMode.Upsert (default): insert new points, update existing points
+                - UpdateMode.InsertOnly: only insert new points, do not update existing points
+                - UpdateMode.UpdateOnly: only update existing points, do not insert new points
         """
         ...
 

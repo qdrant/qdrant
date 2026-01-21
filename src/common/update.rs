@@ -295,6 +295,9 @@ pub async fn do_upsert_points(
     inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
+    use point_ops::UpdateMode;
+    use segment::types::Filter;
+
     let toc = toc_provider
         .check_strict_mode(
             &operation,
@@ -304,39 +307,58 @@ pub async fn do_upsert_points(
         )
         .await?;
 
-    let (operation, shard_key, usage, update_filter) = match operation {
+    let (operation, shard_key, usage, update_filter, update_mode) = match operation {
         PointInsertOperations::PointsBatch(batch) => {
             let PointsBatch {
                 batch,
                 shard_key,
                 update_filter,
+                update_mode,
             } = batch;
             let (batch, usage) = convert_batch(batch, inference_params).await?;
             let operation = PointInsertOperationsInternal::PointsBatch(batch);
-            (operation, shard_key, usage, update_filter)
+            let update_mode = update_mode.map(rest_update_mode_to_internal);
+            (operation, shard_key, usage, update_filter, update_mode)
         }
         PointInsertOperations::PointsList(list) => {
             let PointsList {
                 points,
                 shard_key,
                 update_filter,
+                update_mode,
             } = list;
             let (list, usage) =
                 convert_point_struct(points, InferenceType::Update, inference_params).await?;
             let operation = PointInsertOperationsInternal::PointsList(list);
-            (operation, shard_key, usage, update_filter)
+            let update_mode = update_mode.map(rest_update_mode_to_internal);
+            (operation, shard_key, usage, update_filter, update_mode)
         }
     };
 
-    let operation = if let Some(condition) = update_filter {
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
-            ConditionalInsertOperationInternal {
+    // Decide which operation to use based on update_filter and update_mode
+    let operation = match (update_filter, update_mode) {
+        // If update_filter is provided, always use conditional upsert
+        (Some(condition), mode) => CollectionUpdateOperations::PointOperation(
+            PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
                 points_op: operation,
                 condition,
-            },
-        ))
-    } else {
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation))
+                update_mode: mode,
+            }),
+        ),
+        // If update_mode is InsertOnly or UpdateOnly, use conditional upsert with empty filter
+        (None, Some(UpdateMode::InsertOnly)) | (None, Some(UpdateMode::UpdateOnly)) => {
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPointsConditional(
+                ConditionalInsertOperationInternal {
+                    points_op: operation,
+                    condition: Filter::default(), // Empty filter matches all existing points
+                    update_mode,
+                },
+            ))
+        }
+        // Default: regular upsert
+        (None, None) | (None, Some(UpdateMode::Upsert)) => {
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation))
+        }
     };
 
     let result = update(
@@ -352,6 +374,15 @@ pub async fn do_upsert_points(
     .await?;
 
     Ok((result, usage))
+}
+
+/// Convert REST UpdateMode to internal UpdateMode
+fn rest_update_mode_to_internal(mode: api::rest::schema::UpdateMode) -> point_ops::UpdateMode {
+    match mode {
+        api::rest::schema::UpdateMode::Upsert => point_ops::UpdateMode::Upsert,
+        api::rest::schema::UpdateMode::InsertOnly => point_ops::UpdateMode::InsertOnly,
+        api::rest::schema::UpdateMode::UpdateOnly => point_ops::UpdateMode::UpdateOnly,
+    }
 }
 
 pub async fn do_delete_points(

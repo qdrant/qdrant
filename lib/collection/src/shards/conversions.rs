@@ -84,6 +84,7 @@ pub fn internal_upsert_points(
             shard_key_selector: None,
             update_filter: None,
             timeout: wait_timeout,
+            update_mode: None, // Default mode (Upsert)
         }),
     })
 }
@@ -97,10 +98,19 @@ pub fn internal_conditional_upsert_points(
     wait_timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpsertPointsInternal> {
+    use crate::operations::point_ops::UpdateMode;
+
     let ConditionalInsertOperationInternal {
         points_op: point_insert_operations,
         condition,
+        update_mode,
     } = point_condition_upsert_operations;
+
+    let grpc_update_mode = update_mode.map(|mode| match mode {
+        UpdateMode::Upsert => api::grpc::qdrant::UpdateMode::Upsert as i32,
+        UpdateMode::InsertOnly => api::grpc::qdrant::UpdateMode::InsertOnly as i32,
+        UpdateMode::UpdateOnly => api::grpc::qdrant::UpdateMode::UpdateOnly as i32,
+    });
 
     Ok(UpsertPointsInternal {
         shard_id,
@@ -119,6 +129,7 @@ pub fn internal_conditional_upsert_points(
             shard_key_selector: None,
             update_filter: Some(api::grpc::Filter::from(condition)),
             timeout: wait_timeout,
+            update_mode: grpc_update_mode,
         }),
     })
 }
