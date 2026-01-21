@@ -10,6 +10,7 @@ use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
+use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::shard_not_found_error;
@@ -738,7 +739,12 @@ async fn recover_partial_snapshot_from(
                 "{peer_url}/collections/{encoded_collection_name}/shards/{shard_id}/snapshot/partial/create"
             );
 
-            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
+            // Empty snapshot manifest allows us to use partial snapshots even if local shard doesn't exist
+            let snapshot_manifest = match collection.get_partial_snapshot_manifest(shard_id).await {
+                Ok(manifest) => manifest,
+                Err(CollectionError::NotFound { .. }) => SnapshotManifest::default(),
+                Err(err) => return Err(StorageError::from(err))
+            };
 
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
             let (partial_snapshot_file, partial_snapshot_temp_path) = tempfile::Builder::new()

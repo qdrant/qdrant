@@ -140,8 +140,6 @@ impl ShardReplicaSet {
 
                 None
             }
-            None if snapshot_manifest.is_empty() => None,
-
             Some(shard) => {
                 let local_manifest = shard.snapshot_manifest().await;
 
@@ -177,16 +175,7 @@ impl ShardReplicaSet {
                     }
                 }
             }
-
-            None => {
-                return Err(CollectionError::bad_request(format!(
-                    "failed to restore partial shard snapshot for shard {}:{}: \
-                     local shard does not exist on peer {}",
-                    self.collection_id,
-                    self.shard_id,
-                    self.this_peer_id(),
-                )));
-            }
+            None => None,
         };
 
         // Try to restore local replica from specified shard snapshot directory
@@ -330,7 +319,7 @@ impl ShardReplicaSet {
             .await
             .as_ref()
             .ok_or_else(|| {
-                CollectionError::bad_request(format!(
+                CollectionError::not_found(format!(
                     "local shard {}:{} does not exist on peer {}",
                     self.collection_id,
                     self.shard_id,
