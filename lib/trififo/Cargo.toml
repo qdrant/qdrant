@@ -13,7 +13,8 @@ workspace = true
 bench_all = []
 
 [dependencies]
-ahash = {workspace = true}
+ahash = { workspace = true }
+hashbrown = "0.16.1"
 
 [dev-dependencies]
 itertools = { workspace = true }
@@ -28,6 +29,9 @@ rayon = { workspace = true }
 quick_cache = "0.6"
 schnellru = "0.2"
 foyer = "0.22"
+
+# For ring buffer comparison test
+ringbuf = "0.4"
 
 # For memory measurement
 cap = "0.1"
