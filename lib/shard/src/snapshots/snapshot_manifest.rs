@@ -17,13 +17,6 @@ pub struct SnapshotManifest {
 }
 
 impl SnapshotManifest {
-    /// Create an empty snapshot manifest
-    pub fn empty() -> Self {
-        Self {
-            segments: HashMap::new(),
-        }
-    }
-
     /// Creates a `SnapshotManifest` by looking at the files of the unpacked snapshot
     ///
     /// # Arguments

@@ -140,8 +140,6 @@ impl ShardReplicaSet {
 
                 None
             }
-            None if snapshot_manifest.is_empty() => None,
-
             Some(shard) => {
                 let local_manifest = shard.snapshot_manifest().await;
 
@@ -177,7 +175,6 @@ impl ShardReplicaSet {
                     }
                 }
             }
-
             None => None,
         };
 
