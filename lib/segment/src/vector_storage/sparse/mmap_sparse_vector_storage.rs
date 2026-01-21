@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::Gridstore;
 use gridstore::config::{Compression, StorageOptions};
+use memory::mmap_ops::read_only_mode_enabled;
 use sparse::common::sparse_vector::SparseVector;
 
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -46,13 +47,24 @@ impl MmapSparseVectorStorage {
             return Self::open(path);
         }
 
+        if read_only_mode_enabled() {
+            return Err(OperationError::validation_error(
+                "Cannot create sparse vector storage in read-only mode",
+            ));
+        }
+
         Self::create(path)
     }
 
     fn open(path: &Path) -> OperationResult<Self> {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = Gridstore::open(storage_dir).map_err(|err| {
+        let storage = if read_only_mode_enabled() {
+            Gridstore::open_read_only(storage_dir)
+        } else {
+            Gridstore::open(storage_dir)
+        }
+        .map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -82,6 +94,12 @@ impl MmapSparseVectorStorage {
     }
 
     fn create(path: &Path) -> OperationResult<Self> {
+        if read_only_mode_enabled() {
+            return Err(OperationError::validation_error(
+                "Cannot create sparse vector storage in read-only mode",
+            ));
+        }
+
         let path = path.to_path_buf();
 
         // Storage

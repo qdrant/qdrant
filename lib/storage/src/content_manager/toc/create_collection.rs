@@ -21,6 +21,7 @@ impl TableOfContent {
         operation: CreateCollection,
         collection_shard_distribution: CollectionShardDistribution,
     ) -> Result<bool, StorageError> {
+        self.ensure_write_allowed("create collections")?;
         // Collection operations require multiple file operations,
         // before collection can actually be registered in the service.
         // To prevent parallel writing of the files, we use this lock.

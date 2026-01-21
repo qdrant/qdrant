@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::mem::{self, MaybeUninit, size_of, transmute};
+use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -7,12 +7,14 @@ use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
+use fs_err as fs;
 use fs_err::{File, OpenOptions};
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::{self, MULTI_MMAP_IS_SUPPORTED};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
+use zerocopy::FromBytes;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::OperationResult;
@@ -85,8 +87,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
-        let deleted_mmap = mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global, false)
-            .describe("Open mmap deleted for writing")?;
+        let deleted_mmap = if mmap_ops::read_only_mode_enabled() {
+            mmap_ops::open_read_mmap(deleted_path, AdviceSetting::Global, false)
+                .describe("Open mmap deleted for reading")?
+        } else {
+            mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global, false)
+                .describe("Open mmap deleted for writing")?
+        };
 
         // Advise kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
@@ -153,7 +160,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             &self.mmap
         };
         let byte_slice = &mmap[offset..(offset + self.raw_size())];
-        let arr: &[T] = unsafe { transmute(byte_slice) };
+        let arr: &[T] = <T>::ref_cast_slice(byte_slice);
         &arr[0..self.dim]
     }
 
@@ -188,6 +195,9 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     ///
     /// Returns true if the key was not deleted before, and it is now deleted.
     pub fn delete(&mut self, key: PointOffsetType) -> bool {
+        if mmap_ops::read_only_mode_enabled() {
+            return false;
+        }
         let is_deleted = !self.deleted.replace(key as usize, true);
         if is_deleted {
             self.deleted_count += 1;
@@ -263,10 +273,31 @@ fn ensure_mmap_file_size(path: &Path, header: &[u8], size: Option<u64>) -> Opera
     // If it exists, only set the length
     if path.exists() {
         if let Some(size) = size {
-            let file = OpenOptions::new().write(true).open(path)?;
-            file.set_len(size)?;
+            if mmap_ops::read_only_mode_enabled() {
+                let actual_size = fs::metadata(path)?.len();
+                if actual_size != size {
+                    return Err(
+                        crate::common::operation_error::OperationError::service_error(format!(
+                            "Read-only mode forbids resizing {} from {actual_size} to {size}",
+                            path.display()
+                        )),
+                    );
+                }
+            } else {
+                let file = OpenOptions::new().write(true).open(path)?;
+                file.set_len(size)?;
+            }
         }
         return Ok(());
+    }
+
+    if mmap_ops::read_only_mode_enabled() {
+        return Err(
+            crate::common::operation_error::OperationError::service_error(format!(
+                "Read-only mode forbids creating mmap file {}",
+                path.display()
+            )),
+        );
     }
 
     // Create file, and make it the correct size

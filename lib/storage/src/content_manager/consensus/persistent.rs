@@ -167,6 +167,40 @@ impl Persistent {
         Ok(state)
     }
 
+    /// Load existing raft state in read-only mode without any filesystem writes.
+    ///
+    /// This is used when starting Qdrant in read-only mode where:
+    /// - The storage must be pre-initialized with existing data
+    /// - No filesystem modifications are allowed
+    /// - WAL state is not modified
+    pub fn load_read_only(storage_path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let path_legacy = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
+        let path_json = storage_path.as_ref().join(STATE_FILE_NAME);
+
+        let state = if path_json.exists() {
+            log::info!(
+                "Loading raft state (read-only) from {}",
+                path_json.display()
+            );
+            Self::load_json(path_json)?
+        } else if path_legacy.exists() {
+            log::info!(
+                "Loading raft state (read-only) from {}",
+                path_legacy.display()
+            );
+            Self::load(path_legacy)?
+        } else {
+            return Err(StorageError::service_error(format!(
+                "Cannot start in read-only mode: no existing raft state found at {}. \
+                 Storage must be pre-initialized before using read-only mode.",
+                storage_path.as_ref().display()
+            )));
+        };
+
+        log::debug!("State (read-only): {state:?}");
+        Ok(state)
+    }
+
     fn remove_unknown_peer_metadata(&self) -> Result<(), StorageError> {
         let is_updated = {
             let mut peer_metadata = self.peer_metadata_by_id.write();

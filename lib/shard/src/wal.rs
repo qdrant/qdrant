@@ -21,6 +21,8 @@ pub struct SerdeWal<R> {
     options: WalOptions,
     /// First index of our logical WAL.
     first_index: Option<u64>,
+    /// Whether this WAL is opened in read-only mode.
+    read_only: bool,
     _record: PhantomData<R>,
 }
 
@@ -55,12 +57,50 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
             wal,
             options: wal_options,
             first_index,
+            read_only: false,
             _record: PhantomData,
         })
     }
 
-    /// Write a record to the WAL but does guarantee durability.
+    /// Open a WAL in read-only mode.
+    /// Returns Ok(Some(wal)) if successful, Ok(None) if WAL doesn't exist,
+    /// or Err if there's an error opening an existing WAL.
+    pub fn open_read_only(dir: &Path, wal_options: WalOptions) -> Result<Option<SerdeWal<R>>> {
+        let first_index_path = dir.join(FIRST_INDEX_FILE);
+
+        if !first_index_path.exists() {
+            return Ok(None);
+        }
+
+        let wal = Wal::with_options(dir, &wal_options)
+            .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
+
+        let first_index = {
+            let wal_state: WalState = read_json(&first_index_path).map_err(|err| {
+                WalError::InitWalError(format!("failed to read first-index file: {err}"))
+            })?;
+
+            let first_index = wal_state
+                .ack_index
+                .max(wal.first_index())
+                .min(wal.last_index());
+            Some(first_index)
+        };
+
+        Ok(Some(SerdeWal {
+            wal,
+            options: wal_options,
+            first_index,
+            read_only: true,
+            _record: PhantomData,
+        }))
+    }
+
+    /// Write a record to the WAL but does not guarantee durability.
     pub fn write(&mut self, entity: &R) -> Result<u64> {
+        if self.read_only {
+            return Err(WalError::ReadOnlyWalError);
+        }
         // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
         let binary_entity = serde_cbor::to_vec(&entity).unwrap();
         self.wal
@@ -138,6 +178,9 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     ///
     /// * `until_index` - the newest no longer required record sequence number
     pub fn ack(&mut self, until_index: u64) -> Result<()> {
+        if self.read_only {
+            return Err(WalError::ReadOnlyWalError);
+        }
         // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
@@ -155,7 +198,8 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         if self.first_index != new_first_index {
             self.first_index = new_first_index;
             // Persist current `first_index` value on disk
-            // TODO: Should we log this error and continue instead of failing?
+            // Note: Errors are logged in flush_first_index() but still cause failure
+            // to maintain data integrity
             self.flush_first_index()?;
         }
 
@@ -172,13 +216,18 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
             &WalState::new(first_index),
         )
         .map_err(|err| {
-            WalError::TruncateWalError(format!("failed to write first-index file: {err:?}"))
+            let error_msg = format!("failed to write first-index file: {err:?}");
+            log::error!("{error_msg}");
+            WalError::TruncateWalError(error_msg)
         })?;
 
         Ok(())
     }
 
     pub fn flush(&mut self) -> Result<()> {
+        if self.read_only {
+            return Err(WalError::ReadOnlyWalError);
+        }
         self.wal
             .flush_open_segment()
             .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
@@ -251,6 +300,8 @@ pub enum WalError {
     TruncateWalError(String),
     #[error("Operation rejected by WAL for old clock")]
     ClockRejected,
+    #[error("Cannot write to WAL in read-only mode")]
+    ReadOnlyWalError,
 }
 
 #[cfg(test)]

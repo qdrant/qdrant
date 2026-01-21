@@ -24,6 +24,8 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::loaders::{self, Csr};
 use sparse::index::search_context::SearchContext;
+
+#[cfg(not(target_os = "windows"))]
 mod prof;
 
 const NUM_QUERIES: usize = 2048;

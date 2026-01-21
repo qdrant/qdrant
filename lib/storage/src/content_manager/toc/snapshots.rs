@@ -38,6 +38,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
     ) -> Result<PathBuf, StorageError> {
+        self.ensure_write_allowed("create snapshots")?;
         let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio_fs::create_dir_all(&snapshots_path)
             .await
@@ -54,13 +55,13 @@ impl TableOfContent {
         &self,
         collection_pass: &CollectionPass<'_>,
     ) -> Result<SnapshotDescription, StorageError> {
-        // Increment snapshot telemetry/mertic counter and account for the whole scope.
-        // (This must be a named variable so it doesn't get dropped prematurely!)
-        let _running_snapshots_guard = self.count_snapshot_creation(collection_pass.name());
-
         // create all the directories of the derived collection snapshot path of
         // the collection.
         self.create_snapshots_path(collection_pass.name()).await?;
+
+        // Increment snapshot telemetry/metric counter and account for the whole scope.
+        // (This must be a named variable so it doesn't get dropped prematurely!)
+        let _running_snapshots_guard = self.count_snapshot_creation(collection_pass.name());
 
         let collection = self.get_collection(collection_pass).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that

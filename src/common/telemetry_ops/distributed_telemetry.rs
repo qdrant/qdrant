@@ -210,7 +210,7 @@ fn aggregate_collections(
 
         // Aggregate resharding info from all peers
         let reshardings =
-            aggregate_resharding_info(&base_peer_id, telemetry_by_peer, &collection_id);
+            aggregate_resharding_info(base_peer_id, telemetry_by_peer, &collection_id);
 
         // Aggregate shards from all peers
         let shards = aggregate_shards(telemetry_by_peer, collection, &collection_id);
@@ -230,7 +230,7 @@ fn aggregate_collections(
 
 fn aggregate_shard_transfers(
     base_peer_id: PeerId,
-    telemetry_by_peer: &HashMap<u64, &TelemetryData>,
+    telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
     collection_id: &String,
 ) -> Vec<ShardTransferInfo> {
     let get_transfers = |peer_id| {
@@ -285,11 +285,11 @@ fn aggregate_shard_transfers(
 }
 
 fn aggregate_resharding_info(
-    base_peer_id: &PeerId,
+    base_peer_id: PeerId,
     telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
     collection_id: &String,
 ) -> Vec<ReshardingInfo> {
-    let get_reshardings = |peer_id| {
+    let get_reshardings = |peer_id: &PeerId| {
         let telemetry = telemetry_by_peer.get(peer_id)?;
 
         telemetry
@@ -306,9 +306,9 @@ fn aggregate_resharding_info(
     };
 
     let get_resharding_by_peer_and_uuid =
-        |peer_id, uuid| get_reshardings(peer_id)?.iter().find(|r| r.uuid == uuid);
+        |peer_id: &PeerId, uuid| get_reshardings(peer_id)?.iter().find(|r| r.uuid == uuid);
 
-    let Some(base_reshardings) = get_reshardings(base_peer_id) else {
+    let Some(base_reshardings) = get_reshardings(&base_peer_id) else {
         return Vec::new();
     };
 
@@ -422,7 +422,7 @@ fn get_collection_telemetry<'a>(
 
 fn aggregate_cluster_telemetry(
     base_telemetry: &TelemetryData,
-    telemetry_by_peer: &HashMap<u64, &TelemetryData>,
+    telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
     missing_peers: Vec<PeerId>,
 ) -> Option<DistributedClusterTelemetry> {
     let base_cluster = base_telemetry.cluster.as_ref()?;
@@ -443,10 +443,10 @@ fn aggregate_cluster_telemetry(
 }
 
 fn aggregate_peers_info(
-    missing_peers: Vec<u64>,
+    missing_peers: Vec<PeerId>,
     base_cluster: &ClusterTelemetry,
-    telemetry_by_peer: &HashMap<u64, &TelemetryData>,
-) -> Option<HashMap<u64, DistributedPeerInfo>> {
+    telemetry_by_peer: &HashMap<PeerId, &TelemetryData>,
+) -> Option<HashMap<PeerId, DistributedPeerInfo>> {
     let all_peers = base_cluster.peers.as_ref()?;
 
     let mut distributed_peers_info: HashMap<_, _> = all_peers
@@ -459,7 +459,7 @@ fn aggregate_peers_info(
 
             let details = telemetry_by_peer.get(peer_id).and_then(|peer_telemetry| {
                 let Some(version) = peer_telemetry.app.as_ref().map(|t| t.version.clone()) else {
-                    debug_assert!(false, "internal service should include app version");
+                    log::warn!("internal service should include app version");
                     return None;
                 };
 
@@ -468,10 +468,7 @@ fn aggregate_peers_info(
                     .as_ref()
                     .and_then(|c| c.status.as_ref())
                 else {
-                    debug_assert!(
-                        false,
-                        "internal service should include cluster status telemetry"
-                    );
+                    log::warn!("internal service should include cluster status telemetry");
                     return None;
                 };
 
@@ -502,7 +499,7 @@ fn aggregate_peers_info(
         if distributed_peers_info.contains_key(&peer_id) {
             continue;
         }
-        debug_assert!(false, "all missing peers should have been listed already");
+        log::warn!("all missing peers should have been listed already");
 
         let Some(info) = base_cluster
             .peers

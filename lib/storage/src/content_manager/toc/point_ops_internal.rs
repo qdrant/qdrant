@@ -56,6 +56,7 @@ impl TableOfContent {
         wait: bool,
         timeout: Option<Duration>,
     ) -> StorageResult<UpdateResult> {
+        self.ensure_write_allowed("cleanup shards")?;
         let collection_pass =
             access.check_collection_access(collection_name, AccessRequirements::new().write())?;
 

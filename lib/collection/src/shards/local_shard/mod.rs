@@ -58,6 +58,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
 use tokio_util::task::AbortOnDropHandle;
+use wal::WalOptions;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
@@ -83,7 +84,7 @@ use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal_delta::RecoverableWal;
+use crate::wal_delta::{ReadOnlyWal, RecoverableWal, WalMode};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -100,7 +101,7 @@ pub struct LocalShard {
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    pub(super) wal: RecoverableWal,
+    pub(super) wal: WalMode,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
@@ -217,17 +218,18 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfigInternal>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        wal: SerdeWal<OperationWithClockTag>,
+        wal: Option<SerdeWal<OperationWithClockTag>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
         update_runtime: Handle,
         search_runtime: Handle,
+        read_only: bool,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
-        let locked_wal = Arc::new(Mutex::new(wal));
+        let locked_wal = wal.map(|w| Arc::new(Mutex::new(w)));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
         let total_optimized_points = Arc::new(AtomicUsize::new(0));
 
@@ -244,12 +246,12 @@ impl LocalShard {
         let scroll_read_lock = Arc::new(tokio::sync::RwLock::new(()));
         let update_tracker = UpdateTracker::default();
 
+        let update_wal = if read_only { None } else { locked_wal.clone() };
         let prevent_unoptimized_threshold_kb = config
             .optimizer_config
             .prevent_unoptimized
             .unwrap_or_default()
             .then(|| config.optimizer_config.get_indexing_threshold_kb());
-
         let mut update_handler = UpdateHandler::new(
             collection_name.clone(),
             shared_storage_config.clone(),
@@ -260,7 +262,7 @@ impl LocalShard {
             optimizer_resource_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
-            locked_wal.clone(),
+            update_wal,
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
             prevent_unoptimized_threshold_kb,
@@ -283,13 +285,28 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
+        let LocalShardClocks {
+            newest_clocks,
+            oldest_clocks,
+        } = clocks;
+
+        let wal = if read_only {
+            WalMode::ReadOnly(ReadOnlyWal::new(locked_wal, newest_clocks, oldest_clocks))
+        } else {
+            WalMode::Writable(RecoverableWal::new(
+                locked_wal.expect("WAL is required in writable mode"),
+                newest_clocks,
+                oldest_clocks,
+            ))
+        };
+
         Self {
             collection_name,
             segments: segment_holder,
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            wal: RecoverableWal::new(locked_wal, clocks.newest_clocks, clocks.oldest_clocks),
+            wal,
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -323,15 +340,38 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(&wal_path, (&collection_config_read.wal_config).into())
-                .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
+        let wal: Option<SerdeWal<OperationWithClockTag>> = if read_only {
+            if wal_path.exists() {
+                match SerdeWal::open_read_only(
+                    &wal_path,
+                    WalOptions::from(&collection_config_read.wal_config),
+                ) {
+                    Ok(Some(wal)) => Some(wal),
+                    Ok(None) => None,
+                    Err(err) => {
+                        log::warn!("Failed to open WAL in read-only mode: {err}");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            Some(
+                SerdeWal::new(
+                    &wal_path,
+                    WalOptions::from(&collection_config_read.wal_config),
+                )
+                .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?,
+            )
+        };
 
         // Walk over segments directory and collect all directory entries now
         // Collect now and error early to prevent errors while we've already spawned load threads
@@ -381,7 +421,7 @@ impl LocalShard {
             .map(|segment_path| {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
                 let handle = tokio::task::spawn_blocking(move || {
-                    let segment = load_segment(&segment_path, &AtomicBool::new(false))?;
+                    let segment = load_segment(&segment_path, &AtomicBool::new(false), read_only)?;
 
                     let mut segment = match segment {
                         LoadSegmentOutcome::Loaded(segment) => segment,
@@ -395,12 +435,19 @@ impl LocalShard {
                         }
                     };
 
-                    segment.check_consistency_and_repair()?;
+                    if !read_only {
+                        segment.check_consistency_and_repair()?;
 
-                    if rebuild_payload_index {
-                        segment.update_all_field_indices(
-                            &payload_index_schema.read().schema.clone(),
-                        )?;
+                        if rebuild_payload_index {
+                            segment.update_all_field_indices(
+                                &payload_index_schema.read().schema.clone(),
+                            )?;
+                        }
+                    } else if rebuild_payload_index {
+                        log::debug!(
+                            "Skipping payload index rebuild in read-only mode (prevents mutations) for segment {}",
+                            segment_path.display(),
+                        );
                     }
 
                     CollectionResult::Ok(LoadSegmentOutcome::Loaded(segment))
@@ -438,12 +485,14 @@ impl LocalShard {
         }
         drop(segment_stream); // release `payload_index_schema` from borrow checker
 
-        let res = deduplicate_points_async(&segment_holder).await?;
-        if res > 0 {
-            log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
-        }
+        if !read_only {
+            let res = deduplicate_points_async(&segment_holder).await?;
+            if res > 0 {
+                log::debug!("Deduplicated {res} points for {collection_id}/{shard_id}");
+            }
 
-        clear_temp_segments(shard_path);
+            clear_temp_segments(shard_path);
+        }
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
@@ -458,7 +507,8 @@ impl LocalShard {
         let clocks = LocalShardClocks::load(shard_path)?;
 
         // Always make sure we have any appendable segments, needed for update operations
-        if !segment_holder.has_appendable_segment() {
+        // Skip in read-only mode as we don't need appendable segments
+        if !read_only && !segment_holder.has_appendable_segment() {
             debug_assert!(
                 false,
                 "Shard has no appendable segments, this should never happen",
@@ -488,11 +538,14 @@ impl LocalShard {
             clocks,
             update_runtime,
             search_runtime,
+            read_only,
         )
         .await;
 
-        // Apply outstanding operations from WAL
-        local_shard.load_from_wal(collection_id).await?;
+        // Apply outstanding operations from WAL (skip in read-only mode)
+        if !read_only {
+            local_shard.load_from_wal(collection_id).await?;
+        }
 
         Ok(local_shard)
     }
@@ -617,7 +670,7 @@ impl LocalShard {
         }
 
         let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(&wal_path, (&config.wal_config).into())?;
+            SerdeWal::new(&wal_path, WalOptions::from(&config.wal_config))?;
 
         let optimizers = build_optimizers(
             shard_path,
@@ -636,13 +689,14 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             payload_index_schema,
-            wal,
+            Some(wal),
             optimizers,
             optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
             update_runtime,
             search_runtime,
+            false,
         )
         .await;
 
@@ -665,10 +719,19 @@ impl LocalShard {
         Ok(())
     }
 
-    /// Loads latest collection operations from WAL
+    /// Loads latest collection operations from WAL.
+    ///
+    /// # Panics (debug mode)
+    /// Panics in debug mode if called on a read-only shard.
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let mut newest_clocks = self.wal.newest_clocks.lock().await;
-        let wal = self.wal.wal.lock().await;
+        debug_assert!(
+            !matches!(self.wal, WalMode::ReadOnly(_)),
+            "load_from_wal should not be called on read-only shards"
+        );
+        let wal_ref = self.wal.writable_wal()?;
+
+        let mut newest_clocks = self.wal.newest_clocks().lock().await;
+        let wal = wal_ref.lock().await;
         let bar = ProgressBar::new(wal.len(false));
 
         let progress_style = ProgressStyle::default_bar()
@@ -1145,6 +1208,14 @@ impl LocalShardClocks {
             newest_clocks: Arc::new(Mutex::new(newest_clocks)),
             oldest_clocks: Arc::new(Mutex::new(oldest_clocks)),
         }
+    }
+
+    pub(crate) fn newest_clocks(&self) -> &Arc<Mutex<ClockMap>> {
+        &self.newest_clocks
+    }
+
+    pub(crate) fn oldest_clocks(&self) -> &Arc<Mutex<ClockMap>> {
+        &self.oldest_clocks
     }
 
     // Load clock maps from disk

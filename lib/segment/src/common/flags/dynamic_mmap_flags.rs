@@ -8,8 +8,8 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use memmap2::MmapMut;
 use memory::fadvise::clear_disk_cache;
-use memory::madvise::{self, AdviceSetting, Madviseable as _};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::madvise::{AdviceSetting, Madviseable as _};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, read_only_mode_enabled};
 use memory::mmap_type::{MmapBitSlice, MmapType};
 
 use crate::common::Flusher;
@@ -88,11 +88,24 @@ impl DynamicMmapFlags {
     }
 
     pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
-        fs::create_dir_all(directory)?;
+        if !directory.exists() {
+            if read_only_mode_enabled() {
+                return Err(OperationError::service_error(format!(
+                    "Read-only mode forbids creating flags directory {}",
+                    directory.display()
+                )));
+            }
+            fs::create_dir_all(directory)?;
+        }
         let status_mmap = ensure_status_file(directory)?;
         let mut status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
 
         if status.current_file_id != 0 {
+            if read_only_mode_enabled() {
+                return Err(OperationError::service_error(
+                    "Cannot migrate dynamic mmap flags in read-only mode",
+                ));
+            }
             // Migrate
             fs::copy(
                 directory.join(FLAGS_FILE_LEGACY),
@@ -118,18 +131,9 @@ impl DynamicMmapFlags {
     ) -> OperationResult<MmapBitSlice> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
 
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(directory.join(FLAGS_FILE))?;
-        file.set_len(capacity_bytes as u64)?;
-
-        let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
-        drop(file);
-
-        flags_mmap.madvise(madvise::get_global())?;
+        let flags_path = directory.join(FLAGS_FILE);
+        create_and_ensure_length(&flags_path, capacity_bytes)?;
+        let flags_mmap = open_write_mmap(&flags_path, AdviceSetting::Global, false)?;
 
         if populate {
             flags_mmap.populate();
@@ -161,6 +165,11 @@ impl DynamicMmapFlags {
                 "Cannot shrink the mmap flags from {} to {new_len}",
                 self.status.len,
             )));
+        }
+        if read_only_mode_enabled() {
+            return Err(OperationError::service_error(
+                "Cannot resize mmap flags in read-only mode",
+            ));
         }
 
         // Capacity can be up to 2x the current length

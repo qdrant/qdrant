@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use clap::Parser;
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment_constructor::load_segment;
+use segment::segment_constructor::{LoadSegmentOutcome, load_segment};
 use segment::types::PointIdType;
 
 #[derive(Parser, Debug)]
@@ -40,11 +40,18 @@ fn main() {
             continue;
         }
 
-        // Open segment
-
-        let segment = load_segment(path, &AtomicBool::new(false))
-            .unwrap()
-            .unwrap();
+        // Open segment in read-write mode (third parameter = false)
+        let segment = match load_segment(path, &AtomicBool::new(false), false) {
+            Ok(LoadSegmentOutcome::Loaded(seg)) => seg,
+            Ok(LoadSegmentOutcome::Skipped) => {
+                eprintln!("Segment was skipped at: {segment_path}");
+                continue;
+            }
+            Err(e) => {
+                eprintln!("Failed to load segment at {segment_path}: {e}");
+                continue;
+            }
+        };
 
         eprintln!(
             "path = {:#?}, size-points = {}",
@@ -63,9 +70,13 @@ fn main() {
             let internal_id = segment.get_internal_id(point_id);
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
-                let payload = segment
-                    .payload(point_id, &HardwareCounterCell::disposable())
-                    .unwrap();
+                let payload = match segment.payload(point_id, &HardwareCounterCell::disposable()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Failed to retrieve payload: {e}");
+                        continue;
+                    }
+                };
                 // let vectors = segment.all_vectors(point_id).unwrap();
 
                 println!("Internal ID: {internal_id:?}");

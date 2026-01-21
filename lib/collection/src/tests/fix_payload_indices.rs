@@ -92,6 +92,7 @@ async fn test_fix_payload_indices() {
         current_runtime.clone(),
         current_runtime,
         ResourceBudget::default(),
+        false, // read_only
     )
     .await
     .unwrap();

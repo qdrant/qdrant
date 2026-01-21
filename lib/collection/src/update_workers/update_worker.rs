@@ -18,7 +18,7 @@ use crate::shards::local_shard::indexed_only::get_largest_unindexed_segment_vect
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
-use crate::wal_delta::LockedWal;
+use crate::wal_delta::WalMode;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -28,7 +28,7 @@ impl UpdateWorkers {
         collection_name: CollectionId,
         mut receiver: Receiver<UpdateSignal>,
         optimize_sender: Sender<OptimizerSignal>,
-        wal: LockedWal,
+        wal: WalMode,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
@@ -36,6 +36,7 @@ impl UpdateWorkers {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
     ) {
+        let mut explicit_stop = false;
         while let Some(signal) = receiver.recv().await {
             match signal {
                 UpdateSignal::Operation(OperationData {
@@ -99,33 +100,92 @@ impl UpdateWorkers {
                         });
                     };
                 }
-                UpdateSignal::Stop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
-                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
-                    break;
+                signal => {
+                    if let Some(true) = Self::handle_control_signal(signal, &optimize_sender).await
+                    {
+                        explicit_stop = true;
+                        break;
+                    }
                 }
-                UpdateSignal::Nop => optimize_sender
+            }
+        }
+        if !explicit_stop {
+            optimize_sender
+                .send(OptimizerSignal::Stop)
+                .await
+                .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+        }
+    }
+
+    pub async fn read_only_update_worker_fn(
+        mut receiver: Receiver<UpdateSignal>,
+        optimize_sender: Sender<OptimizerSignal>,
+    ) {
+        let mut explicit_stop = false;
+        while let Some(signal) = receiver.recv().await {
+            match signal {
+                UpdateSignal::Operation(OperationData { sender, .. }) => {
+                    if let Some(feedback) = sender
+                        && feedback
+                            .send(Err(CollectionError::bad_request(
+                                "Cannot write operations in read-only mode",
+                            )))
+                            .is_err()
+                    {
+                        log::debug!(
+                            "Can't report read-only operation result. Assume already not required"
+                        );
+                    }
+                }
+                signal => {
+                    if let Some(true) = Self::handle_control_signal(signal, &optimize_sender).await
+                    {
+                        explicit_stop = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !explicit_stop {
+            optimize_sender
+                .send(OptimizerSignal::Stop)
+                .await
+                .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+        }
+    }
+
+    async fn handle_control_signal(
+        signal: UpdateSignal,
+        optimize_sender: &Sender<OptimizerSignal>,
+    ) -> Option<bool> {
+        match signal {
+            UpdateSignal::Stop => {
+                optimize_sender
+                    .send(OptimizerSignal::Stop)
+                    .await
+                    .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+                Some(true)
+            }
+            UpdateSignal::Nop => {
+                optimize_sender
                     .send(OptimizerSignal::Nop)
                     .await
                     .unwrap_or_else(|_| {
                         log::info!(
                             "Can't notify optimizers, assume process is dead. Restart is required"
                         );
-                    }),
-                UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(()).unwrap_or_else(|_| {
-                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
-                }
+                Some(false)
             }
+            UpdateSignal::Plunger(callback_sender) => {
+                callback_sender.send(()).unwrap_or_else(|_| {
+                    log::debug!("Can't notify sender, assume nobody is waiting anymore");
+                });
+                Some(false)
+            }
+            UpdateSignal::Operation(_) => None,
         }
-        // Transmitter was destroyed
-        optimize_sender
-            .send(OptimizerSignal::Stop)
-            .await
-            .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
     }
 
     /// Checks that unoptimized segments are small enough, so that we can effectively
@@ -190,15 +250,15 @@ impl UpdateWorkers {
         operation: CollectionUpdateOperations,
         op_num: SeqNumberType,
         wait: bool,
-        wal: LockedWal,
+        wal: WalMode,
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         hw_measurements: HwMeasurementAcc,
     ) -> CollectionResult<usize> {
-        // If wait flag is set, explicitly flush WAL first
+        // If wait flag is set, explicitly flush WAL first (only if WAL is writable)
         if wait {
-            wal.blocking_lock().flush().map_err(|err| {
+            wal.flush_blocking().map_err(|err| {
                 CollectionError::service_error(format!(
                     "Can't flush WAL before operation {op_num} - {err}"
                 ))

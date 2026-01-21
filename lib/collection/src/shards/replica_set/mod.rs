@@ -239,6 +239,12 @@ impl ShardReplicaSet {
     /// WARN: This method intended to be used only on the initial start of the node.
     /// It does not implement any logic to recover from a failure.
     /// Will panic or load partial state if there is a failure.
+    ///
+    /// # Parameters
+    ///
+    /// * `read_only` - When true, prevents writing replica state updates to disk during load.
+    ///   Use this mode when loading shards in a read-only environment where state mutations
+    ///   should not be persisted.
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,
@@ -257,15 +263,17 @@ impl ShardReplicaSet {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
+        read_only: bool,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
 
-        if replica_state.read().this_peer_id != this_peer_id {
+        let should_update = replica_state.read().this_peer_id != this_peer_id;
+        if should_update && !read_only {
             replica_state
                 .write(|rs| {
-                    let this_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(this_peer_id);
+                    let old_peer_id = rs.this_peer_id;
+                    let local_state = rs.remove_peer_state(old_peer_id);
                     if let Some(state) = local_state {
                         rs.set_peer_state(this_peer_id, state);
                     }
@@ -275,6 +283,11 @@ impl ShardReplicaSet {
                     panic!("Failed to update replica state in {shard_path:?}: {e}");
                 })
                 .unwrap();
+        } else if should_update && read_only {
+            log::debug!(
+                "Skipping replica state update for shard {collection_id}:{shard_id} \
+                 (this_peer_id: {this_peer_id}) in read-only mode"
+            );
         }
 
         let remote_shards: Vec<_> = Self::init_remote_shards(
@@ -309,6 +322,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_resource_budget.clone(),
+                    read_only,
                 )
                 .await;
 
@@ -406,6 +420,15 @@ impl ShardReplicaSet {
 
     pub async fn has_local_shard(&self) -> bool {
         self.local.read().await.is_some()
+    }
+
+    /// Flush all segments to disk for the local shard. Testing helper.
+    #[cfg(feature = "testing")]
+    pub async fn full_flush(&self) {
+        let local = self.local.read().await;
+        if let Some(shard) = local.as_ref() {
+            shard.full_flush();
+        }
     }
 
     /// Checks if the shard exists locally and not a proxy.

@@ -54,7 +54,7 @@ impl ShardReplicaSet {
             }
             Some(Shard::Proxy(_)) => {
                 return Err(CollectionError::service_error(format!(
-                    "Cannot queue proxify local shard {} to peer {} because it already is a proxy",
+                    "Cannot proxify local shard {} to peer {} because it already is a proxy",
                     self.shard_id, remote_shard.peer_id,
                 )));
             }
@@ -188,9 +188,7 @@ impl ShardReplicaSet {
 
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
-            None => {
-                Ok(QueueProxyShard::new(local_shard, remote_shard, wal_keep_from, progress).await)
-            }
+            None => QueueProxyShard::new(local_shard, remote_shard, wal_keep_from, progress).await,
             Some(from_version) => {
                 QueueProxyShard::new_from_version(
                     local_shard,

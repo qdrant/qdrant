@@ -138,7 +138,7 @@ struct KeyIdsPair {
     /// The key is persisted as untagged variant. The JSON value gives us enough information
     /// however to distinguish between a shard key number and string.
     key: ShardKey,
-    /// Associalted shard IDs.
+    /// Associated shard IDs.
     shard_ids: HashSet<ShardId>,
 }
 
@@ -287,7 +287,7 @@ mod test {
 
         let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
 
-        // Load collection once to trigger mirgation to the new shard-key format.
+        // Load collection once to trigger migation to the new shard-key format.
         {
             Collection::load(
                 COLLECTION_TEST_NAME.to_string(),
@@ -303,8 +303,10 @@ mod test {
                 None,
                 ResourceBudget::default(),
                 None,
+                false, // read_only
             )
-            .await;
+            .await
+            .unwrap();
         }
 
         let shard_key_data: SerdeHelper =

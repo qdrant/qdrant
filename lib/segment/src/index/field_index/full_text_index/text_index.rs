@@ -35,8 +35,8 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchPhrase, MatchText, PayloadKeyType};
 
 pub enum FullTextIndex {
-    Mutable(MutableFullTextIndex),
-    Immutable(ImmutableFullTextIndex),
+    Mutable(Box<MutableFullTextIndex>),
+    Immutable(Box<ImmutableFullTextIndex>),
     Mmap(Box<MmapFullTextIndex>),
 }
 
@@ -56,9 +56,10 @@ impl FullTextIndex {
         ));
         let index = if is_appendable {
             MutableFullTextIndex::open_rocksdb(db_wrapper, config, create_if_missing)?
-                .map(Self::Mutable)
+                .map(|idx| Self::Mutable(Box::new(idx)))
         } else {
-            ImmutableFullTextIndex::open_rocksdb(db_wrapper, config)?.map(Self::Immutable)
+            ImmutableFullTextIndex::open_rocksdb(db_wrapper, config)?
+                .map(|idx| Self::Immutable(Box::new(idx)))
         };
         Ok(index)
     }
@@ -76,8 +77,8 @@ impl FullTextIndex {
             Some(Self::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Some(Self::Immutable(ImmutableFullTextIndex::open_mmap(
-                mmap_index,
+            Some(Self::Immutable(Box::new(
+                ImmutableFullTextIndex::open_mmap(mmap_index),
             )))
         };
         Ok(index)
@@ -89,7 +90,7 @@ impl FullTextIndex {
         create_if_missing: bool,
     ) -> OperationResult<Option<Self>> {
         let index = MutableFullTextIndex::open_gridstore(dir, config, create_if_missing)?;
-        Ok(index.map(Self::Mutable))
+        Ok(index.map(|idx| Self::Mutable(Box::new(idx))))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
@@ -508,12 +509,12 @@ impl FieldIndexBuilderTrait for FullTextIndexRocksDbBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         if self.keep_appendable {
-            return Ok(FullTextIndex::Mutable(self.mutable_index));
+            return Ok(FullTextIndex::Mutable(Box::new(self.mutable_index)));
         }
 
-        Ok(FullTextIndex::Immutable(
+        Ok(FullTextIndex::Immutable(Box::new(
             ImmutableFullTextIndex::from_rocksdb_mutable(self.mutable_index),
-        ))
+        )))
     }
 }
 

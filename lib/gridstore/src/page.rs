@@ -13,23 +13,49 @@ use crate::error::GridstoreError;
 use crate::tracker::BlockOffset;
 
 #[derive(Debug)]
-pub(crate) struct Page {
-    path: PathBuf,
-    /// Main data mmap for read/write
-    ///
-    /// Best suited for random reads.
-    mmap: MmapMut,
-    /// Read-only mmap best suited for sequential reads
-    ///
-    /// `None` on platforms that do not support multiple memory maps to the same file.
-    /// Use [`mmap_seq`] utility function to access this mmap if available.
-    _mmap_seq: Option<Mmap>,
+pub(crate) enum Page {
+    ReadOnly {
+        path: PathBuf,
+        /// Main data mmap for read-only access
+        mmap: Mmap,
+        /// Read-only mmap best suited for sequential reads
+        ///
+        /// `None` on platforms that do not support multiple memory maps to the same file.
+        /// Use [`mmap_seq`] utility function to access this mmap if available.
+        _mmap_seq: Option<Mmap>,
+    },
+    ReadWrite {
+        path: PathBuf,
+        /// Main data mmap for read/write
+        ///
+        /// Best suited for random reads.
+        mmap: MmapMut,
+        /// Read-only mmap best suited for sequential reads
+        ///
+        /// `None` on platforms that do not support multiple memory maps to the same file.
+        /// Use [`mmap_seq`] utility function to access this mmap if available.
+        _mmap_seq: Option<Mmap>,
+    },
 }
 
 impl Page {
     /// Flushes outstanding memory map modifications to disk.
     pub(crate) fn flush(&self) -> std::io::Result<()> {
-        self.mmap.flush()
+        match self {
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq: _,
+            } => {
+                // Read-only pages don't need flushing
+                Ok(())
+            }
+            Page::ReadWrite {
+                path: _,
+                mmap,
+                _mmap_seq: _,
+            } => mmap.flush(),
+        }
     }
 
     /// Create a new page at the given path
@@ -50,7 +76,7 @@ impl Page {
 
         let path = path.to_path_buf();
 
-        Ok(Page {
+        Ok(Page::ReadWrite {
             path,
             mmap,
             _mmap_seq: mmap_seq,
@@ -80,7 +106,35 @@ impl Page {
         };
 
         let path = path.to_path_buf();
-        Ok(Page {
+        Ok(Page::ReadWrite {
+            path,
+            mmap,
+            _mmap_seq: mmap_seq,
+        })
+    }
+
+    /// Open an existing page at the given path in read-only mode
+    /// If the file does not exist, return None
+    pub fn open_read_only(path: &Path) -> Result<Page> {
+        if !path.exists() {
+            return Err(GridstoreError::service_error(format!(
+                "Page file does not exist: {}",
+                path.display()
+            )));
+        }
+        let mmap = open_read_mmap(path, AdviceSetting::from(Advice::Random), false)?;
+        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
+            Some(open_read_mmap(
+                path,
+                AdviceSetting::from(Advice::Sequential),
+                false,
+            )?)
+        } else {
+            None
+        };
+
+        let path = path.to_path_buf();
+        Ok(Page::ReadOnly {
             path,
             mmap,
             _mmap_seq: mmap_seq,
@@ -90,11 +144,28 @@ impl Page {
     /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
     #[inline]
     fn mmap_seq(&self) -> &[u8] {
-        #[expect(clippy::used_underscore_binding)]
-        self._mmap_seq
-            .as_ref()
-            .map(|m| m.as_ref())
-            .unwrap_or(self.mmap.as_ref())
+        match self {
+            Page::ReadOnly {
+                mmap, _mmap_seq, ..
+            } =>
+            {
+                #[expect(clippy::used_underscore_binding)]
+                _mmap_seq
+                    .as_ref()
+                    .map(|m| m.as_ref())
+                    .unwrap_or(mmap.as_ref())
+            }
+            Page::ReadWrite {
+                mmap, _mmap_seq, ..
+            } =>
+            {
+                #[expect(clippy::used_underscore_binding)]
+                _mmap_seq
+                    .as_ref()
+                    .map(|m| m.as_ref())
+                    .unwrap_or(mmap.as_ref())
+            }
+        }
     }
 
     /// Write a value into the page
@@ -117,14 +188,28 @@ impl Page {
         let value_start = block_offset as usize * block_size_bytes;
 
         let value_end = value_start + value_size;
-        // only write what fits in the page
-        let unwritten_tail = value_end.saturating_sub(self.mmap.len());
 
-        // set value region
-        self.mmap[value_start..value_end - unwritten_tail]
-            .copy_from_slice(&value[..value_size - unwritten_tail]);
+        match self {
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq: _,
+            } => value_size,
+            Page::ReadWrite {
+                path: _,
+                mmap,
+                _mmap_seq: _,
+            } => {
+                // only write what fits in the page
+                let unwritten_tail = value_end.saturating_sub(mmap.len());
 
-        unwritten_tail
+                // set value region
+                mmap[value_start..value_end - unwritten_tail]
+                    .copy_from_slice(&value[..value_size - unwritten_tail]);
+
+                unwritten_tail
+            }
+        }
     }
 
     /// Read a value from the page
@@ -155,12 +240,28 @@ impl Page {
                 block_size_bytes,
             )
         } else {
-            Self::read_value_with_generic_storage(
-                &self.mmap,
-                block_offset,
-                length,
-                block_size_bytes,
-            )
+            match self {
+                Page::ReadOnly {
+                    path: _,
+                    mmap,
+                    _mmap_seq: _,
+                } => Self::read_value_with_generic_storage(
+                    mmap,
+                    block_offset,
+                    length,
+                    block_size_bytes,
+                ),
+                Page::ReadWrite {
+                    path: _,
+                    mmap,
+                    _mmap_seq: _,
+                } => Self::read_value_with_generic_storage(
+                    mmap,
+                    block_offset,
+                    length,
+                    block_size_bytes,
+                ),
+            }
         }
     }
 
@@ -187,23 +288,71 @@ impl Page {
     /// Delete the page from the filesystem.
     #[allow(dead_code)]
     pub fn delete_page(self) {
-        #[expect(clippy::used_underscore_binding)]
-        drop((self.mmap, self._mmap_seq));
-        fs::remove_file(&self.path).unwrap();
+        match self {
+            Page::ReadOnly {
+                mmap,
+                _mmap_seq,
+                path,
+            } => {
+                #[expect(clippy::used_underscore_binding)]
+                drop((mmap, _mmap_seq));
+                fs::remove_file(&path).unwrap();
+            }
+            Page::ReadWrite {
+                mmap,
+                _mmap_seq,
+                path,
+            } => {
+                #[expect(clippy::used_underscore_binding)]
+                drop((mmap, _mmap_seq));
+                fs::remove_file(&path).unwrap();
+            }
+        }
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
-        #[expect(clippy::used_underscore_binding)]
-        if let Some(mmap_seq) = &self._mmap_seq {
-            mmap_seq.populate();
+        match self {
+            Page::ReadOnly {
+                path: _,
+                mmap: _,
+                _mmap_seq,
+            } =>
+            {
+                #[expect(clippy::used_underscore_binding)]
+                if let Some(mmap_seq) = _mmap_seq {
+                    mmap_seq.populate();
+                }
+            }
+            Page::ReadWrite {
+                path: _,
+                mmap: _,
+                _mmap_seq,
+            } =>
+            {
+                #[expect(clippy::used_underscore_binding)]
+                if let Some(mmap_seq) = _mmap_seq {
+                    mmap_seq.populate();
+                }
+            }
         }
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)?;
+        match self {
+            Page::ReadOnly {
+                path,
+                mmap: _,
+                _mmap_seq: _,
+            } => clear_disk_cache(path),
+            Page::ReadWrite {
+                path,
+                mmap: _,
+                _mmap_seq: _,
+            } => clear_disk_cache(path),
+        }?;
         Ok(())
     }
 }

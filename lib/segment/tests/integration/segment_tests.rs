@@ -204,7 +204,7 @@ fn ordered_deletion_test() {
         segment.segment_path.clone()
     };
 
-    let segment = load_segment(&path, &AtomicBool::new(false))
+    let segment = load_segment(&path, &AtomicBool::new(false), false)
         .unwrap()
         .unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
@@ -241,7 +241,9 @@ fn skip_deleted_segment() {
     let new_path = path.with_extension("deleted");
     fs::rename(&path, new_path).unwrap();
 
-    let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
+    // `skip_deleted` does not affect ".deleted" directory handling; it only controls
+    // whether deleted points inside a segment are loaded.
+    let segment = load_segment(&path, &AtomicBool::new(false), false).unwrap();
 
     assert!(matches!(segment, LoadSegmentOutcome::Skipped));
 }

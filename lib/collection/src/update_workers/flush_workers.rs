@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 
 use crate::shards::local_shard::LocalShardClocks;
 use crate::update_workers::UpdateWorkers;
-use crate::wal_delta::LockedWal;
+use crate::wal_delta::WalMode;
 
 impl UpdateWorkers {
     /// Returns confirmed version after flush of all segments
@@ -32,13 +32,13 @@ impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     fn flush_worker_internal(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: WalMode,
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
     ) {
         log::trace!("Attempting flushing");
-        let wal_flush_job = wal.blocking_lock().flush_async();
+        let wal_flush_job = wal.flush_async();
 
         let wal_flush_res = match wal_flush_job.join() {
             Ok(Ok(())) => Ok(()),
@@ -93,7 +93,7 @@ impl UpdateWorkers {
             segments.write().report_optimizer_error(err);
         }
 
-        if let Err(err) = wal.blocking_lock().ack(ack) {
+        if let Err(err) = wal.ack(ack) {
             log::warn!("Failed to acknowledge WAL version: {err}");
             segments.write().report_optimizer_error(err);
         }
@@ -102,7 +102,7 @@ impl UpdateWorkers {
     #[allow(clippy::too_many_arguments)]
     pub async fn flush_worker_fn(
         segments: LockedSegmentHolder,
-        wal: LockedWal,
+        wal: WalMode,
         wal_keep_from: Arc<AtomicU64>,
         clocks: LocalShardClocks,
         flush_interval_sec: u64,
@@ -138,7 +138,7 @@ impl UpdateWorkers {
             })
             .await
             .unwrap_or_else(|error| {
-                log::error!("Flush worker failed: {error}",);
+                log::error!("Flush worker failed: {error}");
             });
         }
     }

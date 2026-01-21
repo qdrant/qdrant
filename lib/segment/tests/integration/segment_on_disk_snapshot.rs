@@ -207,7 +207,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
+    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false), false)
         .unwrap()
         .unwrap();
 

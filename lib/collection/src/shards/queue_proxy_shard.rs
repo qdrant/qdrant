@@ -46,6 +46,9 @@ const BATCH_SIZE: usize = 10;
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
 
 const MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: Version = Version::new(1, 14, 1);
+const READ_ONLY_QUEUE_PROXY_ERROR: &str =
+    "Cannot create queue proxy shard in read-only mode: WAL is not available";
+const READ_ONLY_WAL_TRANSFER_ERROR: &str = "Cannot transfer WAL batch in read-only mode";
 
 /// QueueProxyShard shard
 ///
@@ -72,15 +75,34 @@ impl QueueProxyShard {
     /// Queue proxy the given local shard and point to the remote shard.
     ///
     /// This starts queueing all new updates on the local shard at the point of creation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shard WAL is read-only.
     pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
-        }
+    ) -> Result<Self, (LocalShard, CollectionError)> {
+        let wal = match wrapped_shard.wal.as_writable_wal() {
+            Some(wal) => wal.clone(),
+            None => {
+                return Err((
+                    wrapped_shard,
+                    CollectionError::bad_request(READ_ONLY_QUEUE_PROXY_ERROR),
+                ));
+            }
+        };
+        let start_from = wal.lock().await.last_index() + 1;
+        Self::new_from_version(
+            wrapped_shard,
+            remote_shard,
+            wal_keep_from,
+            start_from,
+            progress,
+        )
+        .await
     }
 
     /// Queue proxy the given local shard and point to the remote shard, from a specific WAL version.
@@ -94,6 +116,7 @@ impl QueueProxyShard {
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
     /// `version` is too old or too new, queue proxy creation is rejected.
+    /// This also fails if the shard WAL is read-only.
     pub async fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
@@ -102,7 +125,13 @@ impl QueueProxyShard {
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
-        let wal = wrapped_shard.wal.wal.clone();
+        let Some(wal) = wrapped_shard.wal.as_writable_wal() else {
+            return Err((
+                wrapped_shard,
+                CollectionError::bad_request(READ_ONLY_QUEUE_PROXY_ERROR),
+            ));
+        };
+        let wal = wal.clone();
         let wal_lock = wal.lock().await;
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
@@ -148,11 +177,11 @@ impl QueueProxyShard {
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
-        save_wal: bool,
+        lock_wal: bool,
     ) -> CollectionResult<()> {
         self.inner_unchecked()
             .wrapped_shard
-            .create_snapshot(temp_path, tar, format, manifest, save_wal)
+            .create_snapshot(temp_path, tar, format, manifest, lock_wal)
             .await
     }
 
@@ -466,22 +495,6 @@ struct Inner {
 }
 
 impl Inner {
-    pub async fn new(
-        wrapped_shard: LocalShard,
-        remote_shard: RemoteShard,
-        wal_keep_from: Arc<AtomicU64>,
-        progress: Arc<ParkingMutex<TransferTaskProgress>>,
-    ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
-        Self::new_from_version(
-            wrapped_shard,
-            remote_shard,
-            wal_keep_from,
-            start_from,
-            progress,
-        )
-    }
-
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
@@ -546,10 +559,18 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, total, batch) = {
-            let wal = self.wrapped_shard.wal.wal.lock().await;
-            let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
+            let wal = self
+                .wrapped_shard
+                .wal
+                .as_writable_wal()
+                .ok_or_else(|| CollectionError::bad_request(READ_ONLY_WAL_TRANSFER_ERROR))?;
+            let wal_guard = wal.lock().await;
+            let items_left = (wal_guard.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
-            let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
+            let batch = wal_guard
+                .read(transfer_from)
+                .take(BATCH_SIZE)
+                .collect::<Vec<_>>();
             debug_assert!(
                 batch.len() <= items_left as usize,
                 "batch cannot be larger than items_left",

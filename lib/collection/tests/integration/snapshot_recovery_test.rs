@@ -97,7 +97,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             .unwrap();
     }
 
-    // Upload 1000 random vectors to the collection
+    // Upload 100 random vectors to the collection
     let mut points = Vec::new();
     for i in 0..100 {
         points.push(PointStructPersisted {
@@ -151,8 +151,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         None,
         ResourceBudget::default(),
         None,
+        false, // read_only = false
     )
-    .await;
+    .await
+    .unwrap();
 
     let query_vector = vec![1.0, 0.0, 0.0, 0.0];
 

@@ -95,8 +95,14 @@ async fn test_hw_metrics_cancellation() {
             CollectionError::Timeout { description: _ }
         ));
 
-        // Wait until the cancellation is processed is finished
-        std::thread::sleep(Duration::from_millis(50));
+        // Wait until the cancellation is processed
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let mut attempts = 0;
+    while outer_hw.get_cpu() == 0 && attempts < 20 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        attempts += 1;
     }
 
     assert!(outer_hw.get_cpu() > 0);

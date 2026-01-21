@@ -634,7 +634,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path, &stopped).unwrap().unwrap();
+    let segment = load_segment(&path, &stopped, false).unwrap().unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,
@@ -721,7 +721,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
 
     // drop version file and reload index
     drop(sparse_vector_index);
-    fs::remove_file(&version_file).unwrap();
+    fs::remove_file(&version_file).expect("Failed to remove version file");
     let sparse_vector_index = open_index();
     assert!(version_file.exists(), "version file should be recreated");
     check_search(&sparse_vector_index);

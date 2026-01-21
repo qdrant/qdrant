@@ -162,6 +162,9 @@ fn range_filtering(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(target_os = "windows")]
+criterion_group!(benches, range_filtering);
+
 #[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;

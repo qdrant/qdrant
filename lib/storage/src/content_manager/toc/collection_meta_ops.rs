@@ -37,6 +37,9 @@ impl TableOfContent {
         &self,
         operation: CollectionMetaOperations,
     ) -> Result<bool, StorageError> {
+        if !matches!(&operation, CollectionMetaOperations::Nop { .. }) {
+            self.ensure_write_allowed("perform collection metadata operations")?;
+        }
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
                 log::info!("Creating collection {}", operation.collection_name);

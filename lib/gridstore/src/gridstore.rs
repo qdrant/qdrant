@@ -169,6 +169,16 @@ impl<V: Blob> Gridstore<V> {
     /// Open an existing storage at the given path
     /// Returns None if the storage does not exist
     pub fn open(base_path: PathBuf) -> Result<Self> {
+        Self::open_inner(base_path, false)
+    }
+
+    /// Open an existing storage at the given path in read-only mode
+    /// Returns None if the storage does not exist
+    pub fn open_read_only(base_path: PathBuf) -> Result<Self> {
+        Self::open_inner(base_path, true)
+    }
+
+    fn open_inner(base_path: PathBuf, read_only: bool) -> Result<Self> {
         if !base_path.exists() {
             return Err(GridstoreError::service_error(format!(
                 "Path '{base_path:?}' does not exist"
@@ -185,7 +195,11 @@ impl<V: Blob> Gridstore<V> {
         let config_file = BufReader::new(File::open(&config_path)?);
         let config: StorageConfig = serde_json::from_reader(config_file)?;
 
-        let page_tracker = Tracker::open(&base_path)?;
+        let page_tracker = if read_only {
+            Tracker::open_read_only(&base_path)?
+        } else {
+            Tracker::open(&base_path)?
+        };
 
         let bitmask = Bitmask::open(&base_path, config)?;
 
@@ -204,7 +218,11 @@ impl<V: Blob> Gridstore<V> {
         let mut pages = storage.pages.write();
         for page_id in 0..num_pages as PageId {
             let page_path = storage.page_path(page_id);
-            let page = Page::open(&page_path)?;
+            let page = if read_only {
+                Page::open_read_only(&page_path)?
+            } else {
+                Page::open(&page_path)?
+            };
             pages.push(page);
         }
         drop(pages);
