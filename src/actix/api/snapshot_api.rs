@@ -738,7 +738,8 @@ async fn recover_partial_snapshot_from(
                 "{peer_url}/collections/{encoded_collection_name}/shards/{shard_id}/snapshot/partial/create"
             );
 
-            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
+            // Empty snapshot manifest allows us to use partial snapshots even if local shard doesn't exist
+            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await.unwrap_or_else(|_| SnapshotManifest::empty());
 
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
             let (partial_snapshot_file, partial_snapshot_temp_path) = tempfile::Builder::new()
