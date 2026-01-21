@@ -66,6 +66,8 @@ impl UpdateWorkers {
         let confirmed_version = match confirmed_version {
             Ok(version) => version,
             Err(err) => {
+                // Since Self::flush_segments is flushing asynchronously, we can get the error
+                // from the previous flush cycle, not necessarily this one.
                 log::error!("Failed to flush: {err}");
                 segments.write().report_optimizer_error(err);
                 return;

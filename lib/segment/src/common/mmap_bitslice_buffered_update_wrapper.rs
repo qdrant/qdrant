@@ -7,6 +7,7 @@ use memory::mmap_type::MmapBitSlice;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
+use crate::common::operation_error::OperationError;
 
 /// A wrapper around `MmapBitSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
@@ -89,10 +90,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
                 bitslice.upgrade(),
                 pending_updates_weak.upgrade(),
             ) else {
-                log::debug!(
-                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
-                );
-                return Ok(());
+                // Already dropped, skip flush
+                log::trace!("MmapBitsliceBuffered was dropped, cancelling flush");
+                return Err(OperationError::cancelled(
+                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance",
+                ));
             };
 
             let mut mmap_slice_write = bitslice.write();
