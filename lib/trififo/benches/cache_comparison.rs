@@ -311,11 +311,12 @@ where
     // Force garbage collection / deallocation
     std::thread::sleep(std::time::Duration::from_millis(100));
 
+    let keys = generate_sequential_keys(capacity);
+
     let before = ALLOCATOR.allocated();
     let cache = create_cache();
 
     // Insert entries
-    let keys = generate_sequential_keys(capacity);
     for (i, key) in keys.iter().enumerate() {
         cache.insert(*key, i as u32);
     }
