@@ -62,6 +62,7 @@ impl LocalShard {
 
         let optimizations: OperationDurationStatistics = self
             .optimizers
+            .load()
             .iter()
             .map(|optimizer| {
                 optimizer
