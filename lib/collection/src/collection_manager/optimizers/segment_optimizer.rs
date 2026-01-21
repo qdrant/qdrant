@@ -600,6 +600,24 @@ pub trait SegmentOptimizer {
         Ok(optimized_segment)
     }
 
+    /// Test wrapper for [`SegmentOptimizer::optimize`].
+    #[cfg(test)]
+    fn optimize_for_test(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> usize {
+        let permit_cpu_count = segment::index::hnsw_index::num_rayon_threads(0);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        self.optimize(
+            segments,
+            Uuid::new_v4(),
+            ids,
+            budget.try_acquire(0, permit_cpu_count).unwrap(),
+            budget,
+            &AtomicBool::new(false),
+            ProgressTracker::new_for_test(),
+            Box::new(|| ()),
+        )
+        .unwrap()
+    }
+
     /// Performs optimization of collections's segments
     ///
     /// Including:

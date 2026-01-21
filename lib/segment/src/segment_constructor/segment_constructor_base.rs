@@ -739,7 +739,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
             let segment_uuid = Uuid::new_v4();
             let new_path = path.with_file_name(segment_uuid.to_string());
             log::warn!(
-                "Segmant name is not a valid UUID: {}. Renaming to {segment_uuid}",
+                "Segment name is not a valid UUID: {}. Renaming to {segment_uuid}",
                 path.display(),
             );
             fs::rename(path, &new_path)?;
