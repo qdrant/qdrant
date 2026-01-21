@@ -86,17 +86,12 @@ impl<'de> Deserialize<'de> for DateTimePayloadType {
     /// Returns a clear user-facing error when the format is invalid.
     /// Example accepted value: `2014-01-01T00:00:00Z`.
     ///
-    /// For binary formats (CBOR/MessagePack/WAL), delegates to chrono's deserializer
-    /// which handles timestamps and other non-string representations.
+    /// Binary formats (CBOR/MessagePack/WAL) also serialize as RFC3339 strings, so we reuse
+    /// the same parsing path everywhere.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        if !deserializer.is_human_readable() {
-            return chrono::DateTime::<chrono::Utc>::deserialize(deserializer)
-                .map(DateTimePayloadType::from);
-        }
-
         let str_datetime: Cow<'de, str> = Cow::deserialize(deserializer)?;
 
         match DateTimePayloadType::from_str(str_datetime.as_ref()) {
@@ -4075,7 +4070,7 @@ mod tests {
     }
 
     /// Regression test: DateTimePayloadType binary serialization roundtrip.
-    /// Ensures the `!is_human_readable()` path in DateTimePayloadType::deserialize works.
+    /// Ensures DateTimePayloadType parses binary-encoded RFC3339 strings.
     #[test]
     fn test_datetime_payload_type_binary_roundtrip() {
         let original = DateTimePayloadType::from_str("2024-06-15T12:30:45Z").unwrap();
