@@ -13191,7 +13191,7 @@
             "type": "string"
           },
           "segment_ids": {
-            "description": "Segment IDs being optimized",
+            "description": "Internal segment IDs being optimized. These are local and in-memory, meaning that they can refer to different segments after a service restart.",
             "type": "array",
             "items": {
               "type": "integer",
@@ -13200,7 +13200,7 @@
             }
           },
           "segment_uuids": {
-            "description": "Segment UUIDs being optimized",
+            "description": "Segment UUIDs being optimized. Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name.",
             "type": "array",
             "items": {
               "type": "string"

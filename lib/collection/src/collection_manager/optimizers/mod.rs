@@ -96,11 +96,9 @@ impl TrackerLog {
 pub struct Tracker {
     /// Name of the optimizer
     pub name: String,
-    /// Internal segment IDs being optimized
-    /// These are local and in-memory, meaning that they can refer to different segments after a service restart.
+    /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
     /// Segment UUIDs being optimized
-    /// Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name
     pub segment_uuids: Vec<String>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
@@ -153,9 +151,13 @@ pub struct TrackerTelemetry {
     /// Name of the optimizer
     #[anonymize(false)]
     pub name: String,
-    /// Segment IDs being optimized
+    /// Internal segment IDs being optimized.
+    /// These are local and in-memory, meaning that they can refer to different
+    /// segments after a service restart.
     pub segment_ids: Vec<SegmentId>,
-    /// Segment UUIDs being optimized
+    /// Segment UUIDs being optimized.
+    /// Refers to same segments as in `segment_ids`, but trackable across
+    /// restarts, and reflect their directory name.
     pub segment_uuids: Vec<String>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
