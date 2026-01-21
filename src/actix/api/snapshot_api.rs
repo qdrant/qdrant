@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use collection::operations::types::CollectionError;
 use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
@@ -11,6 +10,7 @@ use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
+use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::shard::ShardId;
 use collection::shards::shard_holder::shard_not_found_error;
