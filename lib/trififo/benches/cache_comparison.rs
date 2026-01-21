@@ -26,6 +26,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Zipf;
 use schnellru::{ByLength, LruMap};
+use strum::EnumIter;
+use strum::IntoEnumIterator;
 
 /// Cache key representing a file descriptor and page offset.
 ///
@@ -267,15 +269,31 @@ impl CacheBench for FoyerWrapper {
 
 /// List of cache implementations to benchmark.
 /// Add "trififo" here when implementation is ready.
-const CACHE_NAMES: &[&str] = &["quick_cache", "schnellru", "foyer"];
+#[derive(EnumIter, Copy, Clone)]
+enum CacheName {
+    QuickCache,
+    Schnellru,
+    Foyer,
+    // Trififo,
+}
 
-fn create_cache(name: &str, capacity: usize) -> Arc<dyn CacheBench> {
+impl std::fmt::Display for CacheName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CacheName::QuickCache => write!(f, "quick_cache"),
+            CacheName::Schnellru => write!(f, "schnellru"),
+            CacheName::Foyer => write!(f, "foyer"),
+            // CacheName::Trififo => write!(f, "trififo"),
+        }
+    }
+}
+
+fn create_cache(name: CacheName, capacity: usize) -> Arc<dyn CacheBench> {
     match name {
-        "quick_cache" => Arc::new(QuickCacheWrapper::new(capacity)),
-        "schnellru" => Arc::new(SchnellruWrapper::new(capacity as u32)),
-        "foyer" => Arc::new(FoyerWrapper::new(capacity)),
-        // "trififo" => Arc::new(TrififoWrapper::new(capacity)),
-        _ => panic!("Unknown cache: {name}"),
+        CacheName::QuickCache => Arc::new(QuickCacheWrapper::new(capacity)),
+        CacheName::Schnellru => Arc::new(SchnellruWrapper::new(capacity as u32)),
+        CacheName::Foyer => Arc::new(FoyerWrapper::new(capacity)),
+        // CacheName::Trififo => Arc::new(TrififoWrapper::new(capacity)),
     }
 }
 
@@ -286,10 +304,9 @@ fn create_cache(name: &str, capacity: usize) -> Arc<dyn CacheBench> {
 /// Target: 26,214,400 entries. If each page is 4KB, this many entries are worth 100GB of data
 const MEMORY_BENCH_ENTRIES: usize = 26_214_400;
 
-fn measure_memory_usage<F, T>(name: &str, capacity: usize, create_cache: F)
+fn measure_memory_usage<F>(name: CacheName, capacity: usize, create_cache: F)
 where
-    F: FnOnce() -> T,
-    T: CacheBench,
+    F: FnOnce() -> Arc<dyn CacheBench>,
 {
     // Force garbage collection / deallocation
     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -324,17 +341,11 @@ where
 /// Insert 26,214,400 entries and measure memory usage
 fn test_memory_usage() {
     println!("=== Memory Usage Report ===");
-    measure_memory_usage("quick_cache", MEMORY_BENCH_ENTRIES, || {
-        QuickCacheWrapper::new(MEMORY_BENCH_ENTRIES)
-    });
-
-    measure_memory_usage("schnellru", MEMORY_BENCH_ENTRIES, || {
-        SchnellruWrapper::new(MEMORY_BENCH_ENTRIES as u32)
-    });
-
-    measure_memory_usage("foyer", MEMORY_BENCH_ENTRIES, || {
-        FoyerWrapper::new(MEMORY_BENCH_ENTRIES)
-    });
+    for name in CacheName::iter() {
+        measure_memory_usage(name, MEMORY_BENCH_ENTRIES, || {
+            create_cache(name, MEMORY_BENCH_ENTRIES)
+        });
+    }
 
     println!();
 }
@@ -391,7 +402,7 @@ fn test_hit_ratio() {
     ] {
         println!("Pattern: {pattern_name}");
 
-        for cache_name in CACHE_NAMES {
+        for cache_name in CacheName::iter() {
             let cache = create_cache(cache_name, cache_capacity);
 
             let hit_ratio = measure_hit_ratio(cache.as_ref(), keys);
@@ -415,10 +426,10 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     group.throughput(Throughput::Elements(OPS_PER_ITER as u64));
 
     let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY as u64 * 2, 1.0, 42);
-    for cache_name in CACHE_NAMES {
+    for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("insert", cache_name),
-            cache_name,
+            &cache_name,
             |b, &name| {
                 let cache = create_cache(name, CACHE_CAPACITY);
 
@@ -434,10 +445,10 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     // Pre-fill caches for get benchmarks
     let prefill_keys = generate_sequential_keys(CACHE_CAPACITY);
 
-    for cache_name in CACHE_NAMES {
+    for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("get_hit", cache_name),
-            cache_name,
+            &cache_name,
             |b, &name| {
                 let cache = create_cache(name, CACHE_CAPACITY);
 
@@ -481,7 +492,7 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
     // Benchmark: Concurrent get-or-insert under Zipf distribution
     // This measures how each cache handles the common pattern of:
     // "get if exists, otherwise fetch and insert"
-    for cache_name in CACHE_NAMES {
+    for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("get_or_insert", cache_name),
             &(cache_name, &thread_keys),
@@ -522,8 +533,8 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 // =============================================================================
 
 fn bench_all(c: &mut Criterion) {
-    // test_memory_usage();
-    // test_hit_ratio();
+    test_memory_usage();
+    test_hit_ratio();
 
     bench_single_thread_latency(c);
     bench_multi_thread_latency(c);

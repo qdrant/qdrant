@@ -7962,6 +7962,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_distr",
  "schnellru",
+ "strum",
  "tokio",
 ]
 

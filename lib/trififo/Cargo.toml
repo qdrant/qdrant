@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 
 [dev-dependencies]
+strum = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
