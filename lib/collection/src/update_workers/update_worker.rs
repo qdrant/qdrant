@@ -42,7 +42,6 @@ impl UpdateWorkers {
                     op_num,
                     operation,
                     sender,
-                    wait,
                     hw_measurements,
                 }) => {
                     let collection_name_clone = collection_name.clone();
@@ -68,6 +67,7 @@ impl UpdateWorkers {
                         continue;
                     };
 
+                    let wait = sender.is_some();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
