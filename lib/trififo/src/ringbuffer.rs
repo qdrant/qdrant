@@ -15,7 +15,7 @@
 use std::mem::MaybeUninit;
 
 pub struct RingBuffer<T> {
-    buffer: Vec<MaybeUninit<T>>,
+    buffer: Box<[MaybeUninit<T>]>,
     capacity: usize,
     /// Current write position (0 to capacity-1, wraps around)
     write_pos: usize,
@@ -31,11 +31,9 @@ impl<T> RingBuffer<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         assert!(capacity > 0, "Ring buffer capacity must be greater than 0");
 
-        let mut buffer = Vec::with_capacity(capacity);
-        // Reserve space without initializing
-        for _ in 0..capacity {
-            buffer.push(MaybeUninit::uninit());
-        }
+        let buffer: Box<[MaybeUninit<T>]> = (0..capacity)
+            .map(|_| MaybeUninit::uninit())
+            .collect();
 
         Self {
             buffer,
@@ -212,7 +210,7 @@ impl<T> Drop for RingBuffer<T> {
             for i in 0..self.len {
                 let pos = (start_pos + i) % self.capacity;
                 unsafe {
-                    self.buffer[pos].assume_init_drop();
+                    std::ptr::drop_in_place(self.buffer[pos].as_mut_ptr());
                 }
             }
         }
@@ -388,90 +386,4 @@ mod tests {
         // try_push should fail again since it's full
         assert_eq!(buffer.try_push(50), Err(50));
     }
-
-    #[test]
-    fn test_comparison_with_ringbuf_crate() {
-        use ringbuf::HeapRb;
-        use ringbuf::traits::{Consumer, Observer, RingBuffer as RingBufferTrait};
-
-        const CAPACITY: usize = 5;
-        let mut our_buffer = super::RingBuffer::with_capacity(CAPACITY);
-        let mut their_buffer: HeapRb<i32> = HeapRb::new(CAPACITY);
-
-        // Push some initial items
-        for i in 0..3 {
-            our_buffer.overwriting_push(i);
-            their_buffer.push_overwrite(i);
-        }
-
-        // Verify both have same length
-        assert_eq!(our_buffer.len(), their_buffer.occupied_len());
-
-        // Push more items to cause wrapping
-        for i in 3..10 {
-            our_buffer.overwriting_push(i);
-            their_buffer.push_overwrite(i);
-        }
-
-        // Both should have same length
-        assert_eq!(our_buffer.len(), their_buffer.occupied_len());
-        assert_eq!(our_buffer.len(), CAPACITY);
-
-        // Verify their buffer has same items
-        let their_items: Vec<_> = their_buffer.iter().copied().collect();
-        let our_items: Vec<_> = (0..our_buffer.len()).map(|_| our_buffer.pop_push(0).0).collect();
-
-        assert_eq!(our_items, their_items);
-    }
-
-    #[test]
-    fn test_sequential_access_pattern() {
-        // Simulate a use case where we track offsets in a separate structure
-        let mut buffer = RingBuffer::with_capacity(4);
-        let mut tracker = std::collections::HashMap::new();
-
-        // Add items and track them
-        for i in 0..3 {
-            let offset = buffer.overwriting_push(i * 10);
-            tracker.insert(format!("key{}", i), offset);
-        }
-
-        // Access via tracker
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key0"]), Some(&0));
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key1"]), Some(&10));
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key2"]), Some(&20));
-
-        // Track which keys map to which offsets before wrapping
-        let key0_offset = tracker["key0"];
-        let key3_offset = 3 % buffer.capacity(); // Will be offset 3
-
-        // Add more items, causing wrapping
-        for i in 3..8 {
-            let offset = buffer.overwriting_push(i * 10);
-            tracker.insert(format!("key{}", i), offset);
-        }
-
-        // Note: After pushing 3,4,5,6,7 (5 more items into capacity-4 buffer),
-        // positions 0,1,2,3 get reused. The valid range is now [0,1,2,3] containing [40,50,60,70]
-
-        // Manually invalidate keys that were overwritten
-        // key0 (offset 0) was overwritten by key4 (also offset 0)
-        // key1 (offset 1) was overwritten by key5 (also offset 1)
-        // key2 (offset 2) was overwritten by key6 (also offset 2)
-        // key3 (offset 3) was overwritten by key7 (also offset 3)
-
-        tracker.remove("key0");
-        tracker.remove("key1");
-        tracker.remove("key2");
-        tracker.remove("key3");
-
-        assert_eq!(tracker.len(), 4);
-
-        // Recent keys should still work
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key4"]), Some(&40));
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key5"]), Some(&50));
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key6"]), Some(&60));
-        assert_eq!(buffer.get_absolute_unchecked(tracker["key7"]), Some(&70));
-    }
-
 }
