@@ -543,7 +543,8 @@ fn test_delete_points_in_appendable_memmap_vector_storages() {
         storage.flusher()().unwrap();
     }
 
-    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage =
+        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 }
 
 #[test]
@@ -557,7 +558,8 @@ fn test_update_from_delete_points_appendable_memmap_vector_storages() {
         storage.flusher()().unwrap();
     }
 
-    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage =
+        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 }
 
 #[test]
@@ -570,7 +572,8 @@ fn test_score_points_in_appendable_memmap_vector_storages() {
         storage.flusher()().unwrap();
     }
 
-    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage =
+        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 }
 
 #[test]
@@ -583,5 +586,6 @@ fn test_score_quantized_points_appendable_memmap_vector_storages() {
         storage.flusher()().unwrap();
     }
 
-    let _storage = open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage =
+        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 }

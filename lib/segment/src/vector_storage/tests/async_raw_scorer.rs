@@ -54,7 +54,8 @@ fn test_async_raw_scorer(
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let mut storage = open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true, false)?;
+    let mut storage =
+        open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true, false)?;
 
     let mut id_tracker = FixtureIdTracker::new(points);
 

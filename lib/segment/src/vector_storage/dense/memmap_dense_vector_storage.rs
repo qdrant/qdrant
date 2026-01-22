@@ -79,8 +79,13 @@ pub fn open_memmap_vector_storage_byte(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer(), populate)?;
+    let storage = open_memmap_vector_storage_with_async_io_impl(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+        populate,
+    )?;
     Ok(VectorStorageEnum::DenseMemmapByte(storage))
 }
 
@@ -90,8 +95,13 @@ pub fn open_memmap_vector_storage_half(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer(), populate)?;
+    let storage = open_memmap_vector_storage_with_async_io_impl(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+        populate,
+    )?;
     Ok(VectorStorageEnum::DenseMemmapHalf(storage))
 }
 
@@ -123,7 +133,8 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io, populate)?;
+    let mmap_store =
+        MmapDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io, populate)?;
 
     Ok(Box::new(MemmapDenseVectorStorage {
         vectors_path,

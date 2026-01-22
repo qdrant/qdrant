@@ -215,8 +215,9 @@ pub fn open_appendable_memmap_vector_storage(
     distance: Distance,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance, populate)?;
+    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+        path, dim, distance, populate,
+    )?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
 }
