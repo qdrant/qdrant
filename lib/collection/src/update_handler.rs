@@ -19,7 +19,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     SegmentOptimizer, plan_optimizations,
 };
 use crate::common::stoppable_task::StoppableTaskHandle;
-use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::CollectionResult;
 use crate::shards::CollectionId;
@@ -35,18 +34,10 @@ pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
-    /// Operation
-    pub operation: OperationDataSource,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
     /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
-}
-
-#[derive(Debug)]
-pub enum OperationDataSource {
-    Direct(Box<CollectionUpdateOperations>),
-    FromWal(u64),
 }
 
 /// Signal, used to inform Updater process

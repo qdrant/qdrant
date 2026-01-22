@@ -16,7 +16,7 @@ use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
 use crate::shards::local_shard::indexed_only::get_largest_unindexed_segment_vector_size;
 use crate::shards::update_tracker::UpdateTracker;
-use crate::update_handler::{OperationData, OperationDataSource, OptimizerSignal, UpdateSignal};
+use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::wal_delta::LockedWal;
 
@@ -40,7 +40,6 @@ impl UpdateWorkers {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
-                    operation,
                     sender,
                     hw_measurements,
                 }) => {
@@ -50,17 +49,13 @@ impl UpdateWorkers {
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
-                    let operation = match operation {
-                        OperationDataSource::Direct(o) => *o,
-                        OperationDataSource::FromWal(op_num) => {
-                            wal.lock()
-                                .await
-                                .read_once(op_num)
-                                .unwrap()
-                                .unwrap()
-                                .operation
-                        }
-                    };
+                    let operation = wal
+                        .lock()
+                        .await
+                        .read_once(op_num)
+                        .unwrap()
+                        .unwrap()
+                        .operation;
 
                     let operation_result = Self::wait_for_optimization(
                         prevent_unoptimized_threshold_kb,

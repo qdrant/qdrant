@@ -30,7 +30,7 @@ use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rat
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
-use crate::update_handler::{OperationData, OperationDataSource, UpdateSignal};
+use crate::update_handler::{OperationData, UpdateSignal};
 
 #[async_trait]
 impl ShardOperation for LocalShard {
@@ -90,17 +90,8 @@ impl ShardOperation for LocalShard {
                 Err(err) => return Err(err.into()),
             };
 
-            // Some condition to decide whether to keep operation in RAM or not
-            let operations_count = _wal_lock.last_index() - _wal_lock.first_index();
-            let operation = if operations_count > 1_000 {
-                OperationDataSource::FromWal(operation_id)
-            } else {
-                OperationDataSource::Direct(Box::new(operation.operation))
-            };
-
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
-                operation,
                 sender: callback_sender,
                 hw_measurements: hw_measurement_acc.clone(),
             }));
