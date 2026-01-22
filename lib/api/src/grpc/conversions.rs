@@ -1440,9 +1440,7 @@ impl From<segment::types::BinaryQuantizationQueryEncoding> for BinaryQuantizatio
                 Variant::Setting(Setting::Scalar8Bits.into())
             }
             segment::types::BinaryQuantizationQueryEncoding::Uncompressed => {
-                // Uncompressed query encoding is not yet exposed via gRPC/HTTP API
-                // This will be added in a follow-up PR
-                todo!("Uncompressed query encoding not yet supported in gRPC/HTTP API")
+                Variant::Setting(Setting::Uncompressed.into())
             }
         };
 
