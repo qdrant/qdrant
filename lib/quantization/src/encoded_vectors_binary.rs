@@ -449,7 +449,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
         // Validate that uncompressed queries are only used with dot product distance and one bit encoding
         if matches!(query_encoding, QueryEncoding::Uncompressed)
-            && (!matches!(vector_parameters.distance_type, DistanceType::Dot) || !matches!(encoding, Encoding::OneBit))
+            && (!matches!(vector_parameters.distance_type, DistanceType::Dot)
+                || !matches!(encoding, Encoding::OneBit))
         {
             return Err(EncodingError::ArgumentsError(format!(
                 "Uncompressed query encoding is only supported for dot product distance, \
