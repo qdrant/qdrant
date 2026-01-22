@@ -447,9 +447,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             QueryEncoding::Uncompressed => false, // Uncompressed queries don't need stats
         };
 
-        // Validate that uncompressed queries are only used with dot product distance
+        // Validate that uncompressed queries are only used with dot product distance and one bit encoding
         if matches!(query_encoding, QueryEncoding::Uncompressed)
-            && !matches!(vector_parameters.distance_type, DistanceType::Dot)
+            && (!matches!(vector_parameters.distance_type, DistanceType::Dot) || !matches!(encoding, Encoding::OneBit))
         {
             return Err(EncodingError::ArgumentsError(format!(
                 "Uncompressed query encoding is only supported for dot product distance, \
@@ -758,13 +758,22 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
     /// Calculate dot product between uncompressed query vector and binary-quantized document vector.
     ///
+    /// This function assumes OneBit encoding for the binary-quantized document vector.
     /// For binary-quantized vectors, each bit represents a value of -1 (bit=0) or 1 (bit=1).
+    /// This is a sign quantization scheme where:
+    /// - Values > 0.0 are encoded as bit=1 and decoded as +1.0
+    /// - Values <= 0.0 (including exactly 0.0) are encoded as bit=0 and decoded as -1.0
+    ///
+    /// Note: This is a lossy quantization - exact zeros are quantized to -1.0, which introduces
+    /// approximation error. This is a fundamental limitation of 1-bit quantization that can
+    /// only represent two values per dimension.
+    ///
     /// This function computes the dot product by extracting bits and multiplying with
     /// the corresponding query vector values.
     ///
     /// # Arguments
     /// * `query_vector` - The uncompressed query vector (f32 values)
-    /// * `binary_vector` - The binary-quantized document vector (bits)
+    /// * `binary_vector` - The binary-quantized document vector (bits, OneBit encoding)
     ///
     /// # Returns
     /// The dot product as an f32 value.
@@ -780,8 +789,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             let bit_index = i / bits_count;
             let bit_offset = i % bits_count;
             let bit = (binary_vector[bit_index] >> bit_offset) & one;
-            // bit is either 0 or one (which is 1), so we can compare directly
-            dot_product += dim_value * if bit == one { 1.0 } else { -1.0 };
+            // bit is either 0 or one (which is 1 for integer types)
+            // Convert to usize to check if bit is set (non-zero means bit=1, zero means bit=0)
+            dot_product += dim_value
+                * if bit.to_usize().unwrap_or(0) != 0 {
+                    1.0
+                } else {
+                    -1.0
+                };
         }
 
         dot_product
