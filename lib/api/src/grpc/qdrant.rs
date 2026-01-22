@@ -4953,7 +4953,8 @@ pub struct UpsertPoints {
     /// Option for custom sharding to specify used shard keys
     #[prost(message, optional, tag = "5")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub update_filter: ::core::option::Option<Filter>,
@@ -6713,7 +6714,8 @@ pub mod points_update_operation {
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
-        /// If specified, only points that match this filter will be updated, others will be inserted
+        /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+        /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
         #[prost(message, optional, tag = "3")]
         pub update_filter: ::core::option::Option<super::Filter>,
         /// Mode of the upsert operation: insert_only, upsert (default), update_only

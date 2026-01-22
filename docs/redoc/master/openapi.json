@@ -10849,7 +10849,7 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
@@ -11197,7 +11197,7 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"

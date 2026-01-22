@@ -1375,7 +1375,8 @@ pub struct PointsBatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,
@@ -1413,7 +1414,8 @@ pub struct PointsList {
     pub points: Vec<PointStruct>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,

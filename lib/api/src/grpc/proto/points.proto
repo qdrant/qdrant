@@ -172,7 +172,8 @@ message UpsertPoints {
   optional WriteOrdering ordering = 4;
   // Option for custom sharding to specify used shard keys
   optional ShardKeySelector shard_key_selector = 5;
-  // If specified, only points that match this filter will be updated, others will be inserted
+  // Filter to apply when updating existing points. Only points matching this filter will be updated.
+  // Points that don't match will keep their current state. New points will be inserted regardless of the filter.
   optional Filter update_filter = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
@@ -1176,7 +1177,8 @@ message PointsUpdateOperation {
     repeated PointStruct points = 1;
     // Option for custom sharding to specify used shard keys
     optional ShardKeySelector shard_key_selector = 2;
-    // If specified, only points that match this filter will be updated, others will be inserted
+    // Filter to apply when updating existing points. Only points matching this filter will be updated.
+    // Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     optional Filter update_filter = 3;
     // Mode of the upsert operation: insert_only, upsert (default), update_only
     optional UpdateMode update_mode = 4;
