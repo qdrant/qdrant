@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
+use memory::madvise::AdviceSetting;
 use rstest::rstest;
 use tempfile::Builder;
 
@@ -313,6 +314,7 @@ fn create_vector_storage(
                 vec_dim,
                 Distance::Dot,
                 MultiVectorConfig::default(),
+                AdviceSetting::Global,
                 false,
             )
             .unwrap()

@@ -14,6 +14,7 @@ use fs_err::File;
 use io::safe_delete::{safe_delete_with_suffix, sync_parent_dir};
 use io::storage_version::StorageVersion;
 use log::info;
+use memory::madvise::{Advice, AdviceSetting};
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
@@ -103,6 +104,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
 fn open_mmap_vector_storage(
     vector_storage_path: &Path,
     vector_config: &VectorDataConfig,
+    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
@@ -114,6 +116,7 @@ fn open_mmap_vector_storage(
             vector_config.size,
             vector_config.distance,
             *multi_vec_config,
+            madvise,
             populate,
         )
     } else {
@@ -122,18 +125,21 @@ fn open_mmap_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
+                madvise,
                 populate,
             ),
             VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
+                madvise,
                 populate,
             ),
             VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
+                madvise,
                 populate,
             ),
         }
@@ -185,13 +191,22 @@ pub(crate) fn open_vector_storage(
             }
         }
         // Mmap on disk, not appendable
-        VectorStorageType::Mmap => {
-            let populate = false;
-            open_mmap_vector_storage(vector_storage_path, vector_config, populate)
-        }
+        VectorStorageType::Mmap => open_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::Global,
+            false,
+        ),
+        VectorStorageType::InRamMmap => open_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::from(Advice::Normal),
+            true,
+        ),
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => {
-            let populate = false;
+            const MADVISE: AdviceSetting = AdviceSetting::Global;
+            const POPULATE: bool = false;
             if let Some(multi_vec_config) = &vector_config.multivector_config {
                 open_appendable_memmap_multi_vector_storage(
                     storage_element_type,
@@ -199,7 +214,8 @@ pub(crate) fn open_vector_storage(
                     vector_config.size,
                     vector_config.distance,
                     *multi_vec_config,
-                    populate,
+                    MADVISE,
+                    POPULATE,
                 )
             } else {
                 match storage_element_type {
@@ -207,19 +223,22 @@ pub(crate) fn open_vector_storage(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
-                        populate,
+                        MADVISE,
+                        POPULATE,
                     ),
                     VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
-                        populate,
+                        MADVISE,
+                        POPULATE,
                     ),
                     VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
-                        populate,
+                        MADVISE,
+                        POPULATE,
                     ),
                 }
             }
@@ -241,10 +260,6 @@ pub(crate) fn open_vector_storage(
                     vector_config.distance,
                 )
             }
-        }
-        VectorStorageType::InRamMmap => {
-            let populate = true;
-            open_mmap_vector_storage(vector_storage_path, vector_config, populate)
         }
     }
 }

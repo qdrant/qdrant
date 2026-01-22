@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
+use memory::madvise::AdviceSetting;
 use tempfile::Builder;
 
 #[cfg(feature = "rocksdb")]
@@ -537,55 +538,103 @@ fn test_score_quantized_points_volatile_vector_storages() {
 fn test_delete_points_in_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
-        let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_appendable_memmap_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
         do_test_delete_points(&mut storage);
         storage.flusher()().unwrap();
     }
 
-    let _storage =
-        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage = open_appendable_memmap_vector_storage(
+        dir.path(),
+        4,
+        Distance::Dot,
+        AdviceSetting::Global,
+        false,
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_update_from_delete_points_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
-        let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_appendable_memmap_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
 
         do_test_update_from_delete_points(&mut storage);
         storage.flusher()().unwrap();
     }
 
-    let _storage =
-        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage = open_appendable_memmap_vector_storage(
+        dir.path(),
+        4,
+        Distance::Dot,
+        AdviceSetting::Global,
+        false,
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_score_points_in_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
-        let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_appendable_memmap_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
         do_test_score_points(&mut storage);
         storage.flusher()().unwrap();
     }
 
-    let _storage =
-        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage = open_appendable_memmap_vector_storage(
+        dir.path(),
+        4,
+        Distance::Dot,
+        AdviceSetting::Global,
+        false,
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_score_quantized_points_appendable_memmap_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
-        let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+        let mut storage = open_appendable_memmap_vector_storage(
+            dir.path(),
+            4,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
         test_score_quantized_points(&mut storage);
         storage.flusher()().unwrap();
     }
 
-    let _storage =
-        open_appendable_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
+    let _storage = open_appendable_memmap_vector_storage(
+        dir.path(),
+        4,
+        Distance::Dot,
+        AdviceSetting::Global,
+        false,
+    )
+    .unwrap();
 }

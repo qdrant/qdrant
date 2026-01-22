@@ -59,12 +59,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         deleted_path: &Path,
         dim: usize,
         with_async_io: bool,
+        madvise: AdviceSetting,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
-        let mmap = mmap_ops::open_read_mmap(vectors_path, AdviceSetting::Global, populate)
+        let mmap = mmap_ops::open_read_mmap(vectors_path, madvise, populate)
             .describe("Open mmap for reading")?;
 
         // Only open second mmap for sequential reads if supported

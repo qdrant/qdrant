@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use memory::madvise::AdviceSetting;
 use rand::Rng;
 use rand::distr::StandardUniform;
 use segment::data_types::named_vectors::CowVector;
@@ -35,7 +36,8 @@ fn init_mmap_vector_storage(
     populate: bool,
 ) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
-    let mut storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
+    let mut storage =
+        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
     let mut vectors = (0..num).map(|_id| {
         let vector = random_vector(dim);
         (CowVector::from(vector), false)
@@ -46,7 +48,8 @@ fn init_mmap_vector_storage(
 
     assert_eq!(storage.available_vector_count(), num);
     drop(storage);
-    let storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
+    let storage =
+        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
     assert_eq!(storage.available_vector_count(), num);
     (storage, id_tracker)
 }
