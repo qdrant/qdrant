@@ -5441,6 +5441,7 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken",
  "log",
+ "lru",
  "memory",
  "mockito",
  "murmur3",
