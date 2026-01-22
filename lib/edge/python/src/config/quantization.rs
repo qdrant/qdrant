@@ -371,6 +371,7 @@ impl From<PyBinaryQuantizationEncoding> for BinaryQuantizationEncoding {
 pub enum PyBinaryQuantizationQueryEncoding {
     Default,
     Binary,
+    Uncompressed,
     Scalar4Bits,
     Scalar8Bits,
 }
@@ -387,6 +388,7 @@ impl Repr for PyBinaryQuantizationQueryEncoding {
         let repr = match self {
             Self::Default => "Default",
             Self::Binary => "Binary",
+            Self::Uncompressed => "Uncompressed",
             Self::Scalar4Bits => "Scalar4Bits",
             Self::Scalar8Bits => "Scalar8Bits",
         };
@@ -400,6 +402,7 @@ impl From<BinaryQuantizationQueryEncoding> for PyBinaryQuantizationQueryEncoding
         match encoding {
             BinaryQuantizationQueryEncoding::Default => PyBinaryQuantizationQueryEncoding::Default,
             BinaryQuantizationQueryEncoding::Binary => PyBinaryQuantizationQueryEncoding::Binary,
+            BinaryQuantizationQueryEncoding::Uncompressed => PyBinaryQuantizationQueryEncoding::Uncompressed,
             BinaryQuantizationQueryEncoding::Scalar4Bits => {
                 PyBinaryQuantizationQueryEncoding::Scalar4Bits
             }
