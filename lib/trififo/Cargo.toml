@@ -9,9 +9,14 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+bench_all = []
+
 [dependencies]
+ahash = {workspace = true}
 
 [dev-dependencies]
+itertools = { workspace = true }
 strum = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }

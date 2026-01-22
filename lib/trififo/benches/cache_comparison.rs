@@ -19,9 +19,10 @@ use std::sync::Arc;
 use cap::Cap;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use foyer::{EvictionConfig, S3FifoConfig};
+use itertools::Itertools;
 use parking_lot::Mutex;
 use quick_cache::sync::Cache as QuickCache;
-use rand::distr::{Distribution, Uniform};
+use rand::distr::Distribution;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Zipf;
@@ -44,6 +45,12 @@ impl Key {
     /// Create a new cache key.
     #[inline]
     pub const fn new(fd: i32, page: u32) -> Self {
+        Self { fd, page }
+    }
+
+    pub const fn from_u64(u: u64) -> Self {
+        let fd = (u >> 32) as i32;
+        let page = u as u32;
         Self { fd, page }
     }
 }
@@ -77,16 +84,14 @@ fn generate_zipf_keys(n: usize, num_unique: u64, exponent: f64, seed: u64) -> Ve
     (0..n)
         .map(|_| {
             let id = zipf.sample(&mut rng) as u64;
-            Key::new((id / 1_000_000) as i32, (id % 1_000_000) as u32)
+            Key::from_u64(id)
         })
         .collect()
 }
 
 /// Generate sequential keys (testing sequential read efficiency)
 fn generate_sequential_keys(n: usize) -> Vec<Key> {
-    (0..n)
-        .map(|i| Key::new((i / 1_000_000) as i32, (i % 1_000_000) as u32))
-        .collect()
+    (0..n).map(|i| Key::from_u64(i as u64)).collect()
 }
 
 /// Generate a scan-resistant workload pattern.
@@ -95,39 +100,43 @@ fn generate_sequential_keys(n: usize) -> Vec<Key> {
 /// - Sequential scans (should not evict working set)
 fn generate_scan_resistant_keys(
     n: usize,
-    working_set_size: u64,
+    num_unique: u64,
     scan_size: u64,
     scan_frequency: f64,
     seed: u64,
 ) -> Vec<Key> {
     let mut rng = StdRng::seed_from_u64(seed);
-    let zipf = Zipf::new(working_set_size as f64, 1.0).unwrap();
-    let uniform_scan = Uniform::new(working_set_size, working_set_size + scan_size).unwrap();
+    let zipf = Zipf::new(num_unique as f64, 1.0).unwrap();
+    let mut scan = (0..num_unique).cycle();
 
-    (0..n)
-        .map(|_| {
-            let is_scan: bool = rng.random_bool(scan_frequency);
-            let id = if is_scan {
-                // Sequential scan access (cold data)
-                uniform_scan.sample(&mut rng)
-            } else {
-                // Hot working set access
-                zipf.sample(&mut rng) as u64
-            };
-            Key::new((id / 1_000_000) as i32, (id % 1_000_000) as u32)
-        })
-        .collect()
+    let mut keys = Vec::with_capacity(n);
+
+    while keys.len() < n {
+        let is_scan: bool = rng.random_bool(scan_frequency);
+        if is_scan {
+            // Sequential scan access (cold data)
+            for _ in 0..scan_size {
+                let id = scan.next().unwrap();
+                let key = Key::from_u64(id);
+                keys.push(key);
+            }
+        } else {
+            // Hot working set access
+            let id = zipf.sample(&mut rng) as u64;
+            let key = Key::from_u64(id);
+            keys.push(key);
+        }
+    }
+
+    keys
 }
 
-/// Generate uniform random keys
-fn generate_uniform_keys(n: usize, num_unique: u64, seed: u64) -> Vec<Key> {
-    let mut rng = StdRng::seed_from_u64(seed);
-    let uniform = Uniform::new(0u64, num_unique).unwrap();
-
-    (0..n)
-        .map(|_| {
-            let id = uniform.sample(&mut rng);
-            Key::new((id / 1_000_000) as i32, (id % 1_000_000) as u32)
+/// Generate sequential keys, but repeat each one exactly twice
+fn generate_duplicate_keys(num_unique: usize) -> Vec<Key> {
+    (0..num_unique)
+        .flat_map(|id| {
+            let key = Key::from_u64(id as u64);
+            [key, key] // Each key appears exactly twice in sequence
         })
         .collect()
 }
@@ -151,8 +160,20 @@ struct QuickCacheWrapper {
 
 impl QuickCacheWrapper {
     fn new(capacity: usize) -> Self {
+        let options = quick_cache::OptionsBuilder::new()
+            .estimated_items_capacity(capacity)
+            .hot_allocation(0.9)
+            .shards(1)
+            .weight_capacity(capacity as u64)
+            .build()
+            .unwrap();
         Self {
-            cache: QuickCache::new(capacity),
+            cache: QuickCache::with_options(
+                options,
+                quick_cache::UnitWeighter,
+                ahash::RandomState::new(),
+                Default::default(),
+            ),
         }
     }
 }
@@ -212,7 +233,7 @@ impl FoyerWrapper {
     fn new(capacity: usize) -> Self {
         Self {
             cache: foyer::CacheBuilder::new(capacity)
-                .with_shards(6)
+                .with_shards(1)
                 .with_eviction_config(EvictionConfig::S3Fifo(S3FifoConfig {
                     small_queue_capacity_ratio: 0.1,
                     ghost_queue_capacity_ratio: 0.5,
@@ -311,14 +332,14 @@ where
     // Force garbage collection / deallocation
     std::thread::sleep(std::time::Duration::from_millis(100));
 
-    let keys = generate_sequential_keys(capacity);
+    let keys = generate_duplicate_keys(capacity);
 
     let before = ALLOCATOR.allocated();
     let cache = create_cache();
 
     // Insert entries
-    for (i, key) in keys.iter().enumerate() {
-        cache.insert(*key, i as u32);
+    for key in keys.iter() {
+        cache.insert(*key, key.page);
     }
 
     let after = ALLOCATOR.allocated();
@@ -329,10 +350,10 @@ where
         "{name}: {capacity} entries, {total_bytes} bytes total, ~{bytes_per_entry:.1} bytes/entry"
     );
 
-    // Verify entries are actually cached (sample check)
+    // Verify entries are actually cached
     let mut hits = 0;
-    for (i, key) in keys.iter().enumerate() {
-        if cache.get(key) == Some(i as u32) {
+    for key in keys.iter().dedup() {
+        if cache.get(key) == Some(key.page) {
             hits += 1;
         }
     }
@@ -374,19 +395,19 @@ fn measure_hit_ratio(cache: &dyn CacheBench, keys: &[Key]) -> f64 {
 
 /// Test that reports hit ratios for different cache implementations and workload patterns.
 fn test_hit_ratio() {
-    let num_accesses = 1_000_000;
+    let num_accesses = 10_000_000;
     let cache_capacity = 100_000;
 
     // Different workload patterns
-    let zipf_keys = generate_zipf_keys(num_accesses, cache_capacity as u64 * 10, 1.0, 42);
-    let uniform_keys = generate_uniform_keys(num_accesses, cache_capacity as u64 * 10, 42);
+    let zipf_1_2 = generate_zipf_keys(num_accesses, cache_capacity as u64 * 10, 1.2, 42);
+    let zipf_1_0 = generate_zipf_keys(num_accesses, cache_capacity as u64 * 10, 1.0, 42);
     let sequential_keys = generate_sequential_keys(num_accesses);
     // Scan-resistant workload: 80% hot set accesses, 20% sequential scans
     let scan_resistant_keys = generate_scan_resistant_keys(
         num_accesses,
-        cache_capacity as u64 / 2, // working set is half the cache
-        cache_capacity as u64 * 5, // scans are 5x cache size
-        0.2,                       // 20% of accesses are scans
+        cache_capacity as u64 * 10, // the cache can hold 1/10 of data
+        100,                        // scans are 1/100 the cache size
+        0.01,                       // 1% of probability to get a scan
         42,
     );
 
@@ -396,8 +417,8 @@ fn test_hit_ratio() {
     println!();
 
     for (pattern_name, keys) in [
-        ("zipf_1.0", &zipf_keys),
-        ("uniform", &uniform_keys),
+        ("zipf_1.2", &zipf_1_2),
+        ("zipf_1.0", &zipf_1_0),
         ("sequential", &sequential_keys),
         ("scan_resistant", &scan_resistant_keys),
     ] {
@@ -426,7 +447,7 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     // Benchmark insert operations
     group.throughput(Throughput::Elements(OPS_PER_ITER as u64));
 
-    let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY as u64 * 2, 1.0, 42);
+    let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY as u64 * 10, 1.0, 42);
     for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("insert", cache_name),
@@ -444,20 +465,19 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     }
 
     // Pre-fill caches for get benchmarks
-    let prefill_keys = generate_sequential_keys(CACHE_CAPACITY);
+    let prefill_keys = generate_duplicate_keys(CACHE_CAPACITY);
 
     for cache_name in CacheName::iter() {
+        let cache = create_cache(cache_name, CACHE_CAPACITY);
+        // Pre-fill
+        for (i, key) in prefill_keys.iter().enumerate() {
+            cache.insert(*key, i as u32);
+        }
+
         group.bench_with_input(
             BenchmarkId::new("get_hit", cache_name),
             &cache_name,
-            |b, &name| {
-                let cache = create_cache(name, CACHE_CAPACITY);
-
-                // Pre-fill
-                for (i, key) in prefill_keys.iter().enumerate() {
-                    cache.insert(*key, i as u32);
-                }
-
+            |b, _name| {
                 b.iter(|| {
                     for key in prefill_keys.iter().cycle().take(OPS_PER_ITER) {
                         black_box(cache.get(key));
@@ -487,7 +507,7 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
     // Generate Zipf-distributed keys for each thread (simulating realistic hot/cold access patterns)
     // Each thread gets its own key sequence with a different seed to avoid identical access patterns
     let thread_keys: Vec<Vec<Key>> = (0..NUM_THREADS)
-        .map(|t| generate_zipf_keys(OPS_PER_THREAD, CACHE_CAPACITY as u64 * 10, 1.0, t as u64))
+        .map(|t| generate_zipf_keys(OPS_PER_THREAD, CACHE_CAPACITY as u64 * 10, 1.2, t as u64))
         .collect();
 
     // Benchmark: Concurrent get-or-insert under Zipf distribution
