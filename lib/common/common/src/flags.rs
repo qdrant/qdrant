@@ -112,7 +112,6 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         migrate_rocksdb_payload_indices,
         appendable_quantization,
         single_file_mmap_vector_storage,
-
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
