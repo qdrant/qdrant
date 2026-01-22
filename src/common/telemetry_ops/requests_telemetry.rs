@@ -38,8 +38,6 @@ pub struct ActixTelemetryCollector {
 
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    #[serde(skip)]
-    #[schemars(skip)]
     per_collection_data: LruCache<
         CollectionEndpointKey,
         HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
@@ -65,8 +63,6 @@ pub struct TonicTelemetryCollector {
 
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
-    #[serde(skip)]
-    #[schemars(skip)]
     per_collection_data: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
 }
 
