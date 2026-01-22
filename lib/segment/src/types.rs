@@ -82,16 +82,22 @@ impl DateTimeWrapper {
 }
 
 impl<'de> Deserialize<'de> for DateTimePayloadType {
+    /// Parses RFC3339 datetime strings used in REST/JSON `datetime_range` filters.
+    /// Returns a clear user-facing error when the format is invalid.
+    /// Example accepted value: `2014-01-01T00:00:00Z`.
+    ///
+    /// Binary formats (CBOR/MessagePack/WAL) also serialize as RFC3339 strings, so we reuse
+    /// the same parsing path everywhere.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
-        match parse_result {
-            Some(datetime) => Ok(datetime),
-            None => Err(serde::de::Error::custom(format!(
-                "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
+        let str_datetime: Cow<'de, str> = Cow::deserialize(deserializer)?;
+
+        match DateTimePayloadType::from_str(str_datetime.as_ref()) {
+            Ok(datetime) => Ok(datetime),
+            Err(_) => Err(serde::de::Error::custom(format!(
+                "'{str_datetime}' does not match accepted datetime format (RFC3339). Example: 2014-01-01T00:00:00Z"
             ))),
         }
     }
@@ -2593,7 +2599,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<OrderedFloat<FloatPayloadType>>),
@@ -2618,6 +2624,55 @@ impl Hash for RangeInterface {
                 lte.hash(state);
             }
         }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum RangeInterfaceUntagged {
+    Float(Range<OrderedFloatPayloadType>),
+    DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> serde::Deserialize<'de> for RangeInterface {
+    /// Parses range bounds, treating string bounds as RFC3339 datetimes for REST/JSON `datetime_range` filters.
+    /// Preserves clear user-facing errors when datetime formats are invalid.
+    /// Example accepted datetime bound: `2014-01-01T00:00:00Z`.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if !deserializer.is_human_readable() {
+            return RangeInterfaceUntagged::deserialize(deserializer).map(|parsed| match parsed {
+                RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
+                RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
+            });
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // If any range bound is a string -> treat as datetime range
+        if let Some(obj) = value.as_object() {
+            let keys = ["lt", "gt", "lte", "gte"];
+            let has_string_bound = keys
+                .iter()
+                .any(|k| obj.get(*k).map(|v| v.is_string()).unwrap_or(false));
+
+            if has_string_bound {
+                return serde_json::from_value::<Range<DateTimePayloadType>>(value)
+                    .map(RangeInterface::DateTime)
+                    .map_err(serde::de::Error::custom);
+            }
+        }
+
+        // Fallback to existing untagged behavior
+        let parsed = serde_json::from_value::<RangeInterfaceUntagged>(value)
+            .map_err(serde::de::Error::custom)?;
+
+        Ok(match parsed {
+            RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
+            RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
+        })
     }
 }
 
@@ -3209,7 +3264,7 @@ impl NestedCondition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, JsonSchema, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 #[serde(
     expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
@@ -3233,6 +3288,73 @@ pub enum Condition {
 
     #[serde(skip)]
     CustomIdChecker(CustomIdChecker),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+#[serde(
+    expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
+)]
+#[allow(clippy::large_enum_variant)]
+#[allow(dead_code)]
+enum ConditionUntagged {
+    Field(FieldCondition),
+    IsEmpty(IsEmptyCondition),
+    IsNull(IsNullCondition),
+    HasId(HasIdCondition),
+    HasVector(HasVectorCondition),
+    Nested(NestedCondition),
+    Filter(Filter),
+
+    #[serde(skip)]
+    CustomIdChecker(CustomIdChecker),
+}
+
+impl From<ConditionUntagged> for Condition {
+    fn from(condition: ConditionUntagged) -> Self {
+        match condition {
+            ConditionUntagged::Field(condition) => Condition::Field(condition),
+            ConditionUntagged::IsEmpty(condition) => Condition::IsEmpty(condition),
+            ConditionUntagged::IsNull(condition) => Condition::IsNull(condition),
+            ConditionUntagged::HasId(condition) => Condition::HasId(condition),
+            ConditionUntagged::HasVector(condition) => Condition::HasVector(condition),
+            ConditionUntagged::Nested(condition) => Condition::Nested(condition),
+            ConditionUntagged::Filter(condition) => Condition::Filter(condition),
+            ConditionUntagged::CustomIdChecker(condition) => Condition::CustomIdChecker(condition),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Condition {
+    /// Deserializes Condition with special handling for FieldCondition to preserve
+    /// readable RFC3339 datetime parse errors. Other variants use ConditionUntagged
+    /// for compiler-level safety when new variants are added.
+    /// Example accepted datetime value: `2014-01-01T00:00:00Z`.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let value = serde_json::Value::deserialize(deserializer)?;
+
+            // Special case: FieldCondition first to surface datetime parse errors.
+            // Untagged enum would swallow these errors with generic message.
+            if let Some(obj) = value.as_object()
+                && obj.contains_key("key")
+            {
+                return serde_json::from_value::<FieldCondition>(value)
+                    .map(Condition::Field)
+                    .map_err(serde::de::Error::custom);
+            }
+
+            // All other variants handled by ConditionUntagged (compiler-safe)
+            serde_json::from_value::<ConditionUntagged>(value)
+                .map(Condition::from)
+                .map_err(serde::de::Error::custom)
+        } else {
+            ConditionUntagged::deserialize(deserializer).map(Condition::from)
+        }
+    }
 }
 
 impl Condition {
@@ -3928,6 +4050,78 @@ mod tests {
 
         // Having or not the Z at the end of the string both mean UTC time
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
+    }
+
+    #[test]
+    fn test_invalid_datetime_range_returns_clear_rfc3339_error() {
+        let json = r#"{
+            "key": "created_at",
+            "range": {
+                "gte": "2014-01-01T00:00:00BAD"
+            }
+        }"#;
+
+        let err = serde_json::from_str::<Condition>(json)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("RFC3339"), "err was: {err}");
+        assert!(err.contains("2014-01-01T00:00:00BAD"), "err was: {err}");
+        assert!(err.contains("Example"), "err was: {err}");
+    }
+
+    /// Regression test: DateTimePayloadType binary serialization roundtrip.
+    /// Ensures DateTimePayloadType parses binary-encoded RFC3339 strings.
+    #[test]
+    fn test_datetime_payload_type_binary_roundtrip() {
+        let original = DateTimePayloadType::from_str("2024-06-15T12:30:45Z").unwrap();
+
+        // rmp-serde uses non-human-readable format
+        let binary = rmp_serde::to_vec(&original).expect("serialize");
+        let restored: DateTimePayloadType = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(original, restored);
+    }
+
+    /// Regression test: RangeInterface with datetime binary roundtrip.
+    /// Ensures the RangeInterface datetime deserialization works in binary.
+    #[test]
+    fn test_range_interface_datetime_binary_roundtrip() {
+        let dt_gte = DateTimePayloadType::from_str("2024-01-01T00:00:00Z").unwrap();
+        let dt_lte = DateTimePayloadType::from_str("2024-12-31T23:59:59Z").unwrap();
+
+        let range = RangeInterface::DateTime(Range {
+            lt: None,
+            gt: None,
+            gte: Some(dt_gte),
+            lte: Some(dt_lte),
+        });
+
+        // rmp-serde uses non-human-readable format
+        let binary = rmp_serde::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        assert_eq!(range, restored);
+    }
+
+    /// Regression test: Non-FieldCondition JSON deserialization uses ConditionUntagged fallback.
+    /// Ensures compiler-safe handling of other Condition variants.
+    #[test]
+    fn test_condition_json_fallback_to_untagged() {
+        // IsEmptyCondition (no "key" field at top level, uses "is_empty" instead)
+        let is_empty_json = r#"{"is_empty": {"key": "optional_field"}}"#;
+        let condition: Condition = serde_json::from_str(is_empty_json).unwrap();
+        assert!(matches!(condition, Condition::IsEmpty(_)));
+
+        // HasIdCondition
+        let has_id_json = r#"{"has_id": [1, 2, 3]}"#;
+        let condition: Condition = serde_json::from_str(has_id_json).unwrap();
+        assert!(matches!(condition, Condition::HasId(_)));
+
+        // Nested Filter
+        let nested_json = r#"{"nested": {"key": "items", "filter": {"must": []}}}"#;
+        let condition: Condition = serde_json::from_str(nested_json).unwrap();
+        assert!(matches!(condition, Condition::Nested(_)));
     }
 
     #[test]
