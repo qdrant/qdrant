@@ -3,9 +3,9 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_counter::HardwareCounterCell;
+    use quantization::EncodingError;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
-    use quantization::EncodingError;
     use quantization::encoded_vectors_binary::{
         BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
     };
@@ -769,9 +769,7 @@ mod tests {
         test_uncompressed_query_dot_product_impl::<u128>(128);
     }
 
-    fn test_uncompressed_query_dot_product_impl<TBitsStoreType: BitsStoreType>(
-        vector_dim: usize,
-    ) {
+    fn test_uncompressed_query_dot_product_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 32;
         let error = vector_dim as f32 * 0.01;
 
@@ -869,7 +867,9 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(EncodingError::ArgumentsError(msg)) => {
-                assert!(msg.contains("Uncompressed query encoding is only supported for dot product distance"));
+                assert!(msg.contains(
+                    "Uncompressed query encoding is only supported for dot product distance"
+                ));
                 assert!(msg.contains("L1"));
             }
             _ => panic!("Expected ArgumentsError"),
@@ -894,7 +894,9 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(EncodingError::ArgumentsError(msg)) => {
-                assert!(msg.contains("Uncompressed query encoding is only supported for dot product distance"));
+                assert!(msg.contains(
+                    "Uncompressed query encoding is only supported for dot product distance"
+                ));
                 assert!(msg.contains("L2"));
             }
             _ => panic!("Expected ArgumentsError"),
