@@ -7,7 +7,7 @@ the Linux device-mapper 'delay' target.
 
 Usage:
     python dm_delay_benchmark.py --points 100000 --runs 3
-    python dm_delay_benchmark.py --points 50000 --latencies "0:0,10:10,20:20"
+    python dm_delay_benchmark.py --points 50000 --latencies "0:0,20:20" --async-scorer
 """
 
 import argparse
@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import requests
+
 _TESTS_DIR = Path(__file__).parent.parent
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
@@ -30,186 +32,107 @@ if 'PYTEST_CURRENT_TEST' not in os.environ:
 from consensus_tests.utils import (
     start_cluster, kill_all_processes, start_first_peer, start_peer
 )
-
 from benchmark import (
-    Result, create_collection, upsert_points, run_transfer, cleanup_replica, drop_caches, wait_for_optimization, COLLECTION
+    Result, create_collection, upsert_points, run_transfer,
+    cleanup_replica, drop_caches, wait_for_optimization, COLLECTION
 )
 
-import requests
-
-
-# --- Segment Storage Info ---
-
-def get_segment_storage_info(uri: str) -> dict:
-    """
-    Get detailed segment storage type info from telemetry.
-
-    Returns dict with segment storage types and counts.
-    """
-    try:
-        r = requests.get(f"{uri}/telemetry?details_level=6", timeout=10)
-        if not r.ok:
-            return {"error": f"HTTP {r.status_code}"}
-
-        telemetry = r.json().get('result', {})
-        collections_telemetry = telemetry.get('collections', {})
-
-        # Find our collection
-        for coll in collections_telemetry.get('collections', []):
-            if coll.get('id') == COLLECTION:
-                # Extract segment configs from shards[].local.segments[]
-                segments = []
-                for shard in coll.get('shards', []):
-                    local = shard.get('local', {})
-                    for seg in local.get('segments', []):
-                        config = seg.get('config', {})
-                        vector_data = config.get('vector_data', {})
-                        for vec_name, vec_config in vector_data.items():
-                            storage_type = vec_config.get('storage_type', 'unknown')
-                            segments.append({
-                                'vector_name': vec_name,
-                                'storage_type': storage_type,
-                                'index': vec_config.get('index', {}).get('type', 'unknown'),
-                            })
-
-                # Count storage types
-                storage_types = {}
-                for seg in segments:
-                    st = seg['storage_type']
-                    storage_types[st] = storage_types.get(st, 0) + 1
-
-                return {
-                    'segment_count': len(segments),
-                    'storage_types': storage_types,
-                    'segments': segments,
-                }
-
-        return {"error": "collection not found"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def wait_for_mmap_segments(uri: str, timeout: int = 180) -> bool:
-    """
-    Wait for segments to be optimized with Mmap storage type.
-
-    Mmap storage (not ChunkedMmap) is required for io_uring to work.
-    In multi-node clusters, each node keeps one appendable ChunkedMmap segment.
-    Returns True if at least one Mmap segment exists and Mmap count >= ChunkedMmap count.
-    """
-    print("  Waiting for Mmap segments...", end='', flush=True)
-    start = time.time()
-    storage_types = {}
-
-    while time.time() - start < timeout:
-        info = get_segment_storage_info(uri)
-        storage_types = info.get('storage_types', {})
-
-        mmap_count = storage_types.get('Mmap', 0)
-        chunked_count = storage_types.get('ChunkedMmap', 0) + storage_types.get('InRamChunkedMmap', 0)
-
-        # In multi-node clusters, each node has 1 ChunkedMmap for writes
-        # Check that we have at least as many Mmap segments as ChunkedMmap
-        if mmap_count > 0 and mmap_count >= chunked_count:
-            print(f" done ({time.time() - start:.1f}s) - storage: {storage_types}")
-            return True
-
-        time.sleep(2)
-        print(".", end='', flush=True)
-
-    print(f" timeout after {timeout}s - storage: {storage_types}")
-    return False
-
-# --- Constants ---
-
-# Time to wait for cluster/processes to settle after operations
+# Constants
 SETTLE_TIME_S = 2
-
-
-def restart_cluster(peer_dirs: List[Path], port_seed: int, memory_limit: str = None, log_prefix: str = "", extra_env: dict = None):
-    """Restart cluster using existing peer directories and same ports (preserves data and cluster state)."""
-    import requests
-
-    peer_api_uris = []
-
-    # Start first peer with same port as original
-    api_uri, bootstrap_uri = start_first_peer(
-        peer_dirs[0], f"{log_prefix}peer_0_0.log",
-        port=port_seed, extra_env=extra_env, memory_limit=memory_limit
-    )
-    peer_api_uris.append(api_uri)
-
-    # Start other peers with same ports as original
-    for i in range(1, len(peer_dirs)):
-        port = port_seed + i * 100
-        api_uri = start_peer(
-            peer_dirs[i], f"{log_prefix}peer_0_{i}.log",
-            bootstrap_uri, port=port, extra_env=extra_env, memory_limit=memory_limit
-        )
-        peer_api_uris.append(api_uri)
-
-    # Wait for all peers to be responsive and cluster to have a leader
-    # Use longer timeout since recovery with dm-delay can be slow (especially 20ms+ latency)
-    timeout = 600  # 10 minutes
-    start = time.time()
-    while time.time() - start < timeout:
-        all_ready = True
-        for uri in peer_api_uris:
-            try:
-                r = requests.get(f"{uri}/cluster", timeout=5)
-                if not r.ok:
-                    all_ready = False
-                    break
-                info = r.json().get('result', {})
-                # Check for leader
-                if info.get('raft_info', {}).get('leader') is None:
-                    all_ready = False
-                    break
-            except:
-                all_ready = False
-                break
-        if all_ready:
-            return peer_api_uris, peer_dirs, bootstrap_uri
-        time.sleep(1)
-
-    raise Exception(f"Timeout waiting for cluster to be ready after {timeout}s")
-
-# Time between transfer runs to allow cleanup to complete
 INTER_RUN_DELAY_S = 1
-
-# Default disk image size (must fit test data + Qdrant overhead)
 DEFAULT_DISK_SIZE_GB = 15
 
 
-# --- Shell Command Helper ---
-
 def run_cmd(cmd: str, sudo: bool = False, check: bool = True) -> str:
-    """
-    Run shell command and return stdout.
-
-    Args:
-        cmd: Command to run
-        sudo: Prefix with sudo
-        check: Raise on non-zero exit
-
-    Returns:
-        Stripped stdout
-    """
+    """Run shell command and return stdout."""
     if sudo:
         cmd = f"sudo {cmd}"
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
     return r.stdout.strip()
 
 
-# --- dm-delay Device Management ---
+def get_storage_types(uri: str) -> dict:
+    """Get segment storage type counts from telemetry."""
+    try:
+        r = requests.get(f"{uri}/telemetry?details_level=6", timeout=10)
+        if not r.ok:
+            return {}
+
+        for coll in r.json().get('result', {}).get('collections', {}).get('collections', []):
+            if coll.get('id') == COLLECTION:
+                types = {}
+                for shard in coll.get('shards', []):
+                    for seg in shard.get('local', {}).get('segments', []):
+                        for vec_cfg in seg.get('config', {}).get('vector_data', {}).values():
+                            st = vec_cfg.get('storage_type', 'unknown')
+                            types[st] = types.get(st, 0) + 1
+                return types
+        return {}
+    except Exception:
+        return {}
+
+
+def wait_for_mmap_segments(uri: str, timeout: int = 180) -> bool:
+    """Wait for segments to use Mmap storage (required for io_uring)."""
+    print("  Waiting for Mmap segments...", end='', flush=True)
+    start = time.time()
+
+    while time.time() - start < timeout:
+        types = get_storage_types(uri)
+        mmap = types.get('Mmap', 0)
+        chunked = types.get('ChunkedMmap', 0) + types.get('InRamChunkedMmap', 0)
+
+        if mmap > 0 and mmap >= chunked:
+            print(f" done ({time.time() - start:.1f}s)")
+            return True
+
+        time.sleep(2)
+        print(".", end='', flush=True)
+
+    print(f" timeout")
+    return False
+
+
+def restart_cluster(peer_dirs: List[Path], port_seed: int,
+                    memory_limit: str = None, extra_env: dict = None):
+    """Restart cluster using existing peer directories."""
+    peer_uris = []
+
+    api_uri, bootstrap_uri = start_first_peer(
+        peer_dirs[0], "peer_restart.log",
+        port=port_seed, extra_env=extra_env, memory_limit=memory_limit
+    )
+    peer_uris.append(api_uri)
+
+    for i in range(1, len(peer_dirs)):
+        api_uri = start_peer(
+            peer_dirs[i], f"peer_{i}_restart.log",
+            bootstrap_uri, port=port_seed + i * 100,
+            extra_env=extra_env, memory_limit=memory_limit
+        )
+        peer_uris.append(api_uri)
+
+    # Wait for cluster ready
+    timeout = 600
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            all_ready = all(
+                requests.get(f"{uri}/cluster", timeout=5).json()
+                .get('result', {}).get('raft_info', {}).get('leader')
+                for uri in peer_uris
+            )
+            if all_ready:
+                return peer_uris, peer_dirs, bootstrap_uri
+        except Exception:
+            pass
+        time.sleep(1)
+
+    raise Exception(f"Cluster not ready after {timeout}s")
+
 
 class DmDelay:
-    """
-    Manages a dm-delay device for disk latency injection.
-
-    Creates a loopback device with configurable read/write latency using
-    the device-mapper 'delay' target.
-    """
+    """Manages a dm-delay device for disk latency injection."""
 
     def __init__(self, size_gb: int = DEFAULT_DISK_SIZE_GB,
                  mount_point: str = "/mnt/qdrant_delayed"):
@@ -218,32 +141,18 @@ class DmDelay:
         self.img_path = Path("/tmp/qdrant_delayed_disk.img")
         self.loop_dev: Optional[str] = None
         self.dm_name = "qdrant_delayed"
-        self.is_setup = False
 
     def is_available(self) -> bool:
-        """Check if dm-delay kernel module is available, try to load if not."""
-        result = run_cmd("dmsetup targets | grep -q delay", sudo=True, check=False)
-        if result == "":
+        """Check if dm-delay kernel module is available."""
+        if run_cmd("dmsetup targets | grep -q delay", sudo=True, check=False) == "":
             return True
-        # Try to load the module
         run_cmd("modprobe dm-delay", sudo=True, check=False)
         return run_cmd("dmsetup targets | grep -q delay", sudo=True, check=False) == ""
 
-    def setup(self, read_delay_ms: int, write_delay_ms: int) -> Optional[Path]:
-        """
-        Setup dm-delay device with specified latencies.
-
-        Args:
-            read_delay_ms: Latency to add to read operations (milliseconds)
-            write_delay_ms: Latency to add to write operations (milliseconds)
-
-        Returns:
-            Path to mounted filesystem, or None on failure
-        """
+    def setup(self, read_ms: int, write_ms: int) -> Optional[Path]:
+        """Setup dm-delay device with specified latencies."""
         try:
-            print(f"  Setting up dm-delay: read={read_delay_ms}ms, write={write_delay_ms}ms")
-
-            # Clean up any previous setup
+            print(f"  Setting up dm-delay: read={read_ms}ms, write={write_ms}ms")
             self.teardown()
 
             # Create backing file if needed
@@ -252,100 +161,50 @@ class DmDelay:
                 print(f"  Creating {self.size_gb}GB disk image...")
                 run_cmd(f"dd if=/dev/zero of={self.img_path} bs=1M count={self.size_gb * 1024} status=progress")
 
-            # Setup loopback device
+            # Setup loopback and dm-delay
             self.loop_dev = run_cmd(f"losetup --find --show {self.img_path}", sudo=True)
-            print(f"  Loop device: {self.loop_dev}")
 
-            # Format if needed
             if 'ext4' not in run_cmd(f"blkid {self.loop_dev}", sudo=True, check=False):
-                print(f"  Formatting as ext4...")
                 run_cmd(f"mkfs.ext4 -q {self.loop_dev}", sudo=True)
 
-            # Get device size in sectors
             sectors = run_cmd(f"blockdev --getsz {self.loop_dev}", sudo=True)
-
-            # Create dm-delay device
-            dm_table = f"0 {sectors} delay {self.loop_dev} 0 {read_delay_ms} {self.loop_dev} 0 {write_delay_ms}"
+            dm_table = f"0 {sectors} delay {self.loop_dev} 0 {read_ms} {self.loop_dev} 0 {write_ms}"
             run_cmd(f'echo "{dm_table}" | sudo dmsetup create {self.dm_name}')
-            print(f"  Created dm-delay device: /dev/mapper/{self.dm_name}")
 
-            # Mount
+            # Mount and set permissions
             run_cmd(f"mkdir -p {self.mount_point}", sudo=True)
             run_cmd(f"mount /dev/mapper/{self.dm_name} {self.mount_point}", sudo=True)
+            run_cmd(f"chown -R {os.getenv('USER', 'root')}:{os.getenv('USER', 'root')} {self.mount_point}", sudo=True)
 
-            # Set permissions
-            user = os.getenv('USER', 'root')
-            run_cmd(f"chown -R {user}:{user} {self.mount_point}", sudo=True)
-
-            self.is_setup = True
             print(f"  Mounted at: {self.mount_point}")
             return self.mount_point
 
-        except subprocess.CalledProcessError as e:
-            print(f"  Error setting up dm-delay: {e}")
-            self.teardown()
-            return None
         except Exception as e:
-            print(f"  Unexpected error: {e}")
+            print(f"  Error: {e}")
             self.teardown()
             return None
 
     def teardown(self):
-        """Clean up dm-delay device, unmount, and detach loop device."""
-        try:
-            run_cmd(f"umount {self.mount_point} 2>/dev/null", sudo=True, check=False)
-            run_cmd(f"dmsetup remove {self.dm_name} 2>/dev/null", sudo=True, check=False)
-            if self.loop_dev:
-                run_cmd(f"losetup -d {self.loop_dev} 2>/dev/null", sudo=True, check=False)
-                self.loop_dev = None
-            self.is_setup = False
-            print(f"  dm-delay cleaned up")
-        except Exception as e:
-            print(f"  Warning during cleanup: {e}")
+        """Clean up dm-delay device."""
+        run_cmd(f"umount {self.mount_point} 2>/dev/null", sudo=True, check=False)
+        run_cmd(f"dmsetup remove {self.dm_name} 2>/dev/null", sudo=True, check=False)
+        if self.loop_dev:
+            run_cmd(f"losetup -d {self.loop_dev} 2>/dev/null", sudo=True, check=False)
+            self.loop_dev = None
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.teardown()
-
-
-# --- Single Configuration Test ---
 
 def run_single_config(
-    dm: DmDelay,
-    read_ms: int,
-    write_ms: int,
-    points: int,
-    dims: int,
-    runs: int,
-    memory_limit: str = None,
-    force_cold: bool = False,
-    async_scorer: bool = False
+    dm: DmDelay, read_ms: int, write_ms: int,
+    points: int, dims: int, runs: int,
+    memory_limit: str = None, force_cold: bool = False, async_scorer: bool = False
 ) -> Optional[Result]:
-    """
-    Run benchmark for a single latency configuration.
-
-    Args:
-        dm: DmDelay instance
-        read_ms: Read delay in milliseconds
-        write_ms: Write delay in milliseconds
-        points: Number of points to transfer
-        dims: Vector dimensions
-        runs: Number of runs
-        memory_limit: Memory limit for Qdrant process (e.g., '512M')
-        force_cold: If True, restart Qdrant between runs to ensure cold cache
-
-    Returns:
-        Result object or None on failure
-    """
+    """Run benchmark for a single latency configuration."""
     print(f"\n{'='*50}")
     print(f"LATENCY: read={read_ms}ms, write={write_ms}ms")
     print(f"{'='*50}")
 
     delayed_path = dm.setup(read_ms, write_ms)
     if not delayed_path:
-        print(f"  SKIP: Failed to setup dm-delay")
         return None
 
     cluster_dir = delayed_path / f"cluster_{read_ms}_{write_ms}"
@@ -353,31 +212,18 @@ def run_single_config(
         shutil.rmtree(cluster_dir)
     cluster_dir.mkdir(parents=True)
 
-    # Use fixed ports so cluster can restart with same configuration
-    # Port range: 21000 + (read_ms * 100 + write_ms) * 1000 to avoid collisions
     port_seed = 21000 + (read_ms * 100 + write_ms) * 10
 
     result = Result(f"latency_{read_ms}_{write_ms}", {
-        'read_delay_ms': read_ms,
-        'write_delay_ms': write_ms,
-        'points': points,
-        'force_cold': force_cold,
-        'memory_limit': memory_limit,
-        'async_scorer': async_scorer
+        'read_delay_ms': read_ms, 'write_delay_ms': write_ms,
+        'points': points, 'force_cold': force_cold, 'async_scorer': async_scorer
     })
 
-    # Setup extra environment
-    extra_env = {
-        # Increase max request size to 256MB for large vector tests
-        "QDRANT__SERVICE__MAX_REQUEST_SIZE_MB": "256",
-    }
+    extra_env = {"QDRANT__SERVICE__MAX_REQUEST_SIZE_MB": "256"}
     if async_scorer:
         extra_env["QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORER"] = "true"
-        # Enable debug logging for io_uring verification
-        extra_env["RUST_LOG"] = "segment=debug,qdrant=info"
 
-    uris = None
-    dirs = None
+    uris = dirs = None
 
     try:
         for i in range(runs):
@@ -385,66 +231,37 @@ def run_single_config(
 
             if i == 0:
                 # First run: create cluster and data
-                print(f"    Starting cluster on delayed storage (ports from {port_seed})...")
-                uris, dirs, _ = start_cluster(cluster_dir, num_peers=2, port_seed=port_seed, extra_env=extra_env or None, memory_limit=memory_limit)
-                print(f"      Peer 0: {uris[0]}")
-                print(f"      Peer 1: {uris[1]}")
+                uris, dirs, _ = start_cluster(
+                    cluster_dir, num_peers=2, port_seed=port_seed,
+                    extra_env=extra_env, memory_limit=memory_limit
+                )
+                print(f"    Peers: {uris[0]}, {uris[1]}")
 
                 create_collection(uris[0], dims)
                 upsert_points(uris[0], points, dims)
-
-                # Wait for optimization to complete (converts segments to Mmap storage with io_uring)
                 wait_for_optimization(uris[0])
 
-                # Wait for segments to be converted to Mmap storage (required for io_uring)
-                if async_scorer:
-                    if not wait_for_mmap_segments(uris[0]):
-                        print("  WARNING: Segments still using ChunkedMmap!")
-                        print("  io_uring will NOT be active (it requires Mmap storage)")
-                        seg_info = get_segment_storage_info(uris[0])
-                        print(f"  Current storage types: {seg_info.get('storage_types', {})}")
-                    else:
-                        seg_info = get_segment_storage_info(uris[0])
-                        print(f"  Segment storage info: {seg_info.get('storage_types', {})}")
+                if async_scorer and not wait_for_mmap_segments(uris[0]):
+                    print("  WARNING: io_uring requires Mmap storage")
 
-                # For fair comparison with cold restarts, also restart cluster after data creation
                 if force_cold:
-                    print(f"    Stopping cluster after data creation for true cold start...")
                     kill_all_processes()
                     time.sleep(SETTLE_TIME_S)
-
-                    # Drop caches while no process has files mapped
-                    print(f"    Dropping caches...")
                     drop_caches(cluster_dir, verbose=True)
-
-                    print(f"    Restarting cluster (ports from {port_seed})...")
-                    uris, dirs, _ = restart_cluster(dirs, port_seed=port_seed, memory_limit=memory_limit, log_prefix="run0_", extra_env=extra_env or None)
-                    print(f"      Peer 0: {uris[0]}")
-                    print(f"      Peer 1: {uris[1]}")
+                    uris, dirs, _ = restart_cluster(dirs, port_seed, memory_limit, extra_env)
                     time.sleep(SETTLE_TIME_S)
                 else:
-                    # Drop caches AFTER upsert to ensure data must be read from disk
-                    print(f"    Dropping caches after data creation...")
                     drop_caches(dirs[0] / "storage" / "collections")
                     time.sleep(SETTLE_TIME_S)
 
             elif force_cold:
-                # Cold restart: stop cluster, drop caches, restart with existing data
-                print(f"    Stopping cluster for cold restart...")
                 kill_all_processes()
                 time.sleep(SETTLE_TIME_S)
-
-                # Drop caches BEFORE restarting to ensure cold start
                 drop_caches(cluster_dir, verbose=True)
-
-                print(f"    Restarting cluster (ports from {port_seed})...")
-                uris, dirs, _ = restart_cluster(dirs, port_seed=port_seed, memory_limit=memory_limit, log_prefix=f"run{i}_", extra_env=extra_env or None)
-                print(f"      Peer 0: {uris[0]}")
-                print(f"      Peer 1: {uris[1]}")
+                uris, dirs, _ = restart_cluster(dirs, port_seed, memory_limit, extra_env)
                 time.sleep(SETTLE_TIME_S)
 
             else:
-                # Warm mode: just drop caches and cleanup replica
                 drop_caches(dirs[0] / "storage" / "collections", verbose=True)
                 cleanup_replica(uris)
                 time.sleep(INTER_RUN_DELAY_S)
@@ -462,110 +279,71 @@ def run_single_config(
         return result
 
     finally:
-        print(f"  Stopping cluster...")
         kill_all_processes()
         time.sleep(SETTLE_TIME_S)
         dm.teardown()
 
 
-# --- Main Benchmark ---
-
 def run_dm_delay(
-    points: int,
-    dims: int,
-    runs: int,
+    points: int, dims: int, runs: int,
     latencies: List[Tuple[int, int]] = None,
-    memory_limit: str = None,
-    force_cold: bool = False,
-    async_scorer: bool = False
+    memory_limit: str = None, force_cold: bool = False, async_scorer: bool = False
 ) -> Result:
-    """
-    Test transfer throughput with various disk latencies using dm-delay.
-
-    Args:
-        points: Number of points to transfer
-        dims: Vector dimensions
-        runs: Number of runs per latency configuration
-        latencies: List of (read_delay_ms, write_delay_ms) tuples
-        memory_limit: Memory limit for each Qdrant peer (e.g., '512M', '1G')
-                      Forces page cache eviction for realistic disk I/O
-        force_cold: Restart Qdrant between each run to guarantee cold cache
-        async_scorer: Enable io_uring async scorer for batched vector reads
-    """
+    """Run transfer benchmark with various disk latencies."""
     if latencies is None:
         latencies = [
-            (0, 0),      # Baseline (no delay)
-            (1, 1),      # Cloud Qdrant
-            (5, 5),      # Light SSD
-            (10, 10),    # Typical SSD
-            (20, 20),    # Slow SSD / EBS gp3
-            # (50, 50),    # HDD-like
-            (0, 20),     # Fast reads, slow writes (write bottleneck)
-            (20, 0),     # Slow reads, fast writes (read bottleneck)
+            (0, 0), (1, 1), (5, 5), (10, 10), (20, 20),
+            (0, 20), (20, 0),
         ]
 
     print(f"\n{'='*60}")
-    print(f"DM-DELAY DISK LATENCY EXPERIMENT")
-    print(f"Points: {points:,}, Dims: {dims}, Runs per config: {runs}")
-    print(f"Latency configs: {len(latencies)}")
+    print(f"DM-DELAY BENCHMARK: {points:,} pts, {dims}d, {runs} runs")
+    if async_scorer:
+        print(f"io_uring: ENABLED")
     print(f"{'='*60}")
 
     dm = DmDelay()
-
-    # Check availability
     if not dm.is_available():
-        print("\nERROR: dm-delay kernel module not available")
-        print("Try: sudo modprobe dm-delay")
+        print("\nERROR: dm-delay not available. Try: sudo modprobe dm-delay")
         return Result("dm_delay", {'error': 'dm-delay not available'}, [])
 
     all_results = []
     try:
         for read_ms, write_ms in latencies:
-            result = run_single_config(dm, read_ms, write_ms, points, dims, runs, memory_limit, force_cold, async_scorer)
+            result = run_single_config(
+                dm, read_ms, write_ms, points, dims, runs,
+                memory_limit, force_cold, async_scorer
+            )
             if result:
                 all_results.append(result)
     except KeyboardInterrupt:
-        print("\n\nInterrupted! Cleaning up...")
+        print("\n\nInterrupted!")
     finally:
         dm.teardown()
 
-    # Print summary
-    print_summary(all_results)
-
-    return Result("dm_delay", {
-        'points': points,
-        'dims': dims,
-        'latencies': latencies
-    }, [m for r in all_results for m in r.runs])
-
-
-def print_summary(results: List[Result]):
-    """Print formatted summary table."""
+    # Summary
     print(f"\n{'='*60}")
-    print("SUMMARY: Disk Latency Impact")
+    print("SUMMARY")
     print(f"{'='*60}")
-    print(f"{'Read (ms)':<12} {'Write (ms)':<12} {'Throughput':<15} {'vs Baseline':<12}")
-    print("-" * 55)
+    print(f"{'Read':<8} {'Write':<8} {'Throughput':<15} {'vs Baseline':<12}")
+    print("-" * 50)
 
-    if not results:
-        print("No results collected.")
-        return
-
-    baseline_tp = results[0].stats()['throughput_mean']
-    for r in results:
+    baseline = all_results[0].stats()['throughput_mean'] if all_results else 0
+    for r in all_results:
         s = r.stats()
         read_ms = r.params.get('read_delay_ms', 0)
         write_ms = r.params.get('write_delay_ms', 0)
         tp = s['throughput_mean']
-
-        if baseline_tp > 0 and r != results[0]:
-            pct = ((tp - baseline_tp) / baseline_tp) * 100
-            print(f"{read_ms:<12} {write_ms:<12} {tp:>10,.0f} pts/s  {pct:>+6.1f}%")
+        if r == all_results[0]:
+            print(f"{read_ms:<8} {write_ms:<8} {tp:>10,.0f} pts/s  baseline")
         else:
-            print(f"{read_ms:<12} {write_ms:<12} {tp:>10,.0f} pts/s  {'baseline':>8}")
+            pct = ((tp - baseline) / baseline) * 100 if baseline else 0
+            print(f"{read_ms:<8} {write_ms:<8} {tp:>10,.0f} pts/s  {pct:>+.1f}%")
 
+    return Result("dm_delay", {
+        'points': points, 'dims': dims, 'latencies': latencies
+    }, [m for r in all_results for m in r.runs])
 
-# --- CLI ---
 
 def main():
     parser = argparse.ArgumentParser(
@@ -573,56 +351,39 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with default latencies
   python dm_delay_benchmark.py --points 100000 --runs 3
-
-  # Run with custom latencies (read_ms:write_ms)
-  python dm_delay_benchmark.py --latencies "0:0,10:10,20:20,50:50"
-
-  # Quick test
-  python dm_delay_benchmark.py --points 50000 --runs 1 --latencies "0:0,20:20"
+  python dm_delay_benchmark.py --latencies "0:0,20:20" --async-scorer
+  python dm_delay_benchmark.py --points 50000 --runs 2 --force-cold
 
 Prerequisites:
-  # Load dm-delay kernel module
   sudo modprobe dm-delay
-
-  # Verify it's available
   sudo dmsetup targets | grep delay
 """
     )
-    parser.add_argument('--points', '-p', type=int, default=100_000,
-                        help="Number of points to transfer (default: 100000)")
-    parser.add_argument('--dims', '-d', type=int, default=768,
-                        help="Vector dimensions (default: 768)")
-    parser.add_argument('--runs', '-r', type=int, default=3,
-                        help="Number of runs per latency config (default: 3)")
+    parser.add_argument('--points', '-p', type=int, default=100_000)
+    parser.add_argument('--dims', '-d', type=int, default=768)
+    parser.add_argument('--runs', '-r', type=int, default=3)
     parser.add_argument('--latencies', type=str, default=None,
-                        help="Comma-separated read:write latency pairs (e.g., '0:0,10:10,20:20')")
-    parser.add_argument('--output', '-o', type=Path, default=Path("benchmark_results"),
-                        help="Output directory for results (default: benchmark_results)")
+                        help="Comma-separated read:write pairs (e.g., '0:0,20:20')")
+    parser.add_argument('--output', '-o', type=Path, default=Path("benchmark_results"))
     parser.add_argument('--memory-limit', '-m', type=str, default=None,
-                        help="Memory limit per Qdrant peer (e.g., '512M', '1G'). "
-                             "Forces page cache eviction for realistic disk I/O")
+                        help="Memory limit per peer (e.g., '512M')")
     parser.add_argument('--force-cold', action='store_true',
-                        help="Restart Qdrant between each run to guarantee cold cache. "
-                             "Without this, only run 1 per config is truly cold.")
+                        help="Restart between runs for cold cache")
     parser.add_argument('--async-scorer', '--io-uring', action='store_true',
-                        help="Enable io_uring async scorer for batched vector reads (Linux only). "
-                             "This is what PR #7928 adds for concurrent disk I/O.")
+                        help="Enable io_uring async reads")
     args = parser.parse_args()
 
-    # Parse latencies
     latencies = None
     if args.latencies:
-        latencies = []
-        for pair in args.latencies.split(','):
-            read_ms, write_ms = pair.split(':')
-            latencies.append((int(read_ms), int(write_ms)))
+        latencies = [(int(r), int(w)) for r, w in
+                     (p.split(':') for p in args.latencies.split(','))]
 
-    # Run benchmark
-    result = run_dm_delay(args.points, args.dims, args.runs, latencies, args.memory_limit, args.force_cold, args.async_scorer)
+    result = run_dm_delay(
+        args.points, args.dims, args.runs, latencies,
+        args.memory_limit, args.force_cold, args.async_scorer
+    )
 
-    # Save results
     args.output.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = args.output / f"dm-delay_{ts}.json"
