@@ -62,9 +62,12 @@ where
             let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data
-                .lock()
-                .add_response_with_collection(&request_key, instant, status, collection.as_deref());
+            telemetry_data.lock().add_response_with_collection(
+                &request_key,
+                instant,
+                status,
+                collection.as_deref(),
+            );
             Ok(response)
         })
     }
