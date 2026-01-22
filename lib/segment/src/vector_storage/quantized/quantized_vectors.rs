@@ -1811,6 +1811,9 @@ impl QuantizedVectors {
             Some(BinaryQuantizationQueryEncoding::Default) => {
                 quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage
             }
+            Some(BinaryQuantizationQueryEncoding::Uncompressed) => {
+                quantization::encoded_vectors_binary::QueryEncoding::Uncompressed
+            }
             None => quantization::encoded_vectors_binary::QueryEncoding::SameAsStorage,
         }
     }

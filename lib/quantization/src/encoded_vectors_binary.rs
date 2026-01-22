@@ -47,6 +47,7 @@ pub enum QueryEncoding {
     SameAsStorage,
     Scalar4bits,
     Scalar8bits,
+    Uncompressed,
 }
 
 impl QueryEncoding {
@@ -59,6 +60,7 @@ pub enum EncodedQueryBQ<TBitsStoreType: BitsStoreType> {
     Binary(EncodedBinVector<TBitsStoreType>),
     Scalar4bits(EncodedScalarVector<TBitsStoreType>),
     Scalar8bits(EncodedScalarVector<TBitsStoreType>),
+    Uncompressed(Vec<f32>),
 }
 
 pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
@@ -442,7 +444,19 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let query_encoding_needs_stats = match query_encoding {
             QueryEncoding::SameAsStorage => storage_encoding_needs_states,
             QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits => true,
+            QueryEncoding::Uncompressed => false, // Uncompressed queries don't need stats
         };
+
+        // Validate that uncompressed queries are only used with dot product distance
+        if matches!(query_encoding, QueryEncoding::Uncompressed) {
+            if !matches!(vector_parameters.distance_type, DistanceType::Dot) {
+                return Err(EncodingError::ArgumentsError(format!(
+                    "Uncompressed query encoding is only supported for dot product distance, \
+                     but got {:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
+                    vector_parameters.distance_type
+                )));
+            }
+        }
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
             Some(VectorStats::build(orig_data.clone(), vector_parameters))
@@ -667,6 +681,13 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             QueryEncoding::Scalar4bits => EncodedQueryBQ::Scalar4bits(
                 Self::encode_scalar_query_vector(query, encoding, (u8::BITS / 2) as usize),
             ),
+            QueryEncoding::Uncompressed => {
+                // Uncompressed queries are only supported for dot product distance
+                // L1/L2 distances are not efficiently computable with uncompressed queries
+                // and binary quantization is typically used with cosine/dot product similarity
+                // Validation will happen in encode_query() where vector_parameters are available
+                EncodedQueryBQ::Uncompressed(query.to_vec())
+            }
         }
     }
 
@@ -735,6 +756,47 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         EncodedScalarVector {
             encoded_vector: encoded_query,
         }
+    }
+
+    /// Calculate dot product between uncompressed query vector and binary-quantized document vector.
+    ///
+    /// For binary-quantized vectors, each bit represents a value of -1 (bit=0) or 1 (bit=1).
+    /// This function computes the true dot product by extracting bits and multiplying with
+    /// the corresponding query vector values.
+    ///
+    /// # Arguments
+    /// * `query_vector` - The uncompressed query vector (f32 values)
+    /// * `binary_vector` - The binary-quantized document vector (bits)
+    /// * `dim` - The dimension of the vectors
+    ///
+    /// # Returns
+    /// The dot product as an f32 value.
+    fn calculate_dot_product_uncompressed(
+        query_vector: &[f32],
+        binary_vector: &[TBitsStoreType],
+        dim: usize,
+    ) -> f32 {
+        debug_assert!(query_vector.len() == dim);
+
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        let mut dot_product = 0.0;
+
+        for i in 0..dim {
+            let bit_index = i / bits_count;
+            let bit_offset = i % bits_count;
+            let bit = (binary_vector[bit_index] >> bit_offset) & one;
+
+            // Check if bit is set (non-zero) - if so, value is 1, otherwise -1
+            let binary_val = if bit.to_usize().unwrap_or(0) != 0 {
+                1.0
+            } else {
+                -1.0
+            };
+            dot_product += query_vector[i] * binary_val;
+        }
+
+        dot_product
     }
 
     pub fn get_quantized_vector_size_from_params(dim: usize, encoding: Encoding) -> usize {
@@ -838,6 +900,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryBQ<TBitsStoreType> {
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
+        // Validation happens during encode(), so we can safely assume the configuration is valid here
         Self::encode_query_vector(
             query,
             &self.metadata.vector_stats,
@@ -959,6 +1022,27 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 &encoded_vector.encoded_vector,
                 u8::BITS as usize / 2,
             ),
+            EncodedQueryBQ::Uncompressed(query_vector) => {
+                // Uncompressed queries are only supported for dot product distance
+                // This should have been validated during query encoding, but we check again for safety
+                debug_assert!(
+                    matches!(self.metadata.vector_parameters.distance_type, DistanceType::Dot),
+                    "Uncompressed queries should only be used with dot product distance"
+                );
+
+                let dot_product = Self::calculate_dot_product_uncompressed(
+                    query_vector,
+                    vector_data_usize,
+                    self.metadata.vector_parameters.dim,
+                );
+
+                // Apply invert flag if needed
+                if self.metadata.vector_parameters.invert {
+                    -dot_product
+                } else {
+                    dot_product
+                }
+            }
         }
     }
 }
