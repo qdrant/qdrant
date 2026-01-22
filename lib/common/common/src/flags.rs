@@ -85,7 +85,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_payload_storage: true,
             migrate_rocksdb_payload_indices: true,
             appendable_quantization: true,
-            single_file_mmap_vector_storage: true,
+            single_file_mmap_vector_storage: false,
         }
     }
 }
