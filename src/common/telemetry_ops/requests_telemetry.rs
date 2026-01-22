@@ -379,7 +379,7 @@ mod tests {
         // Insert more than DEFAULT_MAX_COLLECTIONS entries
         let max_collections = ActixWorkerTelemetryCollector::DEFAULT_MAX_COLLECTIONS;
         for i in 0..max_collections + 10 {
-            let collection_name = format!("collection_{}", i);
+            let collection_name = format!("collection_{i}");
             collector.add_response_with_collection(
                 "GET /collections/{name}",
                 instant,
@@ -414,7 +414,7 @@ mod tests {
         // Insert more than DEFAULT_MAX_COLLECTIONS entries
         let max_collections = TonicWorkerTelemetryCollector::DEFAULT_MAX_COLLECTIONS;
         for i in 0..max_collections + 10 {
-            let collection_name = format!("collection_{}", i);
+            let collection_name = format!("collection_{i}");
             collector.add_response_with_collection(
                 "Qdrant/Search".to_string(),
                 instant,
