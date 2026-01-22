@@ -61,7 +61,7 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true).unwrap()
+    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true, false).unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {

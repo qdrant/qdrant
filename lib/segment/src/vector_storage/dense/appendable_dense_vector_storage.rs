@@ -213,9 +213,10 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage =
-        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
+        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance, populate)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
 }
@@ -224,8 +225,9 @@ pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance, populate)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
         storage,
@@ -236,8 +238,9 @@ pub fn open_appendable_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance, populate)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
         storage,
@@ -248,13 +251,12 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
+    populate: bool,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
-
-    let populate = false;
 
     let vectors =
         ChunkedMmapVectors::<T>::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
@@ -383,7 +385,7 @@ mod tests {
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), DIM, Distance::Dot).unwrap();
+            open_appendable_memmap_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
         let hw_counter = HardwareCounterCell::disposable();

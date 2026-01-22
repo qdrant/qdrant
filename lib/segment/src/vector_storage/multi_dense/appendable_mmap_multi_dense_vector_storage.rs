@@ -322,6 +322,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_element_type {
         VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage_full(
@@ -329,18 +330,21 @@ pub fn open_appendable_memmap_multi_vector_storage(
             dim,
             distance,
             multi_vector_config,
+            populate,
         ),
         VectorStorageDatatype::Uint8 => open_appendable_memmap_multi_vector_storage_byte(
             path,
             dim,
             distance,
             multi_vector_config,
+            populate,
         ),
         VectorStorageDatatype::Float16 => open_appendable_memmap_multi_vector_storage_half(
             path,
             dim,
             distance,
             multi_vector_config,
+            populate,
         ),
     }
 }
@@ -350,12 +354,14 @@ pub fn open_appendable_memmap_multi_vector_storage_full(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
         distance,
         multi_vector_config,
+        populate,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
@@ -368,9 +374,10 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config, populate)?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
         storage,
@@ -382,9 +389,10 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config, populate)?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
         storage,
@@ -396,6 +404,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<
     AppendableMmapMultiDenseVectorStorage<
         T,
@@ -408,8 +417,6 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
-
-    let populate = false;
 
     let vectors =
         ChunkedMmapVectors::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
@@ -583,6 +590,7 @@ mod tests {
             DIM,
             Distance::Dot,
             mutli_vector_config,
+            false,
         )
         .unwrap();
 

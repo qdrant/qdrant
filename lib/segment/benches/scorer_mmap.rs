@@ -32,9 +32,10 @@ fn init_mmap_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
+    populate: bool,
 ) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
-    let mut storage = open_memmap_vector_storage(path, dim, dist).unwrap();
+    let mut storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     let mut vectors = (0..num).map(|_id| {
         let vector = random_vector(dim);
         (CowVector::from(vector), false)
@@ -45,7 +46,7 @@ fn init_mmap_vector_storage(
 
     assert_eq!(storage.available_vector_count(), num);
     drop(storage);
-    let storage = open_memmap_vector_storage(path, dim, dist).unwrap();
+    let storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     assert_eq!(storage.available_vector_count(), num);
     (storage, id_tracker)
 }
@@ -54,7 +55,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let dist = Distance::Dot;
-    let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist, false);
     let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-all");
@@ -84,7 +85,7 @@ fn benchmark_scorer_mmap_4(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
     let dist = Distance::Dot;
-    let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
+    let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist, false);
     let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-all");

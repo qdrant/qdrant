@@ -191,6 +191,7 @@ pub(crate) fn open_vector_storage(
         }
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => {
+            let populate = false;
             if let Some(multi_vec_config) = &vector_config.multivector_config {
                 open_appendable_memmap_multi_vector_storage(
                     storage_element_type,
@@ -198,6 +199,7 @@ pub(crate) fn open_vector_storage(
                     vector_config.size,
                     vector_config.distance,
                     *multi_vec_config,
+                    populate,
                 )
             } else {
                 match storage_element_type {
@@ -205,16 +207,19 @@ pub(crate) fn open_vector_storage(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        populate,
                     ),
                     VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        populate,
                     ),
                     VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        populate,
                     ),
                 }
             }
