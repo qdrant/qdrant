@@ -325,10 +325,10 @@ pub trait SegmentOptimizer {
                             config.storage_type = VectorStorageType::InRamMmap;
                         }
                     } // on_disk=false wins, do nothing
-                    None => if threshold_is_on_disk { config.storage_type = VectorStorageType::Mmap } else {
-                        if common::flags::feature_flags().single_file_mmap_vector_storage  {
-                            config.storage_type = VectorStorageType::InRamMmap;
-                        }
+                    None => if threshold_is_on_disk {
+                        config.storage_type = VectorStorageType::Mmap
+                    } else if common::flags::feature_flags().single_file_mmap_vector_storage  {
+                        config.storage_type = VectorStorageType::InRamMmap;
                     }, // Mmap threshold wins
                 }
 
