@@ -1,4 +1,4 @@
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 use std::sync::atomic::AtomicU8;
 
 use crate::cache::GlobalOffset;
@@ -87,7 +87,7 @@ where
     /// Generate a hash for the key stored in the global offset provided
     ///
     /// Panics if the global offset does not point to a valid value
-    pub fn hash_offset<S: BuildHasher>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
+    pub fn hash_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
     where
         S: BuildHasher,
         K: Hash,
@@ -96,9 +96,7 @@ where
         let key = self
             .get_key_by_local_offset(local)
             .expect("The offset should always return a value");
-        let mut hasher = hasher.build_hasher();
-        key.hash(&mut hasher);
-        hasher.finish()
+        hasher.hash_one(key)
     }
 }
 

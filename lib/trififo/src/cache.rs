@@ -1,4 +1,4 @@
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use hashbrown::HashTable;
@@ -53,9 +53,7 @@ where
     /// A convenience method to calculate the hash for a given `key`.
     #[inline]
     fn hash_key(&self, key: &K) -> u64 {
-        let mut hasher = self.hasher.build_hasher();
-        key.hash(&mut hasher);
-        hasher.finish()
+        self.hasher.hash_one(key)
     }
 
     #[inline]
@@ -356,7 +354,7 @@ mod tests {
 
         // Insert more items than capacity
         for i in 0..20 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Cache should not exceed capacity (but ghost queue exists)
@@ -471,7 +469,7 @@ mod tests {
 
         // Insert items
         for i in 0..100 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Access some items multiple times
@@ -484,7 +482,7 @@ mod tests {
 
         // Hot keys should still be in cache
         for &key in &hot_keys {
-            assert_eq!(cache.get(&key), Some(&format!("value_{}", key)));
+            assert_eq!(cache.get(&key), Some(&format!("value_{key}")));
         }
     }
 
@@ -509,7 +507,7 @@ mod tests {
 
         for _ in 0..OPS {
             let key = rng.random_range(0..KEY_RANGE);
-            let value = format!("value_{}", key);
+            let value = format!("value_{key}");
 
             if rng.random_bool(0.7) {
                 // 70% inserts
@@ -536,8 +534,8 @@ mod tests {
         // Verify recent hot keys are likely in both caches
         let hot_key = KEY_RANGE - 1;
         for _ in 0..10 {
-            our_cache.insert(hot_key, format!("hot_value"));
-            quick_cache.insert(hot_key, format!("hot_value"));
+            our_cache.insert(hot_key, "hot_value".to_string());
+            quick_cache.insert(hot_key, "hot_value".to_string());
         }
 
         assert_eq!(our_cache.get(&hot_key), Some(&"hot_value".to_string()));
@@ -559,7 +557,7 @@ mod tests {
 
         for _ in 0..OPS {
             let key = rng.random_range(0..200);
-            let value = format!("val_{}", key);
+            let value = format!("val_{key}");
 
             cache.insert(key, value.clone());
             model.insert(key, value);
@@ -577,7 +575,7 @@ mod tests {
         // All values in cache must match the model
         for i in 0..200 {
             if let Some(cached) = cache.get(&i) {
-                assert_eq!(cached, &model[&i], "Mismatch for key {}", i);
+                assert_eq!(cached, &model[&i], "Mismatch for key {i}");
             }
         }
     }
@@ -588,7 +586,7 @@ mod tests {
 
         // Insert 10 items
         for i in 0..10 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Access some items to mark them as recently used
@@ -598,7 +596,7 @@ mod tests {
 
         // Insert more items to trigger eviction
         for i in 10..15 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Recently accessed items (5-9) are more likely to still be present
@@ -623,7 +621,7 @@ mod tests {
 
         // Insert hot items and access them multiple times
         for i in 0..5 {
-            cache.insert(i, format!("hot_{}", i));
+            cache.insert(i, format!("hot_{i}"));
             for _ in 0..3 {
                 cache.get(&i);
             }
@@ -631,7 +629,7 @@ mod tests {
 
         // Now perform a scan of many one-time access items
         for i in 100..200 {
-            cache.insert(i, format!("cold_{}", i));
+            cache.insert(i, format!("cold_{i}"));
         }
 
         // Hot items should still be present (scan resistance)
@@ -645,8 +643,7 @@ mod tests {
         // S3-FIFO should protect hot items from scan
         assert!(
             hot_present >= 3,
-            "Expected most hot items to survive scan, got {}",
-            hot_present
+            "Expected most hot items to survive scan, got {hot_present}"
         );
     }
 
@@ -657,10 +654,10 @@ mod tests {
         // Alternate between two sets of keys
         for _ in 0..20 {
             for i in 0..5 {
-                cache.insert(i, format!("set1_{}", i));
+                cache.insert(i, format!("set1_{i}"));
             }
             for i in 10..15 {
-                cache.insert(i, format!("set2_{}", i));
+                cache.insert(i, format!("set2_{i}"));
             }
         }
 
@@ -678,7 +675,7 @@ mod tests {
         // Insert the same key repeatedly with different values
         // Note: re-inserting only updates recency, not value (except when promoting from ghost)
         for i in 0..100 {
-            cache.insert(1, format!("value_{}", i));
+            cache.insert(1, format!("value_{i}"));
         }
 
         // Should have the first value (since re-inserts don't update value in small/main queues)
@@ -699,13 +696,13 @@ mod tests {
 
         // Insert many items
         for i in 0..200 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Verify correctness - any item in cache should have correct value
         for i in 0..200 {
             if let Some(value) = cache.get(&i) {
-                assert_eq!(value, &format!("value_{}", i));
+                assert_eq!(value, &format!("value_{i}"));
             }
         }
     }
