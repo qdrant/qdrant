@@ -18,8 +18,9 @@ use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, Ve
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
-use crate::vector_storage::dense::memmap_dense_vector_storage::{
-    open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
+use crate::vector_storage::dense::appendable_dense_vector_storage::{
+    open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
+    open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::{
     AccessPattern, MultiVectorStorage, Random, Sequential, VectorStorage, VectorStorageEnum,
@@ -308,15 +309,27 @@ pub fn open_appendable_memmap_vector_storage(
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_element_type {
-        VectorStorageDatatype::Float32 => {
-            open_memmap_vector_storage(vector_storage_path, size, distance, madvise, populate)
-        }
-        VectorStorageDatatype::Uint8 => {
-            open_memmap_vector_storage_byte(vector_storage_path, size, distance, madvise, populate)
-        }
-        VectorStorageDatatype::Float16 => {
-            open_memmap_vector_storage_half(vector_storage_path, size, distance, madvise, populate)
-        }
+        VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage_full(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
+        VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
+        VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
     }
 }
 
