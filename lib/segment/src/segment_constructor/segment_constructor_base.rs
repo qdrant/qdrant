@@ -100,6 +100,46 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
+fn open_mmap_vector_storage(
+    vector_storage_path: &Path,
+    vector_config: &VectorDataConfig,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    let storage_element_type = vector_config.datatype.unwrap_or_default();
+    if let Some(multi_vec_config) = &vector_config.multivector_config {
+        // there are no mmap multi vector storages, appendable only
+        open_appendable_memmap_multi_vector_storage(
+            storage_element_type,
+            vector_storage_path,
+            vector_config.size,
+            vector_config.distance,
+            *multi_vec_config,
+            populate,
+        )
+    } else {
+        match storage_element_type {
+            VectorStorageDatatype::Float32 => open_memmap_vector_storage(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                populate,
+            ),
+            VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                populate,
+            ),
+            VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                populate,
+            ),
+        }
+    }
+}
+
 pub(crate) fn open_vector_storage(
     #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
@@ -146,34 +186,8 @@ pub(crate) fn open_vector_storage(
         }
         // Mmap on disk, not appendable
         VectorStorageType::Mmap => {
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
-                // there are no mmap multi vector storages, appendable only
-                open_appendable_memmap_multi_vector_storage(
-                    storage_element_type,
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                    *multi_vec_config,
-                )
-            } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_memmap_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                }
-            }
+            let populate = false;
+            open_mmap_vector_storage(vector_storage_path, vector_config, populate)
         }
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => {
@@ -222,6 +236,10 @@ pub(crate) fn open_vector_storage(
                     vector_config.distance,
                 )
             }
+        }
+        VectorStorageType::InRamMmap => {
+            let populate = true;
+            open_mmap_vector_storage(vector_storage_path, vector_config, populate)
         }
     }
 }
