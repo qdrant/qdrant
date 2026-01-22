@@ -343,6 +343,7 @@ message BinaryQuantizationQueryEncoding {
     Binary = 1;
     Scalar4Bits = 2;
     Scalar8Bits = 3;
+    Uncompressed = 4;
   }
 
   oneof variant {
