@@ -300,7 +300,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             dim,
             with_async_io,
             AdviceSetting::Global,
-            false, // No need to populate - data was just written to page cache
+            false, // No need to populate
         )?);
 
         // Flush deleted flags into store

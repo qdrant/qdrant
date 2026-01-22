@@ -6,6 +6,7 @@ use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
+use memory::madvise::AdviceSetting;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
 use segment::data_types::vectors::{
@@ -26,7 +27,7 @@ use segment::types::{
     PayloadSchemaType, SeqNumberType,
 };
 use segment::vector_storage::VectorStorage;
-use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_in_ram_multi_vector_storage_full;
+use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage_full;
 use tempfile::Builder;
 
 #[test]
@@ -56,11 +57,13 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         .unwrap();
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let mut multi_storage = open_appendable_in_ram_multi_vector_storage_full(
+    let mut multi_storage = open_appendable_memmap_multi_vector_storage_full(
         dir.path(),
         dim,
         distance,
         MultiVectorConfig::default(),
+        AdviceSetting::Global,
+        true,
     )
     .unwrap();
 
