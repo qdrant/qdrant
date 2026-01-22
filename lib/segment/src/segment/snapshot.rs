@@ -132,7 +132,7 @@ impl Segment {
                     let version = self
                         .version_tracker
                         .get_vector(vector_name)
-                        .or(self.initial_version);
+                        .or(self.version);
 
                     vector_data
                         .vector_storage
@@ -143,7 +143,7 @@ impl Segment {
                 });
 
         let payload_storage_files = {
-            let version = self.version_tracker.get_payload().or(self.initial_version);
+            let version = self.version_tracker.get_payload().or(self.version);
 
             self.payload_storage
                 .borrow()
