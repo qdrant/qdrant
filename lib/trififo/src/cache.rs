@@ -70,35 +70,32 @@ where
     fn promote_existing(&mut self, local_offset: LocalOffset, key: K, value: V) {
         match local_offset {
             LocalOffset::Ghost(offset) => {
-                if let Some(ghost_key) = self.fifos.ghost.get_absolute_unchecked(offset as usize) {
-                    if ghost_key != &key {
-                        debug_assert!(false, "Key mismatch");
-                        return;
-                    }
-
-                    // promote to main queue
-                    let entry = Entry {
-                        key,
-                        value,
-                        recency: AtomicU8::new(0),
-                    };
-
-                    let local_offset = self.push_to_main_queue(entry);
-                    self.update_hashtable(&key, local_offset);
-
-                    // After updating, ghost key will remain in ghost queue, but it won't be referenced by the hashmap.
-                    // This is expected behavior
+                let ghost_key = self.fifos.ghost.get_absolute_unchecked(offset as usize);
+                if ghost_key != &key {
+                    debug_assert!(false, "Key mismatch");
+                    return;
                 }
+
+                // promote to main queue
+                let entry = Entry {
+                    key,
+                    value,
+                    recency: AtomicU8::new(0),
+                };
+
+                let local_offset = self.push_to_main_queue(entry);
+                self.update_hashtable(&key, local_offset);
+
+                // After updating, ghost key will remain in ghost queue, but it won't be referenced by the hashmap.
+                // This is expected behavior
             }
             LocalOffset::Small(offset) => {
-                if let Some(entry) = self.fifos.small.get_absolute_unchecked(offset as usize) {
-                    entry.incr_recency();
-                }
+                let entry = self.fifos.small.get_absolute_unchecked(offset as usize);
+                entry.incr_recency();
             }
             LocalOffset::Main(offset) => {
-                if let Some(entry) = self.fifos.main.get_absolute_unchecked(offset as usize) {
-                    entry.incr_recency();
-                }
+                let entry = self.fifos.main.get_absolute_unchecked(offset as usize);
+                entry.incr_recency();
             }
         }
     }
@@ -117,7 +114,7 @@ where
         };
 
         // reinsert while there are old entries with non-zero recency
-        while self.fifos.main.reinsert_if(|entry| {
+        while self.fifos.main.reinsert_unchecked_if(|entry| {
             if entry.recency.load(Ordering::Relaxed) > 0 {
                 entry.decr_recency();
                 true
@@ -130,14 +127,13 @@ where
             self.fifos
                 .main
                 .get_absolute_unchecked(self.fifos.main.write_position())
-                .unwrap()
                 .recency
                 .load(Ordering::Relaxed)
                 == 0,
-            "Detected eviction of entry with non-zero recency"
+            "The entry about to evict should have recency zero"
         );
 
-        let (evicted_entry, local_offset) = self.fifos.main.pop_push(entry);
+        let (evicted_entry, local_offset) = self.fifos.main.pop_push_unchecked(entry);
 
         self.remove_from_hashtable(&evicted_entry.key);
 
@@ -152,7 +148,7 @@ where
     fn push_to_small_queue(&mut self, entry: Entry<K, V>) -> LocalOffset {
         // If full, send oldest key to ghost queue, or promote to main queue
         if self.fifos.small.is_full() {
-            let (oldest_entry, small_offset) = self.fifos.small.pop_push(entry);
+            let (oldest_entry, small_offset) = self.fifos.small.pop_push_unchecked(entry);
             if oldest_entry.recency() > 0 {
                 // promote to main queue
                 let oldest_key = oldest_entry.key;
@@ -181,7 +177,7 @@ where
         let entry = self.hashtable.entry(
             hash,
             |global_offset| self.fifos.key_eq(*global_offset, key),
-            |global_offset| self.fifos.hash_offset(*global_offset, &self.hasher),
+            |global_offset| self.fifos.hash_key_at_offset(*global_offset, &self.hasher),
         );
 
         match entry {

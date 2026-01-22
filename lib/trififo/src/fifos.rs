@@ -54,48 +54,38 @@ where
     #[inline]
     pub fn get_entry_by_local_offset(&self, local_offset: LocalOffset) -> Option<&Entry<K, V>> {
         match local_offset {
-            LocalOffset::Small(offset) => self.small.get_absolute_unchecked(offset as usize),
+            LocalOffset::Small(offset) => Some(self.small.get_absolute_unchecked(offset as usize)),
             LocalOffset::Ghost(_offset) => None,
-            LocalOffset::Main(offset) => self.main.get_absolute_unchecked(offset as usize),
+            LocalOffset::Main(offset) => Some(self.main.get_absolute_unchecked(offset as usize)),
         }
     }
 
     #[inline]
-    pub fn get_key_by_local_offset(&self, local_offset: LocalOffset) -> Option<&K> {
+    pub fn get_key_by_local_offset(&self, local_offset: LocalOffset) -> &K {
         match local_offset {
-            LocalOffset::Small(offset) => self
-                .small
-                .get_absolute_unchecked(offset as usize)
-                .map(|entry| &entry.key),
+            LocalOffset::Small(offset) => &self.small.get_absolute_unchecked(offset as usize).key,
             LocalOffset::Ghost(offset) => self.ghost.get_absolute_unchecked(offset as usize),
-            LocalOffset::Main(offset) => self
-                .main
-                .get_absolute_unchecked(offset as usize)
-                .map(|entry| &entry.key),
+            LocalOffset::Main(offset) => &self.main.get_absolute_unchecked(offset as usize).key,
         }
     }
 
     #[inline]
     pub fn key_eq(&self, global_offset: GlobalOffset, key: &K) -> bool {
         let local_offset = self.local_offset(global_offset);
-        let Some(entry_key) = self.get_key_by_local_offset(local_offset) else {
-            return false;
-        };
+        let entry_key = self.get_key_by_local_offset(local_offset);
         entry_key == key
     }
 
     /// Generate a hash for the key stored in the global offset provided
     ///
     /// Panics if the global offset does not point to a valid value
-    pub fn hash_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
+    pub fn hash_key_at_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
     where
         S: BuildHasher,
         K: Hash,
     {
         let local = self.local_offset(global_offset);
-        let key = self
-            .get_key_by_local_offset(local)
-            .expect("The offset should always return a value");
+        let key = self.get_key_by_local_offset(local);
         hasher.hash_one(key)
     }
 }

@@ -110,14 +110,10 @@ impl<T> RingBuffer<T> {
     /// The caller must ensure that:
     /// - `offset < capacity`
     /// - The offset points to valid (not overwritten) data
-    pub fn get_absolute_unchecked(&self, offset: usize) -> Option<&T> {
-        if offset >= self.capacity {
-            return None;
-        }
-
+    pub fn get_absolute_unchecked(&self, offset: usize) -> &T {
         // Safety: We only access positions that have been written to
         // The caller is responsible for ensuring the offset is still valid
-        unsafe { Some(self.buffer[offset].assume_init_ref()) }
+        unsafe { self.buffer[offset].assume_init_ref() }
     }
 
     /// Returns the oldest valid position offset in the buffer.
@@ -155,7 +151,7 @@ impl<T> RingBuffer<T> {
     ///
     /// # Safety
     /// This only reinserts if the buffer is full, otherwise it might panic.
-    pub fn reinsert_if(&mut self, f: impl FnOnce(&T) -> bool) -> bool {
+    pub fn reinsert_unchecked_if(&mut self, f: impl FnOnce(&T) -> bool) -> bool {
         match self.read_pos() {
             None => false,
             Some(pos) if pos == self.write_pos => {
@@ -178,10 +174,13 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Pop oldest, and push new item. Returns the oldest value, and the absolute position of the new value
+    /// Pop oldest, and push new item. Assumes queue is full, so it can do it by swapping a value.
     ///
-    /// Only use this if the queue was full, otherwise, use `overwriting_push`. Panics if queue wasn't full
-    pub fn pop_push(&mut self, item: T) -> (T, usize) {
+    /// Returns the oldest value, and the absolute position of the new value
+    ///
+    /// # Safety
+    /// Only use this if the queue is full, otherwise, use `overwriting_push`. Panics if queue wasn't full
+    pub fn pop_push_unchecked(&mut self, item: T) -> (T, usize) {
         debug_assert_eq!(self.read_pos().unwrap(), self.write_pos);
 
         let read_pos = self.write_pos;
@@ -242,9 +241,9 @@ mod tests {
         let offset1 = buffer.overwriting_push(20);
         let offset2 = buffer.overwriting_push(30);
 
-        assert_eq!(buffer.get_absolute_unchecked(offset0), Some(&10));
-        assert_eq!(buffer.get_absolute_unchecked(offset1), Some(&20));
-        assert_eq!(buffer.get_absolute_unchecked(offset2), Some(&30));
+        assert_eq!(buffer.get_absolute_unchecked(offset0), &10);
+        assert_eq!(buffer.get_absolute_unchecked(offset1), &20);
+        assert_eq!(buffer.get_absolute_unchecked(offset2), &30);
 
         assert_eq!(buffer.len(), 3);
         assert!(buffer.is_full());
@@ -267,8 +266,8 @@ mod tests {
         assert_eq!(offset3, 0); // Wraps to 0
 
         // offset0 and offset3 point to same position
-        assert_eq!(buffer.get_absolute_unchecked(offset0), Some(&40)); // Overwritten!
-        assert_eq!(buffer.get_absolute_unchecked(offset3), Some(&40));
+        assert_eq!(buffer.get_absolute_unchecked(offset0), &40); // Overwritten!
+        assert_eq!(buffer.get_absolute_unchecked(offset3), &40);
     }
 
     #[test]
@@ -281,10 +280,10 @@ mod tests {
         buffer.overwriting_push(40); // Overwrites first item
 
         // Positions 1 and 2 still have their original values
-        assert_eq!(buffer.get_absolute_unchecked(1), Some(&20));
-        assert_eq!(buffer.get_absolute_unchecked(2), Some(&30));
+        assert_eq!(buffer.get_absolute_unchecked(1), &20);
+        assert_eq!(buffer.get_absolute_unchecked(2), &30);
         // Position 0 now has the new value
-        assert_eq!(buffer.get_absolute_unchecked(0), Some(&40));
+        assert_eq!(buffer.get_absolute_unchecked(0), &40);
 
         assert_eq!(buffer.len(), 3);
         assert!(buffer.is_full());
@@ -308,9 +307,9 @@ mod tests {
         assert_eq!(offsets[9], 0);
 
         // Only last 3 items should be accessible
-        assert_eq!(buffer.get_absolute_unchecked(0), Some(&9)); // Position 0
-        assert_eq!(buffer.get_absolute_unchecked(1), Some(&7)); // Position 1
-        assert_eq!(buffer.get_absolute_unchecked(2), Some(&8)); // Position 2
+        assert_eq!(buffer.get_absolute_unchecked(0), &9); // Position 0
+        assert_eq!(buffer.get_absolute_unchecked(1), &7); // Position 1
+        assert_eq!(buffer.get_absolute_unchecked(2), &8); // Position 2
 
         assert_eq!(buffer.len(), 3);
     }
@@ -355,12 +354,12 @@ mod tests {
         let mut buffer = RingBuffer::with_capacity(1);
 
         let offset0 = buffer.overwriting_push(10);
-        assert_eq!(buffer.get_absolute_unchecked(offset0), Some(&10));
+        assert_eq!(buffer.get_absolute_unchecked(offset0), &10);
         assert!(buffer.is_full());
 
         let offset1 = buffer.overwriting_push(20);
         assert_eq!(offset1, 0); // Same position
-        assert_eq!(buffer.get_absolute_unchecked(offset1), Some(&20)); // Overwritten
+        assert_eq!(buffer.get_absolute_unchecked(offset1), &20); // Overwritten
         assert_eq!(buffer.len(), 1);
     }
 
@@ -379,7 +378,7 @@ mod tests {
 
         // Regular push should still work and overwrite
         let offset = buffer.overwriting_push(40);
-        assert_eq!(buffer.get_absolute_unchecked(offset), Some(&40));
+        assert_eq!(buffer.get_absolute_unchecked(offset), &40);
 
         // try_push should fail again since it's full
         assert_eq!(buffer.try_push(50), Err(50));
