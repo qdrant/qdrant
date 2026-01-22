@@ -1,6 +1,5 @@
-
 mod cache;
-mod ringbuffer;
 mod fifos;
+mod ringbuffer;
 
 pub use cache::Cache;

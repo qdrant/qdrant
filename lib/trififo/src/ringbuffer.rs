@@ -31,9 +31,7 @@ impl<T> RingBuffer<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         assert!(capacity > 0, "Ring buffer capacity must be greater than 0");
 
-        let buffer: Box<[MaybeUninit<T>]> = (0..capacity)
-            .map(|_| MaybeUninit::uninit())
-            .collect();
+        let buffer: Box<[MaybeUninit<T>]> = (0..capacity).map(|_| MaybeUninit::uninit()).collect();
 
         Self {
             buffer,

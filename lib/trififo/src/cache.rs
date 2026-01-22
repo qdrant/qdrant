@@ -1,9 +1,10 @@
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use hashbrown::HashTable;
+
 use crate::fifos::{Entry, Fifos, LocalOffset};
 use crate::ringbuffer::RingBuffer;
-use hashbrown::HashTable;
 
 pub(crate) type GlobalOffset = u32;
 
@@ -182,7 +183,7 @@ where
         let entry = self.hashtable.entry(
             hash,
             |global_offset| self.fifos.key_eq(*global_offset, key),
-            |global_offset| self.fifos.hash_offset(*global_offset, &self.hasher)
+            |global_offset| self.fifos.hash_offset(*global_offset, &self.hasher),
         );
 
         match entry {
@@ -249,8 +250,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
+
+    use super::*;
 
     #[test]
     fn test_new_cache() {

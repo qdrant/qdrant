@@ -87,9 +87,10 @@ where
     /// Generate a hash for the key stored in the global offset provided
     ///
     /// Panics if the global offset does not point to a valid value
-    pub fn hash_offset<S: BuildHasher>(&self, global_offset: GlobalOffset, hasher: &S) -> u64 where
+    pub fn hash_offset<S: BuildHasher>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
+    where
         S: BuildHasher,
-        K: Hash
+        K: Hash,
     {
         let local = self.local_offset(global_offset);
         let key = self
