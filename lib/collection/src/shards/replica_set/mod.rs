@@ -264,8 +264,8 @@ impl ShardReplicaSet {
         if replica_state.read().this_peer_id != this_peer_id {
             replica_state
                 .write(|rs| {
-                    let this_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(this_peer_id);
+                    let old_peer_id = rs.this_peer_id;
+                    let local_state = rs.remove_peer_state(old_peer_id);
                     if let Some(state) = local_state {
                         rs.set_peer_state(this_peer_id, state);
                     }
