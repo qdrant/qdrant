@@ -420,6 +420,9 @@ impl From<PyBinaryQuantizationQueryEncoding> for BinaryQuantizationQueryEncoding
         match encoding {
             PyBinaryQuantizationQueryEncoding::Default => BinaryQuantizationQueryEncoding::Default,
             PyBinaryQuantizationQueryEncoding::Binary => BinaryQuantizationQueryEncoding::Binary,
+            PyBinaryQuantizationQueryEncoding::Uncompressed => {
+                BinaryQuantizationQueryEncoding::Uncompressed
+            }
             PyBinaryQuantizationQueryEncoding::Scalar4Bits => {
                 BinaryQuantizationQueryEncoding::Scalar4Bits
             }
