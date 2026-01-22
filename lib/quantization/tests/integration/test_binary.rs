@@ -830,10 +830,7 @@ mod tests {
             assert_eq!(expected_idx, actual_idx, "Ranking order should match");
             assert!(
                 (expected_score - actual_score).abs() < error,
-                "Score mismatch: expected {}, got {} for vector {}",
-                expected_score,
-                actual_score,
-                expected_idx
+                "Score mismatch: expected {expected_score}, got {actual_score} for vector {expected_idx}",
             );
         }
     }
@@ -842,7 +839,7 @@ mod tests {
     fn test_uncompressed_query_l1_l2_distance_returns_error() {
         let vector_dim = 16;
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-        let vector_data = vec![generate_vector(vector_dim, &mut rng)];
+        let vector_data = [generate_vector(vector_dim, &mut rng)];
 
         let quantized_vector_size =
             EncodedVectorsBin::<u8, TestEncodedStorage>::get_quantized_vector_size_from_params(
