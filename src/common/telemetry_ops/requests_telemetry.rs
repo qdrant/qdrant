@@ -15,6 +15,8 @@ use storage::rbac::{Access, AccessRequirements};
 
 pub type HttpStatusCode = u16;
 
+const COLLECTION_ENDPOINT_SEPARATOR: &str = "|";
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema, Anonymize)]
 pub struct CollectionEndpointKey {
     #[anonymize(true)]
@@ -23,18 +25,33 @@ pub struct CollectionEndpointKey {
     pub endpoint: String,
 }
 
+fn format_collection_endpoint_key(collection: &str, endpoint: &str) -> String {
+    format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
+}
+
+fn format_collection_endpoint_key_from_key(key: &CollectionEndpointKey) -> String {
+    format_collection_endpoint_key(&key.collection, &key.endpoint)
+}
+
+fn anonymize_collection_endpoint_key(key: &str) -> String {
+    let Some((collection, endpoint)) = key.split_once(COLLECTION_ENDPOINT_SEPARATOR) else {
+        return key.to_string().anonymize();
+    };
+
+    let collection = collection.to_string().anonymize();
+    format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
+}
+
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-    pub per_collection:
-        HashMap<CollectionEndpointKey, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub per_collection: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
-#[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
-    #[anonymize(with = anonymize_collection_values)]
     pub responses: HashMap<String, OperationDurationStatistics>,
-    pub per_collection: HashMap<CollectionEndpointKey, OperationDurationStatistics>,
+    pub per_collection: HashMap<String, OperationDurationStatistics>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -144,7 +161,7 @@ impl TonicWorkerTelemetryCollector {
             };
             let aggregator = self
                 .per_collection_data
-                .get_or_insert_mut(key, || OperationDurationsAggregator::new());
+                .get_or_insert_mut(key, OperationDurationsAggregator::new);
             ScopeDurationMeasurer::new_with_instant(aggregator, instant);
         }
     }
@@ -156,7 +173,10 @@ impl TonicWorkerTelemetryCollector {
         }
         let mut per_collection = HashMap::new();
         for (key, aggregator) in self.per_collection_data.iter() {
-            per_collection.insert(key.clone(), aggregator.lock().get_statistics(detail));
+            per_collection.insert(
+                format_collection_endpoint_key_from_key(key),
+                aggregator.lock().get_statistics(detail),
+            );
         }
         GrpcTelemetry {
             responses,
@@ -166,15 +186,6 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
-    pub fn add_response(
-        &mut self,
-        method: String,
-        status_code: HttpStatusCode,
-        instant: std::time::Instant,
-    ) {
-        self.add_response_with_collection(&method, instant, status_code, None);
-    }
-
     pub fn add_response_with_collection(
         &mut self,
         method: &str,
@@ -222,7 +233,10 @@ impl ActixWorkerTelemetryCollector {
             for (status_code, aggregator) in status_codes {
                 status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
             }
-            per_collection.insert(key.clone(), status_codes_map);
+            per_collection.insert(
+                format_collection_endpoint_key_from_key(key),
+                status_codes_map,
+            );
         }
         WebApiTelemetry {
             responses,
@@ -298,10 +312,31 @@ impl Anonymize for WebApiTelemetry {
         let per_collection = self
             .per_collection
             .iter()
-            .map(|(key, value)| (key.anonymize(), anonymize_collection_values(value)))
+            .map(|(key, value)| {
+                (
+                    anonymize_collection_endpoint_key(key),
+                    anonymize_collection_values(value),
+                )
+            })
             .collect();
 
         WebApiTelemetry {
+            responses,
+            per_collection,
+        }
+    }
+}
+
+impl Anonymize for GrpcTelemetry {
+    fn anonymize(&self) -> Self {
+        let responses = anonymize_collection_values(&self.responses);
+        let per_collection = self
+            .per_collection
+            .iter()
+            .map(|(key, value)| (anonymize_collection_endpoint_key(key), value.anonymize()))
+            .collect();
+
+        GrpcTelemetry {
             responses,
             per_collection,
         }
@@ -398,10 +433,8 @@ mod tests {
         let mut collector = ActixWorkerTelemetryCollector::new();
         let instant = std::time::Instant::now();
 
-        // Test that existing add_response method still works (delegates to new method with None)
-        collector.add_response("GET /health".to_string(), 200, instant);
+        collector.add_response_with_collection("GET /health", instant, 200, None);
 
-        // Verify global metrics are tracked
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
         assert!(telemetry.responses.contains_key("GET /health"));
     }
@@ -414,10 +447,7 @@ mod tests {
         collector.add_response_with_collection("GET /collections/{name}", instant, 200, Some("c1"));
 
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
-        let key = CollectionEndpointKey {
-            collection: "c1".to_string(),
-            endpoint: "GET /collections/{name}".to_string(),
-        };
+        let key = format_collection_endpoint_key("c1", "GET /collections/{name}");
 
         assert!(telemetry.per_collection.contains_key(&key));
         assert!(telemetry.responses.contains_key("GET /collections/{name}"));
