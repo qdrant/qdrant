@@ -15,21 +15,26 @@ use storage::rbac::{Access, AccessRequirements};
 
 pub type HttpStatusCode = u16;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema, Anonymize)]
 pub struct CollectionEndpointKey {
+    #[anonymize(true)]
     pub collection: String,
+    #[anonymize(false)]
     pub endpoint: String,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub per_collection:
+        HashMap<CollectionEndpointKey, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
 pub struct GrpcTelemetry {
     #[anonymize(with = anonymize_collection_values)]
     pub responses: HashMap<String, OperationDurationStatistics>,
+    pub per_collection: HashMap<CollectionEndpointKey, OperationDurationStatistics>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -149,7 +154,14 @@ impl TonicWorkerTelemetryCollector {
         for (method, aggregator) in self.methods.iter() {
             responses.insert(method.clone(), aggregator.lock().get_statistics(detail));
         }
-        GrpcTelemetry { responses }
+        let mut per_collection = HashMap::new();
+        for (key, aggregator) in self.per_collection_data.iter() {
+            per_collection.insert(key.clone(), aggregator.lock().get_statistics(detail));
+        }
+        GrpcTelemetry {
+            responses,
+            per_collection,
+        }
     }
 }
 
@@ -204,7 +216,18 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+        let mut per_collection = HashMap::new();
+        for (key, status_codes) in self.per_collection_data.iter() {
+            let mut status_codes_map = HashMap::new();
+            for (status_code, aggregator) in status_codes {
+                status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+            }
+            per_collection.insert(key.clone(), status_codes_map);
+        }
+        WebApiTelemetry {
+            responses,
+            per_collection,
+        }
     }
 }
 
@@ -214,6 +237,10 @@ impl GrpcTelemetry {
             let entry = self.responses.entry(method.clone()).or_default();
             *entry = entry.clone() + other_statistics.clone();
         }
+        for (key, other_statistics) in &other.per_collection {
+            let entry = self.per_collection.entry(key.clone()).or_default();
+            *entry = entry.clone() + other_statistics.clone();
+        }
     }
 }
 
@@ -221,6 +248,13 @@ impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
+            for (status_code, statistics) in status_codes {
+                let entry = status_codes_map.entry(*status_code).or_default();
+                *entry = entry.clone() + statistics.clone();
+            }
+        }
+        for (key, status_codes) in &other.per_collection {
+            let status_codes_map = self.per_collection.entry(key.clone()).or_default();
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
@@ -261,7 +295,16 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        let per_collection = self
+            .per_collection
+            .iter()
+            .map(|(key, value)| (key.anonymize(), anonymize_collection_values(value)))
+            .collect();
+
+        WebApiTelemetry {
+            responses,
+            per_collection,
+        }
     }
 }
 
@@ -361,5 +404,22 @@ mod tests {
         // Verify global metrics are tracked
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
         assert!(telemetry.responses.contains_key("GET /health"));
+    }
+
+    #[test]
+    fn test_per_collection_telemetry() {
+        let mut collector = ActixWorkerTelemetryCollector::new();
+        let instant = std::time::Instant::now();
+
+        collector.add_response_with_collection("GET /collections/{name}", instant, 200, Some("c1"));
+
+        let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
+        let key = CollectionEndpointKey {
+            collection: "c1".to_string(),
+            endpoint: "GET /collections/{name}".to_string(),
+        };
+
+        assert!(telemetry.per_collection.contains_key(&key));
+        assert!(telemetry.responses.contains_key("GET /collections/{name}"));
     }
 }
