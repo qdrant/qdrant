@@ -26,12 +26,12 @@ impl SearchResultAggregator {
     }
 
     pub fn push(&mut self, point: ScoredPoint) {
-        // Skip already seen points
-        if !self.seen.insert(point.id) {
+        let Some(queue) = self.queue.as_mut() else {
             return;
-        }
+        };
 
-        if let Some(queue) = self.queue.as_mut() {
+        // Only add unseen points
+        if self.seen.insert(point.id) {
             queue.push(point);
         }
     }
