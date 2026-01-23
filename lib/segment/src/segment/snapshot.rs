@@ -123,13 +123,16 @@ impl Segment {
         let files = self
             .files()
             .into_iter()
-            .map(|path| (path, FileVersion::Unversioned));
+            .map(|file| (file, FileVersion::Unversioned));
 
         let vector_storage_files =
             self.vector_data
                 .iter()
                 .flat_map(|(vector_name, vector_data)| {
-                    let version = self.version_tracker.get_vector(vector_name);
+                    let version = self
+                        .version_tracker
+                        .get_vector(vector_name)
+                        .or(self.version);
 
                     vector_data
                         .vector_storage
@@ -139,12 +142,20 @@ impl Segment {
                         .map(move |file| (file, FileVersion::from(version)))
                 });
 
-        let payload_storage_files = self
-            .payload_storage
-            .borrow()
-            .files()
-            .into_iter()
-            .map(|file| (file, FileVersion::from(self.version_tracker.get_payload())));
+        let payload_storage_files = {
+            let version = self.version_tracker.get_payload().or(self.version);
+
+            self.payload_storage
+                .borrow()
+                .files()
+                .into_iter()
+                .map(move |file| (file, FileVersion::from(version)))
+        };
+
+        let immutable_files = self.immutable_files().into_iter().map(|file| {
+            let version = self.initial_version.unwrap_or(0);
+            (file, FileVersion::from(version))
+        });
 
         let payload_index_files = self
             .payload_index
@@ -152,21 +163,14 @@ impl Segment {
             .immutable_files()
             .into_iter()
             .map(|(field, file)| {
-                let version = FileVersion::from(
-                    self.version_tracker
-                        .get_payload_index_schema(&field)
-                        .or(self.initial_version)
-                        .or(self.version)
-                        .unwrap_or(0),
-                );
+                let version = self
+                    .version_tracker
+                    .get_payload_index_schema(&field)
+                    .or(self.initial_version)
+                    .unwrap_or(0);
 
-                (file, version)
+                (file, FileVersion::from(version))
             });
-
-        let immutable_files = self.immutable_files().into_iter().map(|path| {
-            let version = FileVersion::from(self.initial_version.or(self.version).unwrap_or(0));
-            (path, version)
-        });
 
         let mut file_versions = HashMap::with_capacity(files.len());
 
@@ -199,6 +203,8 @@ impl Segment {
     fn files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
 
+        files.extend(self.id_tracker.borrow().files());
+
         for vector_data in self.vector_data.values() {
             files.extend(vector_data.vector_index.borrow().files());
             files.extend(vector_data.vector_storage.borrow().files());
@@ -211,13 +217,13 @@ impl Segment {
         files.extend(self.payload_index.borrow().files());
         files.extend(self.payload_storage.borrow().files());
 
-        files.extend(self.id_tracker.borrow().files());
-
         files
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
+
+        files.extend(self.id_tracker.borrow().immutable_files());
 
         for vector_data in self.vector_data.values() {
             files.extend(vector_data.vector_index.borrow().immutable_files());
@@ -228,9 +234,15 @@ impl Segment {
             }
         }
 
-        files.extend(self.payload_storage.borrow().immutable_files());
+        files.extend(
+            self.payload_index
+                .borrow()
+                .immutable_files()
+                .into_iter()
+                .map(|(_, path)| path),
+        );
 
-        files.extend(self.id_tracker.borrow().immutable_files());
+        files.extend(self.payload_storage.borrow().immutable_files());
 
         files
     }
