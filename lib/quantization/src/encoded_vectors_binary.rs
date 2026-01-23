@@ -477,7 +477,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         };
 
         // Validate query encoding compatibility with storage encoding and distance type
-        if let Err(msg) = query_encoding.validate_compatibility(encoding, vector_parameters.distance_type) {
+        if let Err(msg) =
+            query_encoding.validate_compatibility(encoding, vector_parameters.distance_type)
+        {
             return Err(EncodingError::ArgumentsError(msg));
         }
 
