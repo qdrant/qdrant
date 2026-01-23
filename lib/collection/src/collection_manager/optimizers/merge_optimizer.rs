@@ -81,7 +81,7 @@ impl MergeOptimizer {
 }
 
 impl SegmentOptimizer for MergeOptimizer {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "merge"
     }
 

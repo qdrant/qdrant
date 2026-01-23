@@ -106,7 +106,7 @@ async fn test_optimization_process() {
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
         log.iter().for_each(|entry| {
-            assert!(["indexing", "merge"].contains(&entry.name.as_str()));
+            assert!(["indexing", "merge"].contains(&entry.name));
             assert_eq!(entry.status, TrackerStatus::Done);
         });
     }

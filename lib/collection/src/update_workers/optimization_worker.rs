@@ -337,7 +337,7 @@ impl UpdateWorkers {
             // Track optimizer status
             let new_segment_uuid = Uuid::new_v4();
             let (tracker, progress) = Tracker::start(
-                optimizer.as_ref().name(),
+                optimizer.name(),
                 new_segment_uuid,
                 segments_to_merge.clone(),
                 segment_uuids,

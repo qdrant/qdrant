@@ -96,7 +96,7 @@ impl TrackerLog {
 #[derive(Clone, Debug)]
 pub struct Tracker {
     /// Name of the optimizer
-    pub name: String,
+    pub name: &'static str,
     /// UUID of the upcoming segment being created by the optimizer
     pub uuid: Uuid,
     /// Segment IDs being optimized
@@ -114,14 +114,14 @@ impl Tracker {
     ///
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
-        name: impl Into<String>,
+        name: &'static str,
         uuid: Uuid,
         segment_ids: Vec<SegmentId>,
         segment_uuids: Vec<Uuid>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
-            name: name.into(),
+            name,
             uuid,
             segment_ids,
             segment_uuids,
@@ -140,7 +140,7 @@ impl Tracker {
     pub fn to_telemetry(&self) -> TrackerTelemetry {
         let state = self.state.lock();
         TrackerTelemetry {
-            name: self.name.clone(),
+            name: self.name,
             uuid: self.uuid,
             segment_ids: self.segment_ids.clone(),
             segment_uuids: self.segment_uuids.clone(),
@@ -156,7 +156,7 @@ impl Tracker {
 pub struct TrackerTelemetry {
     /// Name of the optimizer
     #[anonymize(false)]
-    pub name: String,
+    pub name: &'static str,
     /// UUID of the upcoming segment being created by the optimizer
     pub uuid: Uuid,
     /// Internal segment IDs being optimized.

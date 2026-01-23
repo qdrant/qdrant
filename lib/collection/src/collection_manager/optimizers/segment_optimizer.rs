@@ -57,7 +57,7 @@ pub struct OptimizerThresholds {
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
     /// Get name describing this optimizer
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Get the path of the segments directory
     fn segments_path(&self) -> &Path;

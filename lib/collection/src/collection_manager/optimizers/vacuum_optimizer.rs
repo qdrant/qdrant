@@ -119,7 +119,7 @@ impl VacuumOptimizer {
 }
 
 impl SegmentOptimizer for VacuumOptimizer {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "vacuum"
     }
 
