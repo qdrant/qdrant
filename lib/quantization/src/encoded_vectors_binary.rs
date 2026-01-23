@@ -1049,14 +1049,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 u8::BITS as usize / 2,
             ),
             EncodedQueryBQ::Uncompressed(query_vector) => {
-                // Uncompressed queries are only supported for dot product distance
+                // Uncompressed queries are only supported for dot product distance and OneBit encoding
                 // This should have been validated during query encoding, but we check again for safety
                 debug_assert!(
                     matches!(
                         self.metadata.vector_parameters.distance_type,
                         DistanceType::Dot
+                    ) && matches!(
+                        self.metadata.encoding,
+                        Encoding::OneBit
                     ),
-                    "Uncompressed queries should only be used with dot product distance"
+                    "Uncompressed queries should only be used with dot product distance and OneBit encoding"
                 );
                 debug_assert!(
                     query_vector.len() == self.metadata.vector_parameters.dim,
