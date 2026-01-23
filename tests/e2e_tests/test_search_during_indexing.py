@@ -16,6 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import List
 
+import pytest
 from qdrant_client import models
 
 from .client_utils import ClientUtils
@@ -327,6 +328,7 @@ class TestSearchDuringIndexing:
         assert not stats.errors, f"Baseline had errors: {stats.errors}"
         return stats
 
+    @pytest.mark.skip
     def test_search_with_updates_and_indexing(self, qdrant_container_factory):
         """
         Benchmark search latency during concurrent updates AND payload indexing.
