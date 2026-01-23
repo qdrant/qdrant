@@ -11,6 +11,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
 use memory::fadvise::clear_disk_cache;
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 
 use crate::common::Flusher;
@@ -61,12 +62,16 @@ pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
         path,
         dim,
         distance,
         get_async_scorer(),
+        madvise,
+        populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmap(storage))
 }
@@ -75,9 +80,17 @@ pub fn open_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer())?;
+    let storage = open_memmap_vector_storage_with_async_io_impl(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+        madvise,
+        populate,
+    )?;
     Ok(VectorStorageEnum::DenseMemmapByte(storage))
 }
 
@@ -85,9 +98,17 @@ pub fn open_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer())?;
+    let storage = open_memmap_vector_storage_with_async_io_impl(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+        madvise,
+        populate,
+    )?;
     Ok(VectorStorageEnum::DenseMemmapHalf(storage))
 }
 
@@ -96,12 +117,16 @@ pub fn open_memmap_vector_storage_with_async_io(
     dim: usize,
     distance: Distance,
     with_async_io: bool,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
         path,
         dim,
         distance,
         with_async_io,
+        madvise,
+        populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmap(storage))
 }
@@ -111,12 +136,21 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
     dim: usize,
     distance: Distance,
     with_async_io: bool,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<Box<MemmapDenseVectorStorage<T>>> {
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io)?;
+    let mmap_store = MmapDenseVectors::open(
+        &vectors_path,
+        &deleted_path,
+        dim,
+        with_async_io,
+        madvise,
+        populate,
+    )?;
 
     Ok(Box::new(MemmapDenseVectorStorage {
         vectors_path,
@@ -265,6 +299,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             &self.deleted_path,
             dim,
             with_async_io,
+            AdviceSetting::Global,
+            false, // No need to populate
         )?);
 
         // Flush deleted flags into store
@@ -359,7 +395,9 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let mut storage =
+            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
+                .unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
 
         // Assert this storage lists both the vector and deleted file
@@ -476,7 +514,9 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let mut storage =
+            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
+                .unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
         let hw_counter = HardwareCounterCell::new();
@@ -604,7 +644,9 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let mut storage =
+            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
+                .unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
         let hw_counter = HardwareCounterCell::new();
@@ -679,7 +721,9 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let mut storage =
+            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
+                .unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
         let hw_counter = HardwareCounterCell::new();
@@ -754,7 +798,9 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
+        let mut storage =
+            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
+                .unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 

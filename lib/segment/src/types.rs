@@ -1499,6 +1499,9 @@ pub enum VectorStorageType {
     ///
     /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
     InRamChunkedMmap,
+    /// Storage in a single mmap file, not appendable
+    /// Pre-fetched into RAM on load
+    InRamMmap,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -1557,7 +1560,7 @@ impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
     pub fn is_on_disk(&self) -> bool {
         match self {
-            Self::Memory | Self::InRamChunkedMmap => false,
+            Self::Memory | Self::InRamChunkedMmap | Self::InRamMmap => false,
             Self::Mmap | Self::ChunkedMmap => true,
         }
     }
@@ -1599,6 +1602,7 @@ impl VectorDataConfig {
             VectorStorageType::Mmap => false,
             VectorStorageType::ChunkedMmap => true,
             VectorStorageType::InRamChunkedMmap => true,
+            VectorStorageType::InRamMmap => false,
         };
         is_index_appendable && is_storage_appendable
     }

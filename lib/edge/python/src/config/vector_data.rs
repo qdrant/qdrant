@@ -177,6 +177,7 @@ pub enum PyVectorStorageType {
     Mmap,
     ChunkedMmap,
     InRamChunkedMmap,
+    InRamMmap,
 }
 
 #[pymethods]
@@ -193,6 +194,7 @@ impl Repr for PyVectorStorageType {
             Self::Mmap => "Mmap",
             Self::ChunkedMmap => "ChunkedMmap",
             Self::InRamChunkedMmap => "InRamChunkedMmap",
+            Self::InRamMmap => "InRamMmap",
         };
 
         f.simple_enum::<Self>(repr)
@@ -206,6 +208,7 @@ impl From<VectorStorageType> for PyVectorStorageType {
             VectorStorageType::Mmap => PyVectorStorageType::Mmap,
             VectorStorageType::ChunkedMmap => PyVectorStorageType::ChunkedMmap,
             VectorStorageType::InRamChunkedMmap => PyVectorStorageType::InRamChunkedMmap,
+            VectorStorageType::InRamMmap => PyVectorStorageType::InRamMmap,
         }
     }
 }
@@ -217,6 +220,7 @@ impl From<PyVectorStorageType> for VectorStorageType {
             PyVectorStorageType::Mmap => VectorStorageType::Mmap,
             PyVectorStorageType::ChunkedMmap => VectorStorageType::ChunkedMmap,
             PyVectorStorageType::InRamChunkedMmap => VectorStorageType::InRamChunkedMmap,
+            PyVectorStorageType::InRamMmap => VectorStorageType::InRamMmap,
         }
     }
 }
