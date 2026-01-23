@@ -6,9 +6,8 @@ use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
-use crate::vector_storage::Random;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
+use crate::vector_storage::{Random, VectorOffsetType};
 
 pub struct QuantizedChunkedMmapStorage {
     data: ChunkedMmapVectors<u8>,
@@ -37,7 +36,8 @@ impl QuantizedChunkedMmapStorage {
 
 impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        ChunkedVectorStorage::get::<Random>(&self.data, index as VectorOffsetType)
+        self.data
+            .get::<Random>(index as VectorOffsetType)
             .unwrap_or_default()
     }
 
@@ -47,7 +47,8 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
         vector: &[u8],
         hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
     ) -> std::io::Result<()> {
-        ChunkedVectorStorage::insert(&mut self.data, id as VectorOffsetType, vector, hw_counter)
+        self.data
+            .insert(id as VectorOffsetType, vector, hw_counter)
             .map_err(std::io::Error::other)
     }
 

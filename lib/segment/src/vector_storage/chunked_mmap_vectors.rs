@@ -19,10 +19,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::AccessPattern;
-use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_vectors;
+use crate::vector_storage::{AccessPattern, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -162,14 +161,17 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         chunk_vector_idx * self.config.dim
     }
 
+    #[inline]
     pub fn max_vector_size_bytes(&self) -> usize {
         self.config.chunk_size_bytes
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.status.len
     }
 
+    #[inline]
     pub fn dim(&self) -> usize {
         self.config.dim
     }
@@ -257,13 +259,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         Ok(new_id)
     }
 
-    fn get(&self, key: VectorOffsetType, force_sequential: bool) -> Option<&[T]> {
-        self.get_many(key, 1, force_sequential)
-    }
-
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
     #[inline]
-    fn get_many(
+    fn get_many_impl(
         &self,
         start_key: VectorOffsetType,
         count: usize,
@@ -300,7 +298,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         maybe_uninit_fill_from(
             vectors,
             keys.iter().map(|key| {
-                self.get(*key, do_sequential_read)
+                self.get_many_impl(*key, 1, do_sequential_read)
                     .unwrap_or_else(|| panic!("Vector {key} not found"))
             }),
         )
@@ -334,105 +332,29 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         vec![Self::config_file(&self.directory)] // TODO: Is config immutable?
     }
-}
 
-impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T> {
     #[inline]
-    fn len(&self) -> usize {
-        ChunkedMmapVectors::len(self)
+    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+        self.get_many_impl(key, 1, P::IS_SEQUENTIAL)
     }
 
     #[inline]
-    fn dim(&self) -> usize {
-        ChunkedMmapVectors::dim(self)
+    pub fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        self.get_many_impl(key, count, P::IS_SEQUENTIAL)
     }
 
-    #[inline]
-    fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, P::IS_SEQUENTIAL)
-    }
-
-    #[inline]
-    fn files(&self) -> Vec<PathBuf> {
-        ChunkedMmapVectors::files(self)
-    }
-
-    #[inline]
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        ChunkedMmapVectors::immutable_files(self)
-    }
-
-    #[inline]
-    fn flusher(&self) -> Flusher {
-        ChunkedMmapVectors::flusher(self)
-    }
-
-    #[inline]
-    fn push(
-        &mut self,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<VectorOffsetType> {
-        ChunkedMmapVectors::push(self, vector, hw_counter)
-    }
-
-    #[inline]
-    fn insert(
-        &mut self,
-        key: VectorOffsetType,
-        vector: &[T],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        ChunkedMmapVectors::insert(self, key, vector, hw_counter)
-    }
-
-    #[inline]
-    fn insert_many(
-        &mut self,
-        start_key: VectorOffsetType,
-        vectors: &[T],
-        count: usize,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        ChunkedMmapVectors::insert_many(self, start_key, vectors, count, hw_counter)
-    }
-
-    #[inline]
-    fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, P::IS_SEQUENTIAL)
-    }
-
-    #[inline]
-    fn get_batch<'a>(
-        &'a self,
-        keys: &[VectorOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        ChunkedMmapVectors::get_batch(self, keys, vectors)
-    }
-
-    #[inline]
-    fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
-        ChunkedMmapVectors::get_remaining_chunk_keys(self, start_key)
-    }
-
-    #[inline]
-    fn max_vector_size_bytes(&self) -> usize {
-        ChunkedMmapVectors::max_vector_size_bytes(self)
-    }
-
-    fn is_on_disk(&self) -> bool {
+    pub fn is_on_disk(&self) -> bool {
         !self.config.populate.unwrap_or(false)
     }
 
-    fn populate(&self) -> OperationResult<()> {
+    pub fn populate(&self) -> OperationResult<()> {
         for chunk in &self.chunks {
             chunk.populate()?;
         }
         Ok(())
     }
 
-    fn clear_cache(&self) -> OperationResult<()> {
+    pub fn clear_cache(&self) -> OperationResult<()> {
         for chunk_idx in 0..self.chunks.len() {
             let file_path = chunk_name(&self.directory, chunk_idx);
             clear_disk_cache(&file_path)?;

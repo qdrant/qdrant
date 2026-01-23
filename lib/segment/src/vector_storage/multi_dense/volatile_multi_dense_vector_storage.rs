@@ -14,10 +14,11 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::CHUNK_SIZE;
-use crate::vector_storage::{AccessPattern, MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    AccessPattern, MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+};
 
 /// All fields are counting vectors and not dimensions.
 #[derive(Debug, Clone, Default)]

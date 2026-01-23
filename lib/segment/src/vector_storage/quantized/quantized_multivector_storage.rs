@@ -14,9 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
-use crate::vector_storage::Random;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
+use crate::vector_storage::{Random, VectorOffsetType};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct MultivectorOffset {
@@ -222,14 +221,15 @@ impl MultivectorOffsetsStorageChunkedMmap {
 
 impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        ChunkedVectorStorage::get::<Random>(&self.data, idx as VectorOffsetType)
+        self.data
+            .get::<Random>(idx as VectorOffsetType)
             .and_then(|offsets| offsets.first())
             .cloned()
             .unwrap_or_default()
     }
 
     fn len(&self) -> usize {
-        ChunkedVectorStorage::len(&self.data)
+        self.data.len()
     }
 
     fn flusher(&self) -> MmapFlusher {
@@ -248,21 +248,17 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
         offset: MultivectorOffset,
         hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
-        ChunkedVectorStorage::insert(
-            &mut self.data,
-            id as VectorOffsetType,
-            &[offset],
-            hw_counter,
-        )
-        .map_err(std::io::Error::other)
+        self.data
+            .insert(id as VectorOffsetType, &[offset], hw_counter)
+            .map_err(std::io::Error::other)
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        ChunkedVectorStorage::files(&self.data)
+        self.data.files()
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        ChunkedVectorStorage::immutable_files(&self.data)
+        self.data.immutable_files()
     }
 }
 
