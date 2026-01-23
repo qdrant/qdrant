@@ -67,15 +67,13 @@ impl QueryEncoding {
                 if !matches!(distance_type, DistanceType::Dot) {
                     return Err(format!(
                         "Uncompressed query encoding is only supported for dot product distance, \
-                         but got {:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
-                        distance_type
+                         but got {distance_type:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
                     ));
                 }
                 if !matches!(encoding, Encoding::OneBit) {
                     return Err(format!(
                         "Uncompressed query encoding is only supported with OneBit storage encoding, \
-                         but got {:?}. Use Binary or Scalar query encoding for {:?} storage encoding.",
-                        encoding, encoding
+                         but got {encoding:?}. Use Binary or Scalar query encoding for {encoding:?} storage encoding.",
                     ));
                 }
                 Ok(())
