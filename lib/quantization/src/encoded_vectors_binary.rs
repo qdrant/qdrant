@@ -54,6 +54,35 @@ impl QueryEncoding {
     pub fn is_same_as_storage(&self) -> bool {
         matches!(self, QueryEncoding::SameAsStorage)
     }
+
+    /// Validates if this query encoding is compatible with the given storage encoding and distance type.
+    /// Returns `Ok(())` if compatible, or an error message describing the incompatibility.
+    pub fn validate_compatibility(
+        self,
+        encoding: Encoding,
+        distance_type: DistanceType,
+    ) -> Result<(), String> {
+        match self {
+            QueryEncoding::Uncompressed => {
+                if !matches!(distance_type, DistanceType::Dot) {
+                    return Err(format!(
+                        "Uncompressed query encoding is only supported for dot product distance, \
+                         but got {:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
+                        distance_type
+                    ));
+                }
+                if !matches!(encoding, Encoding::OneBit) {
+                    return Err(format!(
+                        "Uncompressed query encoding is only supported with OneBit storage encoding, \
+                         but got {:?}. Use Binary or Scalar query encoding for {:?} storage encoding.",
+                        encoding, encoding
+                    ));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 pub enum EncodedQueryBQ<TBitsStoreType: BitsStoreType> {
@@ -447,16 +476,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             QueryEncoding::Uncompressed => false, // Uncompressed queries don't need stats
         };
 
-        // Validate that uncompressed queries are only used with dot product distance and one bit encoding
-        if matches!(query_encoding, QueryEncoding::Uncompressed)
-            && (!matches!(vector_parameters.distance_type, DistanceType::Dot)
-                || !matches!(encoding, Encoding::OneBit))
-        {
-            return Err(EncodingError::ArgumentsError(format!(
-                "Uncompressed query encoding is only supported for dot product distance, \
-                 but got {:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
-                vector_parameters.distance_type
-            )));
+        // Validate query encoding compatibility with storage encoding and distance type
+        if let Err(msg) = query_encoding.validate_compatibility(encoding, vector_parameters.distance_type) {
+            return Err(EncodingError::ArgumentsError(msg));
         }
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {

@@ -171,7 +171,15 @@ mod tests {
         }
 
         let encoded: Vec<_> = QueryEncoding::iter()
-            .map(|query_encoding| {
+            .filter_map(|query_encoding| {
+                // Skip Uncompressed query encoding if storage encoding is not OneBit
+                // Uncompressed queries are only supported with OneBit storage encoding
+                if matches!(query_encoding, QueryEncoding::Uncompressed)
+                    && !matches!(encoding, Encoding::OneBit)
+                {
+                    return None;
+                }
+
                 let quantized_vector_size = EncodedVectorsBin::<
                         TBitsStoreType,
                         TestEncodedStorage,
@@ -179,7 +187,7 @@ mod tests {
                         vector_dim, encoding
                     );
 
-                EncodedVectorsBin::<TBitsStoreType, _>::encode(
+                let res = EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
@@ -193,7 +201,9 @@ mod tests {
                     None,
                     &AtomicBool::new(false),
                 )
-                .unwrap()
+                .unwrap();
+
+                Some(res)
             })
             .collect();
 
