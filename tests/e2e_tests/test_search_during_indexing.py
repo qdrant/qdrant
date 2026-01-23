@@ -1,9 +1,5 @@
 """
-Benchmark search latency during concurrent updates and payload indexing.
-
-Measures how search latency degrades when the system is under load from:
-1. Continuous point updates (upserts)
-2. Payload index creation
+Benchmark search latency during payload index creation.
 
 Run with: pytest tests/e2e_tests/test_search_during_indexing.py -v -s
 """
@@ -16,7 +12,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import List
 
-import pytest
 from qdrant_client import models
 
 from .client_utils import ClientUtils
@@ -98,7 +93,6 @@ class SearchStats:
         )
 
     def degradation_vs(self, baseline: "SearchStats") -> dict:
-        """Calculate degradation ratios compared to baseline."""
         def ratio(a: float, b: float) -> float:
             return a / b if b > 0 else 0
         return {
@@ -138,11 +132,10 @@ def generate_payload() -> dict:
 
 
 class TestSearchDuringIndexing:
-    """Benchmark search latency during concurrent indexing and updates."""
+    """Benchmark search latency during concurrent indexing."""
 
     @staticmethod
     def _insert_data(client: ClientUtils, num_points: int, batch_size: int = 1000):
-        """Insert test data into collection."""
         for offset in range(0, num_points, batch_size):
             points = [
                 models.PointStruct(
@@ -158,7 +151,6 @@ class TestSearchDuringIndexing:
 
     @staticmethod
     def _wait_for_green(client: ClientUtils, timeout: int = 300) -> bool:
-        """Wait for collection to reach green status."""
         print("  Waiting for optimization...", end="", flush=True)
         start = time.time()
         while time.time() - start < timeout:
@@ -176,7 +168,6 @@ class TestSearchDuringIndexing:
 
     @staticmethod
     def _run_search_baseline(client: ClientUtils, duration: float) -> SearchStats:
-        """Run search-only benchmark for baseline measurement."""
         stats = SearchStats()
         end_time = time.time() + duration
 
@@ -202,7 +193,6 @@ class TestSearchDuringIndexing:
 
     @staticmethod
     def _search_loop(client: ClientUtils, stop: threading.Event, stats: SearchStats):
-        """Continuously search and collect latencies."""
         while not stop.is_set():
             try:
                 query = [random.random() for _ in range(VECTOR_SIZE)]
@@ -223,32 +213,7 @@ class TestSearchDuringIndexing:
             time.sleep(0.05)
 
     @staticmethod
-    def _update_loop(client: ClientUtils, stop: threading.Event, stats: OperationStats):
-        """Continuously upsert points."""
-        point_id = 1_000_000
-        batch_size = 100
-
-        while not stop.is_set():
-            try:
-                points = [
-                    models.PointStruct(
-                        id=point_id + i,
-                        vector=[random.random() for _ in range(VECTOR_SIZE)],
-                        payload=generate_payload(),
-                    )
-                    for i in range(batch_size)
-                ]
-                client.client.upsert(collection_name=COLLECTION_NAME, points=points, wait=True)
-                stats.completed += 1
-                point_id += batch_size
-            except Exception as e:
-                stats.errors.append(str(e))
-                print(f"  ERROR: Upsert failed: {str(e)[:100]}")
-            time.sleep(0.2)
-
-    @staticmethod
     def _indexing_loop(client: ClientUtils, stop: threading.Event, stats: OperationStats):
-        """Create payload indexes one by one."""
         for field_name, field_schema in PAYLOAD_INDEXES:
             if stop.is_set():
                 break
@@ -276,7 +241,6 @@ class TestSearchDuringIndexing:
 
     @staticmethod
     def _print_comparison(baseline: SearchStats, concurrent: SearchStats):
-        """Print latency comparison table."""
         deg = concurrent.degradation_vs(baseline)
         print(f"\nLatency comparison (concurrent / baseline):")
         print(f"  p50:  {baseline.p50_ms:6.1f}ms -> {concurrent.p50_ms:6.1f}ms  ({deg['p50']:.1f}x)")
@@ -284,29 +248,13 @@ class TestSearchDuringIndexing:
         print(f"  p99:  {baseline.p99_ms:6.1f}ms -> {concurrent.p99_ms:6.1f}ms  ({deg['p99']:.1f}x)")
         print(f"  max:  {baseline.max_ms:6.1f}ms -> {concurrent.max_ms:6.1f}ms  ({deg['max']:.1f}x)")
 
-    @staticmethod
-    def _print_index_stats(stats: OperationStats):
-        """Print indexing statistics."""
-        if stats.durations_ms:
-            total = sum(stats.durations_ms) / 1000
-            print(f"Indexes: {stats.completed} created in {total:.1f}s total")
-            for i, dur in enumerate(stats.durations_ms):
-                print(f"  - Index {i+1}: {dur:.0f}ms")
-        else:
-            print(f"Indexes: {stats.completed} created")
-
-    def _print_results(
-        self,
-        baseline: SearchStats,
-        search_stats: SearchStats,
-        index_stats: OperationStats,
-        update_stats: OperationStats = None,
-    ):
-        """Print benchmark results and comparison."""
+    def _print_results(self, baseline: SearchStats, search_stats: SearchStats, index_stats: OperationStats):
         print(f"\nConcurrent: {search_stats.summary()}")
-        if update_stats:
-            print(f"Updates: {update_stats.completed} batches, {len(update_stats.errors)} errors")
-        self._print_index_stats(index_stats)
+        if index_stats.durations_ms:
+            total = sum(index_stats.durations_ms) / 1000
+            print(f"Indexes: {index_stats.completed} created in {total:.1f}s total")
+            for i, dur in enumerate(index_stats.durations_ms):
+                print(f"  - Index {i+1}: {dur:.0f}ms")
 
         print(f"\n{'='*60}")
         print("COMPARISON")
@@ -323,7 +271,6 @@ class TestSearchDuringIndexing:
         print(f"{'='*60}")
 
     def _setup_collection(self, client: ClientUtils):
-        """Create collection and insert initial data."""
         print(f"\n{'='*60}")
         print("SETUP")
         print(f"{'='*60}")
@@ -341,7 +288,6 @@ class TestSearchDuringIndexing:
         self._wait_for_green(client)
 
     def _run_baseline(self, client: ClientUtils) -> SearchStats:
-        """Run baseline search benchmark."""
         print(f"\n{'='*60}")
         print("BASELINE (search only)")
         print(f"{'='*60}")
@@ -355,60 +301,8 @@ class TestSearchDuringIndexing:
         assert not stats.errors, f"Baseline had errors: {stats.errors}"
         return stats
 
-    @pytest.mark.skip
-    def test_search_with_updates_and_indexing(self, qdrant_container_factory):
-        """
-        Benchmark search latency during concurrent updates AND payload indexing.
-
-        Runs three concurrent operations:
-        - Search queries (measuring latency)
-        - Point upserts (100 points every 200ms)
-        - Payload index creation
-        """
-        container_info = qdrant_container_factory()
-        client = ClientUtils(host=container_info.host, port=container_info.http_port, timeout=30)
-        assert client.wait_for_server(), "Server failed to start"
-
-        self._setup_collection(client)
-        baseline = self._run_baseline(client)
-
-        # Concurrent phase
-        print(f"\n{'='*60}")
-        print("CONCURRENT (search + updates + indexing)")
-        print(f"{'='*60}")
-
-        search_stats = SearchStats()
-        update_stats = OperationStats()
-        index_stats = OperationStats()
-        stop = threading.Event()
-
-        threads = [
-            threading.Thread(target=self._search_loop, args=(client, stop, search_stats)),
-            threading.Thread(target=self._update_loop, args=(client, stop, update_stats)),
-            threading.Thread(target=self._indexing_loop, args=(client, stop, index_stats)),
-        ]
-
-        duration = 30
-        print(f"Running for {duration}s...")
-        print("  - Search: measuring latency")
-        print("  - Updates: 100 points every 200ms")
-        print("  - Indexing: creating payload indexes")
-
-        for t in threads:
-            t.start()
-        time.sleep(duration)
-        stop.set()
-        for t in threads:
-            t.join(timeout=10)
-
-        self._print_results(baseline, search_stats, index_stats, update_stats)
-
     def test_search_with_indexing_only(self, qdrant_container_factory):
-        """
-        Benchmark search latency during payload indexing only (NO concurrent updates).
-
-        Isolates indexing impact for comparison with the full test.
-        """
+        """Benchmark search latency during payload indexing (no concurrent updates)."""
         container_info = qdrant_container_factory()
         client = ClientUtils(host=container_info.host, port=container_info.http_port, timeout=30)
         assert client.wait_for_server(), "Server failed to start"
@@ -416,9 +310,8 @@ class TestSearchDuringIndexing:
         self._setup_collection(client)
         baseline = self._run_baseline(client)
 
-        # Concurrent phase (no updates)
         print(f"\n{'='*60}")
-        print("CONCURRENT (search + indexing, NO updates)")
+        print("CONCURRENT (search + indexing)")
         print(f"{'='*60}")
 
         search_stats = SearchStats()
@@ -432,9 +325,6 @@ class TestSearchDuringIndexing:
 
         duration = 30
         print(f"Running for {duration}s...")
-        print("  - Search: measuring latency")
-        print("  - Indexing: creating payload indexes")
-        print("  - NO updates")
 
         for t in threads:
             t.start()
