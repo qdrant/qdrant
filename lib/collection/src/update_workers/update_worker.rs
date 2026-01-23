@@ -18,6 +18,7 @@ use crate::shards::local_shard::indexed_only::get_largest_unindexed_segment_vect
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
 
 const BYTES_IN_KB: usize = 1024;
@@ -35,6 +36,7 @@ impl UpdateWorkers {
         prevent_unoptimized_threshold_kb: Option<usize>,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
+        applied_seq_handler: Arc<AppliedSeqHandler>,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -119,6 +121,8 @@ impl UpdateWorkers {
                         Ok(Err(err)) => Err(err),
                         Err(err) => Err(CollectionError::from(err)),
                     };
+
+                    applied_seq_handler.update(op_num);
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
