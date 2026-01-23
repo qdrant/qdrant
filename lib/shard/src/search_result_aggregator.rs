@@ -9,31 +9,41 @@ use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
 
 pub struct SearchResultAggregator {
-    queue: FixedLengthPriorityQueue<ScoredPoint>,
+    queue: Option<FixedLengthPriorityQueue<ScoredPoint>>,
     seen: AHashSet<PointIdType>, // Point ids seen
 }
 
 impl SearchResultAggregator {
     pub fn new(limit: usize) -> Self {
         SearchResultAggregator {
-            queue: FixedLengthPriorityQueue::new(limit),
+            queue: if limit > 0 {
+                Some(FixedLengthPriorityQueue::new(limit))
+            } else {
+                None
+            },
             seen: AHashSet::with_capacity(limit.min(LARGEST_REASONABLE_ALLOCATION_SIZE)),
         }
     }
 
     pub fn push(&mut self, point: ScoredPoint) {
-        // track new value in `queue`
+        let Some(queue) = self.queue.as_mut() else {
+            return;
+        };
+
+        // Only add unseen points
         if self.seen.insert(point.id) {
-            self.queue.push(point);
+            queue.push(point);
         }
     }
 
     pub fn into_vec(self) -> Vec<ScoredPoint> {
-        self.queue.into_sorted_vec()
+        self.queue
+            .map(|queue| queue.into_sorted_vec())
+            .unwrap_or_default()
     }
 
     pub fn lowest(&self) -> Option<&ScoredPoint> {
-        self.queue.top()
+        self.queue.as_ref().and_then(|queue| queue.top())
     }
 }
 
