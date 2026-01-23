@@ -503,7 +503,10 @@ impl QuantizationConfigDiff {
         // We only need to validate Binary quantization with Uncompressed query encoding
         if let QuantizationConfigDiff::Binary(binary) = self
             && let Some(query_encoding) = &binary.binary.query_encoding
-            && matches!(query_encoding, BinaryQuantizationQueryEncoding::Uncompressed)
+            && matches!(
+                query_encoding,
+                BinaryQuantizationQueryEncoding::Uncompressed
+            )
         {
             // Check distance type for all vectors - uncompressed queries only work with dot product
             for (vector_name, _) in collection_params.vectors.params_iter() {
@@ -516,14 +519,15 @@ impl QuantizationConfigDiff {
                 }
             }
 
-            let effective_encoding = binary.binary.encoding.as_ref()
-                .or_else(|| existing_quantization.and_then(|q| {
+            let effective_encoding = binary.binary.encoding.as_ref().or_else(|| {
+                existing_quantization.and_then(|q| {
                     if let QuantizationConfig::Binary(existing_binary) = q {
                         existing_binary.binary.encoding.as_ref()
                     } else {
                         None
                     }
-                }));
+                })
+            });
 
             // Check encoding - uncompressed queries only work with OneBit
             if !matches!(effective_encoding, Some(BinaryQuantizationEncoding::OneBit)) {
