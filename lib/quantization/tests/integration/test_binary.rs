@@ -890,8 +890,7 @@ mod tests {
         assert!(
             scores_differ,
             "Uncompressed and binary query scores should differ for continuous float vectors. \
-             Uncompressed: {:?}, Binary: {:?}",
-            uncompressed_scores, binary_scores
+             Uncompressed: {uncompressed_scores:?}, Binary: {binary_scores:?}",
         );
     }
 
