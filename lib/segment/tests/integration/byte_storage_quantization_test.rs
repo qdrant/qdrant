@@ -246,8 +246,8 @@ fn test_byte_storage_binary_quantization_hnsw(
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
         assert!(matches!(
             raw_storage,
-            &VectorStorageEnum::DenseAppendableInRamByte(_)
-                | &VectorStorageEnum::DenseAppendableInRamHalf(_),
+            &VectorStorageEnum::DenseAppendableMemmapByte(_)
+                | &VectorStorageEnum::DenseAppendableMemmapHalf(_),
         ));
     }
 

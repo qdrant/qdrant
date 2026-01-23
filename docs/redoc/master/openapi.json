@@ -12130,6 +12130,11 @@
             "description": "Use appendable quantization in appendable plain segments.\n\nEnabled by default in Qdrant 1.16.0.",
             "default": true,
             "type": "boolean"
+          },
+          "single_file_mmap_vector_storage": {
+            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
@@ -12806,6 +12811,13 @@
             "type": "string",
             "enum": [
               "InRamChunkedMmap"
+            ]
+          },
+          {
+            "description": "Storage in a single mmap file, not appendable Pre-fetched into RAM on load",
+            "type": "string",
+            "enum": [
+              "InRamMmap"
             ]
           }
         ]

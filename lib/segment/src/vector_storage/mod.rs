@@ -9,7 +9,6 @@ pub mod chunked_vector_storage;
 pub mod chunked_vectors;
 pub mod common;
 pub mod dense;
-mod in_ram_persisted_vectors;
 pub mod multi_dense;
 pub mod quantized;
 pub mod query;

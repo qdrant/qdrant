@@ -94,9 +94,6 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseAppendableInRam(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseAppendableInRamByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseAppendableInRamHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
         #[cfg(feature = "rocksdb")]
         VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
@@ -119,15 +116,6 @@ pub fn new_raw_scorer<'a>(
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
-        }
-        VectorStorageEnum::MultiDenseAppendableInRam(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
-        }
-        VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
-        }
-        VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => {
             raw_multi_scorer_impl(query, vs.as_ref(), hc)
         }
     }
