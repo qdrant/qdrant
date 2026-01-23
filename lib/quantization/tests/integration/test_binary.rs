@@ -928,7 +928,7 @@ mod tests {
                     assert!(msg.contains(
                         "Uncompressed query encoding is only supported for dot product distance"
                     ));
-                    assert!(msg.contains(&format!("{:?}", distance_type)));
+                    assert!(msg.contains(&format!("{distance_type:?}")));
                 }
                 _ => panic!("Expected ArgumentsError"),
             }
