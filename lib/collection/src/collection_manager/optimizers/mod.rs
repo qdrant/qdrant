@@ -80,12 +80,10 @@ impl TrackerLog {
         let mut completed = Vec::new();
         for tracker in self.descriptions.iter().rev() {
             let state = tracker.state.lock();
-            match state.status {
-                TrackerStatus::Optimizing => ongoing.push(tracker.progress_view.clone()),
-
-                TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
-                    completed.push(tracker.progress_view.clone());
-                }
+            if state.status.is_running() {
+                ongoing.push(tracker.progress_view.clone());
+            } else {
+                completed.push(tracker.progress_view.clone());
             }
         }
         IndexingProgressViews { ongoing, completed }
@@ -203,14 +201,11 @@ pub struct TrackerState {
 impl TrackerState {
     /// Update the tracker state to the given `status`
     pub fn update(&mut self, status: TrackerStatus) {
-        match status {
-            TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
-                self.end_at.replace(Utc::now());
-            }
-            TrackerStatus::Optimizing => {
-                self.end_at.take();
-            }
-        }
+        self.end_at = if status.is_running() {
+            None
+        } else {
+            Some(Utc::now())
+        };
         self.status = status;
     }
 }
@@ -228,4 +223,13 @@ pub enum TrackerStatus {
     Cancelled(String),
     #[anonymize(false)]
     Error(String),
+}
+
+impl TrackerStatus {
+    pub fn is_running(&self) -> bool {
+        match self {
+            TrackerStatus::Optimizing => true,
+            TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => false,
+        }
+    }
 }

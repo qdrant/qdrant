@@ -9,7 +9,6 @@ use segment::types::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardStatus, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
@@ -85,7 +84,7 @@ impl CollectionTelemetry {
             .flatten()
             .filter_map(|replica_set| replica_set.local.as_ref()?.optimizations.as_ref())
             .flat_map(|optimizer| optimizer.log.iter().flatten())
-            .filter(|log| log.status == TrackerStatus::Optimizing)
+            .filter(|log| log.status.is_running())
             .count()
     }
 
