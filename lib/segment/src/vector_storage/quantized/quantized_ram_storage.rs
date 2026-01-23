@@ -10,7 +10,7 @@ use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
 #[derive(Debug)]
