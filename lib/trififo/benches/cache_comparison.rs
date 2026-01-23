@@ -22,7 +22,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use foyer::{EvictionConfig, S3FifoConfig};
 use itertools::Itertools;
 use parking_lot::Mutex;
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 use quick_cache::sync::Cache as QuickCache;
 use rand::distr::Distribution;
 use rand::rngs::StdRng;
@@ -157,18 +157,18 @@ trait CacheBench: Send + Sync {
 }
 
 // Quick Cache wrapper
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 struct QuickCacheWrapper {
     cache: QuickCache<Key, u32>,
 }
 
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 impl QuickCacheWrapper {
     fn new(capacity: usize) -> Self {
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
             .hot_allocation(0.9)
-            .shards(1)
+            .shards(4)
             .weight_capacity(capacity as u64)
             .build()
             .unwrap();
@@ -183,7 +183,7 @@ impl QuickCacheWrapper {
     }
 }
 
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 impl CacheBench for QuickCacheWrapper {
     fn insert(&self, key: Key, value: u32) {
         self.cache.insert(key, value);
@@ -277,29 +277,24 @@ impl CacheBench for FoyerWrapper {
 }
 
 struct TrififoWrapper {
-    cache: Mutex<trififo::Cache<Key, u32>>,
+    cache: trififo::ShardedCache<Key, u32>,
 }
 
 impl TrififoWrapper {
     fn new(capacity: usize) -> Self {
         Self {
-            cache: Mutex::new(trififo::Cache::new(
-                capacity,
-                0.1,
-                0.5,
-                ahash::RandomState::new(),
-            )),
+            cache: trififo::ShardedCache::new(capacity, 0.1, 0.5, ahash::RandomState::new()),
         }
     }
 }
 
 impl CacheBench for TrififoWrapper {
     fn get(&self, key: &Key) -> Option<u32> {
-        self.cache.lock().get(key).copied()
+        self.cache.get(key)
     }
 
     fn insert(&self, key: Key, value: u32) {
-        self.cache.lock().insert(key, value);
+        self.cache.insert(key, value);
     }
 
     fn get_or_insert(&self, key: Key, value: u32) -> u32 {
@@ -316,7 +311,7 @@ impl CacheBench for TrififoWrapper {
 #[derive(EnumIter, Copy, Clone)]
 enum CacheName {
     Trififo,
-    #[cfg(feature = "bench_all")]
+    // #[cfg(feature = "bench_all")]
     QuickCache,
     #[cfg(feature = "bench_all")]
     Schnellru,
@@ -328,7 +323,7 @@ impl std::fmt::Display for CacheName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CacheName::Trififo => write!(f, "trififo"),
-            #[cfg(feature = "bench_all")]
+            // #[cfg(feature = "bench_all")]
             CacheName::QuickCache => write!(f, "quick_cache"),
             #[cfg(feature = "bench_all")]
             CacheName::Schnellru => write!(f, "schnellru"),
@@ -341,7 +336,7 @@ impl std::fmt::Display for CacheName {
 fn create_cache(name: CacheName, capacity: usize) -> Arc<dyn CacheBench> {
     match name {
         CacheName::Trififo => Arc::new(TrififoWrapper::new(capacity)),
-        #[cfg(feature = "bench_all")]
+        // #[cfg(feature = "bench_all")]
         CacheName::QuickCache => Arc::new(QuickCacheWrapper::new(capacity)),
         #[cfg(feature = "bench_all")]
         CacheName::Schnellru => Arc::new(SchnellruWrapper::new(capacity as u32)),

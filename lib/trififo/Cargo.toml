@@ -15,6 +15,9 @@ bench_all = []
 [dependencies]
 ahash = { workspace = true }
 hashbrown = "0.16.1"
+papaya = "0.1"
+disruptor = "3.7"
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 itertools = { workspace = true }
@@ -22,7 +25,6 @@ strum = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
-parking_lot = { workspace = true }
 rayon = { workspace = true }
 
 # Compare against these caches
