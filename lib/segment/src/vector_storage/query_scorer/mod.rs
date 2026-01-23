@@ -6,7 +6,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::Metric;
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 
 pub mod custom_query_scorer;

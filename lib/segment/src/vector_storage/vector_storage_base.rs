@@ -35,6 +35,10 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMma
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
+/// In case of simple vector storage, vector offset is the same as PointOffsetType.
+/// But in case of multivectors, it requires an additional lookup.
+pub type VectorOffsetType = usize;
+
 pub trait AccessPattern: Copy {
     const IS_SEQUENTIAL: bool;
 }
