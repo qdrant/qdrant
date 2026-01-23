@@ -90,17 +90,15 @@ impl Collection {
             let to_is_local = to_replica_set.is_local().await;
 
             let transfer_method = shard_transfer.method.unwrap_or_default();
+            let is_supported_version = self
+                .channel_service
+                .all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION);
 
-            if transfer_method.is_resharding() {
-                if !self
-                    .channel_service
-                    .all_peers_at_version(&*NEW_UPDATE_ON_RESHARDING_VERSION)
-                {
-                    return Err(CollectionError::service_error(format!(
-                        "Cannot start resharding transfer: not all peers support the required version {}",
-                        *NEW_UPDATE_ON_RESHARDING_VERSION
-                    )));
-                }
+            if transfer_method.is_resharding() && !is_supported_version {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot start resharding transfer: not all peers support the required version {}",
+                    *NEW_UPDATE_ON_RESHARDING_VERSION
+                )));
             }
 
             let initial_state = match transfer_method {
