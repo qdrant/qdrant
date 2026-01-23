@@ -295,6 +295,33 @@ class TestSearchDuringIndexing:
         else:
             print(f"Indexes: {stats.completed} created")
 
+    def _print_results(
+        self,
+        baseline: SearchStats,
+        search_stats: SearchStats,
+        index_stats: OperationStats,
+        update_stats: OperationStats = None,
+    ):
+        """Print benchmark results and comparison."""
+        print(f"\nConcurrent: {search_stats.summary()}")
+        if update_stats:
+            print(f"Updates: {update_stats.completed} batches, {len(update_stats.errors)} errors")
+        self._print_index_stats(index_stats)
+
+        print(f"\n{'='*60}")
+        print("COMPARISON")
+        print(f"{'='*60}")
+        self._print_comparison(baseline, search_stats)
+
+        if search_stats.timeouts:
+            print(f"\n  WARNING: {search_stats.timeouts} search timeouts")
+        if search_stats.errors:
+            print(f"\n  WARNING: {len(search_stats.errors)} search errors")
+
+        print(f"\n{'='*60}")
+        print("BENCHMARK COMPLETE")
+        print(f"{'='*60}")
+
     def _setup_collection(self, client: ClientUtils):
         """Create collection and insert initial data."""
         print(f"\n{'='*60}")
@@ -374,24 +401,7 @@ class TestSearchDuringIndexing:
         for t in threads:
             t.join(timeout=10)
 
-        # Results
-        print(f"\nConcurrent: {search_stats.summary()}")
-        print(f"Updates: {update_stats.completed} batches, {len(update_stats.errors)} errors")
-        self._print_index_stats(index_stats)
-
-        print(f"\n{'='*60}")
-        print("COMPARISON")
-        print(f"{'='*60}")
-        self._print_comparison(baseline, search_stats)
-
-        if search_stats.timeouts:
-            print(f"\n  WARNING: {search_stats.timeouts} search timeouts")
-        if search_stats.errors:
-            print(f"\n  WARNING: {len(search_stats.errors)} search errors")
-
-        print(f"\n{'='*60}")
-        print("BENCHMARK COMPLETE")
-        print(f"{'='*60}")
+        self._print_results(baseline, search_stats, index_stats, update_stats)
 
     def test_search_with_indexing_only(self, qdrant_container_factory):
         """
@@ -433,20 +443,4 @@ class TestSearchDuringIndexing:
         for t in threads:
             t.join(timeout=10)
 
-        # Results
-        print(f"\nConcurrent: {search_stats.summary()}")
-        self._print_index_stats(index_stats)
-
-        print(f"\n{'='*60}")
-        print("COMPARISON")
-        print(f"{'='*60}")
-        self._print_comparison(baseline, search_stats)
-
-        if search_stats.timeouts:
-            print(f"\n  WARNING: {search_stats.timeouts} search timeouts")
-        if search_stats.errors:
-            print(f"\n  WARNING: {len(search_stats.errors)} search errors")
-
-        print(f"\n{'='*60}")
-        print("BENCHMARK COMPLETE")
-        print(f"{'='*60}")
+        self._print_results(baseline, search_stats, index_stats)
