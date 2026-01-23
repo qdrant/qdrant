@@ -97,14 +97,18 @@ pub struct Tracker {
     pub name: &'static str,
     /// UUID of the upcoming segment being created by the optimizer
     pub uuid: Uuid,
-    /// Segment IDs being optimized
-    pub segment_ids: Vec<SegmentId>,
-    /// Segment UUIDs being optimized
-    pub segment_uuids: Vec<Uuid>,
+    /// Segments being optimized
+    pub segments: Vec<TrackerSegmentInfo>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
     pub progress_view: ProgressView,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TrackerSegmentInfo {
+    pub id: SegmentId,
+    pub uuid: Uuid,
 }
 
 impl Tracker {
@@ -114,15 +118,13 @@ impl Tracker {
     pub fn start(
         name: &'static str,
         uuid: Uuid,
-        segment_ids: Vec<SegmentId>,
-        segment_uuids: Vec<Uuid>,
+        segments: Vec<TrackerSegmentInfo>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
             name,
             uuid,
-            segment_ids,
-            segment_uuids,
+            segments,
             state: Default::default(),
             progress_view,
         };
@@ -140,8 +142,8 @@ impl Tracker {
         TrackerTelemetry {
             name: self.name,
             uuid: self.uuid,
-            segment_ids: self.segment_ids.clone(),
-            segment_uuids: self.segment_uuids.clone(),
+            segment_ids: self.segments.iter().map(|s| s.id).collect(),
+            segment_uuids: self.segments.iter().map(|s| s.uuid).collect(),
             status: state.status.clone(),
             start_at: self.progress_view.started_at(),
             end_at: state.end_at,
