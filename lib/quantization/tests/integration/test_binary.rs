@@ -905,57 +905,33 @@ mod tests {
                 vector_dim,
                 Encoding::OneBit,
             );
-        let result = EncodedVectorsBin::<u8, _>::encode(
-            vector_data.iter().map(|v| v.as_slice()),
-            TestEncodedStorageBuilder::new(None, quantized_vector_size),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L1,
-                invert: false,
-            },
-            Encoding::OneBit,
-            QueryEncoding::Uncompressed,
-            None,
-            &AtomicBool::new(false),
-        );
 
-        assert!(result.is_err());
-        match result {
-            Err(EncodingError::ArgumentsError(msg)) => {
-                assert!(msg.contains(
-                    "Uncompressed query encoding is only supported for dot product distance"
-                ));
-                assert!(msg.contains("L1"));
+        for distance_type in [DistanceType::L1, DistanceType::L2] {
+            let result = EncodedVectorsBin::<u8, _>::encode(
+                vector_data.iter().map(|v| v.as_slice()),
+                TestEncodedStorageBuilder::new(None, quantized_vector_size),
+                &VectorParameters {
+                    dim: vector_dim,
+                    deprecated_count: None,
+                    distance_type,
+                    invert: false,
+                },
+                Encoding::OneBit,
+                QueryEncoding::Uncompressed,
+                None,
+                &AtomicBool::new(false),
+            );
+
+            assert!(result.is_err());
+            match result {
+                Err(EncodingError::ArgumentsError(msg)) => {
+                    assert!(msg.contains(
+                        "Uncompressed query encoding is only supported for dot product distance"
+                    ));
+                    assert!(msg.contains(&format!("{:?}", distance_type)));
+                }
+                _ => panic!("Expected ArgumentsError"),
             }
-            _ => panic!("Expected ArgumentsError"),
-        }
-
-        // Expect error for L2 distance
-        let result = EncodedVectorsBin::<u8, _>::encode(
-            vector_data.iter().map(|v| v.as_slice()),
-            TestEncodedStorageBuilder::new(None, quantized_vector_size),
-            &VectorParameters {
-                dim: vector_dim,
-                deprecated_count: None,
-                distance_type: DistanceType::L2,
-                invert: false,
-            },
-            Encoding::OneBit,
-            QueryEncoding::Uncompressed,
-            None,
-            &AtomicBool::new(false),
-        );
-
-        assert!(result.is_err());
-        match result {
-            Err(EncodingError::ArgumentsError(msg)) => {
-                assert!(msg.contains(
-                    "Uncompressed query encoding is only supported for dot product distance"
-                ));
-                assert!(msg.contains("L2"));
-            }
-            _ => panic!("Expected ArgumentsError"),
         }
     }
 }
