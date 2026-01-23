@@ -1069,10 +1069,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                     matches!(
                         self.metadata.vector_parameters.distance_type,
                         DistanceType::Dot
-                    ) && matches!(
-                        self.metadata.encoding,
-                        Encoding::OneBit
-                    ),
+                    ) && matches!(self.metadata.encoding, Encoding::OneBit),
                     "Uncompressed queries should only be used with dot product distance and OneBit encoding"
                 );
                 debug_assert!(
@@ -1083,7 +1080,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 let dot_product =
                     Self::calculate_dot_product_uncompressed(query_vector, vector_data_usize);
 
-                // Apply invert flag if needed
                 if self.metadata.vector_parameters.invert {
                     -dot_product
                 } else {
