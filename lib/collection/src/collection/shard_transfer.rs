@@ -96,7 +96,7 @@ impl Collection {
                     .channel_service
                     .all_peers_at_version(&*NEW_UPDATE_ON_RESHARDING_VERSION)
                 {
-                    return Err(CollectionError::pre_condition_failed(format!(
+                    return Err(CollectionError::service_error(format!(
                         "Cannot start resharding transfer: not all peers support the required version {}",
                         *NEW_UPDATE_ON_RESHARDING_VERSION
                     )));
