@@ -5,6 +5,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::telemetry::PartialSnapshotTelemetry;
 use collection::telemetry::{CollectionTelemetry, ShardCleanStatusTelemetry};
+use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::types::ShardKey;
 use serde::Serialize;
@@ -396,9 +397,14 @@ fn aggregate_shards(
         distributed_shards.push(DistributedShardTelemetry {
             id: base_replicaset.id,
             key: base_replicaset.key.clone(),
-            replicas: replica_map.into_values().collect(),
+            replicas: replica_map
+                .into_values()
+                .sorted_by_key(|replica| replica.peer_id)
+                .collect(),
         });
     }
+
+    distributed_shards.sort_by_key(|shard| shard.id);
 
     Some(distributed_shards)
 }
