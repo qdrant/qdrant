@@ -149,6 +149,7 @@ fn main() {
     let cache_path = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(env!("CARGO_PKG_NAME"))
         .join(env!("CARGO_CRATE_NAME"));
+    fs::create_dir_all(&cache_path).unwrap();
 
     // Load the dataset or generate random vectors.
     let (dataset_mmap, dataset);
