@@ -937,9 +937,6 @@ where
             return Some(Box::new(std::iter::empty()));
         }
 
-        eprintln!("start_bound = {:#?}", start_bound);
-        eprintln!("end_bound = {:#?}", end_bound);
-
         Some(match self {
             NumericIndexInner::Mutable(index) => {
                 Box::new(index.values_range(start_bound, end_bound))
