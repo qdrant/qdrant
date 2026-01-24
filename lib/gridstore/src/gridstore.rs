@@ -600,7 +600,8 @@ impl<V> Gridstore<V> {
                 page.flush()?;
             }
 
-            let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
+            let old_pointers = tracker.write().write_pending(pending_updates);
+            tracker.read().flush()?;
             if old_pointers.is_empty() {
                 // Nothing to do flush here
                 return Ok(());
