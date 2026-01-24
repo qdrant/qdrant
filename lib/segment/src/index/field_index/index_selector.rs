@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "rocksdb")]
 use std::sync::Arc;
@@ -351,7 +352,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
+    fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug, P>(
         &self,
         field: &JsonPath,
         create_if_missing: bool,
@@ -379,7 +380,7 @@ impl IndexSelector<'_> {
     }
 
     #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
-    fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
+    fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug, P>(
         &self,
         field: &JsonPath,
         #[cfg(feature = "rocksdb")] make_rocksdb: fn(

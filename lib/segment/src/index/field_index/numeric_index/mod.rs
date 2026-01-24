@@ -6,6 +6,7 @@ pub mod mutable_numeric_index;
 mod tests;
 
 use std::cmp::{max, min};
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
@@ -174,7 +175,7 @@ where
     Mmap(MmapNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> NumericIndexInner<T>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug> NumericIndexInner<T>
 where
     Vec<T>: Blob,
 {
@@ -515,7 +516,7 @@ pub trait NumericIndexIntoInnerValue<T, P> {
     fn into_inner_value(value: P) -> T;
 }
 
-impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> NumericIndex<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug, P> NumericIndex<T, P>
 where
     Vec<T>: Blob,
 {
@@ -664,8 +665,8 @@ where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
     Vec<T>: Blob;
 
-impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
-    for NumericIndexBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug, P>
+    FieldIndexBuilderTrait for NumericIndexBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
     Vec<T>: Blob,
@@ -828,8 +829,8 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P> FieldIndexBuilderTrait
-    for NumericIndexGridstoreBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug, P>
+    FieldIndexBuilderTrait for NumericIndexGridstoreBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
     Vec<T>: Blob,
@@ -874,7 +875,7 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default> PayloadFieldIndex
+impl<T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug> PayloadFieldIndex
     for NumericIndexInner<T>
 where
     Vec<T>: Blob,
@@ -935,6 +936,9 @@ where
         if !check_boundaries(&start_bound, &end_bound) {
             return Some(Box::new(std::iter::empty()));
         }
+
+        eprintln!("start_bound = {:#?}", start_bound);
+        eprintln!("end_bound = {:#?}", end_bound);
 
         Some(match self {
             NumericIndexInner::Mutable(index) => {
@@ -1209,7 +1213,7 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
-    T: Encodable + Numericable + MmapValue + Send + Sync + Default,
+    T: Encodable + Numericable + MmapValue + Send + Sync + Default + Debug,
     Vec<T>: Blob,
 {
     fn stream_range(

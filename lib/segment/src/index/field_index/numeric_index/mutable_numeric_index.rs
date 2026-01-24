@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::path::PathBuf;
@@ -65,6 +66,25 @@ pub struct InMemoryNumericIndex<T: Encodable + Numericable> {
     pub points_count: usize,
     pub max_values_per_point: usize,
     pub point_to_values: Vec<Vec<T>>,
+}
+
+impl<T: Debug + Encodable + Numericable> Debug for InMemoryNumericIndex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            map,
+            histogram,
+            points_count,
+            max_values_per_point,
+            point_to_values,
+        } = self;
+        f.debug_struct("InMemoryNumericIndex")
+            .field("map", map)
+            .field("histogram", histogram)
+            .field("points_count", points_count)
+            .field("max_values_per_point", max_values_per_point)
+            .field("point_to_values", point_to_values)
+            .finish()
+    }
 }
 
 impl<T: Encodable + Numericable> Default for InMemoryNumericIndex<T> {
@@ -242,7 +262,7 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Send + Sync + Default> MutableNumericIndex<T>
+impl<T: Encodable + Numericable + Send + Sync + Default + Debug> MutableNumericIndex<T>
 where
     Vec<T>: Blob,
 {
