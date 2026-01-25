@@ -258,6 +258,22 @@ impl Shard {
         })
     }
 
+    pub async fn drop_wal(&self) -> CollectionResult<usize> {
+        match self {
+            Self::Local(local_shard) => local_shard.drop_wal().await,
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.drop_wal().await,
+            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.drop_wal().await,
+            Self::QueueProxy(proxy_shard) => {
+                if let Some(local_shard) = proxy_shard.wrapped_shard() {
+                    local_shard.drop_wal().await
+                } else {
+                    Ok(0)
+                }
+            }
+            Self::Dummy(_) => Ok(0),
+        }
+    }
+
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         match self {
             Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
