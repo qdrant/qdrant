@@ -33,14 +33,11 @@ impl Collection {
         wait: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let results = self
             .update_runtime
             .spawn(async move {
-                let _update_lock = update_lock;
-
                 // `ShardReplicaSet::update_local` is *not* cancel safe, so we *have to* execute *all*
                 // `update_local` requests to completion.
                 //
@@ -100,12 +97,9 @@ impl Collection {
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let result = self.update_runtime.spawn(async move {
-            let _update_lock = update_lock;
-
             let Some(shard) = shard_holder.get_shard(shard_selection) else {
                 return Ok(None);
             };
@@ -153,15 +147,12 @@ impl Collection {
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
         let start_time = std::time::Instant::now();
 
         let results = self
             .update_runtime
             .spawn(async move {
-                let _update_lock = update_lock;
-
                 let updates = FuturesUnordered::new();
                 let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
 

@@ -27,7 +27,7 @@ use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -78,10 +78,6 @@ pub struct Collection {
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
     is_initialized: Arc<IsReady>,
-    // Lock to temporary block collection update operations while the collection is being migrated.
-    // Lock is acquired for read on update operation and can be acquired for write externally,
-    // which will block all update operations until the lock is released.
-    updates_lock: Arc<RwLock<()>>,
     // Update runtime handle.
     update_runtime: Handle,
     // Search runtime handle.
@@ -193,7 +189,6 @@ impl Collection {
             abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
-            updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_resource_budget,
@@ -309,7 +304,6 @@ impl Collection {
             abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
             is_initialized: Default::default(),
-            updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_resource_budget,
@@ -853,10 +847,6 @@ impl Collection {
         } else {
             Ok(config.optimizer_config.clone())
         }
-    }
-
-    pub async fn lock_updates(&self) -> RwLockWriteGuard<'_, ()> {
-        self.updates_lock.write().await
     }
 
     pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
