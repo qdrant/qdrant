@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -37,6 +38,7 @@ impl UpdateWorkers {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
+        skip_uploads: Arc<AtomicBool>,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -46,6 +48,10 @@ impl UpdateWorkers {
                     sender,
                     hw_measurements,
                 }) => {
+                    if skip_uploads.load(std::sync::atomic::Ordering::Relaxed) {
+                        continue;
+                    }
+
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
                     let segments_clone = segments.clone();
