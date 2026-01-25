@@ -707,9 +707,37 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             QueryEncoding::Uncompressed => {
                 // Uncompressed queries are only supported for dot product distance for now
                 // Validation will happen in encode_query() where vector_parameters are available
-                EncodedQueryBQ::Uncompressed(query.to_vec())
+                EncodedQueryBQ::Uncompressed(Self::encode_uncompressed_query_vector(query))
             }
         }
+    }
+
+    fn encode_uncompressed_query_vector(query: &[f32]) -> Vec<f32> {
+        let mut query_lut = Vec::with_capacity(query.len() * 16);
+        for query_chunk in query.chunks(4) {
+            let a = query_chunk.get(3).cloned().unwrap_or(0.0);
+            let b = query_chunk.get(2).cloned().unwrap_or(0.0);
+            let c = query_chunk.get(1).cloned().unwrap_or(0.0);
+            let d = query_chunk.first().cloned().unwrap_or(0.0);
+
+            query_lut.push(-a - b - c - d); // 0000
+            query_lut.push(-a - b - c + d); // 0001
+            query_lut.push(-a - b + c - d); // 0010
+            query_lut.push(-a - b + c + d); // 0011
+            query_lut.push(-a + b - c - d); // 0100
+            query_lut.push(-a + b - c + d); // 0101
+            query_lut.push(-a + b + c - d); // 0110
+            query_lut.push(-a + b + c + d); // 0111
+            query_lut.push(a - b - c - d); // 1000
+            query_lut.push(a - b - c + d); // 1001
+            query_lut.push(a - b + c - d); // 1010
+            query_lut.push(a - b + c + d); // 1011
+            query_lut.push(a + b - c - d); // 1100
+            query_lut.push(a + b - c + d); // 1101
+            query_lut.push(a + b + c - d); // 1110
+            query_lut.push(a + b + c + d); // 1111
+        }
+        query_lut
     }
 
     fn encode_scalar_query_vector(
@@ -801,27 +829,23 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     /// # Returns
     /// The dot product as an f32 value.
     fn calculate_dot_product_uncompressed(
-        query_vector: &[f32],
+        query_lut_vector: &[f32],
         binary_vector: &[TBitsStoreType],
     ) -> f32 {
-        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
-        let one = TBitsStoreType::one();
+        // unsafe convert binary_vector to &[u8] for bit extraction
+        #[allow(clippy::useless_conversion)]
+        let binary_vector: &[u8] = transmute_to_u8_slice(binary_vector)
+            .try_into()
+            .expect("Failed to convert binary vector to u8 slice");
+
+        let mask = 0b1111u8;
         let mut dot_product = 0.0;
-
-        for (i, dim_value) in query_vector.iter().enumerate() {
-            let bit_index = i / bits_count;
-            let bit_offset = i % bits_count;
-            let bit = (binary_vector[bit_index] >> bit_offset) & one;
-            // bit is either 0 or one (which is 1 for integer types)
-            // Convert to usize to check if bit is set (non-zero means bit=1, zero means bit=0)
-            dot_product += dim_value
-                * if bit.to_usize().unwrap_or(0) != 0 {
-                    1.0
-                } else {
-                    -1.0
-                };
+        for (i, lut) in query_lut_vector.chunks_exact(16).enumerate() {
+            let bit_index = i / 2;
+            let bit_offset = 4 * (i % 2);
+            let bit = (binary_vector[bit_index] >> bit_offset) & mask;
+            dot_product += lut[bit as usize];
         }
-
         dot_product
     }
 
@@ -1057,10 +1081,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                         DistanceType::Dot
                     ) && matches!(self.metadata.encoding, Encoding::OneBit),
                     "Uncompressed queries should only be used with dot product distance and OneBit encoding"
-                );
-                debug_assert!(
-                    query_vector.len() == self.metadata.vector_parameters.dim,
-                    "Query vector length does not match vector parameters dim"
                 );
 
                 let dot_product =

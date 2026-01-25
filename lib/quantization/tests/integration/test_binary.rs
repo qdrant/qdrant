@@ -774,6 +774,7 @@ mod tests {
         test_uncompressed_query_dot_product_impl::<u8>(33);
         test_uncompressed_query_dot_product_impl::<u128>(16);
         test_uncompressed_query_dot_product_impl::<u128>(128);
+        test_uncompressed_query_dot_product_impl::<u128>(1024);
     }
 
     fn test_uncompressed_query_dot_product_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
@@ -874,7 +875,7 @@ mod tests {
         {
             assert_eq!(expected_idx, actual_idx, "Index mismatch");
             assert!(
-                (expected_score - actual_score).abs() < f32::EPSILON,
+                (expected_score - actual_score).abs() < 1e-4,
                 "Score mismatch at index {expected_idx}: expected {expected_score}, got {actual_score}",
             );
         }
