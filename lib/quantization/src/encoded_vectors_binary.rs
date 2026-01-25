@@ -849,6 +849,50 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         dot_product
     }
 
+    #[target_feature(enable = "sse")]
+    #[target_feature(enable = "sse2")]
+    #[target_feature(enable = "sse4.1")]
+    #[target_feature(enable = "sse4.2")]
+    #[target_feature(enable = "sse3")]
+    fn calculate_dot_product_uncompressed_sse(
+        query_lut_vector: &[f32],
+        binary_vector: &[TBitsStoreType],
+    ) -> f32 {
+        unsafe {
+            use std::arch::x86_64::*;
+
+            let mask = 0b1111u8;
+            let mut binary_vector = binary_vector.as_ptr().cast::<u8>();
+            let mut lut = query_lut_vector.as_ptr();
+            let mut x = _mm_setzero_ps();
+            for _ in 0..query_lut_vector.len() / 64 {
+                let bit = *binary_vector & mask;
+                let l1 = *lut.add(bit as usize);
+                lut = lut.add(16);
+
+                let bit = (*binary_vector) >> 4;
+                let l2 = *lut.add(bit as usize);
+                lut = lut.add(16);
+                binary_vector = binary_vector.add(1);
+
+                let bit = *binary_vector & mask;
+                let l3 = *lut.add(bit as usize);
+                lut = lut.add(16);
+
+                let bit = (*binary_vector) >> 4;
+                let l4 = *lut.add(bit as usize);
+                lut = lut.add(16);
+                binary_vector = binary_vector.add(1);
+
+                x = _mm_add_ps(x, _mm_set_ps(l1, l2, l3, l4));
+            }
+
+            let x64: __m128 = _mm_add_ps(x, _mm_movehl_ps(x, x));
+            let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
+            _mm_cvtss_f32(x32)
+        }
+    }
+
     pub fn get_quantized_vector_size_from_params(dim: usize, encoding: Encoding) -> usize {
         let extended_dim = match encoding {
             Encoding::OneBit => dim,
@@ -1082,6 +1126,24 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                     ) && matches!(self.metadata.encoding, Encoding::OneBit),
                     "Uncompressed queries should only be used with dot product distance and OneBit encoding"
                 );
+
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                if is_x86_feature_detected!("sse4.2")
+                    && self.metadata.vector_parameters.dim.is_multiple_of(64)
+                {
+                    let dot_product = unsafe {
+                        Self::calculate_dot_product_uncompressed_sse(
+                            query_vector,
+                            vector_data_usize,
+                        )
+                    };
+
+                    return if self.metadata.vector_parameters.invert {
+                        -dot_product
+                    } else {
+                        dot_product
+                    };
+                }
 
                 let dot_product =
                     Self::calculate_dot_product_uncompressed(query_vector, vector_data_usize);
