@@ -19,6 +19,19 @@ pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
 
+/// Extract collection name from URL path if it matches /collections/{name} pattern
+fn extract_collection_name(path: &str) -> Option<String> {
+    // Match patterns like /collections/{name} or /collections/{name}/...
+    if let Some(rest) = path.strip_prefix("/collections/") {
+        // Find the next slash or end of string
+        let collection_name = rest.split('/').next()?;
+        if !collection_name.is_empty() {
+            return Some(collection_name.to_string());
+        }
+    }
+    None
+}
+
 /// Actix telemetry service. It hooks every request and looks into response status code.
 ///
 /// More about actix service with similar example
@@ -40,6 +53,10 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
+        
+        // Extract collection name from the actual path
+        let collection_name = extract_collection_name(request.path());
+        
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -48,7 +65,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(request_key, status, collection_name, instant);
             Ok(response)
         })
     }
@@ -86,5 +103,29 @@ where
                 .lock()
                 .create_web_worker_telemetry(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_collection_name() {
+        assert_eq!(
+            extract_collection_name("/collections/my_collection"),
+            Some("my_collection".to_string())
+        );
+        assert_eq!(
+            extract_collection_name("/collections/my_collection/points"),
+            Some("my_collection".to_string())
+        );
+        assert_eq!(
+            extract_collection_name("/collections/my_collection/points/search"),
+            Some("my_collection".to_string())
+        );
+        assert_eq!(extract_collection_name("/collections/"), None);
+        assert_eq!(extract_collection_name("/other/path"), None);
+        assert_eq!(extract_collection_name("/"), None);
     }
 }
