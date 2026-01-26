@@ -849,6 +849,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         dot_product
     }
 
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse")]
     #[target_feature(enable = "sse2")]
     #[target_feature(enable = "sse4.1")]
@@ -1127,7 +1128,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                     "Uncompressed queries should only be used with dot product distance and OneBit encoding"
                 );
 
-                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                #[cfg(target_arch = "x86_64")]
                 if is_x86_feature_detected!("sse4.2")
                     && self.metadata.vector_parameters.dim.is_multiple_of(64)
                 {
