@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -103,7 +104,7 @@ impl<V: Blob> Gridstore<V> {
         self.pages.read().len() as PageId
     }
 
-    pub fn max_point_id(&self) -> PointOffset {
+    pub fn max_point_offset(&self) -> PointOffset {
         self.tracker.read().pointer_count()
     }
 
@@ -532,28 +533,50 @@ impl<V: Blob> Gridstore<V> {
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
     {
-        for (point_offset, pointer) in
-            self.tracker
-                .read()
-                .iter_pointers()
-                .filter_map(|(point_offset, opt_pointer)| {
-                    opt_pointer.map(|pointer| (point_offset, pointer))
-                })
-        {
-            let ValuePointer {
-                page_id,
-                block_offset,
-                length,
-            } = pointer;
+        const BUFFER_SIZE: usize = 128;
+        let max_point_offset = self.max_point_offset();
 
-            let raw = self.read_from_pages::<true>(page_id, block_offset, length);
+        let mut from = 0;
+        let mut buffer = Vec::with_capacity(min(BUFFER_SIZE, max_point_offset as usize));
 
-            hw_counter.incr_delta(raw.len());
+        loop {
+            // Collect pointers into a buffer while holding the lock
+            buffer.clear();
+            buffer.extend(
+                self.tracker
+                    .read()
+                    .iter_pointers(from)
+                    .filter_map(|(point_offset, opt_pointer)| {
+                        opt_pointer.map(|pointer| (point_offset, pointer))
+                    })
+                    .take(BUFFER_SIZE),
+            );
 
-            let decompressed = self.decompress(raw);
-            let value = V::from_bytes(&decompressed);
-            if !callback(point_offset, value)? {
-                return Ok(());
+            // If no more pointers, we're done
+            if buffer.is_empty() {
+                break;
+            }
+
+            // Update `from` for the next iteration
+            from = buffer.last().unwrap().0 + 1;
+
+            // Process buffer without holding the tracker lock
+            for &(point_offset, pointer) in &buffer {
+                let ValuePointer {
+                    page_id,
+                    block_offset,
+                    length,
+                } = pointer;
+
+                let raw = self.read_from_pages::<true>(page_id, block_offset, length);
+
+                hw_counter.incr_delta(raw.len());
+
+                let decompressed = self.decompress(raw);
+                let value = V::from_bytes(&decompressed);
+                if !callback(point_offset, value)? {
+                    return Ok(());
+                }
             }
         }
         Ok(())
@@ -600,7 +623,8 @@ impl<V> Gridstore<V> {
                 page.flush()?;
             }
 
-            let old_pointers = tracker.write().write_pending_and_flush(pending_updates)?;
+            let old_pointers = tracker.write().write_pending(pending_updates);
+            tracker.read().flush()?;
             if old_pointers.is_empty() {
                 // Nothing to do flush here
                 return Ok(());
@@ -982,7 +1006,7 @@ mod tests {
                 Operation::Clear => {
                     log::debug!("op:{i} CLEAR");
                     storage.clear().unwrap();
-                    assert_eq!(storage.max_point_id(), 0, "storage should be empty");
+                    assert_eq!(storage.max_point_offset(), 0, "storage should be empty");
                     model_hashmap.clear();
                 }
                 Operation::Iter(limit) => {
@@ -1725,6 +1749,6 @@ mod tests {
         let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.read().len(), 1);
         assert!(storage.get_pointer(0).is_none(), "point must not exist");
-        assert_eq!(storage.max_point_id(), 0, "must have zero points");
+        assert_eq!(storage.max_point_offset(), 0, "must have zero points");
     }
 }
