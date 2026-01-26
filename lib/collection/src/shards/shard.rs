@@ -16,12 +16,10 @@ use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
-use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizersStatus, PendingOptimizations,
-};
+use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::local_shard::LocalShard;
+use crate::shards::local_shard::{LocalShard, LocalShardOptimizations};
 use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -250,12 +248,12 @@ impl Shard {
         Some(optimizers_log)
     }
 
-    pub fn pending_optimizations(&self) -> Option<PendingOptimizations> {
+    pub fn optimizations(&self) -> Option<LocalShardOptimizations> {
         Some(match self {
-            Self::Local(local_shard) => local_shard.pending_optimizations(),
-            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.pending_optimizations(),
-            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.pending_optimizations(),
-            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.pending_optimizations(),
+            Self::Local(local_shard) => local_shard.optimizations(),
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.optimizations(),
             Self::Dummy(_) => return None,
         })
     }

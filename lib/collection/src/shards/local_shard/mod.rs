@@ -74,8 +74,9 @@ use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizersStatus, PendingOptimizations, ShardInfoInternal,
-    ShardStatus, check_sparse_compatible_with_segment_config,
+    CollectionError, CollectionResult, OptimizationSegmentInfo, OptimizersStatus,
+    PendingOptimization, ShardInfoInternal, ShardStatus,
+    check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;
@@ -978,23 +979,40 @@ impl LocalShard {
     }
 
     /// Call [`plan_optimizations`] and return summary.
-    pub fn pending_optimizations(&self) -> PendingOptimizations {
+    pub fn optimizations(&self) -> LocalShardOptimizations {
         let segments = self.segments.read();
+
+        let mut remaining: HashMap<_, _> = segments.iter_original().collect();
         let scheduled = plan_optimizations(&segments, &self.optimizers.load());
-        let mut pending_segments = 0;
-        let mut points = 0;
-        for (_, segment_ids) in scheduled.iter() {
-            pending_segments += segment_ids.len();
-            for &segment_id in segment_ids {
-                if let Some(LockedSegment::Original(segment)) = segments.get(segment_id) {
-                    points += segment.read().available_point_count();
-                }
-            }
-        }
-        PendingOptimizations {
-            optimizations: scheduled.len(),
-            segments: pending_segments,
-            points,
+        let queued = scheduled
+            .into_iter()
+            .map(|(optimizer, segment_ids)| PendingOptimization {
+                optimizer: optimizer.name(),
+                segments: segment_ids
+                    .into_iter()
+                    .filter_map(|segment_id| {
+                        let segment = remaining.remove(&segment_id)?.read();
+                        Some(OptimizationSegmentInfo {
+                            uuid: segment.uuid,
+                            points_count: segment.available_point_count(),
+                        })
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        LocalShardOptimizations {
+            queued,
+            idle_segments: remaining
+                .into_values()
+                .map(|segment| {
+                    let segment = segment.read();
+                    OptimizationSegmentInfo {
+                        uuid: segment.uuid,
+                        points_count: segment.available_point_count(),
+                    }
+                })
+                .collect(),
         }
     }
 
@@ -1084,6 +1102,12 @@ impl LocalShard {
     fn timeout_or_default_search_timeout(&self, timeout: Option<Duration>) -> Duration {
         timeout.unwrap_or(self.shared_storage_config.search_timeout)
     }
+}
+
+/// Return value of [`LocalShard::optimizations`].
+pub struct LocalShardOptimizations {
+    pub queued: Vec<PendingOptimization>,
+    pub idle_segments: Vec<OptimizationSegmentInfo>,
 }
 
 fn deduplicate_points_async(

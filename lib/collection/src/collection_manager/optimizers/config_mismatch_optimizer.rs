@@ -172,7 +172,7 @@ impl ConfigMismatchOptimizer {
 }
 
 impl SegmentOptimizer for ConfigMismatchOptimizer {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "config mismatch"
     }
 
