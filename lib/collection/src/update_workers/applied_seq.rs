@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::save_on_disk::SaveOnDisk;
+use fs_err as fs;
 #[cfg(test)]
 use io::file_operations::read_json;
 use serde::{Deserialize, Serialize};
@@ -65,9 +66,8 @@ impl AppliedSeqHandler {
         let last_applied_wal_index = wal_first_index.saturating_sub(1);
         let update_count = AtomicU64::new(0);
         let path = shard_path.join(APPLIED_SEQ_FILE);
+        let file_was_already_present = path.exists();
 
-        // loading file can fail but we do not want to bubble up the error
-        // to enable `op_num` to restore from WAL
         let loaded_file: Result<SaveOnDisk<AppliedSeq>, _> =
             SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_wal_index));
         match loaded_file {
@@ -86,14 +86,31 @@ impl AppliedSeqHandler {
                 }
             }
             Err(err) => {
-                // TODO(a.g) re-create file when corrupted
-                log::error!("Error while loading applied_seq at {path:?} {err}");
-                let op_num = AtomicU64::new(last_applied_wal_index);
-                Self {
-                    file: None,
-                    path,
-                    op_num,
-                    update_count,
+                if file_was_already_present {
+                    log::error!("Error while loading existing applied_seq at {path:?} {err}");
+                    // delete file as it is malformed
+                    if let Err(err) = fs::remove_file(&path) {
+                        log::error!("Could not deleted malformed applied_seq file {path:?} {err}");
+                        let op_num = AtomicU64::new(last_applied_wal_index);
+                        Self {
+                            file: None,
+                            path,
+                            op_num,
+                            update_count,
+                        }
+                    } else {
+                        // try again to create the file from scratch
+                        Self::load_or_init(shard_path, wal_first_index)
+                    }
+                } else {
+                    log::error!("Error while creating new applied_seq at {path:?} {err}");
+                    let op_num = AtomicU64::new(last_applied_wal_index);
+                    Self {
+                        file: None,
+                        path,
+                        op_num,
+                        update_count,
+                    }
                 }
             }
         }
@@ -219,8 +236,8 @@ mod tests {
         // reopen handler without crashing
         let handler = AppliedSeqHandler::load_or_init(dir.path(), 650);
 
-        // detects malformed file
-        assert!(handler.file.is_none());
-        assert!(handler.op_num().is_none());
+        // regenerate new file with correct WAL op_num
+        assert!(handler.file.is_some());
+        assert_eq!(handler.op_num(), Some(649));
     }
 }
