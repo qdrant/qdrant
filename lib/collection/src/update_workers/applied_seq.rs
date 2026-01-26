@@ -66,7 +66,6 @@ impl AppliedSeqHandler {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            debug_assert!(current.timestamp <= timestamp);
             current.op_num = op_num;
             current.timestamp = timestamp;
         })?;
@@ -79,10 +78,12 @@ impl AppliedSeqHandler {
         // update in-memory
         self.op_num.store(op_num, Ordering::Relaxed);
         let prev_count = self.update_count.fetch_add(1, Ordering::Relaxed);
+        if prev_count == 0 {
+            return Ok(());
+        }
         // update on disk according to interval to amortize fsync
-        if prev_count + 1 >= APPLIED_SEQ_SAVE_INTERVAL {
+        if prev_count.is_multiple_of(APPLIED_SEQ_SAVE_INTERVAL) {
             self.save(op_num)?;
-            self.update_count.store(0, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -107,11 +108,11 @@ mod tests {
     fn persists_at_interval() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
         let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
-        for i in 1..APPLIED_SEQ_SAVE_INTERVAL {
+        for i in 0..APPLIED_SEQ_SAVE_INTERVAL {
             handler.update(i).unwrap();
             assert_eq!(handler.op_num(), i);
             // nothing persisted yet because less updates than interval
-            assert!(!handler.path().exists());
+            assert!(!handler.path().exists(), "exists too early at {i}");
         }
 
         // one more update to reach APPLIED_SEQ_SAVE_INTERVAL
@@ -127,12 +128,13 @@ mod tests {
     fn read_existing_value_on_init() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
         let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
-        for i in 1..APPLIED_SEQ_SAVE_INTERVAL * 10 {
+        for i in 0..APPLIED_SEQ_SAVE_INTERVAL * 10 {
             handler.update(i).unwrap();
             assert_eq!(handler.op_num(), i);
         }
 
-        let op_num = 6400;
+        let op_num = 640;
+        assert_eq!(APPLIED_SEQ_SAVE_INTERVAL * 10, op_num);
         handler.update(op_num).unwrap();
         assert_eq!(handler.op_num(), op_num);
         assert!(handler.path().exists());
