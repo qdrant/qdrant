@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use common::save_on_disk::SaveOnDisk;
 #[cfg(test)]
@@ -17,7 +16,12 @@ const APPLIED_SEQ_FILE: &str = "applied_seq.json";
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct AppliedSeq {
     pub op_num: u64,
-    pub timestamp: u64,
+}
+
+impl AppliedSeq {
+    fn new(op_num: u64) -> Self {
+        Self { op_num }
+    }
 }
 
 #[derive(Debug)]
@@ -34,6 +38,7 @@ pub struct AppliedSeqHandler {
 }
 
 impl AppliedSeqHandler {
+    /// Get the current in-memory op_num.
     pub fn op_num(&self) -> Option<u64> {
         if self.file.is_some() {
             Some(self.op_num.load(Ordering::Relaxed))
@@ -53,13 +58,18 @@ impl AppliedSeqHandler {
         read_json::<AppliedSeq>(&self.path).unwrap().op_num
     }
 
-    pub fn load_or_init(shard_path: &Path) -> Self {
+    /// Load or create the underlying applied seq file.
+    ///
+    /// `wal_first_index` is expected to be the next used WAL index.
+    pub fn load_or_init(shard_path: &Path, wal_first_index: u64) -> Self {
+        let last_applied_index = wal_first_index.saturating_sub(1);
         let update_count = AtomicU64::new(0);
         let path = shard_path.join(APPLIED_SEQ_FILE);
+
         // loading file can fail but we do not want to bubble up the error
         // to enable `op_num` to restore from WAL
         let loaded_file: Result<SaveOnDisk<AppliedSeq>, _> =
-            SaveOnDisk::load_or_init_default(&path);
+            SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_index));
         match loaded_file {
             Ok(file) => {
                 let existing_op_num = file.read().op_num;
@@ -72,9 +82,9 @@ impl AppliedSeqHandler {
                 }
             }
             Err(err) => {
+                // TODO re-create file
                 log::error!("Error while loading applied_seq at {path:?} {err}");
-                // internal op_num placeholder, not exposed
-                let op_num = AtomicU64::new(0);
+                let op_num = AtomicU64::new(last_applied_index);
                 Self {
                     file: None,
                     path,
@@ -87,14 +97,7 @@ impl AppliedSeqHandler {
 
     fn save(&self, op_num: u64) -> CollectionResult<()> {
         if let Some(file) = self.file.as_ref() {
-            file.write(|current| {
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                current.op_num = op_num;
-                current.timestamp = timestamp;
-            })?;
+            file.write(|current| current.op_num = op_num)?;
         }
         Ok(())
     }
@@ -127,8 +130,8 @@ mod tests {
     #[test]
     fn nothing_persisted_on_init() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
-        assert_eq!(handler.op_num(), Some(0));
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 10);
+        assert_eq!(handler.op_num(), Some(9));
         // nothing persisted yet because no updates observed
         assert!(!handler.path().exists());
     }
@@ -136,7 +139,7 @@ mod tests {
     #[test]
     fn persists_at_interval() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 1);
         for i in 0..APPLIED_SEQ_SAVE_INTERVAL {
             handler.update(i).unwrap();
             assert_eq!(handler.op_num(), Some(i));
@@ -156,7 +159,7 @@ mod tests {
     #[test]
     fn read_existing_value_on_init() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 1);
         for i in 0..APPLIED_SEQ_SAVE_INTERVAL * 10 {
             handler.update(i).unwrap();
             assert_eq!(handler.op_num(), Some(i));
@@ -172,14 +175,14 @@ mod tests {
 
         // drop and reload
         drop(handler);
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 42);
         assert_eq!(handler.op_num(), Some(op_num));
     }
 
     #[test]
     fn handles_file_corruption() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 1);
         let path = handler.path.clone();
 
         for i in 0..APPLIED_SEQ_SAVE_INTERVAL * 10 {
@@ -210,7 +213,7 @@ mod tests {
         drop(file);
 
         // reopen handler without crashing
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 42);
 
         // detects malformed file
         assert!(handler.file.is_none());
