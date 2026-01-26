@@ -251,10 +251,10 @@ impl Tracker {
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     #[must_use = "The old pointers need to be freed in the bitmask"]
-    pub fn write_pending_and_flush(
+    pub fn write_pending(
         &mut self,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
-    ) -> std::io::Result<Vec<ValuePointer>> {
+    ) -> Vec<ValuePointer> {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
@@ -291,18 +291,21 @@ impl Tracker {
         }
 
         // Increment header count if necessary
-        self.persist_pointer_count();
+        self.write_pointer_count();
 
-        // Flush the mmap
-        self.mmap.flush()?;
+        old_pointers
+    }
 
-        Ok(old_pointers)
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.mmap.flush()
     }
 
     #[cfg(test)]
     pub fn write_pending_and_flush_internal(&mut self) -> std::io::Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        self.write_pending_and_flush(pending_updates)
+        let res = self.write_pending(pending_updates);
+        self.flush()?;
+        Ok(res)
     }
 
     /// Return the size of the underlying mmapped file
@@ -360,8 +363,12 @@ impl Tracker {
     }
 
     /// Iterate over the pointers in the tracker
-    pub fn iter_pointers(&self) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
-        (0..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
+    /// Starts from the given point offset
+    pub fn iter_pointers(
+        &self,
+        from: PointOffset,
+    ) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
+        (from..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
     }
 
     /// Get the raw value at the given point offset
@@ -392,7 +399,7 @@ impl Tracker {
     }
 
     /// Increment the header count if the given point offset is larger than the current count
-    fn persist_pointer_count(&mut self) {
+    fn write_pointer_count(&mut self) {
         self.header.next_pointer_offset = self.next_pointer_offset;
         self.write_header();
     }

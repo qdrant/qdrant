@@ -14,7 +14,7 @@ use serde_json::Value;
 fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path) {
     let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
     let mut rdr = csv::Reader::from_reader(csv_file);
-    let mut point_offset = storage.max_point_id();
+    let mut point_offset = storage.max_point_offset();
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     for result in rdr.records() {
@@ -68,7 +68,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     append_csv_data(&mut storage, &csv_path);
     storage.flusher()().unwrap();
 
-    assert_eq!(storage.max_point_id(), expected_point_count);
+    assert_eq!(storage.max_point_offset(), expected_point_count);
 
     // flush to get a consistent bitmask
     storage.flusher()().unwrap();
@@ -88,7 +88,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     c.bench_function("scan storage", |b| {
         let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
-            for i in 0..storage.max_point_id() {
+            for i in 0..storage.max_point_offset() {
                 let res = storage.get_value::<false>(i, &hw_counter).unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
@@ -110,7 +110,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
 
     // delete 30% of the points
     let mut rng = rand::rng();
-    for i in 0..storage.max_point_id() {
+    for i in 0..storage.max_point_offset() {
         if rng.random_bool(0.3) {
             storage.delete_value(i).unwrap();
         }
