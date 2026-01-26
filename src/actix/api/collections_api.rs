@@ -258,7 +258,7 @@ impl TryFrom<&OptimizationsParam> for OptimizationsRequestOptions {
             idle_segments: false,
         };
         for field in with.as_deref().unwrap_or("").split(',') {
-            match field {
+            match field.trim() {
                 "" => (),
                 "queued" => options.queued = true,
                 "completed" => options.completed_limit = Some(completed_limit),
