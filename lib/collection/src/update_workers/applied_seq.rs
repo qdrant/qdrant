@@ -62,17 +62,21 @@ impl AppliedSeqHandler {
     ///
     /// `wal_first_index` is expected to be the next used WAL index.
     pub fn load_or_init(shard_path: &Path, wal_first_index: u64) -> Self {
-        let last_applied_index = wal_first_index.saturating_sub(1);
+        let last_applied_wal_index = wal_first_index.saturating_sub(1);
         let update_count = AtomicU64::new(0);
         let path = shard_path.join(APPLIED_SEQ_FILE);
 
         // loading file can fail but we do not want to bubble up the error
         // to enable `op_num` to restore from WAL
         let loaded_file: Result<SaveOnDisk<AppliedSeq>, _> =
-            SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_index));
+            SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_wal_index));
         match loaded_file {
             Ok(file) => {
                 let existing_op_num = file.read().op_num;
+                debug_assert!(
+                    existing_op_num <= wal_first_index,
+                    "persisted applied_seq:{existing_op_num} cannot be larger than the last_applied_wal_index:{last_applied_wal_index}"
+                );
                 let op_num = AtomicU64::new(existing_op_num);
                 Self {
                     file: Some(file),
@@ -82,9 +86,9 @@ impl AppliedSeqHandler {
                 }
             }
             Err(err) => {
-                // TODO re-create file
+                // TODO(a.g) re-create file when corrupted
                 log::error!("Error while loading applied_seq at {path:?} {err}");
-                let op_num = AtomicU64::new(last_applied_index);
+                let op_num = AtomicU64::new(last_applied_wal_index);
                 Self {
                     file: None,
                     path,
@@ -175,7 +179,7 @@ mod tests {
 
         // drop and reload
         drop(handler);
-        let handler = AppliedSeqHandler::load_or_init(dir.path(), 42);
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 650);
         assert_eq!(handler.op_num(), Some(op_num));
     }
 
@@ -213,7 +217,7 @@ mod tests {
         drop(file);
 
         // reopen handler without crashing
-        let handler = AppliedSeqHandler::load_or_init(dir.path(), 42);
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 650);
 
         // detects malformed file
         assert!(handler.file.is_none());

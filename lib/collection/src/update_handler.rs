@@ -135,7 +135,7 @@ pub struct UpdateHandler {
 
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -154,8 +154,8 @@ impl UpdateHandler {
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> Self {
-        let applied_seq_handler =
-            AppliedSeqHandler::load_or_init(&shard_path, wal.blocking_lock().first_index());
+        let wal_first_index = wal.lock().await.first_index();
+        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path, wal_first_index);
         UpdateHandler {
             collection_name,
             shared_storage_config,
