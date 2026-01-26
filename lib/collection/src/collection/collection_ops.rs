@@ -1,4 +1,4 @@
-use std::cmp::{self, Reverse};
+use std::cmp;
 use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -8,7 +8,6 @@ use semver::Version;
 use shard::count::CountRequestInternal;
 
 use super::Collection;
-use crate::collection_manager::optimizers::IndexingProgressViews;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -428,39 +427,74 @@ impl Collection {
 
     pub async fn optimizations(
         &self,
-        completed_limit: Option<usize>,
+        options: OptimizationsRequestOptions,
     ) -> CollectionResult<OptimizationsResponse> {
-        let mut all_ongoing = Vec::new();
-        let mut all_completed = completed_limit.map(|_| Vec::new());
-        let mut pending = PendingOptimizations::default();
+        let OptimizationsRequestOptions {
+            queued: with_queued,
+            completed_limit,
+            idle_segments: with_idle_segments,
+        } = options;
+
+        // OptimizationsResponse fields
+        let mut running = Vec::new();
+        let mut completed = Vec::new();
+        let mut idle_segments = with_idle_segments.then_some(Vec::new());
+        let mut queued = with_queued.then_some(Vec::new());
+
+        // OptimizationsSummary fields
+        let mut queued_optimizations = 0;
+        let mut queued_segments = 0;
+        let mut queued_points = 0;
+        let mut idle_segments_count = 0;
 
         let shards_holder = self.shards_holder.read().await;
-        for (_shard_id, replica_set) in shards_holder.get_shards() {
-            let Some(log) = replica_set.optimizers_log().await else {
+        for shard in shards_holder.all_shards() {
+            let Some(log) = shard.optimizers_log().await else {
                 continue;
             };
-            let IndexingProgressViews { ongoing, completed } = log.lock().progress_views();
-            all_ongoing.extend(ongoing);
-            if let Some(all_completed) = all_completed.as_mut() {
-                all_completed.extend(completed);
+            for tracker in log.lock().iter() {
+                if tracker.state.lock().status.is_running() {
+                    running.push(tracker.to_optimization());
+                } else if completed_limit.is_some() {
+                    completed.push(tracker.to_optimization());
+                }
             }
-            if let Some(shard_pending) = replica_set.pending_optimizations().await {
-                pending.merge(&shard_pending);
+            if let Some(shard_optimizations) = shard.optimizations().await {
+                queued_optimizations += shard_optimizations.queued.len();
+                for queued_optimization in &shard_optimizations.queued {
+                    queued_segments += queued_optimization.segments.len();
+                    for segment in &queued_optimization.segments {
+                        queued_points += segment.points_count;
+                    }
+                }
+                idle_segments_count += shard_optimizations.idle_segments.len();
+                if let Some(queued) = &mut queued {
+                    queued.extend(shard_optimizations.queued);
+                }
+                if let Some(idle_segments) = &mut idle_segments {
+                    idle_segments.extend(shard_optimizations.idle_segments);
+                }
             }
         }
-        // Sort - see `OptimizationsResponse` doc
-        all_ongoing.sort_by_key(|v| Reverse(v.started_at()));
-        if let Some(all_completed) = all_completed.as_mut() {
-            all_completed.sort_by_key(|v| Reverse(v.started_at()));
-            // Unwrap is ok because `all_completed` and `completed_limit`
-            // either are both `Some` or both `None`.
-            all_completed.truncate(completed_limit.unwrap());
-        }
-        let root = "Segment Optimizing";
+
+        // Sort from newest to oldest
+        running.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
+
         Ok(OptimizationsResponse {
-            ongoing: all_ongoing.into_iter().map(|v| v.snapshot(root)).collect(),
-            completed: all_completed.map(|c| c.into_iter().map(|v| v.snapshot(root)).collect()),
-            pending,
+            summary: OptimizationsSummary {
+                queued_optimizations,
+                queued_segments,
+                queued_points,
+                idle_segments: idle_segments_count,
+            },
+            running,
+            queued,
+            completed: completed_limit.map(|completed_limit| {
+                completed.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
+                completed.truncate(completed_limit);
+                completed
+            }),
+            idle_segments,
         })
     }
 

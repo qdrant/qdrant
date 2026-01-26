@@ -8,6 +8,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
+use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
@@ -26,7 +27,9 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, plan_optimizations,
 };
-use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
+use crate::collection_manager::optimizers::{
+    Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
+};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -288,12 +291,31 @@ impl UpdateWorkers {
                 break;
             }
 
-            let segment_uuids = segments.read().segment_uuids(&segments_to_merge);
+            let segment_infos = {
+                let segments = segments.read();
+                segments_to_merge
+                    .iter()
+                    .filter_map(|&id| {
+                        let Some(segment) = segments.get(id) else {
+                            log::warn!("Failed to get segment with internal id {id}");
+                            return None;
+                        };
+                        let segment = segment.get().read();
+                        Some(TrackerSegmentInfo {
+                            id,
+                            uuid: segment.segment_uuid(),
+                            points_count: segment.available_point_count(),
+                        })
+                    })
+                    .collect_vec()
+            };
 
             log::debug!(
-                "Optimizer '{}' running on segments: {:?}",
+                "Optimizer '{}' running on segments: {uuids}",
                 optimizer.name(),
-                &segment_uuids
+                uuids = segment_infos.iter().format_with(", ", |segment_info, f| {
+                    f(&format_args!("{}", segment_info.uuid))
+                })
             );
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
@@ -336,12 +358,8 @@ impl UpdateWorkers {
 
             // Track optimizer status
             let new_segment_uuid = Uuid::new_v4();
-            let (tracker, progress) = Tracker::start(
-                optimizer.as_ref().name(),
-                new_segment_uuid,
-                segments_to_merge.clone(),
-                segment_uuids,
-            );
+            let (tracker, progress) =
+                Tracker::start(optimizer.name(), new_segment_uuid, segment_infos);
             let tracker_handle = tracker.handle();
 
             let handle = spawn_stoppable(move |stopped| {

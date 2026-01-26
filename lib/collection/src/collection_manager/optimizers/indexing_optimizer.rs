@@ -121,7 +121,7 @@ impl IndexingOptimizer {
 }
 
 impl SegmentOptimizer for IndexingOptimizer {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "indexing"
     }
 
