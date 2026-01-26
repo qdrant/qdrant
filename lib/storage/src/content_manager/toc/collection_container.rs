@@ -208,7 +208,7 @@ impl TableOfContent {
                     )
                     .await?;
                     collections.validate_collection_not_exists(id)?;
-                    collections.insert(id.clone(), collection);
+                    collections.insert(id.clone(), Arc::new(collection));
                 }
 
                 let Some(collection) = collections.get(id) else {

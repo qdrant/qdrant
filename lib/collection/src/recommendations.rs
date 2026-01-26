@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::iter::Peekable;
+use std::sync::Arc;
 use std::time::Duration;
 
 use api::rest::RecommendStrategy;
@@ -15,7 +16,6 @@ use segment::vector_storage::query::RecoQuery;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
 use sparse::common::sparse_vector::SparseVector;
-use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
@@ -144,7 +144,7 @@ pub fn avg_vector_for_recommendation<'a>(
     Ok(search_vector)
 }
 
-pub async fn recommend_by<'a, F, Fut>(
+pub async fn recommend_by<F, Fut>(
     request: RecommendRequestInternal,
     collection: &Collection,
     collection_by_name: F,
@@ -155,7 +155,7 @@ pub async fn recommend_by<'a, F, Fut>(
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    Fut: Future<Output = Option<Arc<Collection>>>,
 {
     if request.limit == 0 {
         return Ok(vec![]);
@@ -242,7 +242,7 @@ pub fn recommend_into_core_search(
 /// * `collection_by_name` - function to retrieve collection by name, used to retrieve points from other collections
 /// * `timeout` - timeout for the whole batch, in the searching stage. E.g. time in preprocessing won't be counted
 ///
-pub async fn recommend_batch_by<'a, F, Fut>(
+pub async fn recommend_batch_by<F, Fut>(
     request_batch: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
     collection: &Collection,
     collection_by_name: F,
@@ -252,7 +252,7 @@ pub async fn recommend_batch_by<'a, F, Fut>(
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    Fut: Future<Output = Option<Arc<Collection>>>,
 {
     let start = std::time::Instant::now();
 

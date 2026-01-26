@@ -11,7 +11,8 @@ use collection::shards::{CollectionId, transfer};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use io::safe_delete::safe_delete_in_tmp;
 
-use super::TableOfContent;
+use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
+use crate::common::utils::try_unwrap_with_timeout_async;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -221,7 +222,31 @@ impl TableOfContent {
                     state.key(),
                 );
             }
+
             removed.stop_gracefully().await;
+
+            // If we try to wait for the collection to be freed, and fail if it is still busy after timeout
+            // it can risk stopping the consensus progress.
+            //
+            // Instead, we proceed with removal regardless, as it should be safe to remove files
+            // at least on Linux.
+            let removed_collection_res = try_unwrap_with_timeout_async(
+                removed,
+                COLLECTION_DELETE_SPIN_INTERVAL,
+                COLLECTION_DELETE_WAIT_TIMEOUT,
+            )
+            .await;
+
+            match removed_collection_res {
+                Ok(collection) => drop(collection),
+                Err(busy_collection) => {
+                    debug_assert!(false, "Collection `{collection_name}` is busy");
+                    log::error!(
+                        "Collection `{collection_name}` is busy and cannot be removed in time."
+                    );
+                    drop(busy_collection);
+                }
+            };
 
             to_delete = Some(safe_delete_in_tmp(&collection_path, &safe_delete_path)?);
 
