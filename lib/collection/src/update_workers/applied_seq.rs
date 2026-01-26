@@ -74,7 +74,7 @@ impl AppliedSeqHandler {
             Ok(file) => {
                 let existing_op_num = file.read().op_num;
                 debug_assert!(
-                    existing_op_num <= wal_first_index,
+                    existing_op_num <= last_applied_wal_index,
                     "persisted applied_seq:{existing_op_num} cannot be larger than the last_applied_wal_index:{last_applied_wal_index}"
                 );
                 let op_num = AtomicU64::new(existing_op_num);
