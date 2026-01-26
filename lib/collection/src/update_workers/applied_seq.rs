@@ -7,6 +7,8 @@ use common::save_on_disk::SaveOnDisk;
 use io::file_operations::read_json;
 use serde::{Deserialize, Serialize};
 
+use crate::operations::types::CollectionResult;
+
 /// How often the `applied_seq` is persisted
 pub const APPLIED_SEQ_SAVE_INTERVAL: u64 = 64;
 
@@ -42,45 +44,45 @@ impl AppliedSeqHandler {
         read_json::<AppliedSeq>(&self.path).unwrap().op_num
     }
 
-    pub fn load_or_init(shard_path: &Path) -> Self {
+    pub fn load_or_init(shard_path: &Path) -> CollectionResult<Self> {
         let path = shard_path.join(APPLIED_SEQ_FILE);
-        let file = SaveOnDisk::load_or_init_default(&path).unwrap();
+        let file = SaveOnDisk::load_or_init_default(&path)?;
 
         let op_num = AtomicU64::new(0);
         let update_count = AtomicU64::new(0);
-        Self {
+        Ok(Self {
             file,
             path,
             op_num,
             update_count,
-        }
+        })
     }
 
-    fn save(&self, op_num: u64) {
-        self.file
-            .write(|current| {
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                debug_assert!(current.timestamp <= timestamp);
-                current.op_num = op_num;
-                current.timestamp = timestamp;
-            })
-            .unwrap();
+    fn save(&self, op_num: u64) -> CollectionResult<()> {
+        self.file.write(|current| {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            debug_assert!(current.timestamp <= timestamp);
+            current.op_num = op_num;
+            current.timestamp = timestamp;
+        })?;
+        Ok(())
     }
 
     /// Update the underlying file every `APPLIED_SEQ_SAVE_INTERVAL` updates.
     /// Always update memory representation
-    pub fn update(&self, op_num: u64) {
+    pub fn update(&self, op_num: u64) -> CollectionResult<()> {
         // update in-memory
         self.op_num.store(op_num, Ordering::Relaxed);
         let prev_count = self.update_count.fetch_add(1, Ordering::Relaxed);
         // update on disk according to interval to amortize fsync
         if prev_count + 1 >= APPLIED_SEQ_SAVE_INTERVAL {
-            self.save(op_num);
+            self.save(op_num)?;
             self.update_count.store(0, Ordering::Relaxed);
         }
+        Ok(())
     }
 }
 
@@ -93,7 +95,7 @@ mod tests {
     #[test]
     fn nothing_persisted_on_init() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
         assert_eq!(handler.op_num(), 0);
         // nothing persisted yet because no updates observed
         assert!(!handler.path().exists());
@@ -102,9 +104,9 @@ mod tests {
     #[test]
     fn persists_at_interval() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
-        let handler = AppliedSeqHandler::load_or_init(dir.path());
+        let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
         for i in 1..APPLIED_SEQ_SAVE_INTERVAL {
-            handler.update(i);
+            handler.update(i).unwrap();
             assert_eq!(handler.op_num(), i);
             // nothing persisted yet because less updates than interval
             assert!(!handler.path().exists());
@@ -112,7 +114,7 @@ mod tests {
 
         // one more update to reach APPLIED_SEQ_SAVE_INTERVAL
         let op_num = 12345;
-        handler.update(op_num);
+        handler.update(op_num).unwrap();
         assert_eq!(handler.op_num(), op_num);
         assert!(handler.path().exists());
         // ensure written to disk

@@ -153,9 +153,9 @@ impl UpdateHandler {
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-    ) -> UpdateHandler {
-        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path);
-        UpdateHandler {
+    ) -> CollectionResult<Self> {
+        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path)?;
+        Ok(UpdateHandler {
             collection_name,
             shared_storage_config,
             payload_index_schema,
@@ -181,7 +181,7 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             applied_seq_handler: Arc::new(applied_seq_handler),
-        }
+        })
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {

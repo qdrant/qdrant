@@ -122,7 +122,9 @@ impl UpdateWorkers {
                         Err(err) => Err(CollectionError::from(err)),
                     };
 
-                    applied_seq_handler.update(op_num);
+                    if let Err(err) = applied_seq_handler.update(op_num) {
+                        log::error!("Can't update last applied_seq {err}")
+                    }
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {

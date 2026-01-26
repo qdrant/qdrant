@@ -224,7 +224,7 @@ impl LocalShard {
         clocks: LocalShardClocks,
         update_runtime: Handle,
         search_runtime: Handle,
-    ) -> Self {
+    ) -> CollectionResult<Self> {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(Mutex::new(wal));
@@ -268,7 +268,7 @@ impl LocalShard {
             shard_path.into(),
             scroll_read_lock.clone(),
             update_tracker.clone(),
-        );
+        )?;
 
         let (update_sender, update_receiver) =
             mpsc::channel(shared_storage_config.update_queue_size);
@@ -283,7 +283,7 @@ impl LocalShard {
 
         drop(config); // release `shared_config` from borrow checker
 
-        Self {
+        Ok(Self {
             collection_name,
             segments: segment_holder,
             collection_config,
@@ -302,7 +302,7 @@ impl LocalShard {
             read_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
-        }
+        })
     }
 
     pub fn segments(&self) -> &RwLock<SegmentHolder> {
@@ -479,7 +479,7 @@ impl LocalShard {
             update_runtime,
             search_runtime,
         )
-        .await;
+        .await?;
 
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
@@ -634,7 +634,7 @@ impl LocalShard {
             update_runtime,
             search_runtime,
         )
-        .await;
+        .await?;
 
         local_shard.insert_fake_operation().await?;
 
