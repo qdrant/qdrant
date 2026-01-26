@@ -69,11 +69,12 @@ impl RecoverableWal {
         wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
-    pub async fn read_once(
+    /// Read a single record from the WAL by its operation number.
+    pub async fn read_single_record(
         &self,
         op_num: u64,
     ) -> shard::wal::Result<Option<OperationWithClockTag>> {
-        self.wal.lock().await.read_once(op_num)
+        self.wal.lock().await.read_single_record(op_num)
     }
 
     /// Take clocks snapshot because we deactivated our replica

@@ -79,7 +79,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
-    pub fn read_once(&self, idx: u64) -> Result<Option<R>> {
+    pub fn read_single_record(&self, idx: u64) -> Result<Option<R>> {
         if let Some(entry) = self.wal.entry(idx) {
             let record: R = serde_cbor::from_slice(&entry)
                 .or_else(|_err| rmp_serde::from_slice(&entry))

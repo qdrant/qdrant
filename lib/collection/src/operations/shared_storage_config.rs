@@ -14,6 +14,10 @@ use crate::shards::transfer::ShardTransferMethod;
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
 const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
+/// Maximum number of operations which are stored in RAM in update worker queue.
+/// If there are more pending operations, operation data
+/// will be read from WAL when processing the operation.
+pub const DEFAULT_UPDATE_QUEUE_RAM_BUFFER: usize = 150;
 pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
 pub const DEFAULT_SNAPSHOTS_PATH: &str = "./snapshots";
 

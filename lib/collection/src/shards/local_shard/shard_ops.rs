@@ -20,6 +20,7 @@ use tokio::time::error::Elapsed;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
+use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
     UpdateResult, UpdateStatus,
@@ -70,6 +71,9 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
+            let pending_operations_count = update_sender
+                .max_capacity()
+                .saturating_sub(update_sender.capacity());
             let channel_permit = update_sender.reserve().await?;
 
             // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
@@ -90,8 +94,14 @@ impl ShardOperation for LocalShard {
                 Err(err) => return Err(err.into()),
             };
 
+            // If there are too many pending operations, don't keep operation data in RAM.
+            // Instead, read operation data from the WAL when processing the operation.
+            let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
+            let operation = keep_operation_in_ram.then_some(Box::new(operation.operation));
+
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
+                operation,
                 sender: callback_sender,
                 hw_measurements: hw_measurement_acc.clone(),
             }));
