@@ -16,8 +16,8 @@ const APPLIED_SEQ_FILE: &str = "applied_seq.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct AppliedSeq {
-    op_num: u64,
-    timestamp: u64,
+    pub op_num: u64,
+    pub timestamp: u64,
 }
 
 #[derive(Debug)]
@@ -46,9 +46,11 @@ impl AppliedSeqHandler {
 
     pub fn load_or_init(shard_path: &Path) -> CollectionResult<Self> {
         let path = shard_path.join(APPLIED_SEQ_FILE);
-        let file = SaveOnDisk::load_or_init_default(&path)?;
+        let file: SaveOnDisk<AppliedSeq> = SaveOnDisk::load_or_init_default(&path)?;
 
-        let op_num = AtomicU64::new(0);
+        let existing_op_num = file.read().op_num;
+        // TODO(a.g) special case for zero
+        let op_num = AtomicU64::new(existing_op_num);
         let update_count = AtomicU64::new(0);
         Ok(Self {
             file,
@@ -119,5 +121,27 @@ mod tests {
         assert!(handler.path().exists());
         // ensure written to disk
         assert_eq!(handler.persisted_op_num(), op_num);
+    }
+
+    #[test]
+    fn read_existing_value_on_init() {
+        let dir = TempDir::with_prefix("applied_seq").unwrap();
+        let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
+        for i in 1..APPLIED_SEQ_SAVE_INTERVAL * 10 {
+            handler.update(i).unwrap();
+            assert_eq!(handler.op_num(), i);
+        }
+
+        let op_num = 6400;
+        handler.update(op_num).unwrap();
+        assert_eq!(handler.op_num(), op_num);
+        assert!(handler.path().exists());
+        // ensure written to disk
+        assert_eq!(handler.persisted_op_num(), op_num);
+
+        // drop and reload
+        drop(handler);
+        let handler = AppliedSeqHandler::load_or_init(dir.path()).unwrap();
+        assert_eq!(handler.op_num(), op_num);
     }
 }
