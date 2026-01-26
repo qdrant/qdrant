@@ -238,7 +238,7 @@ integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.29"
 memmap2 = "0.9.9"
-nix = { version = "0.30", features = ["fs", "feature"] }
+nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
