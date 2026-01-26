@@ -10848,10 +10848,21 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
               },
               {
                 "nullable": true
@@ -11153,6 +11164,15 @@
           }
         }
       },
+      "UpdateMode": {
+        "description": "Defines the mode of the upsert operation\n\n* `upsert` - default mode, insert new points, update existing points * `insert_only` - only insert new points, do not update existing points * `update_only` - only update existing points, do not insert new points",
+        "type": "string",
+        "enum": [
+          "upsert",
+          "insert_only",
+          "update_only"
+        ]
+      },
       "PointsList": {
         "type": "object",
         "required": [
@@ -11176,10 +11196,21 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
               },
               {
                 "nullable": true

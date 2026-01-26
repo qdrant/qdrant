@@ -70,6 +70,7 @@ fn validate_error_sparse_vector_points_list() {
         points: vec![wrong_point_struct()],
         shard_key: None,
         update_filter: None,
+        update_mode: None,
     });
 }
 

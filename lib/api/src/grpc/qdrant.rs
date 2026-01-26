@@ -4953,13 +4953,17 @@ pub struct UpsertPoints {
     /// Option for custom sharding to specify used shard keys
     #[prost(message, optional, tag = "5")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub update_filter: ::core::option::Option<Filter>,
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[prost(enumeration = "UpdateMode", optional, tag = "8")]
+    pub update_mode: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6710,9 +6714,13 @@ pub mod points_update_operation {
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
-        /// If specified, only points that match this filter will be updated, others will be inserted
+        /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+        /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
         #[prost(message, optional, tag = "3")]
         pub update_filter: ::core::option::Option<super::Filter>,
+        /// Mode of the upsert operation: insert_only, upsert (default), update_only
+        #[prost(enumeration = "super::UpdateMode", optional, tag = "4")]
+        pub update_mode: ::core::option::Option<i32>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7350,6 +7358,40 @@ impl WriteOrderingType {
             "Weak" => Some(Self::Weak),
             "Medium" => Some(Self::Medium),
             "Strong" => Some(Self::Strong),
+            _ => None,
+        }
+    }
+}
+/// Defines the mode of the upsert operation
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum UpdateMode {
+    /// Default mode - insert new points, update existing points
+    Upsert = 0,
+    /// Only insert new points, do not update existing points
+    InsertOnly = 1,
+    /// Only update existing points, do not insert new points
+    UpdateOnly = 2,
+}
+impl UpdateMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            UpdateMode::Upsert => "Upsert",
+            UpdateMode::InsertOnly => "InsertOnly",
+            UpdateMode::UpdateOnly => "UpdateOnly",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Upsert" => Some(Self::Upsert),
+            "InsertOnly" => Some(Self::InsertOnly),
+            "UpdateOnly" => Some(Self::UpdateOnly),
             _ => None,
         }
     }

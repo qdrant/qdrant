@@ -18,7 +18,7 @@ use segment::types::{
 use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted,
+    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use crate::segment_holder::SegmentHolder;
@@ -284,14 +284,36 @@ pub fn conditional_upsert(
     let ConditionalInsertOperationInternal {
         mut points_op,
         condition,
+        update_mode,
     } = operation;
 
     let point_ids = points_op.point_ids();
+    let update_mode = update_mode.unwrap_or_default();
 
-    let points_to_exclude =
-        select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+    match update_mode {
+        UpdateMode::Upsert => {
+            // Default behavior: insert new points, update existing points that match the condition
+            let points_to_exclude =
+                select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+            points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
+        }
+        UpdateMode::InsertOnly => {
+            // Only insert new points, skip all existing points entirely
+            let existing_points = segments.select_existing_points(point_ids);
+            points_op.retain_point_ids(|idx| !existing_points.contains(idx));
+        }
+        UpdateMode::UpdateOnly => {
+            // Only update existing points that match the condition, don't insert new points
+            let points_to_exclude =
+                select_excluded_by_filter_ids(segments, point_ids.clone(), condition, hw_counter)?;
+            let existing_points = segments.select_existing_points(point_ids);
+            // Keep only points that exist AND are not excluded by the condition
+            points_op.retain_point_ids(|idx| {
+                existing_points.contains(idx) && !points_to_exclude.contains(idx)
+            });
+        }
+    }
 
-    points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
     let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
 

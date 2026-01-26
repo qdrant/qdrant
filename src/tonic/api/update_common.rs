@@ -53,6 +53,7 @@ pub async fn upsert(
         shard_key_selector,
         update_filter,
         timeout,
+        update_mode,
     } = upsert_points;
 
     let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
@@ -65,6 +66,7 @@ pub async fn upsert(
         update_filter: update_filter
             .map(segment::types::Filter::try_from)
             .transpose()?,
+        update_mode: update_mode.map(grpc_update_mode_to_rest),
     });
 
     let timing = Instant::now();
@@ -87,6 +89,15 @@ pub async fn upsert(
         inference_usage.map(grpc::InferenceUsage::from),
     );
     Ok(Response::new(response))
+}
+
+/// Convert gRPC UpdateMode to REST UpdateMode
+fn grpc_update_mode_to_rest(mode: i32) -> api::rest::schema::UpdateMode {
+    match api::grpc::qdrant::UpdateMode::try_from(mode) {
+        Ok(api::grpc::qdrant::UpdateMode::InsertOnly) => api::rest::schema::UpdateMode::InsertOnly,
+        Ok(api::grpc::qdrant::UpdateMode::UpdateOnly) => api::rest::schema::UpdateMode::UpdateOnly,
+        Ok(api::grpc::qdrant::UpdateMode::Upsert) | Err(_) => api::rest::schema::UpdateMode::Upsert,
+    }
 }
 
 pub async fn delete(
@@ -448,6 +459,7 @@ pub async fn update_batch(
                 points,
                 shard_key_selector,
                 update_filter,
+                update_mode,
             }) => {
                 upsert(
                     StrictModeCheckedTocProvider::new(dispatcher),
@@ -459,6 +471,7 @@ pub async fn update_batch(
                         shard_key_selector,
                         update_filter,
                         timeout,
+                        update_mode,
                     },
                     internal_params,
                     access.clone(),

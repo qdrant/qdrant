@@ -748,6 +748,43 @@ impl SegmentHolder {
         Ok(read_points)
     }
 
+    /// Out of a list of point IDs, select only those that exist in at least one segment.
+    ///
+    /// Optimized for many segments and long lists of IDs:
+    /// - Removes found IDs from consideration for subsequent segments
+    /// - Early terminates when all IDs are found
+    /// - Pre-allocates result set
+    pub fn select_existing_points(&self, ids: Vec<PointIdType>) -> AHashSet<PointIdType> {
+        let mut remaining_ids = ids;
+        if remaining_ids.is_empty() {
+            return AHashSet::new();
+        }
+
+        let mut existing_points = AHashSet::with_capacity(remaining_ids.len());
+
+        // Iterate through segments in proper order (non-appendable first for consistency)
+        for segment in self.non_appendable_then_appendable_segments() {
+            let segment_guard = segment.get().read();
+
+            // Partition remaining IDs: found ones go to existing_points, rest stay in remaining
+            remaining_ids.retain(|&id| {
+                if segment_guard.has_point(id) {
+                    existing_points.insert(id);
+                    false // Remove from remaining
+                } else {
+                    true // Keep in remaining
+                }
+            });
+
+            // Early termination if all points found
+            if remaining_ids.is_empty() {
+                break;
+            }
+        }
+
+        existing_points
+    }
+
     /// Create a new appendable segment and add it to the segment holder.
     ///
     /// The segment configuration is sourced from the given collection parameters.
