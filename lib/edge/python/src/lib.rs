@@ -79,7 +79,7 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
     #[pymodule_export]
-    use super::update::PyUpdateOperation;
+    use super::update::{PyUpdateMode, PyUpdateOperation};
 }
 
 #[pyclass(name = "EdgeShard")]

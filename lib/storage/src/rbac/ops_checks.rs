@@ -707,6 +707,7 @@ mod tests_ops {
                     PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
                         points_op: inner,
                         condition: filter,
+                        update_mode: None,
                     }),
                 );
 

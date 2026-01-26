@@ -384,6 +384,19 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
             return False
     return True
 
+def peers_have_version(peer_api_uris: [str]) -> bool:
+    peer_api_uri = peer_api_uris[0]
+    try:
+        r = requests.get(f"{peer_api_uri}/cluster/telemetry")
+        assert_http_ok(r)
+        peers = r.json()["result"]["cluster"]["peers"]
+        for peer_id, peer_status in peers.items():
+            if peer_status["details"].get("version") is None:
+                return False
+    except requests.exceptions.ConnectionError:
+        print(f"Could not contact peer {peer_api_uri} to fetch versions")
+        return False
+    return True
 
 def all_nodes_have_same_commit(peer_api_uris: [str]) -> bool:
     commits = []
@@ -606,6 +619,12 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str, 
         print_clusters_info(peer_api_uris)
         raise e
 
+def wait_for_all_peers_versions(peer_api_uris: [str]):
+    try:
+        wait_for(peers_have_version, peer_api_uris)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
 
 def wait_for_same_commit(peer_api_uris: [str]):
     try:

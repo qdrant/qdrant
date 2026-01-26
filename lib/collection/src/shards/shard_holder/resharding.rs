@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};
+use shard::operations::point_ops::UpdateMode;
 
 use super::ShardHolder;
 use crate::config::ShardingMethod;
@@ -561,13 +562,27 @@ impl OperationsByMode {
     pub fn with_update_only_existing(mut self, operation: CollectionUpdateOperations) -> Self {
         self.update_only_existing = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => match point_operation {
-                PointOperations::UpsertPoints(operation) => operation.into_update_only(None),
+                PointOperations::UpsertPoints(operation) => {
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::UpsertPointsConditional(
+                            ConditionalInsertOperationInternal {
+                                points_op: operation,
+                                condition: Filter::new(), // Always true condition
+                                update_mode: Some(UpdateMode::UpdateOnly),
+                            },
+                        ),
+                    )]
+                }
                 PointOperations::UpsertPointsConditional(operation) => {
-                    let ConditionalInsertOperationInternal {
-                        points_op,
-                        condition,
-                    } = operation;
-                    points_op.into_update_only(Some(condition))
+                    vec![CollectionUpdateOperations::PointOperation(
+                        PointOperations::UpsertPointsConditional(
+                            ConditionalInsertOperationInternal {
+                                points_op: operation.points_op,
+                                condition: operation.condition,
+                                update_mode: Some(UpdateMode::UpdateOnly),
+                            },
+                        ),
+                    )]
                 }
 
                 PointOperations::DeletePoints { ids } => {

@@ -109,11 +109,13 @@ impl Generalizer for ConditionalInsertOperationInternal {
         let Self {
             points_op,
             condition,
+            update_mode,
         } = self;
 
         Self {
             condition: condition.clone(),
             points_op: points_op.remove_details(),
+            update_mode: *update_mode,
         }
     }
 }
