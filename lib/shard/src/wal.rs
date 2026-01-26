@@ -83,7 +83,11 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         if let Some(entry) = self.wal.entry(idx) {
             let record: R = serde_cbor::from_slice(&entry)
                 .or_else(|_err| rmp_serde::from_slice(&entry))
-                .expect("Can't deserialize entry, probably corrupted WAL or version mismatch");
+                .map_err(|err| {
+                    WalError::WriteWalError(format!(
+                        "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+                    ))
+                })?;
             Ok(Some(record))
         } else {
             Ok(None)
