@@ -15,7 +15,7 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -24,7 +24,8 @@ use uuid::Uuid;
 
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
-impl SegmentEntry for ProxySegment {
+
+impl ImmutableSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
     }
@@ -147,147 +148,6 @@ impl SegmentEntry for ProxySegment {
         };
 
         Ok(result)
-    }
-
-    fn upsert_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let mut was_deleted = false;
-
-        self.version = cmp::max(self.version, op_num);
-
-        let point_offset = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let point_offset = raw_segment.read().get_internal_id(point_id);
-                if point_offset.is_some() {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                point_offset
-            }
-            LockedSegment::Proxy(proxy) => {
-                if proxy.read().has_point(point_id) {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                None
-            }
-        };
-
-        self.set_deleted_offset(point_offset);
-
-        Ok(was_deleted)
-    }
-
-    fn update_vectors(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Update vectors is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn delete_vector(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _vector_name: &VectorName,
-    ) -> OperationResult<bool> {
-        // Print current stack trace for easier debugging of unexpected calls
-        Err(OperationError::service_error(format!(
-            "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _full_payload: &Payload,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Set full payload is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn set_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _payload: &Payload,
-        _key: &Option<JsonPath>,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Set payload is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn delete_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _key: PayloadKeyTypeRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Delete payload is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
-    }
-
-    fn clear_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        Err(OperationError::service_error(format!(
-            "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
-        )))
     }
 
     fn vector(
@@ -783,5 +643,148 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .fill_query_context(query_context)
+    }
+}
+
+impl SegmentEntry for ProxySegment {
+    fn upsert_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _vectors: NamedVectors,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        let mut was_deleted = false;
+
+        self.version = cmp::max(self.version, op_num);
+
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let point_offset = raw_segment.read().get_internal_id(point_id);
+                if point_offset.is_some() {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                point_offset
+            }
+            LockedSegment::Proxy(proxy) => {
+                if proxy.read().has_point(point_id) {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                None
+            }
+        };
+
+        self.set_deleted_offset(point_offset);
+
+        Ok(was_deleted)
+    }
+
+    fn update_vectors(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _vectors: NamedVectors,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Update vectors is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _vector_name: &VectorName,
+    ) -> OperationResult<bool> {
+        // Print current stack trace for easier debugging of unexpected calls
+        Err(OperationError::service_error(format!(
+            "Delete vector is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _full_payload: &Payload,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Set full payload is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn set_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _payload: &Payload,
+        _key: &Option<JsonPath>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Set payload is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn delete_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _key: PayloadKeyTypeRef,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Delete payload is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
+    }
+
+    fn clear_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        Err(OperationError::service_error(format!(
+            "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
+        )))
     }
 }

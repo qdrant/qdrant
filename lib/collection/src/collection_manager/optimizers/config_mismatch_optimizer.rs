@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::SegmentEntry;
+use segment::entry::{ImmutableSegmentEntry as _, SegmentEntry};
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, VectorName};
 
@@ -235,7 +235,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::entry::entry_point::SegmentEntry;
     use segment::types::{
         CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
         ScalarQuantizationConfig, ScalarType,

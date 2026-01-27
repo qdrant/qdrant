@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
 use segment::segment::Segment;
 
 use crate::proxy_segment::ProxySegment;

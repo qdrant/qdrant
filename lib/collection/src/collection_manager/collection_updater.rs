@@ -110,7 +110,7 @@ mod tests {
     use segment::data_types::vectors::{
         DEFAULT_VECTOR_NAME, VectorStructInternal, only_default_vector,
     };
-    use segment::entry::entry_point::SegmentEntry;
+    use segment::entry::entry_point::ImmutableSegmentEntry;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::types::PayloadSchemaType::Keyword;
