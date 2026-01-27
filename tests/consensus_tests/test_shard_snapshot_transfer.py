@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+import re
 import uuid
 from time import sleep
 
@@ -93,6 +94,45 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
     assert counts[0] == counts[1] == counts[2]
+
+
+# Test that transfer comment shows stage info via cluster API and distributed telemetry
+def test_shard_snapshot_transfer_shows_stage_in_comment(tmp_path: pathlib.Path):
+    assert_project_root()
+    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 5_000)
+
+    src = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    dst = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    replicate_shard(peer_api_uris[0], COLLECTION_NAME, src['local_shards'][0]['shard_id'],
+                    src['peer_id'], dst['peer_id'], method="snapshot")
+
+    stage_re = re.compile(r"^(proxifying|creating snapshot|transferring|recovering|flushing queue|waiting consensus|finalizing) \(\d+s\) \|")
+
+    def get_cluster_comments():
+        return [t.get("comment", "") for t in get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME).get("shard_transfers", [])]
+
+    def get_telemetry_comments():
+        r = requests.get(f"{peer_api_uris[2]}/cluster/telemetry", params={"details_level": 6})
+        return [t.get("comment", "") for t in r.json().get("result", {}).get("collections", {}).get(COLLECTION_NAME, {}).get("shard_transfers", [])] if r.ok else []
+
+    found_cluster, found_telemetry = False, False
+    for _ in range(200):
+        comments = get_cluster_comments()
+        if not comments:
+            break
+        found_cluster = found_cluster or any(stage_re.match(c) for c in comments)
+        found_telemetry = found_telemetry or any(stage_re.match(c) for c in get_telemetry_comments())
+        if found_cluster and found_telemetry:
+            break
+        sleep(0.1)
+
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    assert found_cluster, "Expected stage info in cluster API"
+    assert found_telemetry, "Expected stage info in /cluster/telemetry"
 
 
 # Transfer shards from one node to another with an API key is configured

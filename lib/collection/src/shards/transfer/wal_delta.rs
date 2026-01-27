@@ -4,7 +4,7 @@ use common::defaults;
 use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use super::{ShardTransfer, ShardTransferConsensus};
+use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
@@ -119,17 +119,20 @@ pub(super) async fn transfer_wal_delta(
         });
 
     // Queue proxy local shard, start flushing updates to remote
+    progress.lock().set_stage(TransferStage::Proxifying);
     replica_set
-        .queue_proxify_local(remote_shard.clone(), wal_delta_version, progress)
+        .queue_proxify_local(remote_shard.clone(), wal_delta_version, progress.clone())
         .await?;
     debug_assert!(
         replica_set.is_queue_proxy().await,
         "Local shard must be a queue proxy",
     );
+    progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transfer WAL diff by transferring all current queue proxy updates");
     replica_set.queue_proxy_flush().await?;
 
     // Set shard state to Partial
+    progress.lock().set_stage(TransferStage::WaitingConsensus);
     log::trace!(
         "Shard {shard_id} diff transferred to {remote_peer_id} for diff transfer, switching into next stage through consensus",
     );
@@ -144,6 +147,7 @@ pub(super) async fn transfer_wal_delta(
 
     // Transform queue proxy into forward proxy, transfer any remaining updates that just came in
     // After this returns, the complete WAL diff is transferred
+    progress.lock().set_stage(TransferStage::FlushingQueue);
     log::trace!("Transform queue proxy into forward proxy, transferring any remaining records");
     replica_set.queue_proxy_into_forward_proxy().await?;
 
