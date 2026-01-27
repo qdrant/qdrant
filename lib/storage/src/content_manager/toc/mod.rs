@@ -89,7 +89,7 @@ pub struct TableOfContent {
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
-    collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
+    collection_hw_metrics: DashMap<CollectionId, Arc<HwSharedDrain>>,
     /// Collector for various telemetry/metrics.
     telemetry: TocTelemetryCollector,
 }
