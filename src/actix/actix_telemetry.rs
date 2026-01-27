@@ -25,11 +25,13 @@ fn extract_collection(path: &str) -> Option<String> {
     decode(collection).ok().map(|s| s.into_owned())
 }
 
+/// Actix middleware service that collects telemetry for each request.
 pub struct ActixTelemetryService<S> {
     service: S,
     telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
 }
 
+/// Transform factory for creating [`ActixTelemetryService`] instances.
 pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
@@ -74,6 +76,7 @@ where
 }
 
 impl ActixTelemetryTransform {
+    /// Creates a new transform with the given telemetry collector.
     pub fn new(telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>) -> Self {
         Self {
             telemetry_collector,

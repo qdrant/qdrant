@@ -17,22 +17,28 @@ pub type HttpStatusCode = u16;
 
 const COLLECTION_ENDPOINT_SEPARATOR: &str = "|";
 
+/// Key for per-collection telemetry data, combining collection name and endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema, Anonymize)]
 pub struct CollectionEndpointKey {
+    /// Name of the collection.
     #[anonymize(true)]
     pub collection: String,
+    /// API endpoint path pattern.
     #[anonymize(false)]
     pub endpoint: String,
 }
 
+/// Formats a collection-endpoint key string from individual components.
 fn format_collection_endpoint_key(collection: &str, endpoint: &str) -> String {
     format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
 }
 
+/// Formats a collection-endpoint key string from a [`CollectionEndpointKey`].
 fn format_collection_endpoint_key_from_key(key: &CollectionEndpointKey) -> String {
     format_collection_endpoint_key(&key.collection, &key.endpoint)
 }
 
+/// Anonymizes the collection portion of a collection-endpoint key string.
 fn anonymize_collection_endpoint_key(key: &str) -> String {
     let Some((collection, endpoint)) = key.split_once(COLLECTION_ENDPOINT_SEPARATOR) else {
         return key.to_string().anonymize();
@@ -42,15 +48,21 @@ fn anonymize_collection_endpoint_key(key: &str) -> String {
     format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
 }
 
+/// Telemetry data for REST API requests.
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
+    /// Global response statistics grouped by endpoint and HTTP status code.
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    /// Per-collection response statistics grouped by collection-endpoint key and HTTP status code.
     pub per_collection: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
+/// Telemetry data for gRPC requests.
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
+    /// Global response statistics grouped by gRPC method name.
     pub responses: HashMap<String, OperationDurationStatistics>,
+    /// Per-collection response statistics grouped by collection-endpoint key.
     pub per_collection: HashMap<String, OperationDurationStatistics>,
 }
 
@@ -58,6 +70,9 @@ pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
+/// Per-worker telemetry collector for Actix (REST API) requests.
+///
+/// Uses an LRU cache to limit memory usage for per-collection metrics.
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     per_collection_data: LruCache<
@@ -67,8 +82,10 @@ pub struct ActixWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
+    /// Maximum number of collections to track in per-collection metrics.
     const DEFAULT_MAX_COLLECTIONS: usize = 1000;
 
+    /// Creates a new collector with default LRU cache capacity.
     pub fn new() -> Self {
         Self {
             methods: HashMap::new(),
@@ -83,14 +100,19 @@ pub struct TonicTelemetryCollector {
     pub workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
 }
 
+/// Per-worker telemetry collector for Tonic (gRPC) requests.
+///
+/// Uses an LRU cache to limit memory usage for per-collection metrics.
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
     per_collection_data: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
 }
 
 impl TonicWorkerTelemetryCollector {
+    /// Maximum number of collections to track in per-collection metrics.
     const DEFAULT_MAX_COLLECTIONS: usize = 1000;
 
+    /// Creates a new collector with default LRU cache capacity.
     pub fn new() -> Self {
         Self {
             methods: HashMap::new(),
@@ -136,10 +158,14 @@ impl TonicTelemetryCollector {
 }
 
 impl TonicWorkerTelemetryCollector {
+    /// Records a gRPC response without collection context.
     pub fn add_response(&mut self, method: String, instant: std::time::Instant) {
         self.add_response_with_collection(method, instant, None);
     }
 
+    /// Records a gRPC response with optional collection context.
+    ///
+    /// Updates both global metrics and per-collection metrics (if collection is provided).
     pub fn add_response_with_collection(
         &mut self,
         method: String,
@@ -166,6 +192,7 @@ impl TonicWorkerTelemetryCollector {
         }
     }
 
+    /// Returns aggregated gRPC telemetry data.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
         let mut responses = HashMap::new();
         for (method, aggregator) in self.methods.iter() {
@@ -186,6 +213,9 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
+    /// Records a REST API response with optional collection context.
+    ///
+    /// Updates both global metrics and per-collection metrics (if collection is provided).
     pub fn add_response_with_collection(
         &mut self,
         method: &str,
@@ -218,6 +248,7 @@ impl ActixWorkerTelemetryCollector {
         }
     }
 
+    /// Returns aggregated REST API telemetry data.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut responses = HashMap::new();
         for (method, status_codes) in &self.methods {
@@ -246,6 +277,7 @@ impl ActixWorkerTelemetryCollector {
 }
 
 impl GrpcTelemetry {
+    /// Merges telemetry data from another collector into this one.
     pub fn merge(&mut self, other: &GrpcTelemetry) {
         for (method, other_statistics) in &other.responses {
             let entry = self.responses.entry(method.clone()).or_default();
@@ -259,6 +291,7 @@ impl GrpcTelemetry {
 }
 
 impl WebApiTelemetry {
+    /// Merges telemetry data from another collector into this one.
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
