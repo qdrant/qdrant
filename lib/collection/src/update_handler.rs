@@ -129,7 +129,7 @@ pub struct UpdateHandler {
 
     update_tracker: UpdateTracker,
 
-    /// Persist the applied op_num sequence applied
+    /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
 }
 
@@ -153,9 +153,8 @@ impl UpdateHandler {
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        applied_seq_handler: Arc<AppliedSeqHandler>,
     ) -> Self {
-        let wal_last_index = wal.lock().await.last_index();
-        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path, wal_last_index);
         UpdateHandler {
             collection_name,
             shared_storage_config,
@@ -181,7 +180,7 @@ impl UpdateHandler {
             has_triggered_optimizers: Default::default(),
             scroll_read_lock,
             update_tracker,
-            applied_seq_handler: Arc::new(applied_seq_handler),
+            applied_seq_handler,
         }
     }
 
