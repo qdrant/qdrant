@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
+use shard::operations::CollectionUpdateOperations;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
@@ -19,7 +20,6 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     SegmentOptimizer, plan_optimizations,
 };
 use crate::common::stoppable_task::StoppableTaskHandle;
-use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::CollectionResult;
 use crate::shards::CollectionId;
@@ -35,8 +35,8 @@ pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
-    /// Operation
-    pub operation: CollectionUpdateOperations,
+    /// Operation. If None, then the operation data is read from WAL
+    pub operation: Option<Box<CollectionUpdateOperations>>,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
     /// Hardware measurement for the operation

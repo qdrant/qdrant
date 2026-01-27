@@ -79,6 +79,21 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
+    pub fn read_single_record(&self, idx: u64) -> Result<Option<R>> {
+        if let Some(entry) = self.wal.entry(idx) {
+            let record: R = serde_cbor::from_slice(&entry)
+                .or_else(|_err| rmp_serde::from_slice(&entry))
+                .map_err(|err| {
+                    WalError::WriteWalError(format!(
+                        "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+                    ))
+                })?;
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
@@ -265,7 +280,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     #[serde(untagged)]
     enum TestRecord {
@@ -273,13 +288,13 @@ mod tests {
         Struct2(TestInternalStruct2),
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     struct TestInternalStruct1 {
         data: usize,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     struct TestInternalStruct2 {
         a: i32,
@@ -324,6 +339,16 @@ mod tests {
 
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);
+
+        assert_eq!(
+            serde_wal.read_single_record(idx1).unwrap().unwrap(),
+            record1
+        );
+        assert_eq!(
+            serde_wal.read_single_record(idx2).unwrap().unwrap(),
+            record2
+        );
+        assert_eq!(serde_wal.read_single_record(100).unwrap(), None);
 
         match record1 {
             TestRecord::Struct1(x) => assert_eq!(x.data, 10),
