@@ -6,13 +6,12 @@ use fs_err as fs;
 #[cfg(test)]
 use io::file_operations::read_json;
 use serde::{Deserialize, Serialize};
+use shard::files::APPLIED_SEQ_FILE;
 
 use crate::operations::types::CollectionResult;
 
 /// How often the `applied_seq` is persisted
 pub const APPLIED_SEQ_SAVE_INTERVAL: u64 = 64;
-
-const APPLIED_SEQ_FILE: &str = "applied_seq.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct AppliedSeq {
@@ -31,15 +30,18 @@ pub struct AppliedSeqHandler {
     file: Option<SaveOnDisk<AppliedSeq>>,
     /// path of the underlying persisted file
     path: PathBuf,
-    /// precise in-memory op_num (can be larger than value persisted in file)
-    /// invalid value if the file is not present
+    /// precise in-memory op_num (can be larger than value persisted in `file`)
     op_num: AtomicU64,
     /// tracking update for interval based persistence
     update_count: AtomicU64,
 }
 
 impl AppliedSeqHandler {
-    /// Get the current in-memory op_num.
+    /// Get the current in-memory op_num for the last_applied_seq.
+    /// The value is likely larger than what is persisted in `file`.
+    ///
+    ///
+    /// Returns None if the handler is not active.
     pub fn op_num(&self) -> Option<u64> {
         if self.file.is_some() {
             Some(self.op_num.load(Ordering::Relaxed))
@@ -56,14 +58,14 @@ impl AppliedSeqHandler {
 
     #[cfg(test)]
     fn persisted_op_num(&self) -> u64 {
-        read_json::<AppliedSeq>(&self.path).unwrap().op_num
+        let persisted = read_json::<AppliedSeq>(&self.path).unwrap().op_num;
+        debug_assert!(persisted <= self.op_num.load(Ordering::Relaxed));
+        persisted
     }
 
     /// Load or create the underlying applied seq file.
-    ///
-    /// `wal_first_index` is expected to be the next used WAL index.
-    pub fn load_or_init(shard_path: &Path, wal_first_index: u64) -> Self {
-        let last_applied_wal_index = wal_first_index.saturating_sub(1);
+    pub fn load_or_init(shard_path: &Path, wal_last_index: u64) -> Self {
+        let last_applied_wal_index = wal_last_index.saturating_sub(1);
         let update_count = AtomicU64::new(0);
         let path = shard_path.join(APPLIED_SEQ_FILE);
         let file_was_already_present = path.exists();
@@ -73,12 +75,14 @@ impl AppliedSeqHandler {
         match loaded_file {
             Ok(file) => {
                 let persisted_applied_seq = file.read().op_num;
-                // shard transfers might bring a WAL with higher index
-                let max_op_num = std::cmp::max(persisted_applied_seq, last_applied_wal_index);
+                debug_assert!(
+                    persisted_applied_seq <= wal_last_index,
+                    "last_applied_seq:{persisted_applied_seq} cannot be larger than last_wal_index:{wal_last_index}"
+                );
                 Self {
                     file: Some(file),
                     path,
-                    op_num: AtomicU64::new(max_op_num),
+                    op_num: AtomicU64::new(persisted_applied_seq),
                     update_count,
                 }
             }
@@ -88,24 +92,22 @@ impl AppliedSeqHandler {
                     // delete file as it is malformed
                     if let Err(err) = fs::remove_file(&path) {
                         log::error!("Could not deleted malformed applied_seq file {path:?} {err}");
-                        let op_num = AtomicU64::new(last_applied_wal_index);
                         Self {
                             file: None,
                             path,
-                            op_num,
+                            op_num: AtomicU64::new(last_applied_wal_index),
                             update_count,
                         }
                     } else {
                         // try again to create the file from scratch
-                        Self::load_or_init(shard_path, wal_first_index)
+                        Self::load_or_init(shard_path, wal_last_index)
                     }
                 } else {
                     log::error!("Error while creating new applied_seq at {path:?} {err}");
-                    let op_num = AtomicU64::new(last_applied_wal_index);
                     Self {
                         file: None,
                         path,
-                        op_num,
+                        op_num: AtomicU64::new(last_applied_wal_index),
                         update_count,
                     }
                 }
@@ -194,14 +196,8 @@ mod tests {
 
         // drop and reload
         drop(handler);
-        let handler = AppliedSeqHandler::load_or_init(dir.path(), 638);
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 1000);
         assert_eq!(handler.op_num(), Some(op_num));
-
-        // drop and reload
-        drop(handler);
-        // this time we got a fresher WAL which should prevail
-        let handler = AppliedSeqHandler::load_or_init(dir.path(), 801);
-        assert_eq!(handler.op_num(), Some(800));
     }
 
     #[test]

@@ -154,8 +154,8 @@ impl UpdateHandler {
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
     ) -> Self {
-        let wal_first_index = wal.lock().await.first_index();
-        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path, wal_first_index);
+        let wal_last_index = wal.lock().await.last_index();
+        let applied_seq_handler = AppliedSeqHandler::load_or_init(&shard_path, wal_last_index);
         UpdateHandler {
             collection_name,
             shared_storage_config,
