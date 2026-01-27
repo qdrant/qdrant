@@ -86,26 +86,27 @@ impl<K, V> ProducerPool<K, V> {
 
 /// Event published to the disruptor ring buffer.
 /// Uses UnsafeCell to allow taking values out in the processor.
+#[derive(Default)]
 struct InsertEvent<K, V> {
-    key: UnsafeCell<Option<K>>,
-    value: UnsafeCell<Option<V>>,
+    key: K,
+    value: V,
 }
 
 // Safety: InsertEvent is only accessed by one thread at a time:
 // - The producer thread writes to it
 // - The consumer thread reads from it
 // The disruptor guarantees these accesses don't overlap.
-unsafe impl<K: Send, V: Send> Send for InsertEvent<K, V> {}
-unsafe impl<K: Send, V: Send> Sync for InsertEvent<K, V> {}
+// unsafe impl<K: Send, V: Send> Send for InsertEvent<K, V> {}
+// unsafe impl<K: Send, V: Send> Sync for InsertEvent<K, V> {}
 
-impl<K, V> Default for InsertEvent<K, V> {
-    fn default() -> Self {
-        Self {
-            key: UnsafeCell::new(None),
-            value: UnsafeCell::new(None),
-        }
-    }
-}
+// impl<K, V> Default for InsertEvent<K, V> {
+//     fn default() -> Self {
+//         Self {
+//             key: None,
+//             value: None,
+//         }
+//     }
+// }
 
 /// Shared reader state - contains only read-side handles.
 /// This is `Send + Sync` and can be shared via `Arc`.
@@ -122,8 +123,8 @@ struct CacheInner<K, V, S> {
 
 impl<K, V, S> ConcurrentCache<K, V, S>
 where
-    K: Copy + Hash + Eq + Send + Sync + 'static,
-    V: Clone + Send + Sync + 'static,
+    K: Default + Copy + Hash + Eq + Send + Sync + 'static,
+    V: Default + Clone + Send + Sync + 'static,
     S: BuildHasher + Clone + Default + Send + Sync + 'static,
 {
     /// Default number of producers in the pool.
@@ -232,14 +233,7 @@ where
         // Create the disruptor with a processor that handles inserts
         let factory = InsertEvent::default;
         let processor = move |event: &InsertEvent<K, V>, _sequence: i64, _end_of_batch: bool| {
-            // Safety: The disruptor guarantees single-threaded access to each event.
-            // We use UnsafeCell to take ownership of the values.
-            let key = unsafe { (*event.key.get()).take() };
-            let value = unsafe { (*event.value.get()).take() };
-
-            if let (Some(key), Some(value)) = (key, value) {
-                cache_writer.write(|cache| cache.do_insert(key, value));
-            }
+            cache_writer.write(|cache| cache.do_insert(event.key, event.value.clone()));
         };
 
         let producer = build_multi_producer(disruptor_size, factory, BusySpin)
@@ -253,11 +247,8 @@ where
                 let mut producer_clone = producer.clone();
                 let publish_fn: Box<dyn FnMut(K, V) + Send> = Box::new(move |key: K, value: V| {
                     producer_clone.publish(|event| {
-                        // Safety: We have exclusive access during publish
-                        unsafe {
-                            *event.key.get() = Some(key);
-                            *event.value.get() = Some(value);
-                        }
+                        event.key = key;
+                        event.value = value;
                     });
                 });
                 publish_fn
@@ -342,11 +333,8 @@ where
 
     /// Performs the actual insert operation. Only called from writer thread.
     fn do_insert(&mut self, key: K, value: V) {
-        // Check if key already exists - get the offset first, then drop the borrow
-        let existing_offset = {
-            let guard = self.hashtable.guard();
-            self.hashtable.get(&key, &guard).copied()
-        };
+        // Check if key already exists
+        let existing_offset = self.hashtable.pin().get(&key).copied();
 
         if let Some(global_offset) = existing_offset {
             let local_offset = self.fifos.local_offset(global_offset);
