@@ -190,10 +190,14 @@ impl LocalShard {
         applied_seq_path: PathBuf,
         tar: &tar_ext::BuilderExt,
     ) -> CollectionResult<()> {
-        tar.blocking_append_file(applied_seq_path.as_path(), Path::new(APPLIED_SEQ_FILE))
-            .map_err(|err| {
-                CollectionError::service_error(format!("Error while archiving applied_seq: {err}"))
-            })?;
+        if applied_seq_path.exists() {
+            tar.blocking_append_file(applied_seq_path.as_path(), Path::new(APPLIED_SEQ_FILE))
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Error while archiving applied_seq: {err}"
+                    ))
+                })?;
+        }
         Ok(())
     }
 }
