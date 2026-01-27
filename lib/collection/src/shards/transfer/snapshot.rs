@@ -7,7 +7,7 @@ use semver::Version;
 use tempfile::TempPath;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use super::{ShardTransfer, ShardTransferConsensus};
+use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
 use crate::operations::snapshot_ops::{SnapshotPriority, get_checksum_path};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
@@ -183,8 +183,9 @@ pub(super) async fn transfer_snapshot(
     };
 
     // Queue proxy local shard
+    progress.lock().set_stage(TransferStage::Proxifying);
     replica_set
-        .queue_proxify_local(remote_shard.clone(), None, progress)
+        .queue_proxify_local(remote_shard.clone(), None, progress.clone())
         .await?;
 
     debug_assert!(
@@ -207,6 +208,7 @@ pub(super) async fn transfer_snapshot(
         ));
     } else {
         // Create shard snapshot
+        progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
         let snapshot_description = shard_holder_read
             .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
@@ -235,6 +237,7 @@ pub(super) async fn transfer_snapshot(
     };
 
     // Recover shard snapshot on remote
+    progress.lock().set_stage(TransferStage::Recovering);
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
 
     // Since we are providing access to local instance, any of the API keys can be used
@@ -269,6 +272,7 @@ pub(super) async fn transfer_snapshot(
     }
 
     // Set shard state to Partial
+    progress.lock().set_stage(TransferStage::WaitingConsensus);
     log::trace!(
         "Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus",
     );
@@ -282,11 +286,13 @@ pub(super) async fn transfer_snapshot(
         })?;
 
     // Transfer queued updates to remote, transform into forward proxy
+    progress.lock().set_stage(TransferStage::FlushingQueue);
     log::trace!("Transfer all queue proxy updates and transform into forward proxy");
     replica_set.queue_proxy_into_forward_proxy().await?;
 
     // Wait for Partial state in our replica set
     // Consensus sync is done right after this function
+    progress.lock().set_stage(TransferStage::WaitingConsensus);
     let partial_state = ReplicaState::Partial;
     log::trace!("Wait for local shard to reach {partial_state:?} state");
     replica_set

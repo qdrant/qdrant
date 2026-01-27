@@ -12,7 +12,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::SharedShardHolder;
-use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
+use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, TransferStage};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
@@ -75,6 +75,7 @@ pub(super) async fn transfer_stream_records(
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
     // Proxify local shard and create payload indexes on remote shard
+    progress.lock().set_stage(TransferStage::Proxifying);
     {
         let shard_holder = shard_holder.read().await;
 
@@ -114,6 +115,7 @@ pub(super) async fn transfer_stream_records(
     }
 
     // Transfer contents batch by batch
+    progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transferring points to shard {shard_id} by streaming records");
 
     let mut offset = None;
@@ -149,6 +151,7 @@ pub(super) async fn transfer_stream_records(
 
     // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
     if sync_intermediate_state {
+        progress.lock().set_stage(TransferStage::WaitingConsensus);
         log::trace!(
             "Shard {shard_id} recovered on {remote_peer_id} for stream records transfer, switching into next stage through consensus",
         );
