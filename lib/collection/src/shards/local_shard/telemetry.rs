@@ -29,11 +29,18 @@ impl LocalShard {
             let is_stopped = is_stopped_guard.get_is_stopped();
             let handle = tokio::task::spawn_blocking(move || {
                 // blocking sync lock
-                let Some(segments_guard) = segments.try_read_for(timeout) else {
-                    return Err(CollectionError::timeout(timeout, "shard telemetry"));
+                let segments: Vec<_> = {
+                    let Some(holder_guard) = segments.try_read_for(timeout) else {
+                        return Err(CollectionError::timeout(timeout, "shard telemetry"));
+                    };
+                    holder_guard
+                        .iter()
+                        .map(|(_id, segment)| segment.clone())
+                        .collect()
                 };
-                let mut segments_telemetry = Vec::with_capacity(segments_guard.len());
-                for (_id, segment) in segments_guard.iter() {
+
+                let mut segments_telemetry = Vec::with_capacity(segments.len());
+                for segment in segments.iter() {
                     if is_stopped.load(Ordering::Relaxed) {
                         return Ok((vec![], HashMap::default()));
                     }
@@ -47,10 +54,8 @@ impl LocalShard {
                 }
 
                 let collection_config = locked_collection_config.blocking_read();
-                let indexed_only_excluded_vectors = indexed_only::get_index_only_excluded_vectors(
-                    &segments_guard,
-                    &collection_config,
-                );
+                let indexed_only_excluded_vectors =
+                    indexed_only::get_index_only_excluded_vectors(&segments, &collection_config);
 
                 Ok((segments_telemetry, indexed_only_excluded_vectors))
             });
