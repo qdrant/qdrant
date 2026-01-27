@@ -90,7 +90,7 @@ impl AppliedSeqHandler {
                     log::error!("Error while loading existing applied_seq at {path:?} {err}");
                     // delete file as it is malformed
                     if let Err(err) = fs::remove_file(&path) {
-                        log::error!("Could not deleted malformed applied_seq file {path:?} {err}");
+                        log::error!("Could not delete malformed applied_seq file {path:?} {err}");
                         Self {
                             file: None,
                             path,
