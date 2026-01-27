@@ -11,7 +11,6 @@ use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
-use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
 use super::Collection;
@@ -430,7 +429,7 @@ impl Collection {
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
-    pub async fn query_batch<'a, F, Fut>(
+    pub async fn query_batch<F, Fut>(
         &self,
         requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
         collection_by_name: F,
@@ -440,7 +439,7 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+        Fut: Future<Output = Option<Arc<Collection>>>,
     {
         let start = Instant::now();
 

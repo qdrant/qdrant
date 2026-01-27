@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
@@ -36,7 +37,7 @@ use fs_err::tokio as tokio_fs;
 use io::safe_delete::safe_delete_in_tmp;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 use self::dispatcher::TocDispatcher;
 use crate::ConsensusOperations;
@@ -53,6 +54,10 @@ use crate::types::StorageConfig;
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
+
+/// How long to wait till deleted collection is released from previous operations
+pub const COLLECTION_DELETE_WAIT_TIMEOUT: Duration = Duration::from_secs(60 * 10); // 10 mins
+pub const COLLECTION_DELETE_SPIN_INTERVAL: Duration = Duration::from_millis(200);
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 ///
@@ -109,7 +114,7 @@ impl TableOfContent {
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
-        let mut collections: HashMap<String, Collection> = Default::default();
+        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
         for entry in collection_paths {
             let collection_path = entry
@@ -163,7 +168,7 @@ impl TableOfContent {
                 storage_config.optimizers_overwrite.clone(),
             ));
 
-            collections.insert(collection_name.clone(), collection);
+            collections.insert(collection_name.clone(), Arc::new(collection));
         }
 
         // Initialize snapshot telemetry for all loaded collections.
@@ -266,30 +271,25 @@ impl TableOfContent {
     async fn get_collection_unchecked(
         &self,
         collection_name: &str,
-    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
+    ) -> Result<Arc<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
 
         let real_collection_name = {
             let alias_persistence = self.alias_persistence.read().await;
             Self::resolve_name(collection_name, &read_collection, &alias_persistence)?
         };
-        // resolve_name already checked collection existence, unwrap is safe here
-        Ok(RwLockReadGuard::map(read_collection, |collection| {
-            collection.get(&real_collection_name).unwrap() // TODO: WTF!?
-        }))
+
+        Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 
     pub async fn get_collection(
         &self,
         collection: &CollectionPass<'_>,
-    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
+    ) -> Result<Arc<Collection>, StorageError> {
         self.get_collection_unchecked(collection.name()).await
     }
 
-    async fn get_collection_opt(
-        &self,
-        collection_name: String,
-    ) -> Option<RwLockReadGuard<'_, Collection>> {
+    async fn get_collection_opt(&self, collection_name: String) -> Option<Arc<Collection>> {
         self.get_collection_unchecked(&collection_name).await.ok()
     }
 
