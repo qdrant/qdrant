@@ -99,7 +99,7 @@ tap = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers.git", tag = "v1.2.1" }
-sysinfo = "0.37"
+sysinfo = "0.38"
 charabia = { version = "0.9.7", default-features = false, features = [
     "greek",
     "hebrew",
