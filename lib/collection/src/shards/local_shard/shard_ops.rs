@@ -71,6 +71,10 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
+            // Estimate pending operations count in the channel.
+            // `Sender::capacity` is returns available slots in the channel regarging tokio docs.
+            // To calculate pending operations we need to subtract it from the max capacity,
+            // which is the total capacity defined while creating the channel.
             let pending_operations_count = update_sender
                 .max_capacity()
                 .saturating_sub(update_sender.capacity());
