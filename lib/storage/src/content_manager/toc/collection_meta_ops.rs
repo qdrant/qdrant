@@ -212,7 +212,8 @@ impl TableOfContent {
         let collection_path = self.get_collection_path(collection_name);
         let safe_delete_path = self.storage_config.storage_path.join(".deleted");
 
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
+        let removed_opt = self.collections.write().await.remove(collection_name);
+        if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
                 && let Err(err) = removed.abort_resharding(state.key(), true).await
             {
