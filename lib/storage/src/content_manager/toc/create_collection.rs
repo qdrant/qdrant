@@ -204,6 +204,8 @@ impl TableOfContent {
             metadata,
         };
 
+        let start_time = tokio::time::Instant::now();
+
         // No shard key mapping on creation, shard keys are set up after creating the collection
         let shard_key_mapping = None;
 
@@ -236,6 +238,11 @@ impl TableOfContent {
             self.storage_config.optimizers_overwrite.clone(),
         )
         .await?;
+
+        log::info!(
+            "Collection `{collection_name}` created in {:?}",
+            start_time.elapsed()
+        );
 
         collection.print_warnings().await;
 
@@ -275,6 +282,11 @@ impl TableOfContent {
 
             self.telemetry.init_snapshot_telemetry(collection_name);
         }
+
+        log::info!(
+            "Collection `{collection_name}` registered in TOC in {:?}",
+            start_time.elapsed()
+        );
 
         drop(collection_create_guard);
 

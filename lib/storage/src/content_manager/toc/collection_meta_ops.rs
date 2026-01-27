@@ -212,7 +212,11 @@ impl TableOfContent {
         let collection_path = self.get_collection_path(collection_name);
         let safe_delete_path = self.storage_config.storage_path.join(".deleted");
 
+        let start_time = tokio::time::Instant::now();
         let removed_opt = self.collections.write().await.remove(collection_name);
+        log::info!("unregistered collection in {:?}", start_time.elapsed());
+
+
         if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
                 && let Err(err) = removed.abort_resharding(state.key(), true).await
