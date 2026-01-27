@@ -65,13 +65,12 @@ impl AppliedSeqHandler {
 
     /// Load or create the underlying applied seq file.
     pub fn load_or_init(shard_path: &Path, wal_last_index: u64) -> Self {
-        let last_applied_wal_index = wal_last_index.saturating_sub(1);
         let update_count = AtomicU64::new(0);
         let path = shard_path.join(APPLIED_SEQ_FILE);
         let file_was_already_present = path.exists();
 
         let loaded_file: Result<SaveOnDisk<AppliedSeq>, _> =
-            SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_wal_index));
+            SaveOnDisk::load_or_init(&path, || AppliedSeq::new(wal_last_index));
         match loaded_file {
             Ok(file) => {
                 let persisted_applied_seq = file.read().op_num;
@@ -95,7 +94,7 @@ impl AppliedSeqHandler {
                         Self {
                             file: None,
                             path,
-                            op_num: AtomicU64::new(last_applied_wal_index),
+                            op_num: AtomicU64::new(wal_last_index),
                             update_count,
                         }
                     } else {
@@ -107,7 +106,7 @@ impl AppliedSeqHandler {
                     Self {
                         file: None,
                         path,
-                        op_num: AtomicU64::new(last_applied_wal_index),
+                        op_num: AtomicU64::new(wal_last_index),
                         update_count,
                     }
                 }
@@ -151,7 +150,7 @@ mod tests {
     fn nothing_persisted_on_init() {
         let dir = TempDir::with_prefix("applied_seq").unwrap();
         let handler = AppliedSeqHandler::load_or_init(dir.path(), 10);
-        assert_eq!(handler.op_num(), Some(9));
+        assert_eq!(handler.op_num(), Some(10));
         // nothing persisted yet because no updates observed
         assert!(!handler.path().exists());
     }
@@ -238,6 +237,6 @@ mod tests {
 
         // regenerate new file with correct WAL op_num
         assert!(handler.file.is_some());
-        assert_eq!(handler.op_num(), Some(649));
+        assert_eq!(handler.op_num(), Some(650));
     }
 }
