@@ -13423,6 +13423,7 @@
         }
       },
       "WebApiTelemetry": {
+        "description": "Telemetry data for REST API requests.",
         "type": "object",
         "required": [
           "per_collection",
@@ -13430,6 +13431,7 @@
         ],
         "properties": {
           "responses": {
+            "description": "Global response statistics grouped by endpoint and HTTP status code.",
             "type": "object",
             "additionalProperties": {
               "type": "object",
@@ -13439,6 +13441,7 @@
             }
           },
           "per_collection": {
+            "description": "Per-collection response statistics grouped by collection-endpoint key and HTTP status code.",
             "type": "object",
             "additionalProperties": {
               "type": "object",
@@ -13450,6 +13453,7 @@
         }
       },
       "GrpcTelemetry": {
+        "description": "Telemetry data for gRPC requests.",
         "type": "object",
         "required": [
           "per_collection",
@@ -13457,12 +13461,14 @@
         ],
         "properties": {
           "responses": {
+            "description": "Global response statistics grouped by gRPC method name.",
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/OperationDurationStatistics"
             }
           },
           "per_collection": {
+            "description": "Per-collection response statistics grouped by collection-endpoint key.",
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/OperationDurationStatistics"
