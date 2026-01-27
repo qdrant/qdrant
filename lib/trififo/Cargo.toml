@@ -15,7 +15,7 @@ bench_all = []
 [dependencies]
 ahash = { workspace = true }
 hashbrown = "0.16.1"
-papaya = "0.1"
+papaya = "0.2.3"
 disruptor = "3.7"
 parking_lot = { workspace = true }
 

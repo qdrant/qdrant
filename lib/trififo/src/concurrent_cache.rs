@@ -23,7 +23,8 @@ use disruptor::{BusySpin, Producer, build_multi_producer};
 use parking_lot::Mutex;
 
 use crate::cache::GlobalOffset;
-use crate::concurrent_fifos::{Entry, FifosReader, FifosWriter, LocalOffset, new_fifos};
+use crate::concurrent_fifos::{Entry, LocalOffset, S3Fifo};
+use crate::seqlock::{SeqLock, SeqLockReader};
 
 /// A concurrent S3-FIFO cache using the Disruptor pattern.
 ///
@@ -48,7 +49,7 @@ use crate::concurrent_fifos::{Entry, FifosReader, FifosWriter, LocalOffset, new_
 /// ```
 pub struct ConcurrentCache<K, V, S = ahash::RandomState> {
     /// Shared state for lock-free reads
-    reader: Arc<CacheReader<K, V, S>>,
+    reader: SeqLockReader<CacheInner<K, V, S>>,
     /// Pool of producers for receiving inserts from multiple threads, but applying
     /// them on a single one.
     /// Each producer is protected by its own mutex, and threads round-robin
@@ -108,21 +109,11 @@ impl<K, V> Default for InsertEvent<K, V> {
 
 /// Shared reader state - contains only read-side handles.
 /// This is `Send + Sync` and can be shared via `Arc`.
-struct CacheReader<K, V, S> {
-    /// Lock-free concurrent hashtable mapping key -> global offset
+struct CacheInner<K, V, S> {
+    /// Lock-free concurrent hashtable mapping key -> global offset within the fifos.
     hashtable: Arc<papaya::HashMap<K, GlobalOffset, S>>,
-    /// Reader handles for the FIFO queues
-    fifos: FifosReader<K, V>,
-}
-
-/// Writer state - contains only write-side handles.
-/// This is `Send` but NOT `Sync` (due to RingBufferWriter being !Sync).
-/// Owned exclusively by the disruptor consumer thread.
-struct CacheWriter<K, V, S> {
-    /// Lock-free concurrent hashtable (shared with readers)
-    hashtable: Arc<papaya::HashMap<K, GlobalOffset, S>>,
-    /// Writer handles for the FIFO queues
-    fifos: FifosWriter<K, V>,
+    /// Three queues for S3FIFO eviction algorithm.
+    fifos: S3Fifo<K, V>,
 }
 
 // ============================================================================
@@ -216,22 +207,27 @@ where
         assert!(producer_pool_size > 0, "producer_pool_size must be > 0");
 
         // Create the FIFO queues with separate reader/writer handles
-        let (fifos_writer, fifos_reader) = new_fifos(capacity, small_ratio, ghost_ratio);
+        let fifos = S3Fifo::new(capacity, small_ratio, ghost_ratio);
 
         // Create shared hashtable
-        let hashtable = Arc::new(papaya::HashMap::with_capacity_and_hasher(capacity, hasher));
+        // Papaya's allocator internally expects power-of-two sizes for certain
+        // internal buffers. To avoid runtime assertions coming from papaya when
+        // given non-power-of-two capacities, round the requested capacity up to
+        // the next power of two for papaya's allocation. The logical cache
+        // capacity (how many items we intend to hold) remains `capacity`.
+        let papaya_capacity = capacity.next_power_of_two();
+        let hashtable = Arc::new(papaya::HashMap::with_capacity_and_hasher(
+            papaya_capacity,
+            hasher,
+        ));
 
-        // Create reader state (shared across threads)
-        let reader = Arc::new(CacheReader {
+        // Create cache state
+        let cache_inner = CacheInner {
             hashtable: Arc::clone(&hashtable),
-            fifos: fifos_reader.clone(),
-        });
-
-        // Create writer state (owned by disruptor consumer thread)
-        let mut cache_writer = CacheWriter {
-            hashtable,
-            fifos: fifos_writer,
+            fifos: fifos,
         };
+
+        let (reader, cache_writer) = SeqLock::new_reader_writer(cache_inner);
 
         // Create the disruptor with a processor that handles inserts
         let factory = InsertEvent::default;
@@ -242,7 +238,7 @@ where
             let value = unsafe { (*event.value.get()).take() };
 
             if let (Some(key), Some(value)) = (key, value) {
-                cache_writer.do_insert(key, value);
+                cache_writer.write(|cache| cache.do_insert(key, value));
             }
         };
 
@@ -281,26 +277,19 @@ where
     ///
     /// Returns `None` if the key is not found or if it's in the ghost queue (no value).
     #[inline]
-    pub fn get(&self, key: &K) -> Option<&V> {
-        // Lock-free lookup using papaya's guard
-        let guard = self.reader.hashtable.guard();
-        let global_offset = *self.reader.hashtable.get(key, &guard)?;
-        drop(guard); // Release the guard - we have the offset now
+    pub fn get(&self, key: &K) -> Option<V> {
+        self.reader.read(|cache| {
+            let global_offset = *cache.hashtable.pin().get(key)?;
 
-        // Read from ring buffer (lock-free, no guards needed)
-        let local_offset = self.reader.fifos.local_offset(global_offset);
-        let entry = self.reader.fifos.get_entry(local_offset)?;
+            // Read from ring buffer (lock-free, no guards needed)
+            let local_offset = cache.fifos.local_offset(global_offset);
+            let entry = cache.fifos.get_entry(local_offset)?;
 
-        // Verify key still matches (handles race with eviction)
-        // If the entry was evicted and the slot reused, the key won't match
-        if &entry.key != key {
-            return None;
-        }
+            // Atomically increment recency
+            entry.incr_recency();
 
-        // Atomically increment recency
-        entry.incr_recency();
-
-        Some(&entry.value)
+            Some(entry.value.clone())
+        })
     }
 
     /// Inserts a key-value pair into the cache.
@@ -321,7 +310,7 @@ where
 
     /// Returns the number of entries in the cache.
     pub fn len(&self) -> usize {
-        self.reader.hashtable.pin().len()
+        self.reader.read(|cache| cache.hashtable.pin().len())
     }
 
     /// Returns true if the cache is empty.
@@ -330,10 +319,10 @@ where
     }
 }
 
-impl<K, V, S> CacheWriter<K, V, S>
+impl<K, V, S> CacheInner<K, V, S>
 where
     K: Copy + Hash + Eq + Send + Sync,
-    V: Clone + Send + Sync,
+    V: Send + Sync,
     S: BuildHasher + Clone + Default + Send + Sync,
 {
     /// Updates the hashtable by inserting a key with its corresponding global offset,
@@ -382,8 +371,6 @@ where
                     return;
                 }
 
-                // CoW: Insert to main first, then update hashtable
-                // Old ghost entry remains until overwritten (harmless)
                 let entry = Entry::new(key, value);
                 let new_local_offset = self.push_to_main_queue(entry);
                 self.update_hashtable(key, Some(new_local_offset));
@@ -418,15 +405,9 @@ where
             }
         }) {}
 
-        // Safe eviction sequence to ensure readers always see valid data:
-        // 1. Take the entry about to be evicted (leaves slot uninitialized)
-        let to_evict = self.fifos.main.peek_oldest_unchecked();
+        let (evicted, offset) = self.fifos.main.pop_push_unchecked(entry);
 
-        // 2. Remove from hashtable so readers can't find it anymore
-        self.update_hashtable(to_evict.key, None);
-
-        // 3. Actually write the new entry at the evicted slot
-        let offset = self.fifos.main.overwriting_push(entry);
+        self.update_hashtable(evicted.key, None);
 
         LocalOffset::Main(offset as u32)
     }
@@ -434,36 +415,27 @@ where
     /// Pushes to small queue, promoting to main or demoting to ghost as needed.
     #[must_use]
     fn push_to_small_queue(&mut self, entry: Entry<K, V>) -> LocalOffset {
-        let local_offset = match self.fifos.small.try_push(entry) {
-            Ok(offset) => offset,
-            Err(entry) => {
-                // Safe eviction sequence to ensure readers always see valid data:
-                // 1. Peek the entry from the end of the queue
-                let oldest_entry = self.fifos.small.peek_oldest_unchecked();
-                let oldest_key = oldest_entry.key;
-
-                // 2. Add the evicted entry to its new location (main or ghost)
-                if oldest_entry.recency() > 0 {
-                    // Promote to main queue with the full entry we peeked
-                    let new_local_offset = self.push_to_main_queue(oldest_entry.clone());
-                    self.update_hashtable(oldest_key, Some(new_local_offset));
-                } else {
-                    // Demote to ghost queue (only stores key)
-                    let ghost_offset = self.fifos.ghost.overwriting_push(oldest_key);
-                    self.update_hashtable(oldest_key, Some(LocalOffset::Ghost(ghost_offset as u32)));
-                }
-
-                // 3. Remove from hashtable so readers can't find it anymore
-                self.update_hashtable(oldest_key, None);
-
-                // 4. Actually write the new entry at the evicted slot
-                let small_offset = self.fifos.small.overwriting_push(entry);
-
-                return LocalOffset::Small(small_offset as u32);
-            }
+        // Try to push if not full
+        let entry = match self.fifos.small.try_push(entry) {
+            Ok(offset) => return LocalOffset::Main(offset as u32),
+            Err(entry) => entry,
         };
 
-        LocalOffset::Small(local_offset as u32)
+        let (oldest, offset) = self.fifos.small.pop_push_unchecked(entry);
+        let oldest_key = oldest.key;
+
+        // Add the evicted entry to its new location (main or ghost)
+        if oldest.recency() > 0 {
+            // Promote to main queue
+            let new_local_offset = self.push_to_main_queue(oldest);
+            self.update_hashtable(oldest_key, Some(new_local_offset));
+        } else {
+            // Demote to ghost queue (only stores key)
+            let ghost_offset = self.fifos.ghost.overwriting_push(oldest_key);
+            self.update_hashtable(oldest_key, Some(LocalOffset::Ghost(ghost_offset as u32)));
+        }
+
+        LocalOffset::Small(offset as u32)
     }
 }
 
@@ -484,7 +456,7 @@ mod tests {
         thread::sleep(Duration::from_millis(10));
 
         let value = cache.get(&1);
-        assert_eq!(value.map(|s| s.as_str()), Some("hello"));
+        assert_eq!(value, Some("hello".to_string()));
     }
 
     #[test]
