@@ -173,18 +173,25 @@ impl TransferTasksPool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::thread;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_transfer_stage_as_str() {
         assert_eq!(TransferStage::Proxifying.as_str(), "proxifying");
-        assert_eq!(TransferStage::CreatingSnapshot.as_str(), "creating snapshot");
+        assert_eq!(
+            TransferStage::CreatingSnapshot.as_str(),
+            "creating snapshot"
+        );
         assert_eq!(TransferStage::Transferring.as_str(), "transferring");
         assert_eq!(TransferStage::Recovering.as_str(), "recovering");
         assert_eq!(TransferStage::FlushingQueue.as_str(), "flushing queue");
-        assert_eq!(TransferStage::WaitingConsensus.as_str(), "waiting consensus");
+        assert_eq!(
+            TransferStage::WaitingConsensus.as_str(),
+            "waiting consensus"
+        );
         assert_eq!(TransferStage::Finalizing.as_str(), "finalizing");
     }
 
