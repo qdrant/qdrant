@@ -60,6 +60,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
+use crate::shards::transfer::transfer_tasks_pool::TransferTaskStatus;
 
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
@@ -407,6 +408,11 @@ pub struct ShardTransferInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
+
+    /// Internal status of the shard transfer, do not expose.
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub status: Option<TransferTaskStatus>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]

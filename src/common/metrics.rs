@@ -228,6 +228,8 @@ impl CollectionsTelemetry {
         // Shard transfers
         let mut shard_transfers_in = Vec::with_capacity(num_collections);
         let mut shard_transfers_out = Vec::with_capacity(num_collections);
+        let mut shard_transfers_failed = Vec::with_capacity(num_collections);
+        let mut shard_transfers_points_transferred = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -343,15 +345,32 @@ impl CollectionsTelemetry {
 
             let mut incoming_transfers = 0;
             let mut outgoing_transfers = 0;
+            let mut failed_transfers = 0;
+            let mut points_transferred = 0;
 
             if let Some(this_peer_id) = peer_id {
                 for transfer in collection.transfers.iter().flatten() {
+                    let status = transfer.status.as_ref();
+
+                    // On the receiving peer, we don't have a status so we assume `true` if not set.
+                    let running = status.map(|i| i.running()).unwrap_or(true);
+
+                    // Non running transfers
+                    if !running {
+                        if status.is_some_and(|i| i.failed()) {
+                            failed_transfers += 1;
+                        }
+                        continue;
+                    }
+
                     if transfer.to == this_peer_id {
                         incoming_transfers += 1;
                     }
                     if transfer.from == this_peer_id {
                         outgoing_transfers += 1;
                     }
+
+                    points_transferred += status.map(|i| i.points_transferred).unwrap_or_default();
                 }
             }
 
@@ -363,6 +382,12 @@ impl CollectionsTelemetry {
                 f64::from(outgoing_transfers),
                 &[("id", &collection.id)],
             ));
+            shard_transfers_failed.push(gauge(
+                f64::from(failed_transfers),
+                &[("id", &collection.id)],
+            ));
+            shard_transfers_points_transferred
+                .push(gauge(points_transferred as f64, &[("id", &collection.id)]));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -502,6 +527,22 @@ impl CollectionsTelemetry {
             "outgoing shard transfers currently running",
             MetricType::GAUGE,
             shard_transfers_out,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_shard_transfer_failed",
+            "number of failed shard transfers",
+            MetricType::GAUGE,
+            shard_transfers_failed,
+            prefix,
+        ));
+
+        metrics.push_metric(metric_family(
+            "collection_shard_transfer_transferred_points",
+            "number of points already transferred",
+            MetricType::GAUGE,
+            shard_transfers_points_transferred,
             prefix,
         ));
     }
