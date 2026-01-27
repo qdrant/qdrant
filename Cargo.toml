@@ -285,7 +285,7 @@ tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
-uuid = { version = "1.19", features = ["v4", "serde"] }
+uuid = { version = "1.20", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "2209eb2c4a359d9c32f63d868c580df360efa4a9" }
 zerocopy = { version = "0.8.33", features = ["derive"] }
