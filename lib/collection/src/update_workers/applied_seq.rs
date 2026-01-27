@@ -72,16 +72,13 @@ impl AppliedSeqHandler {
             SaveOnDisk::load_or_init(&path, || AppliedSeq::new(last_applied_wal_index));
         match loaded_file {
             Ok(file) => {
-                let existing_op_num = file.read().op_num;
-                debug_assert!(
-                    existing_op_num <= last_applied_wal_index,
-                    "persisted applied_seq:{existing_op_num} cannot be larger than the last_applied_wal_index:{last_applied_wal_index}"
-                );
-                let op_num = AtomicU64::new(existing_op_num);
+                let persisted_applied_seq = file.read().op_num;
+                // shard transfers might bring a WAL with higher index
+                let max_op_num = std::cmp::max(persisted_applied_seq, last_applied_wal_index);
                 Self {
                     file: Some(file),
                     path,
-                    op_num,
+                    op_num: AtomicU64::new(max_op_num),
                     update_count,
                 }
             }
@@ -188,6 +185,7 @@ mod tests {
 
         let op_num = 640;
         assert_eq!(APPLIED_SEQ_SAVE_INTERVAL * 10, op_num);
+
         handler.update(op_num).unwrap();
         assert_eq!(handler.op_num(), Some(op_num));
         assert!(handler.path().exists());
@@ -196,8 +194,14 @@ mod tests {
 
         // drop and reload
         drop(handler);
-        let handler = AppliedSeqHandler::load_or_init(dir.path(), 650);
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 638);
         assert_eq!(handler.op_num(), Some(op_num));
+
+        // drop and reload
+        drop(handler);
+        // this time we got a fresher WAL which should prevail
+        let handler = AppliedSeqHandler::load_or_init(dir.path(), 801);
+        assert_eq!(handler.op_num(), Some(800));
     }
 
     #[test]
