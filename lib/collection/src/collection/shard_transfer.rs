@@ -550,27 +550,7 @@ impl Collection {
         on_finish: impl Future<Output = ()> + Send + 'static,
         on_failure: impl Future<Output = ()> + Send + 'static,
     ) -> CollectionResult<()> {
-        // Check if the transfer is already in progress
-        {
-            let shard_holder = self.shards_holder.read().await;
-            if shard_holder.multi_source_transfer_state.read().is_some() {
-                // todo: Allow more than one at a time?
-                return Err(CollectionError::bad_input(
-                    "Multi source transfer is already in progress",
-                ));
-            };
-        }
-
-        // Initialize the state in the shard holder
-        {
-            let shard_holder = self.shards_holder.write().await;
-            shard_holder.multi_source_transfer_state.write(|state| {
-                *state = Some(MultiSourceTransferState {
-                    transfer: transfer.clone(),
-                    completed_sources: vec![],
-                });
-            })?;
-        }
+        let transfer_clone = transfer.clone();
 
         let MultiSourceTransfer {
             from_peer_ids,
@@ -580,23 +560,40 @@ impl Collection {
             filter,
         } = transfer;
 
-        let source_replicas = from_peer_ids
+        // Validate source replicas before persisting state
+        let source_replicas: Vec<_> = from_peer_ids
             .into_iter()
             .zip(from_shard_ids.into_iter())
-            .collect::<Vec<_>>();
+            .collect();
 
         if source_replicas.len() != 1 {
-            // Will be supported in the future
             return Err(CollectionError::bad_input(format!(
                 "Exactly 1 source replica is supported. Got {:?}",
                 source_replicas.len()
             )));
         }
 
-        // todo: save state for finished transfers to do more than one at a time
         let (from_peer_id, from_shard_id) = *source_replicas
             .first()
             .ok_or_else(|| CollectionError::bad_input("No source replicas provided"))?;
+
+        // Check if the transfer is already in progress and initialize state atomically
+        {
+            let shard_holder = self.shards_holder.write().await;
+            if shard_holder.multi_source_transfer_state.read().is_some() {
+                // todo: Allow more than one multi-source transfers at a time?
+                return Err(CollectionError::bad_input(
+                    "Multi source transfer is already in progress",
+                ));
+            };
+
+            shard_holder.multi_source_transfer_state.write(|state| {
+                *state = Some(MultiSourceTransferState {
+                    transfer: transfer_clone,
+                    completed_sources: vec![],
+                });
+            })?;
+        }
 
         self.start_shard_transfer(
             ShardTransfer {
@@ -623,7 +620,9 @@ impl Collection {
 
         // todo: Add state validation like resharding
         shard_holder.multi_source_transfer_state.write(|state| {
-            debug_assert!(state.is_some(), "multi source transfer is not in progress");
+            if state.is_none() {
+                log::warn!("finish_multi_source_transfer_shard called but no mulit-source transfer in progress");
+            }
             *state = None;
         })?;
 

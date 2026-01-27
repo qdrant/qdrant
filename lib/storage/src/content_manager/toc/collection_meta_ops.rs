@@ -90,7 +90,7 @@ impl TableOfContent {
                     .map(|_| true)
             }
             CollectionMetaOperations::MultiSourceTransferShard(collection, operation) => {
-                log::debug!("Transferring shards {operation:?} of {collection}");
+                log::debug!("Multi-source shard transfer {operation:?} of {collection}");
 
                 self.handle_multi_source_transfer(collection, operation)
                     .await
