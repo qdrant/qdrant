@@ -50,6 +50,33 @@ impl UpdateWorkers {
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
+                    let operation = if let Some(operation) = operation {
+                        *operation
+                    } else {
+                        let record = wal.lock().await.read_single_record(op_num);
+                        match record {
+                            Ok(Some(op)) => op.operation,
+                            Ok(None) => {
+                                if let Some(feedback) = sender {
+                                    feedback.send(Err(CollectionError::service_error(
+                                        format!("Operation {op_num} not found in WAL"),
+                                    ))).unwrap_or_else(|_| {
+                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
+                                    });
+                                }
+                                continue;
+                            }
+                            Err(err) => {
+                                if let Some(feedback) = sender {
+                                    feedback.send(Err(CollectionError::from(err))).unwrap_or_else(|_| {
+                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
+                                    });
+                                }
+                                continue;
+                            }
+                        }
+                    };
+
                     let operation_result = Self::wait_for_optimization(
                         prevent_unoptimized_threshold_kb,
                         &segments_clone,
