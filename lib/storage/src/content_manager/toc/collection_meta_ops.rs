@@ -216,7 +216,6 @@ impl TableOfContent {
         let removed_opt = self.collections.write().await.remove(collection_name);
         log::info!("unregistered collection in {:?}", start_time.elapsed());
 
-
         if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
                 && let Err(err) = removed.abort_resharding(state.key(), true).await
