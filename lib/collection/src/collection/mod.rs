@@ -312,7 +312,7 @@ impl Collection {
         }
     }
 
-    pub async fn stop_gracefully(self) {
+    pub async fn stop_gracefully(&self) {
         let mut owned_holder = self.shards_holder.write().await;
         owned_holder.stop_gracefully().await;
     }

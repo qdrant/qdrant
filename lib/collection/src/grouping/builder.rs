@@ -1,9 +1,9 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
-use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{GroupRequest, group_by};
 use crate::collection::Collection;
@@ -17,7 +17,7 @@ use crate::operations::types::{CollectionError, CollectionResult, PointGroup};
 pub struct GroupBy<'a, F, Fut>
 where
     F: Fn(String) -> Fut + Clone,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    Fut: Future<Output = Option<Arc<Collection>>>,
 {
     group_by: GroupRequest,
     collection: &'a Collection,
@@ -32,7 +32,7 @@ where
 impl<'a, F, Fut> GroupBy<'a, F, Fut>
 where
     F: Fn(String) -> Fut + Clone,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    Fut: Future<Output = Option<Arc<Collection>>>,
 {
     /// Creates a basic GroupBy builder
     pub fn new(

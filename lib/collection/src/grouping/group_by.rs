@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use ahash::AHashMap;
@@ -12,7 +13,6 @@ use segment::types::{
     WithVector,
 };
 use serde_json::Value;
-use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
 use super::types::QueryGroupRequest;
@@ -79,7 +79,7 @@ impl GroupRequest {
         }
     }
 
-    pub async fn into_query_group_request<'a, F, Fut>(
+    pub async fn into_query_group_request<F, Fut>(
         self,
         collection: &Collection,
         collection_by_name: F,
@@ -90,7 +90,7 @@ impl GroupRequest {
     ) -> CollectionResult<QueryGroupRequest>
     where
         F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+        Fut: Future<Output = Option<Arc<Collection>>>,
     {
         let query_search = match self.source {
             SourceRequest::Search(search_req) => ShardQueryRequest::from(search_req),

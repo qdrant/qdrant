@@ -478,6 +478,8 @@ mod group_by {
 
 /// Tests out the different features working together. The individual features are already tested in other places.
 mod group_by_builder {
+    use std::sync::Arc;
+
     use api::rest::SearchRequestInternal;
     use collection::grouping::GroupBy;
     use collection::lookup::WithLookup;
@@ -488,7 +490,6 @@ mod group_by_builder {
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::json_path::JsonPath;
     use segment::payload_json;
-    use tokio::sync::RwLock;
 
     use super::*;
 
@@ -496,7 +497,7 @@ mod group_by_builder {
 
     struct Resources {
         request: GroupRequest,
-        lookup_collection: RwLock<Collection>,
+        lookup_collection: Arc<Collection>,
         collection: Collection,
     }
 
@@ -593,7 +594,7 @@ mod group_by_builder {
             assert_eq!(insert_result.status, UpdateStatus::Completed);
         }
 
-        let lookup_collection = RwLock::new(lookup_collection);
+        let lookup_collection = Arc::new(lookup_collection);
 
         Resources {
             request,
@@ -644,7 +645,7 @@ mod group_by_builder {
             with_vectors: Some(true.into()),
         });
 
-        let collection_by_name = |_: String| async { Some(lookup_collection.read().await) };
+        let collection_by_name = |_: String| async { Some(lookup_collection.clone()) };
 
         let hw_acc = HwMeasurementAcc::new();
         let result = GroupBy::new(request.clone(), &collection, collection_by_name, hw_acc)

@@ -1,6 +1,7 @@
 pub mod types;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -9,7 +10,6 @@ use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use serde::Serialize;
 use shard::retrieve::record_internal::RecordInternal;
-use tokio::sync::RwLockReadGuard;
 use types::PseudoId;
 
 use crate::collection::Collection;
@@ -29,7 +29,7 @@ pub struct WithLookup {
     pub with_vectors: Option<WithVector>,
 }
 
-pub async fn lookup_ids<'a, F, Fut>(
+pub async fn lookup_ids<F, Fut>(
     request: WithLookup,
     values: Vec<PseudoId>,
     collection_by_name: F,
@@ -40,7 +40,7 @@ pub async fn lookup_ids<'a, F, Fut>(
 ) -> CollectionResult<HashMap<PseudoId, RecordInternal>>
 where
     F: FnOnce(String) -> Fut,
-    Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    Fut: Future<Output = Option<Arc<Collection>>>,
 {
     let collection = collection_by_name(request.collection_name.clone())
         .await
