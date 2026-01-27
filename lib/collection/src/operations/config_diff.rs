@@ -519,10 +519,10 @@ impl QuantizationConfigDiff {
                 }
             }
 
-            let effective_encoding = binary.binary.encoding.as_ref().or_else(|| {
+            let effective_encoding = binary.binary.encoding.or_else(|| {
                 existing_quantization.and_then(|q| {
                     if let QuantizationConfig::Binary(existing_binary) = q {
-                        existing_binary.binary.encoding.as_ref()
+                        existing_binary.binary.encoding
                     } else {
                         None
                     }
@@ -530,7 +530,7 @@ impl QuantizationConfigDiff {
             });
 
             // Check encoding - uncompressed queries only work with OneBit
-            if !matches!(effective_encoding, Some(BinaryQuantizationEncoding::OneBit)) {
+            if effective_encoding != Some(BinaryQuantizationEncoding::OneBit) {
                 return Err(CollectionError::bad_input(format!(
                     "Uncompressed query encoding is only supported with OneBit storage encoding, \
                      but got {effective_encoding:?}. Use Binary or Scalar query encoding for {effective_encoding:?} storage encoding.",

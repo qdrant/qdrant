@@ -1052,10 +1052,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 // Uncompressed queries are only supported for dot product distance and OneBit encoding
                 // This should have been validated during query encoding, but we check again for safety
                 debug_assert!(
-                    matches!(
-                        self.metadata.vector_parameters.distance_type,
-                        DistanceType::Dot
-                    ) && matches!(self.metadata.encoding, Encoding::OneBit),
+                    self.metadata.vector_parameters.distance_type == DistanceType::Dot
+                        && self.metadata.encoding == Encoding::OneBit,
                     "Uncompressed queries should only be used with dot product distance and OneBit encoding"
                 );
                 debug_assert!(

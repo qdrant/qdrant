@@ -782,10 +782,10 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         // Use continuous float vectors to actually test quantization behavior
         // (generate_vector only produces ±1.0, which has no quantization loss)
-        let mut vector_data: Vec<Vec<f32>> = Vec::new();
-        for _ in 0..vectors_count {
-            vector_data.push(generate_continuous_vector(vector_dim, &mut rng));
-        }
+        let vector_data: Vec<Vec<f32>> =
+            std::iter::repeat_with(|| generate_continuous_vector(vector_dim, &mut rng))
+                .take(vectors_count)
+                .collect();
 
         let quantized_vector_size =
             EncodedVectorsBin::<TBitsStoreType, TestEncodedStorage>::get_quantized_vector_size_from_params(

@@ -174,9 +174,7 @@ mod tests {
             .filter_map(|query_encoding| {
                 // Skip Uncompressed query encoding if storage encoding is not OneBit
                 // Uncompressed queries are only supported with OneBit storage encoding
-                if matches!(query_encoding, QueryEncoding::Uncompressed)
-                    && !matches!(encoding, Encoding::OneBit)
-                {
+                if query_encoding == QueryEncoding::Uncompressed && encoding != Encoding::OneBit {
                     return None;
                 }
 
