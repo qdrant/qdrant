@@ -51,7 +51,6 @@ impl AppliedSeqHandler {
     }
 
     /// Path for the applied_seq json file
-    /// Not included in snapshots
     pub fn path(&self) -> &Path {
         self.path.as_path()
     }
