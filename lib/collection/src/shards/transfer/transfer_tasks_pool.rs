@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use crate::common::eta_calculator::EtaCalculator;
 use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
 use crate::shards::CollectionId;
-use crate::shards::transfer::{ShardTransfer, ShardTransferKey, TransferStage};
+use crate::shards::transfer::{RecoveryStage, ShardTransfer, ShardTransferKey, TransferStage};
 
 pub struct TransferTasksPool {
     collection_id: CollectionId,
@@ -78,9 +78,55 @@ impl TransferTaskProgress {
         self.current_stage
     }
 
-    /// Get elapsed seconds in current stage
-    pub fn stage_elapsed_secs(&self) -> Option<u64> {
-        self.stage_started.map(|t| t.elapsed().as_secs())
+    /// Get elapsed seconds in current stage (with decimal precision)
+    pub fn stage_elapsed_secs(&self) -> Option<f64> {
+        self.stage_started.map(|t| t.elapsed().as_secs_f64())
+    }
+}
+
+/// Progress tracking for snapshot recovery on the receiver (destination) node.
+///
+/// Tracks the sub-stages of recovery: downloading, unpacking, restoring.
+pub struct RecoveryProgress {
+    current_stage: Option<RecoveryStage>,
+    stage_started: Option<Instant>,
+}
+
+impl RecoveryProgress {
+    pub fn new() -> Self {
+        Self {
+            current_stage: None,
+            stage_started: None,
+        }
+    }
+
+    /// Set the current recovery stage (resets stage elapsed time)
+    pub fn set_stage(&mut self, stage: RecoveryStage) {
+        self.current_stage = Some(stage);
+        self.stage_started = Some(Instant::now());
+    }
+
+    /// Get the current recovery stage
+    pub fn current_stage(&self) -> Option<RecoveryStage> {
+        self.current_stage
+    }
+
+    /// Get elapsed seconds in current stage (with decimal precision)
+    pub fn stage_elapsed_secs(&self) -> Option<f64> {
+        self.stage_started.map(|t| t.elapsed().as_secs_f64())
+    }
+
+    /// Format a comment string showing current stage and elapsed time
+    pub fn format_comment(&self) -> Option<String> {
+        let stage = self.current_stage?;
+        let elapsed = self.stage_elapsed_secs().unwrap_or(0.0);
+        Some(format!("{} ({:.2}s)", stage.as_str(), elapsed))
+    }
+}
+
+impl Default for RecoveryProgress {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -108,8 +154,8 @@ impl TransferTasksPool {
         // Build comment with stage prefix if available
         let mut comment = String::new();
         if let Some(stage) = progress.current_stage() {
-            let elapsed = progress.stage_elapsed_secs().unwrap_or(0);
-            write!(comment, "{} ({}s) | ", stage.as_str(), elapsed).unwrap();
+            let elapsed = progress.stage_elapsed_secs().unwrap_or(0.0);
+            write!(comment, "{} ({:.2}s) | ", stage.as_str(), elapsed).unwrap();
         }
 
         write!(
@@ -210,7 +256,7 @@ mod tests {
         progress.set_stage(TransferStage::Proxifying);
         assert_eq!(progress.current_stage(), Some(TransferStage::Proxifying));
         assert!(progress.stage_elapsed_secs().is_some());
-        assert!(progress.stage_elapsed_secs().unwrap() < 2);
+        assert!(progress.stage_elapsed_secs().unwrap() < 2.00);
     }
 
     #[test]
@@ -238,7 +284,7 @@ mod tests {
         progress.set_stage(TransferStage::Transferring);
         assert_eq!(progress.current_stage(), Some(TransferStage::Transferring));
         // New stage should have very small elapsed time
-        assert!(progress.stage_elapsed_secs().unwrap() < 1);
+        assert!(progress.stage_elapsed_secs().unwrap() < 1.00);
     }
 
     #[test]

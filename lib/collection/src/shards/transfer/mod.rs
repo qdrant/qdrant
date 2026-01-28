@@ -61,6 +61,31 @@ impl TransferStage {
     }
 }
 
+/// Current stage of snapshot recovery on the receiver (destination) node.
+///
+/// These sub-stages break down what happens during the `Recovering` stage
+/// as seen from the destination peer's perspective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryStage {
+    /// HTTP download of snapshot from source node
+    Downloading,
+    /// Extracting tar archive
+    Unpacking,
+    /// Applying data to shard
+    Restoring,
+}
+
+impl RecoveryStage {
+    /// Short lowercase name for display in comment
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Downloading => "downloading",
+            Self::Unpacking => "unpacking",
+            Self::Restoring => "restoring",
+        }
+    }
+}
+
 /// Time between consensus confirmation retries.
 const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 

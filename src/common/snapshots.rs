@@ -9,6 +9,7 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
+use collection::shards::transfer::RecoveryStage;
 use common::tempfile_ext::MaybeTempPath;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
@@ -160,10 +161,17 @@ pub async fn recover_shard_snapshot(
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let cancel_safe = async {
-            let collection = toc.get_collection(&collection_pass).await?;
-            collection.assert_shard_exists(shard_id).await?;
+        let collection = toc.get_collection(&collection_pass).await?;
+        collection.assert_shard_exists(shard_id).await?;
 
+        // Start tracking recovery progress
+        let recovery_progress = collection
+            .shards_holder()
+            .read()
+            .await
+            .start_shard_recovery(shard_id);
+
+        let result = async {
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
 
             let snapshot_path = match snapshot_location {
@@ -177,8 +185,12 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
 
-                    let client = client.client(api_key.as_deref())?;
+                    // Set downloading stage
+                    recovery_progress
+                        .lock()
+                        .set_stage(RecoveryStage::Downloading);
 
+                    let client = client.client(api_key.as_deref())?;
                     snapshots::download::download_snapshot(&client, url, &download_dir).await?
                 }
 
@@ -210,23 +222,28 @@ pub async fn recover_shard_snapshot(
                 }
             }
 
-            Ok((collection, snapshot_path))
-        };
+            // `recover_shard_snapshot_impl` is *not* cancel safe
+            recover_shard_snapshot_impl(
+                &toc,
+                &collection,
+                shard_id,
+                snapshot_path,
+                snapshot_priority,
+                RecoveryType::Full,
+                cancel,
+            )
+            .await
+        }
+        .await;
 
-        let (collection, snapshot_path) =
-            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+        // Finish tracking recovery progress
+        collection
+            .shards_holder()
+            .read()
+            .await
+            .finish_shard_recovery(shard_id);
 
-        // `recover_shard_snapshot_impl` is *not* cancel safe
-        recover_shard_snapshot_impl(
-            &toc,
-            &collection,
-            shard_id,
-            snapshot_path,
-            snapshot_priority,
-            RecoveryType::Full,
-            cancel,
-        )
-        .await
+        result
     })
     .await??;
 
