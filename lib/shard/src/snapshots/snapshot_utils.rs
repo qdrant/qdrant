@@ -100,6 +100,7 @@ impl SnapshotUtils {
             segments_path: from_segments_path,
             newest_clocks_path: from_newest_clocks_path,
             oldest_clocks_path: from_oldest_clocks_path,
+            applied_seq_path: from_applied_seq_path,
         } = get_shard_data_files(snapshot_path);
 
         let ShardDataFiles {
@@ -107,6 +108,7 @@ impl SnapshotUtils {
             segments_path: to_segments_path,
             newest_clocks_path: to_newest_clocks_path,
             oldest_clocks_path: to_oldest_clocks_path,
+            applied_seq_path: to_applied_seq_path,
         } = get_shard_data_files(shard_path);
 
         merge_directories.push((from_segments_path, to_segments_path));
@@ -118,6 +120,10 @@ impl SnapshotUtils {
 
         if from_oldest_clocks_path.exists() {
             move_files.push((from_oldest_clocks_path, to_oldest_clocks_path));
+        }
+
+        if from_applied_seq_path.exists() {
+            move_files.push((from_applied_seq_path, to_applied_seq_path));
         }
 
         SnapshotMergePlan {
