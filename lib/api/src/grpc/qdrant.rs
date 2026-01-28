@@ -12660,6 +12660,8 @@ pub struct ShardTransferTelemetry {
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "6")]
     pub method: ::core::option::Option<i32>,
     /// Freeform string. Typically reports progress
+    ///
+    /// todo: Add filter
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
 }

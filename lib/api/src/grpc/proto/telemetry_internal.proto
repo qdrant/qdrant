@@ -78,6 +78,7 @@ message ShardTransferTelemetry {
   optional ShardTransferMethod method = 6;
   // Freeform string. Typically reports progress
   string comment = 7;
+  // todo: Add filter
 }
 
 message ReshardingTelemetry {
