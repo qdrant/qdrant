@@ -1356,21 +1356,21 @@ impl ShardReplicaSet {
     /// Returns amount of removed records.
     pub async fn drop_wal(&self) -> CollectionResult<usize> {
         let local = self.local.read().await;
-        if let Some(local) = local.as_ref() {
-            let removed_records_count = local.drop_wal().await?;
-            if removed_records_count > 0 {
-                log::debug!(
-                    "Dropped {} WAL records from shard {}:{}",
-                    removed_records_count,
-                    self.collection_id,
-                    self.shard_id
-                );
-            }
-            Ok(removed_records_count)
-        } else {
+        let Some(local) = local.as_ref() else {
             // No local shard to drop WAL from.
-            Ok(0)
+            return Ok(0);
+        };
+
+        let removed_records_count = local.drop_wal().await?;
+        if removed_records_count > 0 {
+            log::debug!(
+                "Dropped {} WAL records from shard {}:{}",
+                removed_records_count,
+                self.collection_id,
+                self.shard_id,
+            );
         }
+        Ok(removed_records_count)
     }
 }
 
