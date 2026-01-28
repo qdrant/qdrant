@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::save_on_disk::SaveOnDisk;
@@ -11,7 +11,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
 use segment::entry::SegmentEntry;
 use segment::types::{SegmentConfig, SnapshotFormat};
-use shard::files::{SEGMENTS_PATH, WAL_PATH};
+use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
@@ -77,6 +77,7 @@ impl LocalShard {
 
         let tar_c = tar.clone();
         let update_lock = self.update_operation_lock.clone();
+        let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
 
         let handle = tokio::task::spawn_blocking(move || {
             // Do not change segments while snapshotting
@@ -94,7 +95,9 @@ impl LocalShard {
 
             if save_wal {
                 // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
+                Self::snapshot_wal(wal, &tar_c)?;
+                // snapshot applied_seq
+                Self::snapshot_applied_seq(applied_seq_path, &tar_c)
             } else {
                 Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
             }
@@ -177,6 +180,22 @@ impl LocalShard {
             tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
                 .map_err(|err| {
                     CollectionError::service_error(format!("Error while archiving WAL: {err}"))
+                })?;
+        }
+        Ok(())
+    }
+
+    /// snapshot the applied_seq file
+    fn snapshot_applied_seq(
+        applied_seq_path: PathBuf,
+        tar: &tar_ext::BuilderExt,
+    ) -> CollectionResult<()> {
+        if applied_seq_path.exists() {
+            tar.blocking_append_file(applied_seq_path.as_path(), Path::new(APPLIED_SEQ_FILE))
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Error while archiving applied_seq: {err}"
+                    ))
                 })?;
         }
         Ok(())

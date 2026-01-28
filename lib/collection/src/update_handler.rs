@@ -26,6 +26,7 @@ use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_workers::UpdateWorkers;
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -127,11 +128,14 @@ pub struct UpdateHandler {
     scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 
     update_tracker: UpdateTracker,
+
+    /// Persist the applied op_num sequence number
+    applied_seq_handler: Arc<AppliedSeqHandler>,
 }
 
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -149,7 +153,8 @@ impl UpdateHandler {
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-    ) -> UpdateHandler {
+        applied_seq_handler: Arc<AppliedSeqHandler>,
+    ) -> Self {
         UpdateHandler {
             collection_name,
             shared_storage_config,
@@ -175,6 +180,7 @@ impl UpdateHandler {
             has_triggered_optimizers: Default::default(),
             scroll_read_lock,
             update_tracker,
+            applied_seq_handler,
         }
     }
 
@@ -209,6 +215,7 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+        let applied_seq_handler = self.applied_seq_handler.clone();
 
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
@@ -221,6 +228,7 @@ impl UpdateHandler {
             self.prevent_unoptimized_threshold_kb,
             self.optimization_handles.clone(),
             optimization_finished_receiver,
+            applied_seq_handler,
         )));
 
         let segments = self.segments.clone();
@@ -329,5 +337,10 @@ impl UpdateHandler {
             .await?;
 
         Ok(())
+    }
+
+    #[allow(unused)] // TODO for purge WAL API
+    pub fn applied_seq(&self) -> Option<u64> {
+        self.applied_seq_handler.op_num()
     }
 }

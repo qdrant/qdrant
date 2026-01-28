@@ -83,6 +83,7 @@ use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::RecoverableWal;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
@@ -130,6 +131,9 @@ pub struct LocalShard {
     ///
     /// Write lock must be held for updates, while read lock must be held for critical sections
     pub(super) update_operation_lock: Arc<tokio::sync::RwLock<()>>,
+
+    /// Persist the applied op_num sequence number
+    applied_seq_handler: Arc<AppliedSeqHandler>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -150,6 +154,7 @@ impl LocalShard {
             segments_path: segments_from,
             newest_clocks_path: newest_clocks_path_from,
             oldest_clocks_path: oldest_clocks_path_from,
+            applied_seq_path: applied_seq_path_from,
         } = shard_data_files_from;
 
         let ShardDataFiles {
@@ -157,6 +162,7 @@ impl LocalShard {
             segments_path: segments_to,
             newest_clocks_path: newest_clocks_path_to,
             oldest_clocks_path: oldest_clocks_path_to,
+            applied_seq_path: applied_seq_path_to,
         } = shard_data_files_to;
 
         move_dir(wal_from, wal_to).await?;
@@ -168,6 +174,10 @@ impl LocalShard {
 
         if oldest_clocks_path_from.exists() {
             move_file(oldest_clocks_path_from, oldest_clocks_path_to).await?;
+        }
+
+        if applied_seq_path_from.exists() {
+            move_file(applied_seq_path_from, applied_seq_path_to).await?;
         }
 
         Ok(())
@@ -189,6 +199,7 @@ impl LocalShard {
             segments_path,
             newest_clocks_path,
             oldest_clocks_path,
+            applied_seq_path,
         } = shard_data_files;
 
         if wal_path.exists() {
@@ -205,6 +216,10 @@ impl LocalShard {
 
         if oldest_clocks_path.exists() {
             tokio_fs::remove_file(oldest_clocks_path).await?;
+        }
+
+        if applied_seq_path.exists() {
+            tokio_fs::remove_file(applied_seq_path).await?;
         }
 
         Ok(())
@@ -250,6 +265,10 @@ impl LocalShard {
             .unwrap_or_default()
             .then(|| config.optimizer_config.get_indexing_threshold_kb());
 
+        let wal_last_index = locked_wal.lock().await.last_index();
+        let applied_seq_handler =
+            Arc::new(AppliedSeqHandler::load_or_init(shard_path, wal_last_index));
+
         let mut update_handler = UpdateHandler::new(
             collection_name.clone(),
             shared_storage_config.clone(),
@@ -268,7 +287,9 @@ impl LocalShard {
             shard_path.into(),
             scroll_read_lock.clone(),
             update_tracker.clone(),
-        );
+            applied_seq_handler.clone(),
+        )
+        .await;
 
         let (update_sender, update_receiver) =
             mpsc::channel(shared_storage_config.update_queue_size);
@@ -302,6 +323,7 @@ impl LocalShard {
             read_rate_limiter,
             is_gracefully_stopped: false,
             update_operation_lock: scroll_read_lock,
+            applied_seq_handler,
         }
     }
 
