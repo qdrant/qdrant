@@ -560,7 +560,13 @@ impl SegmentHolder {
         for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write();
+
+            let mut write_segment = {
+                let _guard = MeasureDelete::default();
+                let write_segment = segment_arc.write();
+                write_segment
+            };
+
             let segment_data = segment_data(write_segment.deref());
 
             for point_id in points {
