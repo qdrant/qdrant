@@ -4,5 +4,5 @@ mod ringbuffer;
 mod seqlock;
 mod cache;
 
-pub use papaya_cache::ConcurrentCache;
-pub use cache::ConcurrentCacheHashbrown;
+pub use papaya_cache::PapayaCache;
+pub use cache::Cache;

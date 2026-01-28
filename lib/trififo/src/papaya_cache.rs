@@ -43,7 +43,7 @@ use crate::seqlock::{SeqLock, SeqLockReader};
 ///     println!("Got: {}", value);
 /// }
 /// ```
-pub struct ConcurrentCache<K, V, S = ahash::RandomState> {
+pub struct PapayaCache<K, V, S = ahash::RandomState> {
     /// Shared state for lock-free reads
     reader: SeqLockReader<CacheInner<K, V, S>>,
     /// Pool of producers for receiving inserts from multiple threads, but applying
@@ -117,7 +117,7 @@ struct CacheInner<K, V, S> {
 // ConcurrentCache implementation
 // ============================================================================
 
-impl<K, V, S> ConcurrentCache<K, V, S>
+impl<K, V, S> PapayaCache<K, V, S>
 where
     K: Default + Copy + Hash + Eq + Send + Sync + 'static,
     V: Default + Clone + Send + Sync + 'static,
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn test_basic_insert_and_get() {
-        let cache = ConcurrentCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
+        let cache = PapayaCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
 
         cache.insert(1, "hello".to_string());
 
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_reads() {
-        let cache = ConcurrentCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
+        let cache = PapayaCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
 
         // Insert some values
         for i in 0..10 {
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_insert_and_read() {
-        let cache = Arc::new(ConcurrentCache::<u64, u64>::new(
+        let cache = Arc::new(PapayaCache::<u64, u64>::new(
             1000,
             0.1,
             0.9,
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_len_and_is_empty() {
-        let cache = ConcurrentCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
+        let cache = PapayaCache::<u64, String>::new(100, 0.1, 0.9, Default::default());
 
         assert!(cache.is_empty());
 
@@ -538,7 +538,7 @@ mod tests {
     #[test]
     fn test_custom_disruptor_size() {
         // Use larger capacity to ensure all entries fit
-        let cache = ConcurrentCache::<u64, String>::with_disruptor_size(
+        let cache = PapayaCache::<u64, String>::with_disruptor_size(
             1000,
             0.1,
             0.9,
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_multi_threaded_inserts() {
-        let cache = Arc::new(ConcurrentCache::<u64, u64>::new(
+        let cache = Arc::new(PapayaCache::<u64, u64>::new(
             10000,
             0.1,
             0.9,
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_high_contention_inserts() {
-        let cache = Arc::new(ConcurrentCache::<u64, u64>::new(
+        let cache = Arc::new(PapayaCache::<u64, u64>::new(
             1000,
             0.1,
             0.9,

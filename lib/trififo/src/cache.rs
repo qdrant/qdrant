@@ -27,7 +27,7 @@ use crate::seqlock::{SeqLock, SeqLockReader};
 ///   happen concurrently.
 /// - Writers publish insert events to a disruptor ring buffer. A single
 ///   dedicated writer thread processes events and mutates the `CacheInner`.
-pub struct ConcurrentCacheHashbrown<K, V, S = ahash::RandomState> {
+pub struct Cache<K, V, S = ahash::RandomState> {
     /// Shared state for lock-free readers.
     reader: SeqLockReader<CacheInner<K, V, S>>,
     /// Pool of producers for publishing insert events from multiple threads.
@@ -84,7 +84,7 @@ struct CacheInner<K, V, S> {
 // Public API
 // ============================================================================
 
-impl<K, V, S> ConcurrentCacheHashbrown<K, V, S>
+impl<K, V, S> Cache<K, V, S>
 where
     K: Default + Copy + Hash + Eq + Send + Sync + 'static,
     V: Default + Clone + Send + Sync + 'static,
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn basic_insert_get() {
-        let cache = ConcurrentCacheHashbrown::<u64, String>::new(100, 0.1, 0.9, Default::default());
+        let cache = Cache::<u64, String>::new(100, 0.1, 0.9, Default::default());
 
         cache.insert(1, "hello".to_string());
         thread::sleep(Duration::from_millis(10));
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn concurrent_reads() {
-        let cache = ConcurrentCacheHashbrown::<u64, String>::new(200, 0.1, 0.9, Default::default());
+        let cache = Cache::<u64, String>::new(200, 0.1, 0.9, Default::default());
 
         for i in 0..20u64 {
             cache.insert(i, format!("val_{}", i));
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn multi_threaded_inserts() {
-        let cache = Arc::new(ConcurrentCacheHashbrown::<u64, u64>::new(
+        let cache = Arc::new(Cache::<u64, u64>::new(
             5000,
             0.1,
             0.9,
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn len_is_empty() {
-        let cache = ConcurrentCacheHashbrown::<u64, String>::new(100, 0.1, 0.9, Default::default());
+        let cache = Cache::<u64, String>::new(100, 0.1, 0.9, Default::default());
         assert!(cache.is_empty());
         cache.insert(42, "v".to_string());
         thread::sleep(Duration::from_millis(10));
@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn high_contention_inserts() {
-        let cache = Arc::new(ConcurrentCacheHashbrown::<u64, u64>::new(
+        let cache = Arc::new(Cache::<u64, u64>::new(
             2000,
             0.1,
             0.9,
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn fuzz_never_returns_unseen_value() {
         const CAPACITY: usize = 1024;
-        let cache = Arc::new(ConcurrentCacheHashbrown::<u64, u64>::new(
+        let cache = Arc::new(Cache::<u64, u64>::new(
             CAPACITY,
             0.1,
             0.9,
