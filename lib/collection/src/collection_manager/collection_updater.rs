@@ -55,22 +55,49 @@ impl CollectionUpdater {
             let _update_operation_lock = update_operation_lock.blocking_write();
             let _update_guard = update_tracker.update();
 
+            // We need to use upgradable read lock to prevent inconsistency during optimization process
+            let upgradable_segments = segments.upgradable_read();
+
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
-                    process_point_operation(segments, op_num, point_operation, hw_counter)
+                    process_point_operation(
+                        &upgradable_segments,
+                        op_num,
+                        point_operation,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                    process_vector_operation(segments, op_num, vector_operation, hw_counter)
+                    process_vector_operation(
+                        &upgradable_segments,
+                        op_num,
+                        vector_operation,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                    process_payload_operation(segments, op_num, payload_operation, hw_counter)
+                    process_payload_operation(
+                        &upgradable_segments,
+                        op_num,
+                        payload_operation,
+                        hw_counter,
+                    )
                 }
                 CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                    process_field_index_operation(segments, op_num, &index_operation, hw_counter)
+                    process_field_index_operation(
+                        &upgradable_segments,
+                        op_num,
+                        &index_operation,
+                        hw_counter,
+                    )
                 }
                 #[cfg(feature = "staging")]
                 CollectionUpdateOperations::StagingOperation(staging_operation) => {
-                    shard::update::process_staging_operation(segments, op_num, staging_operation)
+                    shard::update::process_staging_operation(
+                        &upgradable_segments,
+                        op_num,
+                        staging_operation,
+                    )
                 }
             }
         });
@@ -222,7 +249,7 @@ mod tests {
         }
 
         process_point_operation(
-            &segments,
+            &segments.upgradable_read(),
             101,
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
@@ -262,7 +289,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_payload_operation(
-            &segments,
+            &segments.upgradable_read(),
             100,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,
@@ -302,7 +329,7 @@ mod tests {
 
         // Test payload delete
         process_payload_operation(
-            &segments,
+            &segments.upgradable_read(),
             101,
             PayloadOps::DeletePayload(DeletePayloadOp {
                 points: Some(vec![3.into()]),
@@ -348,7 +375,7 @@ mod tests {
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
         process_payload_operation(
-            &segments,
+            &segments.upgradable_read(),
             102,
             PayloadOps::ClearPayload {
                 points: vec![2.into()],
@@ -417,7 +444,7 @@ mod tests {
         let points = vec![11.into(), 12.into(), 13.into()];
 
         process_payload_operation(
-            &segments,
+            &segments.upgradable_read(),
             102,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,
@@ -481,7 +508,7 @@ mod tests {
         let payload: Payload = serde_json::from_str(r#"{ "color":"blue"}"#).unwrap();
 
         process_payload_operation(
-            &segments,
+            &segments.upgradable_read(),
             103,
             PayloadOps::SetPayload(SetPayloadOp {
                 payload,

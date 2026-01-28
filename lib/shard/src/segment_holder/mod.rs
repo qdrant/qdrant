@@ -780,7 +780,7 @@ impl SegmentHolder {
     /// This builds a segment on disk, but does NOT add it to the current segment holder. That must
     /// be done explicitly. `save_version` must be true for the segment to be loaded when Qdrant
     /// restarts.
-    fn build_tmp_segment(
+    pub fn build_tmp_segment(
         &self,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
