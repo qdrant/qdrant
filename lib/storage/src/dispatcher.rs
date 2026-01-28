@@ -343,7 +343,7 @@ impl Dispatcher {
     }
 
     #[must_use]
-    pub fn get_collection_hw_metrics(&self, collection: String) -> HwSharedDrain {
+    pub fn get_collection_hw_metrics(&self, collection: String) -> Arc<HwSharedDrain> {
         self.toc.get_collection_hw_metrics(collection)
     }
 }
