@@ -51,6 +51,18 @@ impl AppliedSeqHandler {
         }
     }
 
+    /// Get the op_num upper bound for the last_applied_seq adjusted to the persistence interval
+    ///
+    /// Returns None if the handler is not active.
+    pub fn op_num_upper_bound(&self) -> Option<u64> {
+        if self.file.is_some() {
+            let adjusted = self.op_num.load(Ordering::Relaxed) + APPLIED_SEQ_SAVE_INTERVAL + 1;
+            Some(adjusted)
+        } else {
+            None
+        }
+    }
+
     /// Path for the applied_seq json file
     pub fn path(&self) -> &Path {
         self.path.as_path()
