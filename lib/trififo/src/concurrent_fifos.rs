@@ -7,9 +7,8 @@
 //! - Only the single writer thread can perform write operations
 //! - Multiple reader threads can perform lock-free read operations
 
-use std::ops::Deref;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::hash::{BuildHasher, Hash};
 
 use crate::cache::GlobalOffset;
 use crate::concurrent_ringbuffer::RingBuffer;
@@ -163,6 +162,45 @@ impl<K, V> S3Fifo<K, V> {
     #[inline]
     pub fn get_main_entry(&self, offset: u32) -> &Entry<K, V> {
         self.main.get_absolute_unchecked(offset as usize)
+    }
+
+    /// Compare the key stored at a global offset with the provided `key`.
+    ///
+    /// This is a convenience used by hashtable lookup helpers to verify whether
+    /// an entry at `global_offset` corresponds to `key`. It resolves the global
+    /// offset into the appropriate queue (small/main/ghost) and compares the
+    /// stored key.
+    #[inline]
+    pub fn key_eq(&self, global_offset: GlobalOffset, key: &K) -> bool
+    where
+        K: PartialEq,
+    {
+        match self.local_offset(global_offset) {
+            LocalOffset::Small(off) => self.get_small_entry(off).key == *key,
+            LocalOffset::Main(off) => self.get_main_entry(off).key == *key,
+            LocalOffset::Ghost(off) => self.get_ghost_key(off) == key,
+        }
+    }
+
+    /// Compute the hash for the key stored at `global_offset` using the given
+    /// `hasher`. This mirrors the `hash_key_at_offset` helper semantics used by
+    /// other hashtable-adapter code.
+    #[inline]
+    pub fn hash_key_at_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
+    where
+        S: BuildHasher,
+        K: Copy + Hash,
+    {
+        // Extract the key from the appropriate queue and hash it with the provided hasher.
+        let key: K = match self.local_offset(global_offset) {
+            LocalOffset::Small(off) => self.get_small_entry(off).key,
+            LocalOffset::Main(off) => self.get_main_entry(off).key,
+            LocalOffset::Ghost(off) => *self.get_ghost_key(off),
+        };
+
+        // Many hash builder helpers in this crate expose `hash_one`.
+        // Call it to compute the 64-bit hash for the key.
+        hasher.hash_one(&key)
     }
 }
 
