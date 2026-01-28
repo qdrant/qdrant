@@ -13423,12 +13423,15 @@
         }
       },
       "WebApiTelemetry": {
+        "description": "Telemetry data for REST API requests.",
         "type": "object",
         "required": [
-          "responses"
+          "responses",
+          "responses_per_collection"
         ],
         "properties": {
           "responses": {
+            "description": "Global response statistics grouped by endpoint and HTTP status code.",
             "type": "object",
             "additionalProperties": {
               "type": "object",
@@ -13436,19 +13439,45 @@
                 "$ref": "#/components/schemas/OperationDurationStatistics"
               }
             }
+          },
+          "responses_per_collection": {
+            "description": "Per-collection response statistics: collection -> endpoint -> status -> stats.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
+              }
+            }
           }
         }
       },
       "GrpcTelemetry": {
+        "description": "Telemetry data for gRPC requests.",
         "type": "object",
         "required": [
-          "responses"
+          "responses",
+          "responses_per_collection"
         ],
         "properties": {
           "responses": {
+            "description": "Global response statistics grouped by gRPC method name.",
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/OperationDurationStatistics"
+            }
+          },
+          "responses_per_collection": {
+            "description": "Per-collection response statistics: collection -> endpoint -> stats.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
             }
           }
         }
