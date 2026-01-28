@@ -681,21 +681,22 @@ impl LocalShard {
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock().await;
-        let bar = ProgressBar::new(wal.len(false));
-
-        let progress_style = ProgressStyle::default_bar()
-            .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
-            .expect("Failed to create progress style");
-        bar.set_style(progress_style);
 
         let from = wal.first_index();
-        let last_wal_index = wal.last_index();
+        let last_wal_index = from + wal.len(false);
         let to = self
             .applied_seq_handler
             .op_num_upper_bound()
             .unwrap_or(last_wal_index);
         let to = std::cmp::min(to, last_wal_index);
         let wal_entries_to_replay = to - from;
+
+        let bar = ProgressBar::new(wal_entries_to_replay);
+
+        let progress_style = ProgressStyle::default_bar()
+            .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
+            .expect("Failed to create progress style");
+        bar.set_style(progress_style);
 
         log::debug!(
             "Recovering shard {} starting reading WAL from {} up to {} (last_applied_seq:{:?})",
@@ -732,7 +733,7 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_range(from, to) {
+        for (op_num, update) in wal.read_range(from..to) {
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }

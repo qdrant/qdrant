@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
@@ -100,11 +101,11 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
 
         let to = self.first_index() + self.len(false);
-        self.read_range(from, to)
+        self.read_range(from..to)
     }
 
-    pub fn read_range(&self, from: u64, to: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
-        (from..to).map(move |idx| {
+    pub fn read_range(&self, range: Range<u64>) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        range.map(move |idx| {
             let record_bin = self
                 .wal
                 .entry(idx)
