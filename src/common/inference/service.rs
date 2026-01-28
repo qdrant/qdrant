@@ -191,6 +191,7 @@ impl InferenceService {
         let InferenceParams {
             token: inference_token,
             timeout,
+            ext_api_keys,
         } = inference_params;
 
         let token = inference_token.0.or_else(|| self.config.token.clone());
@@ -214,7 +215,12 @@ impl InferenceService {
             request
         };
 
-        let response = request.json(&request_body).send().await;
+        let mut request = request.json(&request_body);
+        if let Some(api_keys) = ext_api_keys {
+            request = request.headers(api_keys.into());
+        }
+
+        let response = request.send().await;
 
         let (response_body, status, retry_after) = match response {
             Ok(response) => {
