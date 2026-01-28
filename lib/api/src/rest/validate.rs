@@ -6,8 +6,10 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::{
     Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
-    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, Sample, VectorInput,
+    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput,
+    Sample, VectorInput,
 };
+use crate::rest::FeedbackStrategy;
 
 impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -40,6 +42,7 @@ impl Validate for Query {
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
+            Query::RelevanceFeedback(feedback) => feedback.validate(),
         }
     }
 }
@@ -92,6 +95,15 @@ impl Validate for ContextInput {
     }
 }
 
+impl Validate for FeedbackStrategy {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            FeedbackStrategy::Naive(simple_feedback_strategy) => {
+                simple_feedback_strategy.validate()
+            }
+        }
+    }
+}
 impl Validate for Fusion {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
@@ -270,4 +282,17 @@ impl Validate for Expression {
             Expression::GaussDecay(gauss_decay_expression) => gauss_decay_expression.validate(),
         }
     }
+}
+
+/// Struct level validation for `FeedbackInput`
+pub fn validate_relevance_feedback_input(
+    relevance_feedback_input: &RelevanceFeedbackInput,
+) -> Result<(), ValidationError> {
+    if relevance_feedback_input.feedback.is_empty() {
+        let mut err = ValidationError::new("feedback");
+        err.message = Some(Cow::from("feedback elements must be non-empty"));
+        return Err(err);
+    }
+
+    Ok(())
 }
