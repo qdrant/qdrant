@@ -1,8 +1,8 @@
-mod papaya_cache;
-mod s3fifo;
-mod ringbuffer;
-mod seqlock;
 mod cache;
+mod papaya_cache;
+mod ringbuffer;
+mod s3fifo;
+mod seqlock;
 
-pub use papaya_cache::PapayaCache;
 pub use cache::Cache;
+pub use papaya_cache::PapayaCache;

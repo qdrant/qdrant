@@ -46,7 +46,7 @@ impl<K, V> Entry<K, V> {
         V: Clone,
     {
         Self {
-            key: self.key.clone(),
+            key: self.key,
             value: self.value.clone(),
             recency: AtomicU8::new(self.recency.load(Ordering::Relaxed)),
         }
@@ -213,7 +213,7 @@ impl<K, V> S3Fifo<K, V> {
 
         // Many hash builder helpers in this crate expose `hash_one`.
         // Call it to compute the 64-bit hash for the key.
-        hasher.hash_one(&key)
+        hasher.hash_one(key)
     }
 }
 

@@ -30,7 +30,6 @@ pub struct RingBuffer<T> {
 unsafe impl<T: Send + Sync> Sync for RingBuffer<T> {}
 
 impl<T> RingBuffer<T> {
-
     pub fn new(capacity: usize) -> Self {
         let buffer: Box<[UnsafeCell<MaybeUninit<T>>]> = (0..capacity)
             .map(|_| UnsafeCell::new(MaybeUninit::uninit()))
@@ -129,9 +128,7 @@ impl<T> RingBuffer<T> {
         // Update write position with Release ordering to ensure the write
         // is visible to readers before they see the new position
         let new_write_pos = (offset + 1) % self.capacity;
-        self
-            .write_pos
-            .store(new_write_pos, Ordering::Release);
+        self.write_pos.store(new_write_pos, Ordering::Release);
 
         // Update length
         let current_len = self.len.load(Ordering::Relaxed);
@@ -172,9 +169,7 @@ impl<T> RingBuffer<T> {
 
         // Advance write position (entry stays in place, effectively reinserted)
         let new_write_pos = (write_pos + 1) % self.capacity;
-        self
-            .write_pos
-            .store(new_write_pos, Ordering::Release);
+        self.write_pos.store(new_write_pos, Ordering::Release);
 
         true
     }
@@ -206,7 +201,7 @@ impl<T> RingBuffer<T> {
     /// Clears the ring buffer.
     #[cfg(test)]
     #[allow(dead_code)]
-    pub fn clear(&mut self) {
+    pub fn clear(&self) {
         self.write_pos.store(0, Ordering::Release);
         self.len.store(0, Ordering::Release);
     }
@@ -253,7 +248,6 @@ mod tests {
     #[should_panic(expected = "Ring buffer capacity must be greater than 0")]
     fn test_zero_capacity_panics() {
         let _ = RingBuffer::<i32>::new(0);
-
     }
 
     #[test]
@@ -305,8 +299,6 @@ mod tests {
         assert_eq!(buffer.try_push(40), Err(40));
         assert_eq!(buffer.len(), 3);
     }
-
-
 
     #[test]
     fn test_reader_is_send_and_sync() {

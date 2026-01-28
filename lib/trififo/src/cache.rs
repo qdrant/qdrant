@@ -11,9 +11,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use disruptor::{BusySpin, Producer, build_multi_producer};
-use parking_lot::Mutex;
-
 use hashbrown::HashTable;
+use parking_lot::Mutex;
 
 use crate::s3fifo::{Entry, LocalOffset, S3Fifo};
 use crate::seqlock::{SeqLock, SeqLockReader};
@@ -34,9 +33,11 @@ pub struct Cache<K, V, S = ahash::RandomState> {
     producer_pool: Arc<ProducerPool<K, V>>,
 }
 
+type DynProducer<K, V> = Box<dyn FnMut(K, V) + Send>;
+
 /// Pool of mutex-protected publish closures to reduce publish contention.
 struct ProducerPool<K, V> {
-    producers: Box<[Mutex<Box<dyn FnMut(K, V) + Send>>]>,
+    producers: Box<[Mutex<DynProducer<K, V>>]>,
     next_producer: AtomicUsize,
 }
 
@@ -257,13 +258,10 @@ where
 
         let global_offset = self.fifos.global_offset(local_offset);
         // Use the find_entry API to update.
-        let entry = self.hashtable.find_entry(
-            hash,
-            |global_offset| {
-                self.fifos
-                    .key_eq(global_offset.load(Ordering::Relaxed), key)
-            },
-        );
+        let entry = self.hashtable.find_entry(hash, |global_offset| {
+            self.fifos
+                .key_eq(global_offset.load(Ordering::Relaxed), key)
+        });
 
         if let Ok(occupied) = entry {
             occupied.get().store(global_offset, Ordering::Relaxed);
@@ -441,13 +439,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rand::Rng;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
     use std::time::Duration;
+
+    use rand::Rng;
+
+    use super::*;
 
     #[test]
     fn basic_insert_get() {
@@ -465,7 +465,7 @@ mod tests {
         let cache = Cache::<u64, String>::new(200, 0.1, 0.9, Default::default());
 
         for i in 0..20u64 {
-            cache.insert(i, format!("val_{}", i));
+            cache.insert(i, format!("val_{i}"));
         }
 
         thread::sleep(Duration::from_millis(50));
@@ -491,12 +491,7 @@ mod tests {
 
     #[test]
     fn multi_threaded_inserts() {
-        let cache = Arc::new(Cache::<u64, u64>::new(
-            5000,
-            0.1,
-            0.9,
-            Default::default(),
-        ));
+        let cache = Arc::new(Cache::<u64, u64>::new(5000, 0.1, 0.9, Default::default()));
 
         const THREADS: usize = 4;
         const PER: u64 = 1000;
@@ -536,17 +531,11 @@ mod tests {
         cache.insert(42, "v".to_string());
         thread::sleep(Duration::from_millis(10));
         assert!(!cache.is_empty());
-        assert!(cache.len() > 0);
     }
 
     #[test]
     fn high_contention_inserts() {
-        let cache = Arc::new(Cache::<u64, u64>::new(
-            2000,
-            0.1,
-            0.9,
-            Default::default(),
-        ));
+        let cache = Arc::new(Cache::<u64, u64>::new(2000, 0.1, 0.9, Default::default()));
         let counter = Arc::new(AtomicUsize::new(0));
 
         const THREADS: usize = 8;
@@ -570,7 +559,7 @@ mod tests {
         }
 
         thread::sleep(Duration::from_millis(100));
-        assert!(cache.len() > 0);
+        assert!(!cache.is_empty());
     }
 
     // --- New fuzz test using repo RNG and a parallel seen map -----------------
@@ -645,9 +634,7 @@ mod tests {
                         // ensure returned value is one of the pre-generated values for this key
                         assert!(
                             vec.contains(&v),
-                            "cache returned unseen value {} for key {}",
-                            v,
-                            key
+                            "cache returned unseen value {v} for key {key}",
                         );
                     }
                     // occasionally yield
@@ -672,9 +659,7 @@ mod tests {
                 let vec = &initial[&k];
                 assert!(
                     vec.contains(&v),
-                    "final check: returned {} for key {} which wasn't in the initial set",
-                    v,
-                    k
+                    "final check: returned {v} for key {k} which wasn't in the initial set",
                 );
             }
         }

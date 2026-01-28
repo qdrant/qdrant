@@ -18,8 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use disruptor::{BusySpin, Producer, build_multi_producer};
 use parking_lot::Mutex;
 
-use crate::s3fifo::GlobalOffset;
-use crate::s3fifo::{Entry, LocalOffset, S3Fifo};
+use crate::s3fifo::{Entry, GlobalOffset, LocalOffset, S3Fifo};
 use crate::seqlock::{SeqLock, SeqLockReader};
 
 /// A concurrent S3-FIFO cache using the Disruptor pattern.
@@ -53,9 +52,11 @@ pub struct PapayaCache<K, V, S = ahash::RandomState> {
     producer_pool: Arc<ProducerPool<K, V>>,
 }
 
+type DynProducer<K, V> = Box<dyn FnMut(K, V) + Send>;
+
 /// Pool of producers to reduce contention on multi-threaded inserts.
 struct ProducerPool<K, V> {
-    producers: Box<[Mutex<Box<dyn FnMut(K, V) + Send>>]>,
+    producers: Box<[Mutex<DynProducer<K, V>>]>,
     /// Counter for round-robin selection of producers
     next_producer: AtomicUsize,
 }
@@ -221,7 +222,7 @@ where
         // Create cache state
         let cache_inner = CacheInner {
             hashtable: Arc::clone(&hashtable),
-            fifos: fifos,
+            fifos,
         };
 
         let (reader, cache_writer) = SeqLock::new_reader_writer(cache_inner);
@@ -441,10 +442,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_basic_insert_and_get() {
@@ -465,7 +467,7 @@ mod tests {
 
         // Insert some values
         for i in 0..10 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         // Give time for inserts to process
@@ -547,7 +549,7 @@ mod tests {
         );
 
         for i in 0..50 {
-            cache.insert(i, format!("value_{}", i));
+            cache.insert(i, format!("value_{i}"));
         }
 
         thread::sleep(Duration::from_millis(100));
@@ -639,6 +641,6 @@ mod tests {
         // Give time for processing
         thread::sleep(Duration::from_millis(100));
 
-        assert!(cache.len() > 0);
+        assert!(!cache.is_empty());
     }
 }

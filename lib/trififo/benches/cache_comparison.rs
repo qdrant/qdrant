@@ -282,12 +282,7 @@ struct TrififoWrapper {
 impl TrififoWrapper {
     fn new(capacity: usize) -> Self {
         Self {
-            cache: trififo::Cache::new(
-                capacity,
-                0.1,
-                0.5,
-                ahash::RandomState::new(),
-            ),
+            cache: trififo::Cache::new(capacity, 0.1, 0.5, ahash::RandomState::new()),
         }
     }
 }

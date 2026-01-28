@@ -7,7 +7,6 @@ pub struct SeqLock<T> {
     inner: UnsafeCell<T>,
 }
 
-
 impl<T> SeqLock<T> {
     fn new(v: T) -> Self {
         SeqLock {
@@ -25,9 +24,7 @@ impl<T> SeqLock<T> {
     /// The writer should only have a single thread using it.
     pub fn new_reader_writer(v: T) -> (SeqLockReader<T>, SeqLockWriter<T>) {
         let lock = Arc::new(SeqLock::new(v));
-        let reader = SeqLockReader {
-            lock: lock.clone(),
-        };
+        let reader = SeqLockReader { lock: lock.clone() };
         let writer = SeqLockWriter {
             lock: lock.clone(),
             _unsend: std::marker::PhantomData,
@@ -71,7 +68,7 @@ impl<T> SeqLock<T> {
 }
 
 pub struct SeqLockReader<T> {
-    lock: Arc<SeqLock<T>>
+    lock: Arc<SeqLock<T>>,
 }
 
 unsafe impl<T> Send for SeqLockReader<T> where T: Send {}
@@ -85,7 +82,7 @@ impl<T> SeqLockReader<T> {
 
 pub struct SeqLockWriter<T> {
     lock: Arc<SeqLock<T>>,
-    _unsend: std::marker::PhantomData<*mut ()>
+    _unsend: std::marker::PhantomData<*mut ()>,
 }
 
 unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
