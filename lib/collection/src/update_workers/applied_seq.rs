@@ -13,6 +13,7 @@ use crate::operations::types::CollectionResult;
 /// How often the `applied_seq` is persisted
 pub const APPLIED_SEQ_SAVE_INTERVAL: u64 = 64;
 
+/// Data structure, used for (de)serialization of the `applied_seq` file
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct AppliedSeq {
     pub op_num: u64,
