@@ -53,7 +53,9 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{ShardHolder, SharedShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
-use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
+use crate::shards::transfer::transfer_tasks_pool::{
+    RecoveryProgress, TaskResult, TransferTasksPool,
+};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionsAggregatedTelemetry;
