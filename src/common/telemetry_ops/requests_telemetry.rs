@@ -15,37 +15,13 @@ use storage::rbac::{Access, AccessRequirements};
 
 pub type HttpStatusCode = u16;
 
-const COLLECTION_ENDPOINT_SEPARATOR: &str = "|";
-
 /// Key for per-collection telemetry data, combining collection name and endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema, Anonymize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CollectionEndpointKey {
     /// Name of the collection.
-    #[anonymize(true)]
     pub collection: String,
     /// API endpoint path pattern.
-    #[anonymize(false)]
     pub endpoint: String,
-}
-
-/// Formats a collection-endpoint key string from individual components.
-fn format_collection_endpoint_key(collection: &str, endpoint: &str) -> String {
-    format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
-}
-
-/// Formats a collection-endpoint key string from a [`CollectionEndpointKey`].
-fn format_collection_endpoint_key_from_key(key: &CollectionEndpointKey) -> String {
-    format_collection_endpoint_key(&key.collection, &key.endpoint)
-}
-
-/// Anonymizes the collection portion of a collection-endpoint key string.
-fn anonymize_collection_endpoint_key(key: &str) -> String {
-    let Some((collection, endpoint)) = key.split_once(COLLECTION_ENDPOINT_SEPARATOR) else {
-        return key.to_string().anonymize();
-    };
-
-    let collection = collection.to_string().anonymize();
-    format!("{collection}{COLLECTION_ENDPOINT_SEPARATOR}{endpoint}")
 }
 
 /// Telemetry data for REST API requests.
@@ -53,8 +29,10 @@ fn anonymize_collection_endpoint_key(key: &str) -> String {
 pub struct WebApiTelemetry {
     /// Global response statistics grouped by endpoint and HTTP status code.
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-    /// Per-collection response statistics grouped by collection-endpoint key and HTTP status code.
-    pub per_collection: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    /// Per-collection response statistics: collection -> endpoint -> status -> stats.
+    #[serde(rename = "responses_per_collection")]
+    pub responses_per_collection:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 /// Telemetry data for gRPC requests.
@@ -62,17 +40,27 @@ pub struct WebApiTelemetry {
 pub struct GrpcTelemetry {
     /// Global response statistics grouped by gRPC method name.
     pub responses: HashMap<String, OperationDurationStatistics>,
-    /// Per-collection response statistics grouped by collection-endpoint key.
-    pub per_collection: HashMap<String, OperationDurationStatistics>,
+    /// Per-collection response statistics: collection -> endpoint -> stats.
+    #[serde(rename = "responses_per_collection")]
+    pub responses_per_collection: HashMap<String, HashMap<String, OperationDurationStatistics>>,
 }
 
 pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
+/// Maximum number of unique (collection, endpoint) pairs to track per worker.
+///
+/// This LRU limit acts as a guardrail against unbounded memory growth in multi-tenant
+/// or adversarial scenarios where collection names are user-controlled. Without this
+/// limit, an attacker could create arbitrarily many collections to exhaust memory.
+const PER_COLLECTION_TELEMETRY_LRU_CAPACITY: usize = 1000;
+
 /// Per-worker telemetry collector for Actix (REST API) requests.
 ///
-/// Uses an LRU cache to limit memory usage for per-collection metrics.
+/// Uses an LRU cache for per-collection metrics to prevent unbounded memory growth.
+/// This is a guardrail for multi-tenant deployments where collection names are
+/// user-controlled and could be used to exhaust memory via cardinality explosion.
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     per_collection_data: LruCache<
@@ -82,15 +70,12 @@ pub struct ActixWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
-    /// Maximum number of collections to track in per-collection metrics.
-    const DEFAULT_MAX_COLLECTIONS: usize = 1000;
-
-    /// Creates a new collector with default LRU cache capacity.
+    /// Creates a new collector with LRU cache capacity set to prevent memory blow-up.
     pub fn new() -> Self {
         Self {
             methods: HashMap::new(),
             per_collection_data: LruCache::new(
-                NonZeroUsize::new(Self::DEFAULT_MAX_COLLECTIONS).unwrap(),
+                NonZeroUsize::new(PER_COLLECTION_TELEMETRY_LRU_CAPACITY).unwrap(),
             ),
         }
     }
@@ -102,22 +87,21 @@ pub struct TonicTelemetryCollector {
 
 /// Per-worker telemetry collector for Tonic (gRPC) requests.
 ///
-/// Uses an LRU cache to limit memory usage for per-collection metrics.
+/// Uses an LRU cache for per-collection metrics to prevent unbounded memory growth.
+/// This is a guardrail for multi-tenant deployments where collection names are
+/// user-controlled and could be used to exhaust memory via cardinality explosion.
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
     per_collection_data: LruCache<CollectionEndpointKey, Arc<Mutex<OperationDurationsAggregator>>>,
 }
 
 impl TonicWorkerTelemetryCollector {
-    /// Maximum number of collections to track in per-collection metrics.
-    const DEFAULT_MAX_COLLECTIONS: usize = 1000;
-
-    /// Creates a new collector with default LRU cache capacity.
+    /// Creates a new collector with LRU cache capacity set to prevent memory blow-up.
     pub fn new() -> Self {
         Self {
             methods: HashMap::new(),
             per_collection_data: LruCache::new(
-                NonZeroUsize::new(Self::DEFAULT_MAX_COLLECTIONS).unwrap(),
+                NonZeroUsize::new(PER_COLLECTION_TELEMETRY_LRU_CAPACITY).unwrap(),
             ),
         }
     }
@@ -198,16 +182,25 @@ impl TonicWorkerTelemetryCollector {
         for (method, aggregator) in self.methods.iter() {
             responses.insert(method.clone(), aggregator.lock().get_statistics(detail));
         }
-        let mut per_collection = HashMap::new();
+
+        // Build nested structure: collection -> endpoint -> stats
+        let mut responses_per_collection: HashMap<
+            String,
+            HashMap<String, OperationDurationStatistics>,
+        > = HashMap::new();
         for (key, aggregator) in self.per_collection_data.iter() {
-            per_collection.insert(
-                format_collection_endpoint_key_from_key(key),
-                aggregator.lock().get_statistics(detail),
-            );
+            responses_per_collection
+                .entry(key.collection.clone())
+                .or_default()
+                .insert(
+                    key.endpoint.clone(),
+                    aggregator.lock().get_statistics(detail),
+                );
         }
+
         GrpcTelemetry {
             responses,
-            per_collection,
+            responses_per_collection,
         }
     }
 }
@@ -258,20 +251,26 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        let mut per_collection = HashMap::new();
+
+        // Build nested structure: collection -> endpoint -> status -> stats
+        let mut responses_per_collection: HashMap<
+            String,
+            HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+        > = HashMap::new();
         for (key, status_codes) in self.per_collection_data.iter() {
             let mut status_codes_map = HashMap::new();
             for (status_code, aggregator) in status_codes {
                 status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
             }
-            per_collection.insert(
-                format_collection_endpoint_key_from_key(key),
-                status_codes_map,
-            );
+            responses_per_collection
+                .entry(key.collection.clone())
+                .or_default()
+                .insert(key.endpoint.clone(), status_codes_map);
         }
+
         WebApiTelemetry {
             responses,
-            per_collection,
+            responses_per_collection,
         }
     }
 }
@@ -283,9 +282,15 @@ impl GrpcTelemetry {
             let entry = self.responses.entry(method.clone()).or_default();
             *entry = entry.clone() + other_statistics.clone();
         }
-        for (key, other_statistics) in &other.per_collection {
-            let entry = self.per_collection.entry(key.clone()).or_default();
-            *entry = entry.clone() + other_statistics.clone();
+        for (collection, endpoints) in &other.responses_per_collection {
+            let collection_entry = self
+                .responses_per_collection
+                .entry(collection.clone())
+                .or_default();
+            for (endpoint, other_statistics) in endpoints {
+                let entry = collection_entry.entry(endpoint.clone()).or_default();
+                *entry = entry.clone() + other_statistics.clone();
+            }
         }
     }
 }
@@ -300,11 +305,17 @@ impl WebApiTelemetry {
                 *entry = entry.clone() + statistics.clone();
             }
         }
-        for (key, status_codes) in &other.per_collection {
-            let status_codes_map = self.per_collection.entry(key.clone()).or_default();
-            for (status_code, statistics) in status_codes {
-                let entry = status_codes_map.entry(*status_code).or_default();
-                *entry = entry.clone() + statistics.clone();
+        for (collection, endpoints) in &other.responses_per_collection {
+            let collection_entry = self
+                .responses_per_collection
+                .entry(collection.clone())
+                .or_default();
+            for (endpoint, status_codes) in endpoints {
+                let endpoint_entry = collection_entry.entry(endpoint.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = endpoint_entry.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -342,20 +353,24 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        let per_collection = self
-            .per_collection
+        let responses_per_collection = self
+            .responses_per_collection
             .iter()
-            .map(|(key, value)| {
-                (
-                    anonymize_collection_endpoint_key(key),
-                    anonymize_collection_values(value),
-                )
+            .map(|(collection, endpoints)| {
+                let anonymized_collection = collection.clone().anonymize();
+                let anonymized_endpoints = endpoints
+                    .iter()
+                    .map(|(endpoint, status_map)| {
+                        (endpoint.clone(), anonymize_collection_values(status_map))
+                    })
+                    .collect();
+                (anonymized_collection, anonymized_endpoints)
             })
             .collect();
 
         WebApiTelemetry {
             responses,
-            per_collection,
+            responses_per_collection,
         }
     }
 }
@@ -363,15 +378,23 @@ impl Anonymize for WebApiTelemetry {
 impl Anonymize for GrpcTelemetry {
     fn anonymize(&self) -> Self {
         let responses = anonymize_collection_values(&self.responses);
-        let per_collection = self
-            .per_collection
+
+        let responses_per_collection = self
+            .responses_per_collection
             .iter()
-            .map(|(key, value)| (anonymize_collection_endpoint_key(key), value.anonymize()))
+            .map(|(collection, endpoints)| {
+                let anonymized_collection = collection.clone().anonymize();
+                let anonymized_endpoints = endpoints
+                    .iter()
+                    .map(|(endpoint, stats)| (endpoint.clone(), stats.anonymize()))
+                    .collect();
+                (anonymized_collection, anonymized_endpoints)
+            })
             .collect();
 
         GrpcTelemetry {
             responses,
-            per_collection,
+            responses_per_collection,
         }
     }
 }
@@ -397,9 +420,8 @@ mod tests {
         let mut collector = ActixWorkerTelemetryCollector::new();
         let instant = std::time::Instant::now();
 
-        // Insert more than DEFAULT_MAX_COLLECTIONS entries
-        let max_collections = ActixWorkerTelemetryCollector::DEFAULT_MAX_COLLECTIONS;
-        for i in 0..max_collections + 10 {
+        // Insert more than LRU capacity entries
+        for i in 0..PER_COLLECTION_TELEMETRY_LRU_CAPACITY + 10 {
             let collection_name = format!("collection_{i}");
             collector.add_response_with_collection(
                 "GET /collections/{name}",
@@ -410,7 +432,10 @@ mod tests {
         }
 
         // Verify LRU cache size is bounded
-        assert_eq!(collector.per_collection_data.len(), max_collections);
+        assert_eq!(
+            collector.per_collection_data.len(),
+            PER_COLLECTION_TELEMETRY_LRU_CAPACITY
+        );
 
         // Oldest entries should be evicted
         let oldest_key = CollectionEndpointKey {
@@ -421,7 +446,7 @@ mod tests {
 
         // Recent entries should still exist
         let recent_key = CollectionEndpointKey {
-            collection: format!("collection_{}", max_collections + 9),
+            collection: format!("collection_{}", PER_COLLECTION_TELEMETRY_LRU_CAPACITY + 9),
             endpoint: "GET /collections/{name}".to_string(),
         };
         assert!(collector.per_collection_data.contains(&recent_key));
@@ -432,9 +457,8 @@ mod tests {
         let mut collector = TonicWorkerTelemetryCollector::new();
         let instant = std::time::Instant::now();
 
-        // Insert more than DEFAULT_MAX_COLLECTIONS entries
-        let max_collections = TonicWorkerTelemetryCollector::DEFAULT_MAX_COLLECTIONS;
-        for i in 0..max_collections + 10 {
+        // Insert more than LRU capacity entries
+        for i in 0..PER_COLLECTION_TELEMETRY_LRU_CAPACITY + 10 {
             let collection_name = format!("collection_{i}");
             collector.add_response_with_collection(
                 "Qdrant/Search".to_string(),
@@ -444,7 +468,10 @@ mod tests {
         }
 
         // Verify LRU cache size is bounded
-        assert_eq!(collector.per_collection_data.len(), max_collections);
+        assert_eq!(
+            collector.per_collection_data.len(),
+            PER_COLLECTION_TELEMETRY_LRU_CAPACITY
+        );
 
         // Oldest entries should be evicted
         let oldest_key = CollectionEndpointKey {
@@ -455,7 +482,7 @@ mod tests {
 
         // Recent entries should still exist
         let recent_key = CollectionEndpointKey {
-            collection: format!("collection_{}", max_collections + 9),
+            collection: format!("collection_{}", PER_COLLECTION_TELEMETRY_LRU_CAPACITY + 9),
             endpoint: "Qdrant/Search".to_string(),
         };
         assert!(collector.per_collection_data.contains(&recent_key));
@@ -477,12 +504,67 @@ mod tests {
         let mut collector = ActixWorkerTelemetryCollector::new();
         let instant = std::time::Instant::now();
 
-        collector.add_response_with_collection("GET /collections/{name}", instant, 200, Some("c1"));
+        collector.add_response_with_collection(
+            "GET /collections/{name}",
+            instant,
+            200,
+            Some("c1"),
+        );
 
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
-        let key = format_collection_endpoint_key("c1", "GET /collections/{name}");
 
-        assert!(telemetry.per_collection.contains_key(&key));
+        // Check nested structure: collection -> endpoint -> status -> stats
+        assert!(telemetry.responses_per_collection.contains_key("c1"));
+        let c1_endpoints = telemetry.responses_per_collection.get("c1").unwrap();
+        assert!(c1_endpoints.contains_key("GET /collections/{name}"));
+
+        // Global responses should also be present
         assert!(telemetry.responses.contains_key("GET /collections/{name}"));
+    }
+
+    #[test]
+    fn test_nested_structure_multiple_collections() {
+        let mut collector = ActixWorkerTelemetryCollector::new();
+        let instant = std::time::Instant::now();
+
+        // Add requests for multiple collections and endpoints
+        collector.add_response_with_collection(
+            "GET /collections/{name}/points",
+            instant,
+            200,
+            Some("collection_a"),
+        );
+        collector.add_response_with_collection(
+            "POST /collections/{name}/points/search",
+            instant,
+            200,
+            Some("collection_a"),
+        );
+        collector.add_response_with_collection(
+            "GET /collections/{name}/points",
+            instant,
+            200,
+            Some("collection_b"),
+        );
+
+        let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
+
+        // Verify structure
+        assert_eq!(telemetry.responses_per_collection.len(), 2);
+
+        let collection_a = telemetry
+            .responses_per_collection
+            .get("collection_a")
+            .unwrap();
+        assert_eq!(collection_a.len(), 2);
+        assert!(collection_a.contains_key("GET /collections/{name}/points"));
+        assert!(collection_a.contains_key("POST /collections/{name}/points/search"));
+
+        let collection_b = telemetry
+            .responses_per_collection
+            .get("collection_b")
+            .unwrap();
+        assert_eq!(collection_b.len(), 1);
+        assert!(collection_b.contains_key("GET /collections/{name}/points"));
     }
 }

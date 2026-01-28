@@ -13426,8 +13426,8 @@
         "description": "Telemetry data for REST API requests.",
         "type": "object",
         "required": [
-          "per_collection",
-          "responses"
+          "responses",
+          "responses_per_collection"
         ],
         "properties": {
           "responses": {
@@ -13440,13 +13440,16 @@
               }
             }
           },
-          "per_collection": {
-            "description": "Per-collection response statistics grouped by collection-endpoint key and HTTP status code.",
+          "responses_per_collection": {
+            "description": "Per-collection response statistics: collection -> endpoint -> status -> stats.",
             "type": "object",
             "additionalProperties": {
               "type": "object",
               "additionalProperties": {
-                "$ref": "#/components/schemas/OperationDurationStatistics"
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
               }
             }
           }
@@ -13456,8 +13459,8 @@
         "description": "Telemetry data for gRPC requests.",
         "type": "object",
         "required": [
-          "per_collection",
-          "responses"
+          "responses",
+          "responses_per_collection"
         ],
         "properties": {
           "responses": {
@@ -13467,11 +13470,14 @@
               "$ref": "#/components/schemas/OperationDurationStatistics"
             }
           },
-          "per_collection": {
-            "description": "Per-collection response statistics grouped by collection-endpoint key.",
+          "responses_per_collection": {
+            "description": "Per-collection response statistics: collection -> endpoint -> stats.",
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/OperationDurationStatistics"
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
             }
           }
         }
