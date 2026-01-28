@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -5,6 +6,7 @@ use futures_util::future::BoxFuture;
 use tower::Service;
 use tower_layer::Layer;
 
+use crate::common::telemetry_ops::request_context::COLLECTION_CONTEXT;
 use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
@@ -40,12 +42,15 @@ where
         let method_name = request.uri().path().to_string();
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
-        Box::pin(async move {
+        Box::pin(COLLECTION_CONTEXT.scope(RefCell::new(None), async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
-            telemetry_data.lock().add_response(method_name, instant);
+            let collection_name = COLLECTION_CONTEXT.with(|ctx| ctx.borrow().clone());
+            telemetry_data
+                .lock()
+                .add_response(method_name, instant, collection_name);
             Ok(response)
-        })
+        }))
     }
 }
 
