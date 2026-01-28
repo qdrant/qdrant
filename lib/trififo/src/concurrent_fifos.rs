@@ -7,11 +7,12 @@
 //! - Only the single writer thread can perform write operations
 //! - Multiple reader threads can perform lock-free read operations
 
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::hash::{BuildHasher, Hash};
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::cache::GlobalOffset;
 use crate::concurrent_ringbuffer::RingBuffer;
+
+pub type GlobalOffset = u32;
 
 /// Entry stored in the small and main queues.
 pub struct Entry<K, V> {
@@ -39,7 +40,11 @@ impl<K, V> Entry<K, V> {
         }
     }
 
-    pub fn clone(&self) -> Self where K: Copy, V: Clone{
+    pub fn clone(&self) -> Self
+    where
+        K: Copy,
+        V: Clone,
+    {
         Self {
             key: self.key.clone(),
             value: self.value.clone(),

@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use disruptor::{BusySpin, Producer, build_multi_producer};
 use parking_lot::Mutex;
 
-use crate::cache::GlobalOffset;
+use crate::concurrent_fifos::GlobalOffset;
 use crate::concurrent_fifos::{Entry, LocalOffset, S3Fifo};
 use crate::seqlock::{SeqLock, SeqLockReader};
 
