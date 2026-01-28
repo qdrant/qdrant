@@ -10,11 +10,7 @@
 //! 3. Verify the key matches (to detect races with eviction)
 //! 4. Increment recency atomically
 //!
-//! With Copy-on-Write style moves (insert at destination, update hashtable, then
-//! the old entry naturally becomes orphaned), entries remain valid at their old
-//! location until overwritten by new insertions.
 
-use std::cell::UnsafeCell;
 use std::hash::{BuildHasher, Hash};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -419,11 +415,27 @@ where
             self.update_hashtable(oldest_key, Some(new_local_offset));
         } else {
             // Demote to ghost queue (only stores key)
-            let ghost_offset = self.fifos.ghost.overwriting_push(oldest_key);
-            self.update_hashtable(oldest_key, Some(LocalOffset::Ghost(ghost_offset as u32)));
+            let ghost_offset = self.push_to_ghost_queue(oldest_key);
+            self.update_hashtable(oldest_key, Some(ghost_offset));
         }
 
         LocalOffset::Small(offset as u32)
+    }
+
+    fn push_to_ghost_queue(&mut self, key: K) -> LocalOffset {
+        // Try fast path
+        let key = match self.fifos.ghost.try_push(key) {
+            Ok(offset) => return LocalOffset::Ghost(offset as u32),
+            Err(key) => key,
+        };
+
+        // Else, pop oldest and push new entry in its place
+        let (evicted, offset) = self.fifos.ghost.pop_push_unchecked(key);
+
+        // Evict from hashtable
+        self.update_hashtable(evicted, None);
+
+        LocalOffset::Ghost(offset as u32)
     }
 }
 
