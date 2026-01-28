@@ -229,7 +229,6 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::ops::Deref;
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -457,7 +456,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_field_index_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
                 field_name: payload_field.clone(),
@@ -569,7 +568,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         process_point_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,
@@ -632,7 +631,7 @@ mod tests {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         process_point_operation(
-            locked_holder.deref(),
+            &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
             &hw_counter,

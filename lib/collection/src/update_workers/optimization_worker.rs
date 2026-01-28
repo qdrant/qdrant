@@ -474,11 +474,15 @@ impl UpdateWorkers {
                 .to_base_segment_config(collection_quantization)
                 .map_err(|err| OperationError::service_error(err.to_string()))?;
 
-            segments.write().create_appendable_segment(
+            let segments_guard = segments.upgradable_read();
+            let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                segment_config,
+                Some(segment_config),
                 payload_index_schema,
+                true,
             )?;
+            let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
+            write_guard.add_new_locked(new_segment);
         }
 
         Ok(())

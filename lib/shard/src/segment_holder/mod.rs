@@ -86,6 +86,14 @@ pub struct SegmentHolder {
 
     /// The amount of currently running optimizations.
     pub running_optimizations: ProcessCounter,
+
+    /// Lock that prevents update operations during segment maintenance
+    ///
+    /// Currently used for:
+    ///
+    /// - Preventing update operations during finalization of segment optimizations
+    ///
+    pub updates_lock: Arc<Mutex<()>>,
 }
 
 impl Drop for SegmentHolder {
@@ -780,7 +788,7 @@ impl SegmentHolder {
     /// This builds a segment on disk, but does NOT add it to the current segment holder. That must
     /// be done explicitly. `save_version` must be true for the segment to be loaded when Qdrant
     /// restarts.
-    fn build_tmp_segment(
+    pub fn build_tmp_segment(
         &self,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
