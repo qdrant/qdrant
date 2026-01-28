@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 
 use super::TableOfContent;
 
 impl TableOfContent {
-    pub fn get_collection_hw_metrics(&self, collection_id: String) -> HwSharedDrain {
+    pub fn get_collection_hw_metrics(&self, collection_id: String) -> Arc<HwSharedDrain> {
         self.collection_hw_metrics
             .entry(collection_id)
             .or_default()
