@@ -16,6 +16,7 @@ default = []
 testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
 gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]
+chakrdb = ["chakrdb-wrapper/ffi"]
 
 [build-dependencies]
 cc = "1.2"
@@ -110,6 +111,7 @@ charabia = { version = "0.9.7", default-features = false, features = [
 ] }
 
 gridstore = { path = "../gridstore" }
+chakrdb-wrapper = { path = "../chakrdb-wrapper", optional = true }
 
 common = { path = "../common/common" }
 io = { path = "../common/io" }

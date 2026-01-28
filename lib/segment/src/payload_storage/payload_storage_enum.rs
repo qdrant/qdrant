@@ -15,6 +15,10 @@ use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+#[cfg(feature = "chakrdb")]
+use crate::payload_storage::chakrdb_on_disk_payload_storage::ChakrDbOnDiskPayloadStorage;
+#[cfg(feature = "chakrdb")]
+use crate::payload_storage::chakrdb_payload_storage::ChakrDbSimplePayloadStorage;
 use crate::types::Payload;
 
 #[derive(Debug)]
@@ -25,6 +29,10 @@ pub enum PayloadStorageEnum {
     SimplePayloadStorage(SimplePayloadStorage),
     #[cfg(feature = "rocksdb")]
     OnDiskPayloadStorage(OnDiskPayloadStorage),
+    #[cfg(feature = "chakrdb")]
+    ChakrDbSimplePayloadStorage(ChakrDbSimplePayloadStorage),
+    #[cfg(feature = "chakrdb")]
+    ChakrDbOnDiskPayloadStorage(ChakrDbOnDiskPayloadStorage),
     MmapPayloadStorage(MmapPayloadStorage),
 }
 
@@ -46,6 +54,20 @@ impl From<SimplePayloadStorage> for PayloadStorageEnum {
 impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
     fn from(a: OnDiskPayloadStorage) -> Self {
         PayloadStorageEnum::OnDiskPayloadStorage(a)
+    }
+}
+
+#[cfg(feature = "chakrdb")]
+impl From<ChakrDbSimplePayloadStorage> for PayloadStorageEnum {
+    fn from(a: ChakrDbSimplePayloadStorage) -> Self {
+        PayloadStorageEnum::ChakrDbSimplePayloadStorage(a)
+    }
+}
+
+#[cfg(feature = "chakrdb")]
+impl From<ChakrDbOnDiskPayloadStorage> for PayloadStorageEnum {
+    fn from(a: ChakrDbOnDiskPayloadStorage) -> Self {
+        PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(a)
     }
 }
 
@@ -75,6 +97,14 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::OnDiskPayloadStorage(s) => {
                 s.overwrite(point_id, payload, hw_counter)
             }
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
             PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload, hw_counter),
         }
     }
@@ -92,6 +122,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.set(point_id, payload, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.set(point_id, payload, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
         }
     }
@@ -116,6 +150,14 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::OnDiskPayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
             PayloadStorageEnum::MmapPayloadStorage(s) => {
                 s.set_by_key(point_id, payload, key, hw_counter)
             }
@@ -134,6 +176,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.get(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.get(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
         }
     }
@@ -150,6 +196,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get_sequential(point_id, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
         }
     }
@@ -167,6 +217,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.delete(point_id, key, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
         }
     }
@@ -183,6 +237,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.clear(point_id, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.clear(point_id, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.clear(point_id, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
         }
     }
@@ -196,6 +254,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.clear_all(hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear_all(hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.clear_all(hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.clear_all(hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_all(hw_counter),
         }
     }
@@ -208,6 +270,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.flusher(),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flusher(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.flusher(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.flusher(),
         }
     }
@@ -223,6 +289,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback, hw_counter),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.iter(callback, hw_counter),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.iter(callback, hw_counter),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
         }
     }
@@ -235,6 +305,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.files(),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.files(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.files(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.files(),
         }
     }
@@ -247,6 +321,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.immutable_files(),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.immutable_files(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.immutable_files(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.immutable_files(),
         }
     }
@@ -259,6 +337,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get_storage_size_bytes(),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_storage_size_bytes(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.get_storage_size_bytes(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.get_storage_size_bytes(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
         }
     }
@@ -271,6 +353,10 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.is_on_disk(),
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.is_on_disk(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(s) => s.is_on_disk(),
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(s) => s.is_on_disk(),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.is_on_disk(),
         }
     }
@@ -287,6 +373,10 @@ impl PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(_) => {}
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(_) => {}
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.populate()?,
         }
         Ok(())
@@ -301,6 +391,10 @@ impl PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(_) => {}
             #[cfg(feature = "rocksdb")]
             PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbSimplePayloadStorage(_) => {}
+            #[cfg(feature = "chakrdb")]
+            PayloadStorageEnum::ChakrDbOnDiskPayloadStorage(_) => {}
             PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_cache()?,
         }
         Ok(())

@@ -13,6 +13,8 @@ pub mod rocksdb_buffered_delete_wrapper;
 pub mod rocksdb_buffered_update_wrapper;
 #[cfg(feature = "rocksdb")]
 pub mod rocksdb_wrapper;
+#[cfg(feature = "chakrdb")]
+pub mod chakrdb_wrapper;
 pub mod score_fusion;
 pub mod utils;
 pub mod validate_snapshot_archive;

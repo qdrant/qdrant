@@ -24,6 +24,8 @@ use uuid::Uuid;
 
 #[cfg(feature = "rocksdb")]
 use super::rocksdb_builder::RocksDbBuilder;
+#[cfg(feature = "chakrdb")]
+use super::chakrdb_builder::ChakrDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
@@ -46,6 +48,10 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
+#[cfg(feature = "chakrdb")]
+use crate::payload_storage::chakrdb_payload_storage::ChakrDbSimplePayloadStorage;
+#[cfg(feature = "chakrdb")]
+use crate::payload_storage::chakrdb_on_disk_payload_storage::ChakrDbOnDiskPayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
@@ -227,6 +233,7 @@ pub(crate) fn open_vector_storage(
 
 pub(crate) fn create_payload_storage(
     #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "chakrdb")] chakrdb_builder: &mut ChakrDbBuilder,
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
@@ -238,6 +245,14 @@ pub(crate) fn create_payload_storage(
         #[cfg(feature = "rocksdb")]
         PayloadStorageType::OnDisk => {
             PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
+        }
+        #[cfg(feature = "chakrdb")]
+        PayloadStorageType::InMemory => {
+            PayloadStorageEnum::from(ChakrDbSimplePayloadStorage::open(chakrdb_builder.require()?)?)
+        }
+        #[cfg(feature = "chakrdb")]
+        PayloadStorageType::OnDisk => {
+            PayloadStorageEnum::from(ChakrDbOnDiskPayloadStorage::open(chakrdb_builder.require()?)?)
         }
         PayloadStorageType::Mmap => PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(
             segment_path.to_path_buf(),
@@ -447,10 +462,14 @@ fn create_segment(
 ) -> OperationResult<Segment> {
     #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
+    #[cfg(feature = "chakrdb")]
+    let mut chakrdb_builder = ChakrDbBuilder::new(segment_path, config)?;
 
     let payload_storage = sp(create_payload_storage(
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
+        #[cfg(feature = "chakrdb")]
+        &mut chakrdb_builder,
         segment_path,
         config,
     )?);
