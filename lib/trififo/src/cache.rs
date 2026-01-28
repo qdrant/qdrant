@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 
 use hashbrown::HashTable;
 
-use crate::concurrent_fifos::{Entry, LocalOffset, S3Fifo};
+use crate::s3fifo::{Entry, LocalOffset, S3Fifo};
 use crate::seqlock::{SeqLock, SeqLockReader};
 
 /// A concurrent S3-FIFO cache using the Disruptor pattern and `hashbrown` for

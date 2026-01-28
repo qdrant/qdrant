@@ -1,8 +1,8 @@
-mod concurrent_cache;
-mod concurrent_fifos;
-mod concurrent_ringbuffer;
+mod papaya_cache;
+mod s3fifo;
+mod ringbuffer;
 mod seqlock;
-mod concurrent_cache_hashbrown;
+mod cache;
 
-pub use concurrent_cache::ConcurrentCache;
-pub use concurrent_cache_hashbrown::ConcurrentCacheHashbrown;
+pub use papaya_cache::ConcurrentCache;
+pub use cache::ConcurrentCacheHashbrown;

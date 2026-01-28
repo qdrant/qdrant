@@ -10,7 +10,7 @@
 use std::hash::{BuildHasher, Hash};
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::concurrent_ringbuffer::RingBuffer;
+use crate::ringbuffer::RingBuffer;
 
 pub type GlobalOffset = u32;
 
