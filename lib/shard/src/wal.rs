@@ -100,9 +100,15 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
 
         let to = self.first_index() + self.len(false);
+        self.read_range(from, to)
+    }
 
+    pub fn read_range(&self, from: u64, to: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
         (from..to).map(move |idx| {
-            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+            let record_bin = self
+                .wal
+                .entry(idx)
+                .unwrap_or_else(|| panic!("Can't read entry {idx} from WAL"));
 
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))

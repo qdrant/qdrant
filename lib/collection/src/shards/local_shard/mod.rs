@@ -82,7 +82,7 @@ use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_s
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
-use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::RecoverableWal;
 
@@ -688,11 +688,21 @@ impl LocalShard {
             .expect("Failed to create progress style");
         bar.set_style(progress_style);
 
+        let from = wal.first_index();
+        let last_wal_index = wal.last_index();
+        let to = self
+            .applied_seq_handler
+            .op_num_upper_bound()
+            .unwrap_or(last_wal_index);
+        let to = std::cmp::min(to, last_wal_index);
+        let wal_entries_to_replay = to - from;
+
         log::debug!(
-            "Recovering shard {} starting reading WAL from {} up to {}",
+            "Recovering shard {} starting reading WAL from {} up to {} (last_applied_seq:{:?})",
             self.path.display(),
-            wal.first_index(),
-            wal.last_index(),
+            from,
+            to,
+            self.applied_seq_handler.op_num(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
@@ -705,7 +715,7 @@ impl LocalShard {
             log::info!(
                 "Recovering shard {}: 0/{} (0%)",
                 self.path.display(),
-                wal.len(false),
+                wal_entries_to_replay,
             );
         }
 
@@ -722,7 +732,7 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_all(false) {
+        for (op_num, update) in wal.read_range(from, to) {
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
@@ -767,8 +777,8 @@ impl LocalShard {
                 let progress = bar.position();
                 log::info!(
                     "{progress}/{} ({}%)",
-                    wal.len(false),
-                    (progress as f32 / wal.len(false) as f32 * 100.0) as usize,
+                    wal_entries_to_replay,
+                    (progress as f32 / wal_entries_to_replay as f32 * 100.0) as usize,
                 );
                 last_progress_report = Instant::now();
             }
@@ -786,14 +796,34 @@ impl LocalShard {
         bar.finish();
         if !show_progress_bar {
             log::info!(
-                "Recovered collection {collection_id}: {0}/{0} (100%)",
-                wal.len(false),
+                "Recovered collection {collection_id}: {wal_entries_to_replay}/{wal_entries_to_replay} (100%)"
             );
         }
 
         // The storage is expected to be consistent after WAL recovery
         #[cfg(feature = "data-consistency-check")]
         self.check_data_consistency()?;
+
+        // Send remaining pending WAL elements to the update channel
+        if to < last_wal_index {
+            log::info!(
+                "Loading remaining {} WAL entries from:{to} into update queue",
+                last_wal_index - to
+            );
+            let update_sender = self.update_sender.load();
+            // TODO use proper collection's hardware measurement
+            let hw_measurements = HwMeasurementAcc::disposable();
+            for op_num in to..=last_wal_index {
+                update_sender
+                    .send(UpdateSignal::Operation(OperationData {
+                        op_num,
+                        operation: None,
+                        sender: None,
+                        hw_measurements: hw_measurements.clone(),
+                    }))
+                    .await?;
+            }
+        }
 
         Ok(())
     }

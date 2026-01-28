@@ -338,9 +338,4 @@ impl UpdateHandler {
 
         Ok(())
     }
-
-    #[allow(unused)] // TODO for purge WAL API
-    pub fn applied_seq(&self) -> Option<u64> {
-        self.applied_seq_handler.op_num()
-    }
 }
