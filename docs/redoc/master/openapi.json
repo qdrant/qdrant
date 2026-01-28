@@ -13702,7 +13702,10 @@
           "responses": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/OperationDurationStatistics"
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
             }
           }
         }
