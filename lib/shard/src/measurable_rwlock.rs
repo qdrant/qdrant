@@ -52,6 +52,7 @@ pub static READ_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableR
 
     total_time_us_counter: atomic::AtomicU64::new(0),
     total_counter: atomic::AtomicU64::new(0),
+    upgrade_lock_time: atomic::AtomicU64::new(0),
 };
 
 pub static WRITE_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
@@ -69,6 +70,25 @@ pub static WRITE_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = Measurable
 
     total_time_us_counter: atomic::AtomicU64::new(0),
     total_counter: atomic::AtomicU64::new(0),
+    upgrade_lock_time: atomic::AtomicU64::new(0),
+};
+
+pub static DELETE_MEASURABLE_RWLOCK_METRICS: MeasurableRwLockMetrics = MeasurableRwLockMetrics {
+    read_counter: atomic::AtomicU64::new(0),
+    write_counter: atomic::AtomicU64::new(0),
+    upgrade_counter: atomic::AtomicU64::new(0),
+    try_read_for_counter: atomic::AtomicU64::new(0),
+    read_wait_time_us_counter: atomic::AtomicU64::new(0),
+    write_wait_time_us_counter: atomic::AtomicU64::new(0),
+    upgrade_wait_time_us_counter: atomic::AtomicU64::new(0),
+    try_read_for_time_us_counter: atomic::AtomicU64::new(0),
+
+    read_lock_time: atomic::AtomicU64::new(0),
+    write_lock_time: atomic::AtomicU64::new(0),
+
+    total_time_us_counter: atomic::AtomicU64::new(0),
+    total_counter: atomic::AtomicU64::new(0),
+    upgrade_lock_time: atomic::AtomicU64::new(0),
 };
 
 thread_local! {
@@ -146,6 +166,15 @@ impl MeasureOperation {
             operation_start: start,
             prev_metrics,
         }
+    }
+}
+
+#[allow(dead_code)]
+pub struct MeasureDelete(MeasureOperation);
+
+impl Default for MeasureDelete {
+    fn default() -> Self {
+        Self(MeasureOperation::new(&DELETE_MEASURABLE_RWLOCK_METRICS))
     }
 }
 

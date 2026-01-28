@@ -2,10 +2,10 @@
 
 use std::sync::atomic::AtomicBool;
 
-use ::parking_lot::RwLock as PLRwLock;
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
+use parking_lot::RwLock as PLRwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;

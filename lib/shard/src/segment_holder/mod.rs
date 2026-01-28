@@ -30,7 +30,7 @@ use crate::locked_segment::LockedSegment;
 use crate::measurable_rwlock::measurable_parking_lot::{
     Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
-use crate::measurable_rwlock::{MeasureRead, MeasureWrite};
+use crate::measurable_rwlock::{MeasureDelete, MeasureRead, MeasureWrite};
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
@@ -713,6 +713,8 @@ impl SegmentHolder {
                             )?;
                             appendable_write_segment
                                 .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+
+                            let _guard = MeasureDelete::default();
 
                             write_segment.delete_point(op_num, point_id, hw_counter)?;
 

@@ -30,7 +30,8 @@ use fs_err as fs;
 use memory::checkfs::{check_fs_info, check_mmap_functionality};
 use memory::mmap_ops::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use shard::measurable_rwlock::{
-    READ_MEASURABLE_RWLOCK_METRICS, WRITE_MEASURABLE_RWLOCK_METRICS, log_metrics,
+    DELETE_MEASURABLE_RWLOCK_METRICS, READ_MEASURABLE_RWLOCK_METRICS,
+    WRITE_MEASURABLE_RWLOCK_METRICS, log_metrics,
 };
 use slog::Drain;
 use startup::setup_panic_hook;
@@ -396,6 +397,7 @@ fn main() -> anyhow::Result<()> {
 
             log_metrics("Read", &READ_MEASURABLE_RWLOCK_METRICS);
             log_metrics("Write", &WRITE_MEASURABLE_RWLOCK_METRICS);
+            log_metrics("Delete", &DELETE_MEASURABLE_RWLOCK_METRICS);
         }
     });
 
