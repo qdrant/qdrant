@@ -114,7 +114,7 @@ impl ForwardProxyShard {
             // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
-                    // TODO: Assign clock tag!? 🤔
+                    // Don't add clock tag, this transfers indices out of regular order
                     OperationWithClockTag::from(CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
                             field_name: index_key,
@@ -181,11 +181,12 @@ impl ForwardProxyShard {
 
         self.remote_shard
             .update(
+                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
                 OperationWithClockTag::from(insert_points_operation),
                 wait,
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation
-            ) // TODO: Assign clock tag!? 🤔
+            )
             .await?;
 
         Ok((next_page_offset, count))
