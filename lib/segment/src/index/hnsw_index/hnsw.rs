@@ -491,7 +491,14 @@ impl HNSWIndex {
             }
 
             if !ids.is_empty() {
-                pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+                pool.install(|| {
+                    ids.par_chunks(128).try_for_each(|chunk| {
+                        for id in chunk {
+                            insert_point(*id)?
+                        }
+                        Ok::<_, OperationError>(())
+                    })
+                })?
             }
 
             drop(progress_main_graph);
