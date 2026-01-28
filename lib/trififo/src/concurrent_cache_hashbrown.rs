@@ -143,13 +143,17 @@ where
         let fifos = S3Fifo::new(capacity, small_ratio, ghost_ratio);
 
         // Create a hashbrown hashtable with requested capacity.
-        // IMPORTANT: allocate 1.5x the logical cache capacity up-front and avoid
-        // resizing. Readers may be concurrently reading from the hashtable at any
-        // moment, so we must ensure the table does not reallocate while the
-        // system is running. We provision extra space (ceil(capacity * 1.5)) so
-        // inserts performed by the single writer will not trigger a resize.
-        let initial_capacity = (capacity * 3 + 1) / 2; // ceil(capacity * 1.5)
-        let hashtable = HashTable::with_capacity(initial_capacity);
+        //
+        // Maximum entries = small + main + ghost = capacity + ghost_size
+        let max_entries = capacity + (capacity as f32 * ghost_ratio) as usize;
+        // IMPORTANT: Allocate for 2x as much entries so that hashtable can be rehashed in-place if needed,
+        // but never resized and reallocate.
+        // See: https://github.com/rust-lang/hashbrown/blob/9641fb3eea9a07933fb631da6e4f5070d2f7e1da/src/raw.rs#L2775
+        //
+        // Internally, the capacity increases to 1/8 higher, but that should only make it more robust.
+        // By doing this, we ensure that concurrent readers will not get to a use-after-free error.
+        let table_capacity = max_entries * 2;
+        let hashtable = HashTable::with_capacity(table_capacity);
 
         let cache_inner = CacheInner {
             hashtable,
@@ -199,10 +203,14 @@ where
             let hash = cache.hash_key(key);
 
             let global_offset = cache.hashtable.find(hash, |global_offset| {
-                cache.fifos.key_eq(global_offset.load(Ordering::Relaxed), key)
+                cache
+                    .fifos
+                    .key_eq(global_offset.load(Ordering::Relaxed), key)
             })?;
 
-            let local = cache.fifos.local_offset(global_offset.load(Ordering::Relaxed));
+            let local = cache
+                .fifos
+                .local_offset(global_offset.load(Ordering::Relaxed));
             let entry = cache.fifos.get_entry(local)?;
             entry.incr_recency();
             Some(entry.value.clone())
@@ -232,7 +240,7 @@ where
 impl<K, V, S> CacheInner<K, V, S>
 where
     K: Copy + Hash + Eq + Send + Sync,
-    V: Send + Sync,
+    V: Clone + Send + Sync,
     S: BuildHasher + Clone + Default + Send + Sync,
 {
     /// Convenience to compute hash for a key using stored hasher.
@@ -243,38 +251,51 @@ where
         self.hasher.hash_one(key)
     }
 
-    /// Update hashtable: insert or remove based on `local_offset`.
-    fn update_hashtable(&mut self, key: &K, local_offset: Option<LocalOffset>) {
+    /// Update hashtable entry for `key`. If it did not exist, does nothing.
+    fn update_hashtable(&mut self, key: &K, local_offset: LocalOffset) {
         let hash = self.hash_key(key);
 
-        match local_offset {
-            Some(local) => {
-                let global_offset = self.fifos.global_offset(local);
-                // Use the entry API to update or insert.
-                let entry = self.hashtable.entry(
-                    hash,
-                    |global_offset| self.fifos.key_eq(global_offset.load(Ordering::Relaxed), key),
-                    |global_offset| self.fifos.hash_key_at_offset(global_offset.load(Ordering::Relaxed), &self.hasher),
-                );
+        let global_offset = self.fifos.global_offset(local_offset);
+        // Use the find_entry API to update.
+        let entry = self.hashtable.find_entry(
+            hash,
+            |global_offset| {
+                self.fifos
+                    .key_eq(global_offset.load(Ordering::Relaxed), key)
+            },
+        );
 
-                match entry {
-                    hashbrown::hash_table::Entry::Occupied(occ) => {
-                        occ.get().store(global_offset, Ordering::Relaxed);
-                    }
-                    hashbrown::hash_table::Entry::Vacant(vac) => {
-                        vac.insert(AtomicU32::new(global_offset));
-                    }
-                }
-            }
-            None => {
-                // Remove key if present
-                if let Ok(entry) = self.hashtable.find_entry(hash, |global_offset| {
-                    self.fifos.key_eq(global_offset.load(Ordering::Relaxed), key)
-                }) {
-                    entry.remove();
-                }
-            }
+        if let Ok(occupied) = entry {
+            occupied.get().store(global_offset, Ordering::Relaxed);
         }
+    }
+
+    /// Remove a key from the hashtable if present.
+    #[inline]
+    fn remove_from_hashtable(&mut self, key: &K) {
+        let hash = self.hash_key(key);
+        if let Ok(entry) = self.hashtable.find_entry(hash, |global_offset| {
+            self.fifos
+                .key_eq(global_offset.load(Ordering::Relaxed), key)
+        }) {
+            entry.remove();
+        }
+    }
+
+    /// Insert a fresh entry into the hashtable. Use this when we've already
+    /// removed the old entry and need to insert at a new location.
+    /// This avoids the key_eq lookup which can fail if the old slot was overwritten.
+    fn insert_unique_to_hashtable(&mut self, key: &K, local_offset: LocalOffset) {
+        let hash = self.hash_key(key);
+        let global_offset = self.fifos.global_offset(local_offset);
+
+        // Insert directly without searching for existing entry.
+        // Caller must ensure the old entry was already removed.
+        self.hashtable
+            .insert_unique(hash, AtomicU32::new(global_offset), |global_offset| {
+                self.fifos
+                    .hash_key_at_offset(global_offset.load(Ordering::Relaxed), &self.hasher)
+            });
     }
 
     /// Main insert implementation. Only executed on writer thread.
@@ -282,9 +303,12 @@ where
         // Check existing entry
         let hash = self.hash_key(&key);
         if let Some(global_offset) = self.hashtable.find(hash, |global_offset| {
-            self.fifos.key_eq(global_offset.load(Ordering::Relaxed), &key)
+            self.fifos
+                .key_eq(global_offset.load(Ordering::Relaxed), &key)
         }) {
-            let local = self.fifos.local_offset(global_offset.load(Ordering::Relaxed));
+            let local = self
+                .fifos
+                .local_offset(global_offset.load(Ordering::Relaxed));
             self.promote_existing(local, key, value);
             return;
         }
@@ -292,7 +316,7 @@ where
         // New entry -> insert into small queue
         let entry = Entry::new(key, value);
         let local = self.push_to_small_queue(entry);
-        self.update_hashtable(&key, Some(local));
+        self.insert_unique_to_hashtable(&key, local);
     }
 
     /// Promote existing entry or increment recency.
@@ -308,7 +332,7 @@ where
 
                 let entry = Entry::new(key, value);
                 let new_local = self.push_to_main_queue(entry);
-                self.update_hashtable(&key, Some(new_local));
+                self.insert_unique_to_hashtable(&key, new_local);
             }
             LocalOffset::Small(offset) => {
                 let entry = self.fifos.get_small_entry(offset);
@@ -340,12 +364,19 @@ where
             }
         }) {}
 
-        let (evicted, off) = self.fifos.main.pop_push_unchecked(entry);
+        // We need to remove from hashtable BEFORE overwriting the slot,
+        // because remove_from_hashtable uses key_eq which reads the current
+        // slot contents. If we remove after overwriting_push, the slot
+        // already contains the new key, so key_eq fails and the entry
+        // becomes a zombie (never removed).
+        let evict_position = self.fifos.main.write_position();
+        let evicted_key = self.fifos.main.get_absolute_unchecked(evict_position).key;
+        self.remove_from_hashtable(&evicted_key);
 
-        // Evicted entry's key should be removed from hashtable (it had a value)
-        self.update_hashtable(&evicted.key, None);
+        // Now safe to overwrite the slot
+        let position = self.fifos.main.overwriting_push(entry);
 
-        LocalOffset::Main(off as u32)
+        LocalOffset::Main(position as u32)
     }
 
     /// Push to small queue, handling eviction to main/ghost and updating hashtable.
@@ -357,21 +388,32 @@ where
             Err(entry) => entry,
         };
 
-        // Else, pop oldest and push new entry in its place
-        let (oldest, off) = self.fifos.small.pop_push_unchecked(entry);
-        let oldest_key = oldest.key;
+        // We need to read the oldest entry and update the hashtable BEFORE
+        // overwriting the slot. This is because update_hashtable use key_eq
+        // which reads the current slot contents. If we do this after overwriting_push,
+        // the slot contains the new key, so key_eq fails and we fail to update the hashtable.
+        let oldest_offset = self.fifos.small.write_position();
+        let oldest_entry = self.fifos.small.get_absolute_unchecked(oldest_offset);
+        let oldest_key = oldest_entry.key;
 
-        if oldest.recency() > 0 {
-            // Promote to main queue and update hashtable
-            let new_local = self.push_to_main_queue(oldest);
-            self.update_hashtable(&oldest_key, Some(new_local));
+        let new_offset = if oldest_entry.recency() > 0 {
+            // Promote to main queue
+            self.push_to_main_queue(oldest_entry.clone())
         } else {
-            // Move key to ghost queue and update hashtable
-            let ghost_offset = self.push_to_ghost_queue(oldest_key);
-            self.update_hashtable(&oldest_key, Some(ghost_offset));
-        }
+            // Demote key to ghost queue
+            self.push_to_ghost_queue(oldest_key)
+        };
 
-        LocalOffset::Small(off as u32)
+        // Update the hashtable to now find the moved entry at the main/ghost queue.
+        // SAFETY: Entry is currently at two places, but:
+        // 1. We have removed the bucket pointing to the overwritten position in main/ghost.
+        // 2. So key_eq will only succeed with the one in small queue.
+        self.update_hashtable(&oldest_key, new_offset);
+
+        // Now safe to overwrite the slot
+        let offset = self.fifos.small.overwriting_push(entry);
+
+        LocalOffset::Small(offset as u32)
     }
 
     fn push_to_ghost_queue(&mut self, key: K) -> LocalOffset {
@@ -381,11 +423,17 @@ where
             Err(key) => key,
         };
 
-        // Else, pop oldest and push new entry in its place
-        let (evicted, offset) = self.fifos.ghost.pop_push_unchecked(key);
+        // We need to remove from hashtable BEFORE overwriting the slot,
+        // because remove_from_hashtable uses key_eq which reads the current
+        // slot contents. If we remove after pop_push_unchecked, the slot
+        // already contains the new key, so key_eq fails and the entry
+        // becomes a zombie (never removed).
+        let evict_offset = self.fifos.ghost.write_position();
+        let evicted_key = *self.fifos.get_ghost_key(evict_offset as u32); // K: Copy
+        self.remove_from_hashtable(&evicted_key);
 
-        // Evict from hashtable
-        self.update_hashtable(evicted, None);
+        // Now safe to overwrite the slot
+        let offset = self.fifos.ghost.overwriting_push(key);
 
         LocalOffset::Ghost(offset as u32)
     }
@@ -394,13 +442,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
     use std::time::Duration;
-    use std::collections::{HashMap, HashSet};
-    use std::sync::Mutex as StdMutex;
-    use rand::{rng, Rng};
 
     #[test]
     fn basic_insert_get() {
@@ -533,38 +580,47 @@ mod tests {
     /// was not previously inserted for that key.
     #[test]
     fn fuzz_never_returns_unseen_value() {
+        const CAPACITY: usize = 1024;
         let cache = Arc::new(ConcurrentCacheHashbrown::<u64, u64>::new(
-            1024, // capacity
+            CAPACITY,
             0.1,
-            0.2,
+            0.9,
             Default::default(),
         ));
 
-        const KEY_SPACE: u64 = 512;
+        const KEY_SPACE: u64 = 10240;
         const WRITERS: usize = 6;
         const READERS: usize = 6;
-        const OPS_PER_WRITER: usize = 800_000;
+        const OPS_PER_WRITER: usize = 200_000;
 
-        // Map of key -> set of values we've published for that key. Writers
-        // insert into this map before publishing to the cache so readers can
-        // validate returned values against this set.
-        let seen: Arc<StdMutex<HashMap<u64, HashSet<u64>>>> = Arc::new(StdMutex::new(HashMap::new()));
+        // Pre-generate a hashmap of random keys -> sets of allowed values.
+        // This map is generated once up-front and then shared (read-only) by all
+        // threads. Any value returned by the cache must belong to the set for
+        // that key (or the key may not be present at all).
+        let mut initial: HashMap<u64, Vec<u64>> = HashMap::new();
+        for k in 0..KEY_SPACE {
+            // Give each key between 1 and 8 candidate values.
+            let count = (rand::random::<u8>() as usize % 8) + 1;
+            let mut set = HashSet::new();
+            while set.len() < count {
+                set.insert(rand::random::<u64>());
+            }
+            initial.insert(k, set.into_iter().collect());
+        }
+        let initial = Arc::new(initial);
 
         let mut handles = Vec::with_capacity(WRITERS + READERS);
 
-        // Writers: generate pseudorandom (key, value) pairs using the repo RNG.
+        // Writers: randomly pick a key and a value from the pre-generated map and insert.
         for _ in 0..WRITERS {
             let c = Arc::clone(&cache);
-            let seen = Arc::clone(&seen);
+            let initial = Arc::clone(&initial);
             handles.push(thread::spawn(move || {
-                let mut rnd = rng();
+                let mut rnd = rand::rng();
                 for _ in 0..OPS_PER_WRITER {
-                    let key = rnd.random_range(0..KEY_SPACE) as u64;
-                    let value = rnd.random::<u64>();
-                    {
-                        let mut map = seen.lock().unwrap();
-                        map.entry(key).or_insert_with(HashSet::new).insert(value);
-                    }
+                    let key = rnd.random_range(0..KEY_SPACE);
+                    let vec = &initial[&key];
+                    let value = vec[rnd.random_range(0..vec.len())];
                     c.insert(key, value);
                     // occasional yield to increase interleaving
                     if (rnd.random::<u32>() & 0x3ff) == 0 {
@@ -574,26 +630,25 @@ mod tests {
             }));
         }
 
-        // Readers: randomly probe keys and verify any returned value was seen.
+        // Readers: randomly probe keys and verify any returned value belongs to the pre-generated set.
         for _ in 0..READERS {
             let c = Arc::clone(&cache);
-            let seen = Arc::clone(&seen);
+            let initial = Arc::clone(&initial);
             handles.push(thread::spawn(move || {
-                let mut rnd = rng();
+                let mut rnd = rand::rng();
                 // number of reads is proportional to total writes
                 let reads = (OPS_PER_WRITER * WRITERS) / (READERS * 2).max(1);
                 for _ in 0..reads {
-                    let key = rnd.random_range(0..KEY_SPACE) as u64;
+                    let key = rnd.random_range(0..KEY_SPACE);
                     if let Some(v) = c.get(&key) {
-                        let map = seen.lock().unwrap();
-                        match map.get(&key) {
-                            Some(set) => {
-                                assert!(set.contains(&v), "cache returned unseen value {} for key {}", v, key);
-                            }
-                            None => {
-                                panic!("cache returned value {} for key {} but no writer has published for this key", v, key);
-                            }
-                        }
+                        let vec = &initial[&key];
+                        // ensure returned value is one of the pre-generated values for this key
+                        assert!(
+                            vec.contains(&v),
+                            "cache returned unseen value {} for key {}",
+                            v,
+                            key
+                        );
                     }
                     // occasionally yield
                     if (rnd.random::<u8>() & 0x1f) == 0 {
@@ -611,12 +666,16 @@ mod tests {
         // Allow the writer/disruptor to flush events
         thread::sleep(Duration::from_millis(200));
 
-        // Final verification: any value returned by the cache must belong to the seen set
+        // Final verification: any value returned by the cache must belong to the pre-generated set
         for k in 0..KEY_SPACE {
             if let Some(v) = cache.get(&k) {
-                let map = seen.lock().unwrap();
-                let set = map.get(&k).expect("cache returned value for key with no published values");
-                assert!(set.contains(&v), "final check: returned {} for key {} which wasn't published", v, k);
+                let vec = &initial[&k];
+                assert!(
+                    vec.contains(&v),
+                    "final check: returned {} for key {} which wasn't in the initial set",
+                    v,
+                    k
+                );
             }
         }
     }

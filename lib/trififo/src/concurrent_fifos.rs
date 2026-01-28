@@ -39,6 +39,14 @@ impl<K, V> Entry<K, V> {
         }
     }
 
+    pub fn clone(&self) -> Self where K: Copy, V: Clone{
+        Self {
+            key: self.key.clone(),
+            value: self.value.clone(),
+            recency: AtomicU8::new(self.recency.load(Ordering::Relaxed)),
+        }
+    }
+
     #[inline]
     pub fn recency(&self) -> u8 {
         self.recency.load(Ordering::Relaxed)

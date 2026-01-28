@@ -103,12 +103,12 @@ impl<T> RingBuffer<T> {
     /// - The offset has been written to at least once
     /// - The caller verifies the data is still valid after reading
     #[inline]
-    pub fn get_absolute_unchecked(&self, offset: usize) -> &T {
-        debug_assert!(offset < self.capacity);
+    pub fn get_absolute_unchecked(&self, position: usize) -> &T {
+        debug_assert!(position < self.capacity);
         // Safety: We use Acquire ordering to synchronize with the Release
         // in write operations. The caller is responsible for verifying
         // the data is still valid (not overwritten with different key).
-        unsafe { (*self.buffer[offset].get()).assume_init_ref() }
+        unsafe { (*self.buffer[position].get()).assume_init_ref() }
     }
 
     /// Pushes an item into the ring buffer and returns its position offset.
