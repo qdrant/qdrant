@@ -31,7 +31,15 @@ pub struct Csr {
     intptr: Vec<u64>,
 }
 
-const CSR_HEADER_SIZE: usize = size_of::<u64>() * 3;
+const CSR_HEADER_SIZE: usize = size_of::<CsrHeader>();
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CsrHeader {
+    nrow: u64,
+    ncol: u64,
+    nnz: u64,
+}
 
 impl Csr {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
@@ -53,9 +61,9 @@ impl Csr {
     }
 
     fn from_mmap(mmap: Mmap) -> io::Result<Self> {
-        // TODO Safety: tuple doesn't have a stable layout.  Replace with a repr(C) struct.
-        let (nrow, ncol, nnz) =
-            unsafe { transmute_from_u8::<(u64, u64, u64)>(&mmap.as_ref()[..CSR_HEADER_SIZE]) };
+        // Safety: CsrHeader is a POD type.
+        let CsrHeader { nrow, ncol, nnz } =
+            unsafe { transmute_from_u8(&mmap.as_ref()[..CSR_HEADER_SIZE]) };
         let (nrow, _ncol, nnz) = (*nrow as usize, *ncol as usize, *nnz as usize);
 
         // Safety: correct alignment.
