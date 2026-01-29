@@ -5,8 +5,20 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 
   
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors, collection_name):
-    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+def setup(collection_name):
+    drop_collection(collection_name)
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 4,
+                "distance": "Dot",
+            },
+        }
+    )
+    assert response.ok
     yield
     drop_collection(collection_name=collection_name)
 
@@ -33,8 +45,7 @@ def test_queue_last_applied_seq(collection_name):
     queue_info = get_queue_info(collection_name)
     
     assert queue_info["length"] == 0
-    # basic_collection_setup insert a first vector
-    assert queue_info["last_applied_seq"] == 1
+    assert queue_info["last_applied_seq"] == 0
     
     # first update
     response = request_with_validation(
@@ -58,7 +69,7 @@ def test_queue_last_applied_seq(collection_name):
     # wait=true so ack. after application
     assert queue_info["length"] == 0
     
-    assert queue_info["last_applied_seq"] == 2
+    assert queue_info["last_applied_seq"] == 1
     
     # second update
     response = request_with_validation(
@@ -81,4 +92,4 @@ def test_queue_last_applied_seq(collection_name):
     # wait=true so ack. after application
     assert queue_info["length"] == 0
     
-    assert queue_info["last_applied_seq"] == 3
+    assert queue_info["last_applied_seq"] == 2
