@@ -21,7 +21,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
-use crate::vector_storage::{AccessPattern, VectorOffsetType};
+use crate::vector_storage::{AccessPattern, VectorOffset, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -286,23 +286,26 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    pub fn get_batch<'a>(
-        &'a self,
-        keys: &[VectorOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        debug_assert!(keys.len() == vectors.len());
+    pub fn for_each_in_batch<F: FnMut(usize, &[T]), O: VectorOffset>(&self, keys: &[O], mut f: F) {
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         let do_sequential_read = is_read_with_prefetch_efficient(keys);
 
-        maybe_uninit_fill_from(
-            vectors,
-            keys.iter().map(|key| {
-                self.get_many_impl(*key, 1, do_sequential_read)
+        // The `f` is most likely a scorer function.
+        // Fetching all vectors first then scoring them is more cache friendly
+        // then fetching and scoring in a single loop.
+        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let vectors = maybe_uninit_fill_from(
+            &mut vectors_buffer,
+            keys.iter().map(|&key| {
+                self.get_many_impl(key.offset(), 1, do_sequential_read)
                     .unwrap_or_else(|| panic!("Vector {key} not found"))
             }),
         )
-        .0
+        .0;
+
+        for (i, vec) in vectors.iter().enumerate() {
+            f(i, vec);
+        }
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -397,17 +400,15 @@ mod tests {
                 chunked_mmap.push(vec, &hw_counter).unwrap();
             }
 
-            let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
-
             let random_offset = 666;
             let batch_size = 10;
 
-            assert!(random_offset + batch_size < num_vectors);
-            assert!(batch_size <= VECTOR_READ_BATCH_SIZE);
-
             let batch_ids = (random_offset..random_offset + batch_size).collect::<Vec<_>>();
-            let vectors_buffer =
-                chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size]);
+            let mut vectors_buffer = Vec::with_capacity(batch_size);
+            chunked_mmap.for_each_in_batch(&batch_ids, |i, vec| {
+                assert_eq!(i, vectors_buffer.len());
+                vectors_buffer.push(vec.to_vec());
+            });
 
             for (i, (vec, loaded_vec)) in zip(
                 &vectors[random_offset..random_offset + batch_size],

@@ -195,16 +195,13 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
             .map_err(|_| OperationError::service_error("Layout is too big"))
     }
 
-    /// Get the dense vectors by the given keys
+    /// Run given function for each vector in the dense batch.
     ///
     /// Implementation can assume that the keys are consecutive
-    fn get_dense_batch<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        let iter = keys.iter().map(|key| self.get_dense::<Random>(*key));
-        maybe_uninit_fill_from(vectors, iter).0
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
+        for (idx, &key) in keys.iter().enumerate() {
+            f(idx, self.get_dense::<Random>(key));
+        }
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {
