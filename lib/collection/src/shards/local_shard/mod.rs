@@ -883,12 +883,10 @@ impl LocalShard {
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
     }
 
-    pub async fn local_update_queue_info(&self) -> UpdateQueueInfo {
-        let last_applied_seq = self.applied_seq_handler.op_num().map(|s| s as usize);
-        let length = self.update_queue_length();
+    pub fn local_update_queue_info(&self) -> UpdateQueueInfo {
         UpdateQueueInfo {
-            length,
-            last_applied_seq,
+            length: self.update_queue_length(),
+            last_applied_seq: self.applied_seq_handler.op_num().map(|s| s as usize),
         }
     }
 
