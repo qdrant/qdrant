@@ -451,8 +451,10 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU8;
     use std::path::PathBuf;
 
+    use memory::mmap_ops::transmute_from_u8;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -753,6 +755,35 @@ mod tests {
         assert_eq!(
             updates, expected,
             "must have one pending update to set block offset 2",
+        );
+    }
+
+    #[test]
+    fn test_option_value_pointer_layout() {
+        #[repr(align(4))]
+        struct AlignedData([u8; size_of::<Option<ValuePointer>>()]);
+
+        let none_data = AlignedData([0; _]);
+        let none_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&none_data.0) };
+        assert!(none_val.is_none());
+
+        let some_data = AlignedData([
+            1, 0, 0, 0, // discriminant with padding
+            0x44, 0x33, 0x22, 0x11, // page_id
+            0x88, 0x77, 0x66, 0x55, // block_offset
+            0xDD, 0xCC, 0xBB, 0xAA, // length
+        ]);
+        let some_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&some_data.0) };
+        // N.B. fails on a big-endian machine.
+        assert_eq!(
+            some_val,
+            &Some(ValuePointer {
+                _discriminant: NonZeroU8::new(1).unwrap(),
+                _padding: Default::default(),
+                page_id: 0x11223344,
+                block_offset: 0x55667788,
+                length: 0xAABBCCDD,
+            })
         );
     }
 
