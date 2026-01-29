@@ -77,7 +77,7 @@ static ALLOCATOR: Cap<alloc::System> = Cap::new(alloc::System, usize::MAX);
 // =============================================================================
 
 /// Generate keys following a Zipf distribution (realistic hot/cold access pattern)
-fn generate_zipf_keys(n: usize, num_unique: u64, exponent: f64, seed: u64) -> Vec<Key> {
+fn generate_zipf_keys(n: usize, num_unique: usize, exponent: f64, seed: u64) -> Vec<Key> {
     let mut rng = StdRng::seed_from_u64(seed);
     let zipf = Zipf::new(num_unique as f64, exponent).unwrap();
 
@@ -100,14 +100,14 @@ fn generate_sequential_keys(n: usize) -> Vec<Key> {
 /// - Sequential scans (should not evict working set)
 fn generate_scan_resistant_keys(
     n: usize,
-    num_unique: u64,
-    scan_size: u64,
+    num_unique: usize,
+    scan_size: usize,
     scan_frequency: f64,
     seed: u64,
 ) -> Vec<Key> {
     let mut rng = StdRng::seed_from_u64(seed);
     let zipf = Zipf::new(num_unique as f64, 1.0).unwrap();
-    let mut scan = (0..num_unique).cycle();
+    let mut scan = (0..num_unique as u64).cycle();
 
     let mut keys = Vec::with_capacity(n);
 
@@ -115,7 +115,7 @@ fn generate_scan_resistant_keys(
         let is_scan: bool = rng.random_bool(scan_frequency);
         if is_scan {
             // Sequential scan access (cold data)
-            for _ in 0..scan_size {
+            while keys.len() < n.min(keys.len() + scan_size) {
                 let id = scan.next().unwrap();
                 let key = Key::from_u64(id);
                 keys.push(key);
@@ -397,17 +397,17 @@ fn measure_hit_ratio(cache: &dyn CacheBench, keys: &[Key]) -> f64 {
 fn test_hit_ratio() {
     let num_accesses = 10_000_000;
     let cache_capacity = 100_000;
+    let key_space = cache_capacity * 10;
 
     // Different workload patterns
-    let zipf_1_2 = generate_zipf_keys(num_accesses, cache_capacity as u64 * 10, 1.2, 42);
-    let zipf_1_0 = generate_zipf_keys(num_accesses, cache_capacity as u64 * 10, 1.0, 42);
+    let zipf_1_2 = generate_zipf_keys(num_accesses, key_space, 1.2, 42);
+    let zipf_1_0 = generate_zipf_keys(num_accesses, key_space, 1.0, 42);
     let sequential_keys = generate_sequential_keys(num_accesses);
-    // Scan-resistant workload: 80% hot set accesses, 20% sequential scans
     let scan_resistant_keys = generate_scan_resistant_keys(
         num_accesses,
-        cache_capacity as u64 * 10, // the cache can hold 1/10 of data
-        100,                        // scans are 1/100 the cache size
-        0.01,                       // 1% of probability to get a scan
+        key_space,
+        cache_capacity / 10_000, // scans are 1/10_000 the cache size
+        0.00001,                 // 0.001% of probability to get a scan
         42,
     );
 
@@ -447,7 +447,7 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     // Benchmark insert operations
     group.throughput(Throughput::Elements(OPS_PER_ITER as u64));
 
-    let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY as u64 * 10, 1.0, 42);
+    let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY * 10, 1.0, 42);
     for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("insert", cache_name),
@@ -507,7 +507,7 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
     // Generate Zipf-distributed keys for each thread (simulating realistic hot/cold access patterns)
     // Each thread gets its own key sequence with a different seed to avoid identical access patterns
     let thread_keys: Vec<Vec<Key>> = (0..NUM_THREADS)
-        .map(|t| generate_zipf_keys(OPS_PER_THREAD, CACHE_CAPACITY as u64 * 10, 1.2, t as u64))
+        .map(|t| generate_zipf_keys(OPS_PER_THREAD, CACHE_CAPACITY * 10, 1.2, t as u64))
         .collect();
 
     // Benchmark: Concurrent get-or-insert under Zipf distribution
