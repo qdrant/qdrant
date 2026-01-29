@@ -74,6 +74,11 @@ pub struct ServiceConfig {
     #[serde(default)]
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
+
+    /// If true, enable per-collection metrics.
+    /// This can be expensive if you have many collections.
+    #[serde(default)]
+    pub record_per_collection: Option<bool>,
 }
 
 impl ServiceConfig {
