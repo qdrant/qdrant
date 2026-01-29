@@ -1,7 +1,50 @@
+#![allow(dead_code)]
+
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering, fence};
 
+/// A seqlock is a lock-free synchronization mechanism that provides
+/// sequential consistency for reads and writes.
+///
+/// It allows a single writer to mutate the inner type uncontended, at the cost of
+/// readers repeating the read as long as:
+/// 1. The writer is not currently accessing the resource
+/// 2. The resource did not change in between the start and end of the read.
+///
+/// The [`SeqLock`] struct itself is not Send, nor Sync, so it is kind of useless on its own.
+///
+/// To allow multiple readers, and ensure a single writer, a `new_reader_writer` method is provided.
+///
+/// # SAFETY
+/// While this lock ensures that a read is consistent, it does not protect against
+/// writers creating use-after-free errors. This is because readers can see the
+/// shared resource even as it is being modified. It is the user responsibility to make
+/// sure the underlying resource does not change allocations, and that the worst that
+/// can happen is a garbage/torn read.
+///
+/// ```ignore
+/// use crate::seqlock::SeqLock;
+///
+/// fn main() {
+///
+///     let shared_resource = String::from("banner");
+///
+///     let (reader, writer) = SeqLock::new_reader_writer(shared_resource);
+///
+///     let reader_2 = reader.clone(); // This can be cheaply copied, pointing to the same resource.
+///
+///     std::thread::spawn(move || {
+///         let value = reader_2.read(|value| value.to_owned());
+///         println!("Value: {}", value);
+///     });
+///
+///     // writer can be sent to a thread, but can't be shared between them
+///     std::thread::spawn(move || {
+///         writer.write(|value| value.push('s'));
+///     });
+/// }
+/// ```
 pub struct SeqLock<T> {
     seq: AtomicUsize,
     inner: UnsafeCell<T>,
@@ -25,9 +68,7 @@ impl<T> SeqLock<T> {
     pub fn new_reader_writer(v: T) -> (SeqLockReader<T>, SeqLockWriter<T>) {
         let lock = Arc::new(SeqLock::new(v));
         let reader = SeqLockReader { lock: lock.clone() };
-        let writer = SeqLockWriter {
-            lock: lock.clone(),
-        };
+        let writer = SeqLockWriter { lock: lock.clone() };
         (reader, writer)
     }
 
@@ -66,6 +107,7 @@ impl<T> SeqLock<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct SeqLockReader<T> {
     lock: Arc<SeqLock<T>>,
 }
@@ -93,11 +135,12 @@ impl<T> SeqLockWriter<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
+
+    use super::*;
 
     #[derive(Debug)]
     struct Pair {
