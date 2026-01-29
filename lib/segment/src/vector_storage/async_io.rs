@@ -191,7 +191,8 @@ fn submit_and_read<T: PrimitiveVectorElement>(
         let buffer_id = entry.user_data() as usize;
         let meta = buffers.buffers[buffer_id].meta.take().unwrap();
         let buffer = &buffers.buffers[buffer_id].buffer;
-        let vector = transmute_from_u8_to_slice(buffer);
+        // TODO Safety: While `T: zerocopy::FromBytes`, it is not clear if buffer has proper alignment.
+        let vector = unsafe { transmute_from_u8_to_slice(buffer) };
         callback(meta.index, meta.point_id, vector);
         unused_buffer_ids.push(buffer_id);
     }
