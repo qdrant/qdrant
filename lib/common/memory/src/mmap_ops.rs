@@ -118,6 +118,10 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
 
     Ok(mmap)
 }
+
+/// # Safety
+///
+/// `data` must have correct alignment and size for `T` and contain correct bit patterns for the type `T`.
 pub unsafe fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
 
@@ -136,10 +140,16 @@ pub unsafe fn transmute_from_u8<T>(v: &[u8]) -> &T {
     unsafe { &*v.as_ptr().cast::<T>() }
 }
 
+/// # Safety
+///
+/// T must be a type with stable representation (POD type, Option with niche optimization, etc).
 pub unsafe fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v).cast::<u8>(), mem::size_of_val(v)) }
 }
 
+/// # Safety
+///
+/// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
 pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
@@ -160,6 +170,9 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     unsafe { std::slice::from_raw_parts(ptr, len) }
 }
 
+/// # Safety
+///
+/// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
 pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
@@ -180,6 +193,9 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
+/// # Safety
+///
+/// T must by a type with stable representation (POD type, Option with niche optimization, etc).
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
 }
