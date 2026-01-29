@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
-use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_vectors;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{AccessPattern, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
@@ -293,7 +293,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     ) -> &'a [&'a [T]] {
         debug_assert!(keys.len() == vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        let do_sequential_read = is_read_with_prefetch_efficient_vectors(keys);
+        let do_sequential_read = is_read_with_prefetch_efficient(keys);
 
         maybe_uninit_fill_from(
             vectors,

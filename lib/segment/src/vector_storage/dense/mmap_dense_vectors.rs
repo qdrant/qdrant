@@ -22,7 +22,7 @@ use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
-use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_points;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{AccessPattern, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
@@ -177,7 +177,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     ) -> &'a [&'a [T]] {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        if is_read_with_prefetch_efficient_points(keys) {
+        if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
             maybe_uninit_fill_from(vectors, iter).0
         } else {

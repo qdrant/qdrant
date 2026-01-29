@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::fmt;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -35,9 +36,26 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMma
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
-/// In case of simple vector storage, vector offset is the same as PointOffsetType.
+/// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
 /// But in case of multivectors, it requires an additional lookup.
 pub type VectorOffsetType = usize;
+
+/// Generalized vector offset.
+pub trait VectorOffset: Copy + fmt::Display + fmt::Debug {
+    fn offset(self) -> VectorOffsetType;
+}
+
+impl VectorOffset for PointOffsetType {
+    fn offset(self) -> VectorOffsetType {
+        self as VectorOffsetType
+    }
+}
+
+impl VectorOffset for VectorOffsetType {
+    fn offset(self) -> VectorOffsetType {
+        self
+    }
+}
 
 pub trait AccessPattern: Copy {
     const IS_SEQUENTIAL: bool;
