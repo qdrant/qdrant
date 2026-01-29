@@ -15,6 +15,9 @@ pub type HttpStatusCode = u16;
 
 pub type GrpcStatusCode = i32;
 
+pub type ActixTelemetryData =
+    HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>;
+
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
@@ -36,11 +39,8 @@ pub struct ActixTelemetryCollector {
 
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
-    methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    per_collection_methods: HashMap<
-        String,
-        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    >,
+    methods: ActixTelemetryData,
+    per_collection_methods: HashMap<String, ActixTelemetryData>,
 }
 
 pub struct TonicTelemetryCollector {
