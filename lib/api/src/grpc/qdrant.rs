@@ -1616,6 +1616,17 @@ pub struct PayloadSchemaInfo {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateQueueInfo {
+    /// Number of elements in the queue
+    #[prost(uint64, tag = "1")]
+    pub length: u64,
+    /// last operation sequence number processed
+    #[prost(uint64, optional, tag = "2")]
+    pub last_applied_seq: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
     /// operating condition of the collection
     #[prost(enumeration = "CollectionStatus", tag = "1")]
@@ -1644,6 +1655,9 @@ pub struct CollectionInfo {
     /// Warnings related to the collection
     #[prost(message, repeated, tag = "11")]
     pub warnings: ::prost::alloc::vec::Vec<CollectionWarning>,
+    /// Update queue info
+    #[prost(message, optional, tag = "12")]
+    pub update_queue: ::core::option::Option<UpdateQueueInfo>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

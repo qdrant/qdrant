@@ -75,7 +75,7 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionResult, OptimizationSegmentInfo, OptimizersStatus,
-    PendingOptimization, ShardInfoInternal, ShardStatus,
+    PendingOptimization, ShardInfoInternal, ShardStatus, UpdateQueueInfo,
     check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
@@ -883,6 +883,15 @@ impl LocalShard {
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
     }
 
+    pub async fn local_update_queue_info(&self) -> UpdateQueueInfo {
+        let last_applied_seq = self.applied_seq_handler.op_num().map(|s| s as usize);
+        let length = self.update_queue_length();
+        UpdateQueueInfo {
+            length,
+            last_applied_seq,
+        }
+    }
+
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
         {
             let segments = self.segments.clone();
@@ -981,6 +990,8 @@ impl LocalShard {
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
+        let update_queue = self.local_update_queue_info().await;
+
         ShardInfoInternal {
             status,
             optimizer_status,
@@ -989,6 +1000,7 @@ impl LocalShard {
             segments_count,
             config: collection_config,
             payload_schema: schema,
+            update_queue,
         }
     }
 
@@ -1123,6 +1135,17 @@ impl LocalShard {
     // Returns configured default search timeout if timeout is None
     fn timeout_or_default_search_timeout(&self, timeout: Option<Duration>) -> Duration {
         timeout.unwrap_or(self.shared_storage_config.search_timeout)
+    }
+
+    /// Estimate pending operations count in the channel.
+    fn update_queue_length(&self) -> usize {
+        let update_sender = self.update_sender.load();
+        // `Sender::capacity` is returns available slots in the channel regarding tokio docs.
+        // To calculate pending operations we need to subtract it from the max capacity,
+        // which is the total capacity defined while creating the channel.
+        update_sender
+            .max_capacity()
+            .saturating_sub(update_sender.capacity())
     }
 }
 

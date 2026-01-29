@@ -136,6 +136,14 @@ pub struct CollectionWarning {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, JsonSchema, Default)]
+pub struct UpdateQueueInfo {
+    /// Number of elements in the queue
+    pub length: usize,
+    /// last operation sequence number processed
+    pub last_applied_seq: Option<usize>,
+}
+
 // Version of the collection config we can present to the user
 /// Information about the collection configuration
 #[derive(Debug, Serialize, JsonSchema)]
@@ -205,6 +213,8 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Update queue info
+    pub update_queue: Option<UpdateQueueInfo>,
 }
 
 impl CollectionInfo {
@@ -225,6 +235,7 @@ impl CollectionInfo {
                 .into_iter()
                 .map(|(k, v)| (k, PayloadIndexInfo::new(v, 0)))
                 .collect(),
+            update_queue: Some(UpdateQueueInfo::default()),
         }
     }
 }
@@ -239,6 +250,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            update_queue,
         } = info;
         Self {
             status: status.into(),
@@ -249,6 +261,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             segments_count,
             config: CollectionConfig::from(config),
             payload_schema,
+            update_queue: Some(update_queue),
         }
     }
 }
@@ -274,6 +287,8 @@ pub struct ShardInfoInternal {
     pub config: CollectionConfigInternal,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Update queue state
+    pub update_queue: UpdateQueueInfo,
 }
 
 /// Current clustering distribution for the collection

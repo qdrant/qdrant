@@ -54,7 +54,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CollectionWarning,
     CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RemoteShardInfo,
-    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    ShardTransferInfo, UpdateQueueInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
@@ -392,6 +392,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            update_queue,
         } = value;
 
         let CollectionConfig {
@@ -550,6 +551,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(api::grpc::qdrant::CollectionWarning::from)
                 .collect(),
+            update_queue: update_queue.map(api::grpc::qdrant::UpdateQueueInfo::from),
         }
     }
 }
@@ -565,6 +567,32 @@ impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
     fn from(value: api::grpc::qdrant::CollectionWarning) -> Self {
         let api::grpc::qdrant::CollectionWarning { message } = value;
         Self { message }
+    }
+}
+
+impl From<UpdateQueueInfo> for api::grpc::qdrant::UpdateQueueInfo {
+    fn from(value: UpdateQueueInfo) -> Self {
+        let UpdateQueueInfo {
+            length,
+            last_applied_seq,
+        } = value;
+        Self {
+            length: length as u64,
+            last_applied_seq: last_applied_seq.map(|x| x as u64),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::UpdateQueueInfo> for UpdateQueueInfo {
+    fn from(value: api::grpc::qdrant::UpdateQueueInfo) -> Self {
+        let api::grpc::qdrant::UpdateQueueInfo {
+            length,
+            last_applied_seq,
+        } = value;
+        Self {
+            length: length as usize,
+            last_applied_seq: last_applied_seq.map(|x| x as usize),
+        }
     }
 }
 
@@ -841,6 +869,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     config,
                     payload_schema,
                     warnings,
+                    update_queue,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -872,6 +901,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                         .try_collect()?,
                     warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
+                    update_queue: update_queue.map(UpdateQueueInfo::from),
                 })
             }
         }

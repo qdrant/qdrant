@@ -6907,6 +6907,17 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "update_queue": {
+            "description": "Update queue info",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateQueueInfo"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8316,6 +8327,27 @@
         "enum": [
           "uuid"
         ]
+      },
+      "UpdateQueueInfo": {
+        "type": "object",
+        "required": [
+          "length"
+        ],
+        "properties": {
+          "length": {
+            "description": "Number of elements in the queue",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "last_applied_seq": {
+            "description": "last operation sequence number processed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
       },
       "PointRequest": {
         "type": "object",
