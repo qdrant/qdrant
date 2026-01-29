@@ -56,6 +56,8 @@ fn test_alias_operation() {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            max_concurrent_shard_loads: Some(1),
+            max_concurrent_segment_loads: Some(1),
         },
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),

@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 
 use semver::Version;
@@ -16,8 +16,27 @@ pub static QDRANT_VERSION: LazyLock<Version> =
 pub static APP_USER_AGENT: LazyLock<String> =
     LazyLock::new(|| format!("Qdrant/{QDRANT_VERSION_STRING}"));
 
-/// Maximum number of segments to load concurrently when loading a collection.
-pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
+/// Maximum number of shard to load concurrently when loading a collection.
+static MAX_CONCURRENT_SHARD_LOADS_CELL: OnceLock<usize> = OnceLock::new();
+
+/// Maximum number of segments to load concurrently when loading a shard.
+static MAX_CONCURRENT_SEGMENT_LOADS_CELL: OnceLock<usize> = OnceLock::new();
+
+pub fn set_max_concurrent_shard_loads(val: usize) {
+    let _ = MAX_CONCURRENT_SHARD_LOADS_CELL.set(val);
+}
+
+pub fn set_max_concurrent_segment_loads(val: usize) {
+    let _ = MAX_CONCURRENT_SEGMENT_LOADS_CELL.set(val);
+}
+
+pub fn max_concurrent_shard_loads() -> usize {
+    *MAX_CONCURRENT_SHARD_LOADS_CELL.get().unwrap_or(&4)
+}
+
+pub fn max_concurrent_segment_loads() -> usize {
+    *MAX_CONCURRENT_SEGMENT_LOADS_CELL.get().unwrap_or(&8)
+}
 
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;

@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
+use ::common::defaults::{set_max_concurrent_segment_loads, set_max_concurrent_shard_loads};
 use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -177,6 +178,14 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
+    // set max concurrent for shard load
+    if let Some(val) = settings.storage.performance.max_concurrent_shard_loads {
+        set_max_concurrent_shard_loads(val);
+    }
+    // set max concurrent for segment load
+    if let Some(val) = settings.storage.performance.max_concurrent_segment_loads {
+        set_max_concurrent_segment_loads(val);
+    }
 
     welcome(&settings);
 
