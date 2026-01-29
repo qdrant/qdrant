@@ -17,7 +17,7 @@ use std::hint::black_box;
 use std::sync::Arc;
 
 use cap::Cap;
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use foyer::{EvictionConfig, S3FifoConfig};
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -89,7 +89,7 @@ fn generate_zipf_keys(n: usize, num_unique: usize, exponent: f64, seed: u64) -> 
         .collect()
 }
 
-/// Generate sequential keys (testing sequential read efficiency)
+/// Generate sequential keys
 fn generate_sequential_keys(n: usize) -> Vec<Key> {
     (0..n).map(|i| Key::from_u64(i as u64)).collect()
 }
@@ -163,7 +163,6 @@ impl QuickCacheWrapper {
         let options = quick_cache::OptionsBuilder::new()
             .estimated_items_capacity(capacity)
             .hot_allocation(0.9)
-            .shards(1)
             .weight_capacity(capacity as u64)
             .build()
             .unwrap();
@@ -233,7 +232,6 @@ impl FoyerWrapper {
     fn new(capacity: usize) -> Self {
         Self {
             cache: foyer::CacheBuilder::new(capacity)
-                .with_shards(1)
                 .with_eviction_config(EvictionConfig::S3Fifo(S3FifoConfig {
                     small_queue_capacity_ratio: 0.1,
                     ghost_queue_capacity_ratio: 0.5,
@@ -447,19 +445,21 @@ fn bench_single_thread_latency(c: &mut Criterion) {
     // Benchmark insert operations
     group.throughput(Throughput::Elements(OPS_PER_ITER as u64));
 
-    let insert_keys = generate_zipf_keys(OPS_PER_ITER, CACHE_CAPACITY * 10, 1.0, 42);
+    let insert_keys = generate_sequential_keys(CACHE_CAPACITY * 10);
     for cache_name in CacheName::iter() {
         group.bench_with_input(
             BenchmarkId::new("insert", cache_name),
             &cache_name,
             |b, &name| {
-                let cache = create_cache(name, CACHE_CAPACITY);
-
-                b.iter(|| {
-                    for (i, key) in insert_keys.iter().enumerate() {
-                        cache.insert(*key, i as u32);
-                    }
-                });
+                b.iter_batched(
+                    || create_cache(name, CACHE_CAPACITY),
+                    |cache| {
+                        for (i, key) in insert_keys.iter().cycle().enumerate().take(OPS_PER_ITER) {
+                            cache.insert(*key, i as u32);
+                        }
+                    },
+                    BatchSize::LargeInput,
+                );
             },
         );
     }
@@ -479,9 +479,13 @@ fn bench_single_thread_latency(c: &mut Criterion) {
             &cache_name,
             |b, _name| {
                 b.iter(|| {
+                    let mut hits = 0;
                     for key in prefill_keys.iter().cycle().take(OPS_PER_ITER) {
-                        black_box(cache.get(key));
+                        if cache.get(key).is_some() {
+                            hits += 1;
+                        }
                     }
+                    assert!(hits as f32 > OPS_PER_ITER as f32 * 0.9);
                 });
             },
         );
