@@ -267,6 +267,8 @@ impl<V: Blob> Gridstore<V> {
         hw_counter: &HardwareCounterCell,
     ) -> Option<V> {
         let ValuePointer {
+            _discriminant: _,
+            _padding: _,
             page_id,
             block_offset,
             length,
@@ -459,6 +461,8 @@ impl<V: Blob> Gridstore<V> {
     /// Returns the deleted value otherwise
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Option<V> {
         let ValuePointer {
+            _discriminant: _,
+            _padding: _,
             page_id,
             block_offset,
             length,
@@ -563,6 +567,8 @@ impl<V: Blob> Gridstore<V> {
             // Process buffer without holding the tracker lock
             for &(point_offset, pointer) in &buffer {
                 let ValuePointer {
+                    _discriminant: _,
+                    _padding: _,
                     page_id,
                     block_offset,
                     length,

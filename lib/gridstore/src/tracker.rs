@@ -1,3 +1,4 @@
+use std::num::NonZeroU8;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
@@ -20,6 +21,10 @@ const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct ValuePointer {
+    /// This is an artificial field to make `Option<ValuePointer>` to have a stable ABI.
+    pub _discriminant: NonZeroU8,
+    pub _padding: [u8; 3],
+
     /// Which page the value is stored in
     pub page_id: PageId,
 
@@ -33,6 +38,8 @@ pub struct ValuePointer {
 impl ValuePointer {
     pub fn new(page_id: PageId, block_offset: BlockOffset, length: u32) -> Self {
         Self {
+            _discriminant: NonZeroU8::new(1).unwrap(),
+            _padding: [0, 0, 0],
             page_id,
             block_offset,
             length,
@@ -442,6 +449,8 @@ mod tests {
     use rstest::rstest;
     use tempfile::Builder;
 
+    use crate::tracker::{BlockOffset, PageId};
+
     use super::{PointerUpdates, Tracker, ValuePointer};
 
     #[test]
@@ -739,5 +748,59 @@ mod tests {
             updates, expected,
             "must have one pending update to set block offset 2",
         );
+    }
+
+    #[test]
+    #[ignore = "Actually, contain undefined behavior"]
+    fn test_layout_compatibility() {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[repr(C)]
+        pub struct ValuePointerOld {
+            /// Which page the value is stored in
+            pub page_id: PageId,
+
+            /// Start offset (in blocks) of the value
+            pub block_offset: BlockOffset,
+
+            /// Length in bytes of the value
+            pub length: u32,
+        }
+
+        assert_eq!(
+            size_of::<Option<ValuePointerOld>>(),
+            size_of::<Option<ValuePointer>>()
+        );
+
+        let old_none = Option::<ValuePointerOld>::None;
+        let new_none = Option::<ValuePointer>::None;
+
+        // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
+        // But we don't have any better option.
+        unsafe { compare_layout(&old_none, &new_none) };
+
+        const PAGE_ID: PageId  = 89;
+        const BLOCK_OFFSET: BlockOffset = 1000;
+        const LENGTH: u32 = 1234567;
+
+        let old_value = Some(ValuePointerOld {
+            page_id: PAGE_ID,
+            block_offset: BLOCK_OFFSET,
+            length: LENGTH,
+        });
+        let new_value = Some(ValuePointer::new(PAGE_ID, BLOCK_OFFSET, LENGTH));
+
+        // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
+        // But we don't have any better option.
+        unsafe { compare_layout(&old_value, &new_value) };
+
+
+        unsafe fn compare_layout<A, B>(a: &A, b: &B) {
+            use std::slice::from_raw_parts;
+
+            let a_data = unsafe { from_raw_parts(a as *const _ as *const u8, size_of::<A>()) };
+            let b_data = unsafe { from_raw_parts(b as *const _ as *const u8, size_of::<B>()) };
+
+            assert_eq!(a_data, b_data);
+        }
     }
 }
