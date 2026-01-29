@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Actually, contain undefined behavior"]
+    #[ignore = "contains undefined behavior"]
     fn test_layout_compatibility() {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[repr(C)]
@@ -833,8 +833,8 @@ mod tests {
         unsafe fn compare_layout<A, B>(a: &A, b: &B) {
             use std::slice::from_raw_parts;
 
-            let a_data = unsafe { from_raw_parts(a as *const _ as *const u8, size_of::<A>()) };
-            let b_data = unsafe { from_raw_parts(b as *const _ as *const u8, size_of::<B>()) };
+            let a_data = unsafe { from_raw_parts((a as *const A).cast::<u8>(), size_of::<A>()) };
+            let b_data = unsafe { from_raw_parts((b as *const B).cast::<u8>(), size_of::<B>()) };
 
             assert_eq!(a_data, b_data);
         }
