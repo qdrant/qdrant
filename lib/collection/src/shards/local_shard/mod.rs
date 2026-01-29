@@ -988,7 +988,7 @@ impl LocalShard {
 
         let (status, optimizer_status) = self.local_shard_status().await;
 
-        let update_queue = self.local_update_queue_info().await;
+        let update_queue = self.local_update_queue_info();
 
         ShardInfoInternal {
             status,
