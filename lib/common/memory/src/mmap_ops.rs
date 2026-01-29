@@ -118,7 +118,7 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
 
     Ok(mmap)
 }
-pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
+pub unsafe fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
 
     debug_assert_eq!(
@@ -136,11 +136,11 @@ pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     unsafe { &*v.as_ptr().cast::<T>() }
 }
 
-pub fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
+pub unsafe fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v).cast::<u8>(), mem::size_of_val(v)) }
 }
 
-pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
+pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
     debug_assert_eq!(
@@ -180,6 +180,6 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
-pub fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
+pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
 }

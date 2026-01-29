@@ -5,6 +5,7 @@ use crate::common::types::DimWeight;
 pub const DEFAULT_MAX_NEXT_WEIGHT: DimWeight = f32::NEG_INFINITY;
 
 #[derive(Debug, Clone, PartialEq)]
+#[repr(C)]
 pub struct GenericPostingElement<W> {
     /// Record ID
     pub record_id: PointOffsetType,
@@ -13,6 +14,7 @@ pub struct GenericPostingElement<W> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[repr(C)]
 pub struct PostingElement {
     /// Record ID
     pub record_id: PointOffsetType,
@@ -21,6 +23,7 @@ pub struct PostingElement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[repr(C)]
 pub struct PostingElementEx {
     /// Record ID
     pub record_id: PointOffsetType,

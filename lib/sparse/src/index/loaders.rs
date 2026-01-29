@@ -53,13 +53,17 @@ impl Csr {
     }
 
     fn from_mmap(mmap: Mmap) -> io::Result<Self> {
+        // TODO Safety: tuple doesn't have a stable layout.  Replace with a repr(C) struct.
         let (nrow, ncol, nnz) =
-            transmute_from_u8::<(u64, u64, u64)>(&mmap.as_ref()[..CSR_HEADER_SIZE]);
+            unsafe { transmute_from_u8::<(u64, u64, u64)>(&mmap.as_ref()[..CSR_HEADER_SIZE]) };
         let (nrow, _ncol, nnz) = (*nrow as usize, *ncol as usize, *nnz as usize);
 
-        let indptr = Vec::from(transmute_from_u8_to_slice::<u64>(
-            &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
-        ));
+        // Safety: correct alignment.
+        let indptr = Vec::from(unsafe {
+            transmute_from_u8_to_slice::<u64>(
+                &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
+            )
+        });
         if !indptr.windows(2).all(|w| w[0] <= w[1]) || indptr.last() != Some(&(nnz as u64)) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

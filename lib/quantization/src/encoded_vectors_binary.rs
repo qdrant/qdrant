@@ -457,7 +457,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
             let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
-            let bytes = transmute_to_u8_slice(encoded_vector_slice);
+            // TODO Safety: bytemuck::Pod type, but is it enough for slice?
+            let bytes = unsafe { transmute_to_u8_slice(encoded_vector_slice) };
             storage_builder.push_vector_data(bytes).map_err(|e| {
                 EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
             })?;
@@ -870,8 +871,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             .vector_io_read()
             .incr_delta(vector_data_1.len() + vector_data_2.len());
 
-        let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
-        let vector_data_usize_2 = transmute_from_u8_to_slice(vector_data_2);
+        // TODO Safety
+        let vector_data_usize_1 = unsafe { transmute_from_u8_to_slice(vector_data_1) };
+        // TODO Safety
+        let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(vector_data_2) };
 
         hw_counter
             .cpu_counter()
@@ -889,8 +892,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         id: PointOffsetType,
     ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id))
-                .to_vec(),
+            // TODO Safety
+            encoded_vector: unsafe {
+                transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id)).to_vec()
+            },
         }))
     }
 
@@ -934,6 +939,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     }
 
     type SupportsBytes = True;
+
     fn score_bytes(
         &self,
         _: Self::SupportsBytes,
@@ -941,7 +947,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_usize = transmute_from_u8_to_slice(bytes);
+        // TODO Safety
+        let vector_data_usize = unsafe { transmute_from_u8_to_slice(bytes) };
 
         hw_counter.cpu_counter().incr_delta(bytes.len());
 

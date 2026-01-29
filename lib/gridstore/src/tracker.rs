@@ -171,6 +171,7 @@ impl PointerUpdates {
 }
 
 #[derive(Debug, Default, Clone)]
+#[repr(C)]
 struct TrackerHeader {
     next_pointer_offset: u32,
 }
@@ -237,7 +238,9 @@ impl Tracker {
             )));
         }
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
-        let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
+        let header: &TrackerHeader =
+            // TODO SAFETY
+            unsafe { transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]) };
         let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
@@ -327,7 +330,9 @@ impl Tracker {
 
     /// Write the current page header to the memory map
     fn write_header(&mut self) {
-        self.mmap[0..size_of::<TrackerHeader>()].copy_from_slice(transmute_to_u8(&self.header));
+        // Safety: TrackerHeader is a POD type.
+        let header_bytes = unsafe { transmute_to_u8(&self.header) };
+        self.mmap[0..header_bytes.len()].copy_from_slice(header_bytes);
     }
 
     /// Save the mapping at the given offset
@@ -351,7 +356,8 @@ impl Tracker {
                 .unwrap();
         }
 
-        self.mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
+        // Safety: ValuePointer has niche optimization and thus is POD type.
+        self.mmap[start_offset..end_offset].copy_from_slice(unsafe { transmute_to_u8(&pointer) });
     }
 
     #[cfg(test)]
@@ -386,7 +392,8 @@ impl Tracker {
         if end_offset > self.mmap.len() {
             return None;
         }
-        let page_pointer = transmute_from_u8(&self.mmap[start_offset..end_offset]);
+        // Safety: ValuePointer has a niche optimization and thus Option<ValuePointer> is a POD type.
+        let page_pointer = unsafe { transmute_from_u8(&self.mmap[start_offset..end_offset]) };
         Some(page_pointer)
     }
 
@@ -449,9 +456,8 @@ mod tests {
     use rstest::rstest;
     use tempfile::Builder;
 
-    use crate::tracker::{BlockOffset, PageId};
-
     use super::{PointerUpdates, Tracker, ValuePointer};
+    use crate::tracker::{BlockOffset, PageId};
 
     #[test]
     fn test_file_name() {
@@ -778,7 +784,7 @@ mod tests {
         // But we don't have any better option.
         unsafe { compare_layout(&old_none, &new_none) };
 
-        const PAGE_ID: PageId  = 89;
+        const PAGE_ID: PageId = 89;
         const BLOCK_OFFSET: BlockOffset = 1000;
         const LENGTH: u32 = 1234567;
 
@@ -792,7 +798,6 @@ mod tests {
         // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
         // But we don't have any better option.
         unsafe { compare_layout(&old_value, &new_value) };
-
 
         unsafe fn compare_layout<A, B>(a: &A, b: &B) {
             use std::slice::from_raw_parts;
