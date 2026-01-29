@@ -122,6 +122,7 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
 /// # Safety
 ///
 /// `data` must have correct alignment and size for `T` and contain correct bit patterns for the type `T`.
+#[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
 
@@ -143,6 +144,7 @@ pub unsafe fn transmute_from_u8<T>(v: &[u8]) -> &T {
 /// # Safety
 ///
 /// T must be a type with stable representation (POD type, Option with niche optimization, etc).
+#[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
     unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v).cast::<u8>(), mem::size_of_val(v)) }
 }
@@ -150,6 +152,7 @@ pub unsafe fn transmute_to_u8<T: Sized>(v: &T) -> &[u8] {
 /// # Safety
 ///
 /// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
+#[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
@@ -173,6 +176,7 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 /// # Safety
 ///
 /// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
+#[deprecated = "use `bytemuck` or `zerocopy`"]
 pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
@@ -196,6 +200,7 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
 /// # Safety
 ///
 /// T must by a type with stable representation (POD type, Option with niche optimization, etc).
+#[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
 }
