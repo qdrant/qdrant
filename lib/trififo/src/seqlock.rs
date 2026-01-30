@@ -99,11 +99,9 @@ impl<T> SeqLock<T> {
         let seq = self.seq.load(Ordering::Acquire);
         self.seq.store(seq + 1, Ordering::Release);
 
-        fence(Ordering::Release);
-
         callback(unsafe { &mut *self.inner.get() });
 
-        self.seq.store(seq + 2, Ordering::Relaxed);
+        self.seq.store(seq + 2, Ordering::Release);
     }
 }
 
