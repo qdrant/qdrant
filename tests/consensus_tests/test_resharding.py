@@ -217,6 +217,10 @@ def test_resharding_forward(tmp_path: pathlib.Path, direction: Literal["up", "do
 
 @pytest.mark.parametrize("direction, peers", [("up", 3), ("down", 3)])
 def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
+    for _ in range(25):
+        resharding_transfer_inner(tmp_path, direction, peers)
+
+def resharding_transfer_inner(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
     """
     Tests that resharding transfers migrate points to target replicas
     """
