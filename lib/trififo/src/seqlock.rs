@@ -107,13 +107,20 @@ impl<T> SeqLock<T> {
     }
 }
 
-#[derive(Clone)]
 pub struct SeqLockReader<T> {
     lock: Arc<SeqLock<T>>,
 }
 
 unsafe impl<T> Send for SeqLockReader<T> where T: Send {}
 unsafe impl<T> Sync for SeqLockReader<T> {}
+
+impl<T> Clone for SeqLockReader<T> {
+    fn clone(&self) -> Self {
+        SeqLockReader {
+            lock: Arc::clone(&self.lock),
+        }
+    }
+}
 
 impl<T> SeqLockReader<T> {
     pub fn read<U>(&self, callback: impl Fn(&T) -> U) -> U {
@@ -153,16 +160,13 @@ mod tests {
         // Create a seqlock-wrapped Pair.
         let (reader, writer) = SeqLock::new_reader_writer(Pair { a: 0, b: 0 });
 
-        // Wrap the reader in an Arc so we can cheaply clone it to multiple threads.
-        let reader = Arc::new(reader);
-
         // Signal to readers when the writer is finished.
         let writer_done = Arc::new(AtomicBool::new(false));
 
         // Spawn several reader threads that continuously read and assert consistency.
         let mut reader_handles = Vec::new();
         for _ in 0..8 {
-            let r = Arc::clone(&reader);
+            let r = SeqLockReader::clone(&reader);
             let done = Arc::clone(&writer_done);
             let handle = thread::spawn(move || {
                 // Count successful reads to ensure readers actually run.
