@@ -276,7 +276,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
             let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            // Safey: T implements zerocopy::IntoBytes.
+            // Safety: T implements zerocopy::IntoBytes.
             #[expect(deprecated, reason = "legacy code")]
             let raw_bites = unsafe { mmap_ops::transmute_to_u8_slice(vector.as_ref()) };
             vectors_file.write_all(raw_bites)?;

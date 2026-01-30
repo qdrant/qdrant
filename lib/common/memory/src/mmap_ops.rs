@@ -175,30 +175,6 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 
 /// # Safety
 ///
-/// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
-#[deprecated = "use `bytemuck` or `zerocopy`"]
-pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
-    debug_assert_eq!(data.len() % size_of::<T>(), 0);
-
-    debug_assert_eq!(
-        data.as_ptr().align_offset(align_of::<T>()),
-        0,
-        "transmuting byte slice {:p} into mutable slice of {}: \
-         required alignment is {} bytes, \
-         byte slice misaligned by {} bytes",
-        data.as_ptr(),
-        std::any::type_name::<T>(),
-        align_of::<T>(),
-        data.as_ptr().align_offset(align_of::<T>()),
-    );
-
-    let len = data.len() / size_of::<T>();
-    let ptr = data.as_mut_ptr().cast::<T>();
-    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
-}
-
-/// # Safety
-///
 /// T must by a type with stable representation (POD type, Option with niche optimization, etc).
 #[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
