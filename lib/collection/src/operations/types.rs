@@ -214,6 +214,7 @@ pub struct CollectionInfo {
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     /// Update queue info
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_queue: Option<UpdateQueueInfo>,
 }
 
