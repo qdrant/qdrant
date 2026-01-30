@@ -29,6 +29,7 @@ pub struct AppFeaturesTelemetry {
     pub recovery_mode: bool,
     pub gpu: bool,
     pub rocksdb: bool,
+    pub staging: bool,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
@@ -87,6 +88,7 @@ impl AppBuildTelemetry {
                 recovery_mode: settings.storage.recovery_mode.is_some(),
                 gpu: cfg!(feature = "gpu"),
                 rocksdb: cfg!(feature = "rocksdb"),
+                staging: cfg!(feature = "staging"),
             }),
             runtime_features: (detail.level >= DetailsLevel::Level1)
                 .then(common::flags::feature_flags),

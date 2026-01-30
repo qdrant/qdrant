@@ -748,6 +748,13 @@ message PayloadSchemaInfo {
   optional uint64 points = 3;
 }
 
+message UpdateQueueInfo {
+    // Number of elements in the queue
+    uint64 length = 1;
+    // last operation number processed
+    optional uint64 op_num = 2;
+}
+
 message CollectionInfo {
   // operating condition of the collection
   CollectionStatus status = 1;
@@ -771,6 +778,8 @@ message CollectionInfo {
   optional uint64 indexed_vectors_count = 10;
   // Warnings related to the collection
   repeated CollectionWarning warnings = 11;
+  // Update queue info
+  UpdateQueueInfo update_queue = 12;
 }
 
 message ChangeAliases {
