@@ -7959,6 +7959,7 @@ dependencies = [
  "rand_distr",
  "rayon",
  "schnellru",
+ "static_assertions",
  "strum",
  "tokio",
 ]

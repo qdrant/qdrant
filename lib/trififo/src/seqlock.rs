@@ -187,24 +187,6 @@ impl<T> SeqLockWriter<T> {
 ///     is_sync(&reader);
 /// }
 /// ```
-fn assert_correct_send_sync() {
-    fn is_send<T: Send>(_: &T) {}
-    fn is_sync<T: Sync>(_: &T) {}
-
-    let (reader, writer) = SeqLock::new_reader_writer(0u32);
-
-    is_send(&writer);
-
-    // this is not possible, as there should be only one reader at any given time. (see compile_fail doctest)
-    // is_sync(&writer);
-
-    // only works if we wrap it in a sync abstraction.
-    is_sync(&std::sync::Mutex::new(writer));
-
-    // Readers are both `Send` and `Sync`, and are cheap to clone
-    is_send(&reader);
-    is_sync(&reader);
-}
 
 #[cfg(test)]
 mod tests {
@@ -212,6 +194,8 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
+
+    use static_assertions::assert_impl_all;
 
     use super::*;
 
@@ -308,5 +292,33 @@ mod tests {
             final_pair.0, num_writes,
             "Final value should be last writer value"
         );
+    }
+
+    fn assert_correct_send_sync() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use std::sync::Mutex;
+
+        use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+        // Writer is Send but not Sync
+        assert_impl_all!(SeqLockWriter<u32>: Send);
+        assert_not_impl_any!(SeqLockWriter<u32>: Sync);
+        // it works only if we wrap it in a sync abstraction.
+        assert_impl_all!(Mutex<SeqLockWriter<u32>>: Sync);
+        // if the wrapped type is not Send, Send doesn't work.
+        assert_not_impl_any!(SeqLockWriter<Rc<u32>>: Send);
+
+        // Reader is Send AND Sync
+        assert_impl_all!(SeqLockReader<u32>: Sync, Send);
+
+        // but only if the wrapped type is also Sync/Send
+        //
+        // Cell is Send, but not Sync
+        assert_impl_all!(SeqLockReader<Cell<u32>>: Send);
+        assert_not_impl_any!(SeqLockReader<Cell<u32>>: Sync);
+        // Rc is neither
+        assert_not_impl_any!(SeqLockReader<Rc<u32>>: Sync, Send);
+        assert_not_impl_any!(SeqLockReader<Arc<Cell<u32>>>: Sync, Send);
     }
 }
