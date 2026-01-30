@@ -12120,7 +12120,8 @@
           "gpu",
           "recovery_mode",
           "rocksdb",
-          "service_debug_feature"
+          "service_debug_feature",
+          "staging"
         ],
         "properties": {
           "debug": {
@@ -12136,6 +12137,9 @@
             "type": "boolean"
           },
           "rocksdb": {
+            "type": "boolean"
+          },
+          "staging": {
             "type": "boolean"
           }
         }

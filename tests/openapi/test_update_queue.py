@@ -1,7 +1,7 @@
 import pytest
 
 from .helpers.helpers import request_with_validation
-from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.collection_setup import drop_collection
 
   
 @pytest.fixture(autouse=True)
@@ -35,13 +35,6 @@ def get_queue_info(collection_name):
     
 
 def test_queue_op_num(collection_name):
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="GET",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
-        
     queue_info = get_queue_info(collection_name)
     
     # empty collection

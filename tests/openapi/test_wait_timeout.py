@@ -53,6 +53,7 @@ def setup(collection_name):
     drop_collection(collection_name=collection_name)
 
 
+# requires --feature staging
 def test_wait_timeout_ack(collection_name):
     sleep, op = run_parallel(
         {
@@ -85,6 +86,7 @@ def test_wait_timeout_ack(collection_name):
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"
 
 
+# requires --feature staging
 def test_wait_timeout_completed(collection_name):
     sleep, op = run_parallel(
         {
@@ -118,6 +120,7 @@ def test_wait_timeout_completed(collection_name):
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"
 
 
+# requires --feature staging
 def test_wait_timeout_twice(collection_name):
     sleep, op = run_parallel(
         {
