@@ -175,7 +175,7 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 
 /// # Safety
 ///
-/// T must by a type with stable representation (POD type, Option with niche optimization, etc).
+/// T must be a type with stable representation (POD type, Option with niche optimization, etc).
 #[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
