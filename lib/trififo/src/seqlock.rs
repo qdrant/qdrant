@@ -95,7 +95,7 @@ impl<T> SeqLock<T> {
         }
     }
 
-    fn write(&self, callback: impl FnOnce(&mut T)) {
+    unsafe fn write(&self, callback: impl FnOnce(&mut T)) {
         let seq = self.seq.load(Ordering::Acquire);
         self.seq.store(seq + 1, Ordering::Release);
 
@@ -143,8 +143,19 @@ pub struct SeqLockWriter<T> {
 unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
 
 impl<T> SeqLockWriter<T> {
-    pub fn write<F: FnOnce(&mut T)>(&self, callback: F) {
-        self.lock.write(callback)
+    /// Get mutable access to the protected resource through a closure.
+    ///
+    /// # SAFETY
+    /// The caller must ensure that at ANY point during the mutation, a reader
+    /// will not get into a panic. This might mean:
+    /// - No use-after-free errors. Which includes not changing allocations.
+    /// - No out-of-bounds indexing.
+    /// - ...etc.
+    ///
+    /// It is fine if the reader reads garbage or get torn reads, since it
+    /// will know that a mutation took place, and retry the operation.
+    pub unsafe fn write<F: FnOnce(&mut T)>(&self, callback: F) {
+        unsafe { self.lock.write(callback) }
     }
 }
 
@@ -246,22 +257,25 @@ mod tests {
             reader_handles.push(handle);
         }
 
+        let num_writes = 20000;
         // Move the writer into its own thread and perform many updates.
         let writer_handle = {
             thread::spawn(move || {
                 // Perform many updates. Within the write callback we intentionally
                 // perform a split update (write 'a' then sleep then write 'b')
                 // to create a window where a naive reader could observe inconsistent state.
-                for i in 1..=2000usize {
-                    writer.write(|p| {
-                        p.a = i;
-                        // Small pause to widen the race window if seqlock were broken.
-                        thread::sleep(Duration::from_nanos(100));
-                        p.b = i;
-                    });
+                for i in 1..=num_writes {
+                    unsafe {
+                        writer.write(|p| {
+                            p.a = i;
+                            // Small pause to widen the race window if seqlock were broken.
+                            thread::sleep(Duration::from_nanos(100));
+                            p.b = i;
+                        })
+                    };
                     // Give readers some time to run between writes.
                     if i % 100 == 0 {
-                        thread::sleep(Duration::from_micros(100));
+                        thread::sleep(Duration::from_micros(10));
                     }
                 }
             })
@@ -291,7 +305,7 @@ mod tests {
             "Final read observed inconsistent values"
         );
         assert_eq!(
-            final_pair.0, 2000usize,
+            final_pair.0, num_writes,
             "Final value should be last writer value"
         );
     }
