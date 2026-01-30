@@ -105,6 +105,10 @@ impl<T> SeqLock<T> {
     }
 }
 
+/// This structure can read the protected resource at any time, but it will:
+/// - busy-wait if a write is taking place.
+/// - or repeat the read if a write took place in between the start and end
+///   of the read.
 pub struct SeqLockReader<T> {
     lock: Arc<SeqLock<T>>,
 }
@@ -126,6 +130,12 @@ impl<T> SeqLockReader<T> {
     }
 }
 
+/// This structure can get mutable access to the structure at any time.
+/// It is intentionally `!Sync`, so there should not be other writers.
+///
+/// Due to the nature of a seqlock, this will not contend with the
+/// readers. The readers will wait until the write finishes, or repeat
+/// the read so that they don't get a torn read.
 pub struct SeqLockWriter<T> {
     lock: Arc<SeqLock<T>>,
 }
@@ -136,6 +146,53 @@ impl<T> SeqLockWriter<T> {
     pub fn write<F: FnOnce(&mut T)>(&self, callback: F) {
         self.lock.write(callback)
     }
+}
+
+/// ```compile_fail,E0277
+/// use trififo::seqlock::SeqLock;
+///
+/// fn is_sync<T: Sync>(_: &T) {}
+///
+/// fn main() {
+///     let (reader, writer) = SeqLock::new_reader_writer(0u32);
+///
+///     is_sync(&writer);
+/// }
+/// ```
+///
+/// `SeqLockReader<T>` is not `Send`/`Sync` when `T: !Send`/`!Sync`:
+/// ```compile_fail,E0277
+/// use trififo::seqlock::SeqLock;
+/// use std::rc::Rc;
+///
+/// fn is_send<T: Send>(_: &T) {}
+/// fn is_sync<T: Sync>(_: &T) {}
+///
+/// fn main() {
+///     // Rc is !Send and !Sync
+///     let (reader, _writer) = SeqLock::new_reader_writer(Rc::new(0u32));
+///
+///     is_send(&reader);
+///     is_sync(&reader);
+/// }
+/// ```
+fn assert_correct_send_sync() {
+    fn is_send<T: Send>(_: &T) {}
+    fn is_sync<T: Sync>(_: &T) {}
+
+    let (reader, writer) = SeqLock::new_reader_writer(0u32);
+
+    is_send(&writer);
+
+    // this is not possible, as there should be only one reader at any given time. (see compile_fail doctest)
+    // is_sync(&writer);
+
+    // only works if we wrap it in a sync abstraction.
+    is_sync(&std::sync::Mutex::new(writer));
+
+    // Readers are both `Send` and `Sync`, and are cheap to clone
+    is_send(&reader);
+    is_sync(&reader);
 }
 
 #[cfg(test)]
@@ -237,27 +294,5 @@ mod tests {
             final_pair.0, 2000usize,
             "Final value should be last writer value"
         );
-    }
-
-    /// ```compile_fail
-    /// use std::sync::Arc;
-    /// use std::thread;
-    /// use super::*;
-    ///
-    /// // Attempting to share the writer across threads via Arc should fail to compile,
-    /// // because SeqLockWriter is intentionally not Sync.
-    /// let (_reader, writer) = SeqLock::new_reader_writer(Pair { a: 0, b: 0 });
-    /// let shared = Arc::new(writer);
-    /// let shared_clone = shared.clone();
-    ///
-    /// // Moving `shared_clone` into a new thread requires `Arc<SeqLockWriter<_>>` to be Send,
-    /// // which in turn requires `SeqLockWriter<_>` to be Sync. This should fail to compile.
-    /// thread::spawn(move || {
-    ///     shared_clone.write(|p| { p.a = 1; p.b = 1; });
-    /// }).join().unwrap();
-    /// ```
-    #[test]
-    fn writer_cannot_be_shared_across_threads() {
-        // The relevant check is the `compile_fail` doctest.
     }
 }
