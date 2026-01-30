@@ -72,7 +72,7 @@ impl<T> SeqLock<T> {
         (reader, writer)
     }
 
-    fn read<U>(&self, callback: impl Fn(&T) -> U) -> U {
+    fn read<U, F: Fn(&T) -> U>(&self, callback: F) -> U {
         loop {
             let seq1 = self.seq.load(Ordering::Acquire);
 
@@ -123,7 +123,7 @@ impl<T> Clone for SeqLockReader<T> {
 }
 
 impl<T> SeqLockReader<T> {
-    pub fn read<U>(&self, callback: impl Fn(&T) -> U) -> U {
+    pub fn read<U, F: Fn(&T) -> U>(&self, callback: F) -> U {
         self.lock.read(callback)
     }
 }
@@ -135,7 +135,7 @@ pub struct SeqLockWriter<T> {
 unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
 
 impl<T> SeqLockWriter<T> {
-    pub fn write(&self, callback: impl FnOnce(&mut T)) {
+    pub fn write<F: FnOnce(&mut T)>(&self, callback: F) {
         self.lock.write(callback)
     }
 }
