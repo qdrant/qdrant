@@ -2,6 +2,7 @@ import pytest
 import requests
 
 from openapi.helpers.helpers import (
+    skip_if_no_feature,
     get_api_string,
     request_with_validation,
 )
@@ -93,6 +94,8 @@ def test_queue_op_num(collection_name):
 
 
 def test_queue_length(collection_name):
+    skip_if_no_feature("staging")
+    
     queue_info = get_queue_info(collection_name)
 
     # empty collection
@@ -125,7 +128,7 @@ def test_queue_length(collection_name):
 
     queue_info = get_queue_info(collection_name)
 
-    # wait=true so ack. after application
+    # wait=false so updates are enqueued but not yet applied
     assert queue_info["length"] == 1
     assert queue_info["op_num"] == 0
 
@@ -147,6 +150,6 @@ def test_queue_length(collection_name):
     assert response.ok
 
     queue_info = get_queue_info(collection_name)
-    # wait=true so ack. after application
+    # wait=false so updates are enqueued but not yet applied
     assert queue_info["length"] == 2
     assert queue_info["op_num"] == 0

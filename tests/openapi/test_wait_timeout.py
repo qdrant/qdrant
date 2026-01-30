@@ -9,6 +9,7 @@ from openapi.helpers.helpers import (
     get_api_string,
     qdrant_host_headers,
     request_with_validation,
+    skip_if_no_feature,
 )
 from openapi.helpers.settings import QDRANT_HOST
 
@@ -53,8 +54,8 @@ def setup(collection_name):
     drop_collection(collection_name=collection_name)
 
 
-# requires --feature staging
 def test_wait_timeout_ack(collection_name):
+    skip_if_no_feature("staging")
     sleep, op = run_parallel(
         {
             "api": "/collections/{collection_name}/debug",
@@ -86,8 +87,8 @@ def test_wait_timeout_ack(collection_name):
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"
 
 
-# requires --feature staging
 def test_wait_timeout_completed(collection_name):
+    skip_if_no_feature("staging")
     sleep, op = run_parallel(
         {
             "api": "/collections/{collection_name}/debug",
@@ -120,8 +121,8 @@ def test_wait_timeout_completed(collection_name):
     assert op.ok and op.json()["result"]["status"] == "wait_timeout"
 
 
-# requires --feature staging
 def test_wait_timeout_twice(collection_name):
+    skip_if_no_feature("staging")
     sleep, op = run_parallel(
         {
             "api": "/collections/{collection_name}/debug",
