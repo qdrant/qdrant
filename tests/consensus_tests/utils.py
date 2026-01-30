@@ -387,11 +387,20 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
 def peers_have_version(peer_api_uris: [str]) -> bool:
     for peer_api_uri in peer_api_uris:
         try:
-            r = requests.get(f"{peer_api_uri}/cluster/telemetry")
+            # Check versions in local telemetry of each peer
+            # Not using cluster level telemetry because it shows versions before
+            # they are fully propagated through consensus
+            r = requests.get(f"{peer_api_uri}/telemetry?details_level=3")
             assert_http_ok(r)
-            peers = r.json()["result"]["cluster"]["peers"]
-            for peer_id, peer_status in peers.items():
-                if peer_status["details"].get("version") is None:
+            cluster = r.json()["result"]["cluster"]
+            peers = cluster["peers"]
+            peer_metadata = cluster["peer_metadata"]
+
+            for peer_id in peers.keys():
+                # Peers without metadata are not listed
+                if peer_id not in peer_metadata:
+                    return False
+                if peer_metadata[peer_id].get("version") is None:
                     return False
         except requests.exceptions.ConnectionError:
             print(f"Could not contact peer {peer_api_uri} to fetch versions")
