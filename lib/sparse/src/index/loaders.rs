@@ -6,6 +6,7 @@ use std::path::Path;
 use fs_err::File;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
 use validator::ValidationErrors;
 
@@ -62,12 +63,14 @@ impl Csr {
 
     fn from_mmap(mmap: Mmap) -> io::Result<Self> {
         // Safety: CsrHeader is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
         let CsrHeader { nrow, ncol, nnz } =
             unsafe { transmute_from_u8(&mmap.as_ref()[..CSR_HEADER_SIZE]) };
         let (nrow, _ncol, nnz) = (*nrow as usize, *ncol as usize, *nnz as usize);
 
         // Safety: correct alignment.
         let indptr = Vec::from(unsafe {
+            #[expect(deprecated, reason = "legacy code")]
             transmute_from_u8_to_slice::<u64>(
                 &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
             )
@@ -99,6 +102,7 @@ impl Csr {
 
             let mut pos = CSR_HEADER_SIZE + size_of::<u64>() * (self.nrow + 1);
 
+            #[expect(deprecated, reason = "legacy code")]
             let indices = transmute_from_u8_to_slice::<u32>(
                 self.mmap
                     .as_ref()
@@ -106,6 +110,7 @@ impl Csr {
             );
             pos += size_of::<u32>() * self.nnz;
 
+            #[expect(deprecated, reason = "legacy code")]
             let data = transmute_from_u8_to_slice::<f32>(
                 self.mmap
                     .as_ref()

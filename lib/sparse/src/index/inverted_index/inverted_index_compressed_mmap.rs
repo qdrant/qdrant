@@ -12,6 +12,7 @@ use io::storage_version::StorageVersion;
 use memmap2::Mmap;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{
     create_and_ensure_length, open_read_mmap, transmute_from_u8_to_slice, transmute_to_u8,
     transmute_to_u8_slice,
@@ -239,6 +240,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             },
             // TODO Safety
             unsafe {
+                #[expect(deprecated, reason = "legacy code")]
                 transmute_from_u8_to_slice(
                     &self.mmap[remainders_start as usize..remainders_end as usize],
                 )
@@ -254,7 +256,10 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let start = start.into() as usize;
         let end = start + count.into() as usize * size_of::<T>();
         // Safety: safe because of the method safety invariants.
-        unsafe { transmute_from_u8_to_slice(&self.mmap[start..end]) }
+        #[expect(deprecated, reason = "legacy code")]
+        unsafe {
+            transmute_from_u8_to_slice(&self.mmap[start..end])
+        }
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
@@ -291,6 +296,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
                 quantization_params: posting.view(&hw_counter).multiplier(),
             };
             // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
             buf.write_all(unsafe { transmute_to_u8(&posting_header) })?;
             offset += store_size.total;
         }
@@ -301,8 +307,10 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             let (id_data, chunks, remainders) = posting_view.parts();
             buf.write_all(id_data)?;
             // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
             buf.write_all(unsafe { transmute_to_u8_slice(chunks) })?;
             // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
             buf.write_all(unsafe { transmute_to_u8_slice(remainders) })?;
         }
 

@@ -277,6 +277,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             check_process_stopped(stopped)?;
             let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             // Safey: T implements zerocopy::IntoBytes.
+            #[expect(deprecated, reason = "legacy code")]
             let raw_bites = unsafe { mmap_ops::transmute_to_u8_slice(vector.as_ref()) };
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
@@ -369,6 +370,7 @@ mod tests {
     use atomic_refcell::AtomicRefCell;
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
+    #[expect(deprecated, reason = "legacy code")]
     use memory::mmap_ops::transmute_to_u8_slice;
     use tempfile::Builder;
 
@@ -773,6 +775,7 @@ mod tests {
     fn test_casts() {
         let data: DenseVector = vec![0.42, 0.069, 333.1, 100500.];
 
+        #[expect(deprecated, reason = "legacy code")]
         let raw_data = unsafe { transmute_to_u8_slice(&data) };
 
         eprintln!("raw_data.len() = {:#?}", raw_data.len());

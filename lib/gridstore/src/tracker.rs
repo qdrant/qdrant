@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, AHashSet};
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
@@ -238,6 +239,7 @@ impl Tracker {
             )));
         }
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
+        #[expect(deprecated, reason = "legacy code")]
         let header: &TrackerHeader =
             // TODO SAFETY
             unsafe { transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]) };
@@ -331,6 +333,7 @@ impl Tracker {
     /// Write the current page header to the memory map
     fn write_header(&mut self) {
         // Safety: TrackerHeader is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
         let header_bytes = unsafe { transmute_to_u8(&self.header) };
         self.mmap[0..header_bytes.len()].copy_from_slice(header_bytes);
     }
@@ -357,6 +360,7 @@ impl Tracker {
         }
 
         // Safety: ValuePointer has niche optimization and thus is POD type.
+        #[expect(deprecated, reason = "legacy code")]
         self.mmap[start_offset..end_offset].copy_from_slice(unsafe { transmute_to_u8(&pointer) });
     }
 
@@ -393,6 +397,7 @@ impl Tracker {
             return None;
         }
         // Safety: ValuePointer has a niche optimization and thus Option<ValuePointer> is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
         let page_pointer = unsafe { transmute_from_u8(&self.mmap[start_offset..end_offset]) };
         Some(page_pointer)
     }
@@ -454,6 +459,7 @@ mod tests {
     use std::num::NonZeroU8;
     use std::path::PathBuf;
 
+    #[expect(deprecated, reason = "legacy code")]
     use memory::mmap_ops::transmute_from_u8;
     use rstest::rstest;
     use tempfile::Builder;
@@ -764,6 +770,7 @@ mod tests {
         struct AlignedData([u8; size_of::<Option<ValuePointer>>()]);
 
         let none_data = AlignedData([0; _]);
+        #[expect(deprecated, reason = "legacy code")]
         let none_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&none_data.0) };
         assert!(none_val.is_none());
 
@@ -773,6 +780,7 @@ mod tests {
             0x88, 0x77, 0x66, 0x55, // block_offset
             0xDD, 0xCC, 0xBB, 0xAA, // length
         ]);
+        #[expect(deprecated, reason = "legacy code")]
         let some_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&some_data.0) };
         // N.B. fails on a big-endian machine.
         assert_eq!(
