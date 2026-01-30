@@ -161,17 +161,17 @@ pub async fn recover_shard_snapshot(
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let collection = toc.get_collection(&collection_pass).await?;
-        collection.assert_shard_exists(shard_id).await?;
+        let cancel_safe = async {
+            let collection = toc.get_collection(&collection_pass).await?;
+            collection.assert_shard_exists(shard_id).await?;
 
-        // Start tracking recovery progress
-        let recovery_progress = collection
-            .shards_holder()
-            .read()
-            .await
-            .start_shard_recovery(shard_id);
+            // Start tracking recovery progress
+            let recovery_progress = collection
+                .shards_holder()
+                .read()
+                .await
+                .start_shard_recovery(shard_id);
 
-        let result = async {
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
 
             let snapshot_path = match snapshot_location {
@@ -222,18 +222,22 @@ pub async fn recover_shard_snapshot(
                 }
             }
 
-            // `recover_shard_snapshot_impl` is *not* cancel safe
-            recover_shard_snapshot_impl(
-                &toc,
-                &collection,
-                shard_id,
-                snapshot_path,
-                snapshot_priority,
-                RecoveryType::Full,
-                cancel,
-            )
-            .await
-        }
+            Ok((collection, snapshot_path, recovery_progress))
+        };
+
+        let (collection, snapshot_path, _recovery_progress) =
+            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
+        let result = recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard_id,
+            snapshot_path,
+            snapshot_priority,
+            RecoveryType::Full,
+            cancel,
+        )
         .await;
 
         // Finish tracking recovery progress

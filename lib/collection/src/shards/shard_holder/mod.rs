@@ -551,16 +551,17 @@ impl ShardHolder {
 
             // Check for active recovery on destination shard first, then sender task status
             let target_shard = to_shard_id.unwrap_or(shard_id);
-            let comment = self
+            let recovery_comment = self
                 .active_recoveries
                 .lock()
                 .get(&target_shard)
-                .and_then(|p| p.lock().format_comment())
-                .or_else(|| {
-                    tasks_pool
-                        .get_task_status(&shard_transfer.key())
-                        .map(|p| p.comment)
-                });
+                .and_then(|p| p.lock().format_comment());
+
+            let comment = recovery_comment.or_else(|| {
+                tasks_pool
+                    .get_task_status(&shard_transfer.key())
+                    .map(|p| p.comment)
+            });
 
             shard_transfers.push(ShardTransferInfo {
                 shard_id,
