@@ -70,14 +70,8 @@ impl ShardOperation for LocalShard {
         }
 
         let operation_id = {
+            let pending_operations_count = self.update_queue_length();
             let update_sender = self.update_sender.load();
-            // Estimate pending operations count in the channel.
-            // `Sender::capacity` is returns available slots in the channel regarding tokio docs.
-            // To calculate pending operations we need to subtract it from the max capacity,
-            // which is the total capacity defined while creating the channel.
-            let pending_operations_count = update_sender
-                .max_capacity()
-                .saturating_sub(update_sender.capacity());
             let channel_permit = update_sender.reserve().await?;
 
             // It is *critical* to hold `_wal_lock` while sending operation to the update handler!

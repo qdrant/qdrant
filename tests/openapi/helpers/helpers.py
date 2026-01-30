@@ -1,6 +1,6 @@
+import pytest
 import json
 import time
-from logging import warning
 from typing import Any, Dict, List
 import jsonschema
 import requests
@@ -178,3 +178,20 @@ def distribution_based_score_fusion(responses: List[List[Any]], limit: int = 10)
 def qdrant_host_headers():
     headers = json.loads(QDRANT_HOST_HEADERS)
     return headers
+
+
+def check_feature_enabled(feature) -> bool:
+    response = request_with_validation(
+        api='/telemetry',
+        method="GET",
+        query_params={'details_level': 10},
+    )
+    assert response.ok
+    features = response.json()['result']['app']['features']
+    result = features[feature]
+    return result
+
+def skip_if_no_feature(feature):
+    feature_is_enabled = check_feature_enabled(feature)
+    if not feature_is_enabled:
+        pytest.skip(f"Skipping because the feature {feature} is disabled at runtime.")
