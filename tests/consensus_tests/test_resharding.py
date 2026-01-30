@@ -1,4 +1,6 @@
 import pathlib
+import os
+import shutil
 from time import sleep
 from typing import Any, Literal
 
@@ -219,6 +221,14 @@ def test_resharding_forward(tmp_path: pathlib.Path, direction: Literal["up", "do
 def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
     for _ in range(25):
         resharding_transfer_inner(tmp_path, direction, peers)
+
+        # Clear temp path
+        for name in os.listdir(tmp_path):
+            path = os.path.join(tmp_path, name)
+            if os.path.isfile(path) or os.path.islink(path):
+                os.remove(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
 
 def resharding_transfer_inner(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
     """
