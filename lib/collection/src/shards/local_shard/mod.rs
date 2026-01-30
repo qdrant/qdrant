@@ -886,7 +886,7 @@ impl LocalShard {
     pub fn local_update_queue_info(&self) -> UpdateQueueInfo {
         UpdateQueueInfo {
             length: self.update_queue_length(),
-            last_applied_seq: self.applied_seq_handler.op_num().map(|s| s as usize),
+            op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
         }
     }
 

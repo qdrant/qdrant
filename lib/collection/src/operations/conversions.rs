@@ -572,26 +572,20 @@ impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
 
 impl From<UpdateQueueInfo> for api::grpc::qdrant::UpdateQueueInfo {
     fn from(value: UpdateQueueInfo) -> Self {
-        let UpdateQueueInfo {
-            length,
-            last_applied_seq,
-        } = value;
+        let UpdateQueueInfo { length, op_num } = value;
         Self {
             length: length as u64,
-            last_applied_seq: last_applied_seq.map(|x| x as u64),
+            op_num: op_num.map(|x| x as u64),
         }
     }
 }
 
 impl From<api::grpc::qdrant::UpdateQueueInfo> for UpdateQueueInfo {
     fn from(value: api::grpc::qdrant::UpdateQueueInfo) -> Self {
-        let api::grpc::qdrant::UpdateQueueInfo {
-            length,
-            last_applied_seq,
-        } = value;
+        let api::grpc::qdrant::UpdateQueueInfo { length, op_num } = value;
         Self {
             length: length as usize,
-            last_applied_seq: last_applied_seq.map(|x| x as usize),
+            op_num: op_num.map(|x| x as usize),
         }
     }
 }

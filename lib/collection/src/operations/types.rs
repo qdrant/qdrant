@@ -140,8 +140,8 @@ pub struct CollectionWarning {
 pub struct UpdateQueueInfo {
     /// Number of elements in the queue
     pub length: usize,
-    /// last operation sequence number processed
-    pub last_applied_seq: Option<usize>,
+    /// last operation number processed
+    pub op_num: Option<usize>,
 }
 
 // Version of the collection config we can present to the user

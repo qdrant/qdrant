@@ -34,7 +34,7 @@ def get_queue_info(collection_name):
     return response.json()["result"]["update_queue"]
     
 
-def test_queue_last_applied_seq(collection_name):
+def test_queue_op_num(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -46,7 +46,7 @@ def test_queue_last_applied_seq(collection_name):
     
     # empty collection
     assert queue_info["length"] == 0
-    assert queue_info["last_applied_seq"] == 0
+    assert queue_info["op_num"] == 0
     
     # apply first update
     response = request_with_validation(
@@ -69,7 +69,7 @@ def test_queue_last_applied_seq(collection_name):
     
     # wait=true so ack. after application
     assert queue_info["length"] == 0
-    assert queue_info["last_applied_seq"] == 1
+    assert queue_info["op_num"] == 1
     
     # apply second update
     response = request_with_validation(
@@ -91,4 +91,4 @@ def test_queue_last_applied_seq(collection_name):
     queue_info = get_queue_info(collection_name)
     # wait=true so ack. after application
     assert queue_info["length"] == 0
-    assert queue_info["last_applied_seq"] == 2
+    assert queue_info["op_num"] == 2

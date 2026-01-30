@@ -8340,8 +8340,8 @@
             "format": "uint",
             "minimum": 0
           },
-          "last_applied_seq": {
-            "description": "last operation sequence number processed",
+          "op_num": {
+            "description": "last operation number processed",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
