@@ -1,1 +1,1 @@
-mod seqlock;
+pub mod seqlock;

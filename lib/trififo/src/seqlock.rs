@@ -109,8 +109,8 @@ pub struct SeqLockReader<T> {
     lock: Arc<SeqLock<T>>,
 }
 
-unsafe impl<T> Send for SeqLockReader<T> where T: Send {}
-unsafe impl<T> Sync for SeqLockReader<T> {}
+unsafe impl<T: Send> Send for SeqLockReader<T> {}
+unsafe impl<T: Sync> Sync for SeqLockReader<T> {}
 
 impl<T> Clone for SeqLockReader<T> {
     fn clone(&self) -> Self {
