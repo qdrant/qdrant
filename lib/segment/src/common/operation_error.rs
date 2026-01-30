@@ -48,6 +48,8 @@ pub enum OperationError {
     InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk space: {description}")]
+    OutOfDisk { description: String },
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
     #[error("Timeout error: {description}")]
@@ -132,6 +134,12 @@ impl OperationError {
             ),
         }
     }
+
+    pub fn out_of_disk(description: impl Into<String>) -> Self {
+        Self::OutOfDisk {
+            description: description.into(),
+        }
+    }
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
@@ -190,6 +198,9 @@ impl From<IoError> for OperationError {
                     free: free_memory,
                 }
             }
+            ErrorKind::StorageFull => OperationError::OutOfDisk {
+                description: format!("IO Error: {err}"),
+            },
             _ => OperationError::service_error(format!("IO Error: {err}")),
         }
     }
