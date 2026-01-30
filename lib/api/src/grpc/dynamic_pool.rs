@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use rand::Rng;
 
+const DRAINING_DURATION: Duration = Duration::from_secs(10);
+
 #[derive(Debug)]
 struct ItemWithStats<T: Clone> {
     pub item: T,
@@ -24,6 +26,8 @@ impl<T: Clone> ItemWithStats<T> {
 
 pub struct DynamicPool<T: Clone> {
     items: HashMap<u64, Arc<ItemWithStats<T>>>,
+    /// Place to store elements in a draining phase
+    draining: Vec<Arc<ItemWithStats<T>>>,
     /// How many times one item can be used
     max_usage_per_item: usize,
     /// Minimal number of items in the pool
@@ -89,8 +93,10 @@ impl<T: Clone> DynamicPool<T> {
                 (Self::random_idx(), item)
             })
             .collect();
+        let draining = vec![];
         Self {
             items,
+            draining,
             max_usage_per_item,
             min_items,
             init_at,
@@ -118,6 +124,22 @@ impl<T: Clone> DynamicPool<T> {
             return None;
         }
 
+        // Clean drained item
+        let now = Instant::now();
+        let now_ms = now.duration_since(self.init_at).as_millis() as usize;
+
+        self.draining.retain(|item| {
+            let usage = item.usage.load(Ordering::Acquire);
+            if usage > 0 {
+                return true; // Still has inflight requests
+            }
+
+            let last_ok = item.last_success.load(Ordering::Acquire);
+            let age = Duration::from_millis((now_ms.saturating_sub(last_ok)) as u64);
+
+            age < DRAINING_DURATION // Keep if it hasn't reached the timeout
+        });
+
         // If all items are used too much, we cannot use any of them so we return None
         let mut total_usage = 0;
         let min_usage_idx = *self
@@ -143,6 +165,8 @@ impl<T: Clone> DynamicPool<T> {
                 .items
                 .remove(&min_usage_idx)
                 .expect("Item must exist, as we just found it");
+            // Item enters a draining phase for a graceful shutdown
+            self.draining.push(item.clone());
             return Some(CountedItem::new(min_usage_idx, item, self.init_at));
         }
 
