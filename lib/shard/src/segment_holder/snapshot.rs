@@ -118,8 +118,10 @@ impl SegmentHolder {
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
         updates_guard: parking_lot::MutexGuard<'a, ()>, // Guarantee no updates are happening
-    ) -> Result<RwLockUpgradableReadGuard<'a, SegmentHolder>, RwLockUpgradableReadGuard<'a, SegmentHolder>>
-    {
+    ) -> Result<
+        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+    > {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step,
         // so it is important, that we don't block reads while doing this.
@@ -164,7 +166,6 @@ impl SegmentHolder {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step,
         // so it is important, that we don't block reads while doing this.
-
 
         // propagate changes to wrapped segment with segment holder read lock
         proxies
