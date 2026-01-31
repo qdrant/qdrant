@@ -51,6 +51,7 @@ use segment::types::{
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -62,9 +63,7 @@ use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;

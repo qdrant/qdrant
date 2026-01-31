@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::types::SeqNumberType;
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::*;
 
 use crate::operations::CollectionUpdateOperations;

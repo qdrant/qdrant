@@ -14,6 +14,7 @@ use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
@@ -21,9 +22,7 @@ use crate::collection_manager::fixtures::{
     TEST_TIMEOUT, build_segment_1, build_segment_2, empty_segment,
 };
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
 mod test_search_aggregation;

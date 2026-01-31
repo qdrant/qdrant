@@ -240,7 +240,7 @@ mod tests {
         CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
         ScalarQuantizationConfig, ScalarType,
     };
-    use shard::segment_holder::LockedSegmentHolder;
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;

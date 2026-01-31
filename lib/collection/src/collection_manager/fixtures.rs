@@ -14,7 +14,7 @@ use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;

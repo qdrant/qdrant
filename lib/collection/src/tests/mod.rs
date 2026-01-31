@@ -25,7 +25,7 @@ use rand::Rng;
 use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tempfile::Builder;
 use tokio::time::{Instant, sleep};
 

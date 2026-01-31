@@ -24,10 +24,10 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::config::CollectionConfigInternal;

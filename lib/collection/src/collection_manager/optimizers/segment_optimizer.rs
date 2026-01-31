@@ -26,12 +26,11 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
 
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};

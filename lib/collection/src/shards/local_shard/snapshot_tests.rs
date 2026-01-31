@@ -7,7 +7,8 @@ use fs_err::File;
 use segment::types::SnapshotFormat;
 use shard::fixtures::{build_segment_1, build_segment_2};
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tempfile::Builder;
 
 use crate::shards::local_shard::snapshot::snapshot_all_segments;

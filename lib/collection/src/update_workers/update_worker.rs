@@ -4,7 +4,7 @@ use std::time::Instant;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 

@@ -21,7 +21,8 @@ use segment::entry::SegmentEntry;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 

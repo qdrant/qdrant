@@ -186,7 +186,7 @@ mod tests {
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;
     use shard::locked_segment::LockedSegment;
-    use shard::segment_holder::LockedSegmentHolder;
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;

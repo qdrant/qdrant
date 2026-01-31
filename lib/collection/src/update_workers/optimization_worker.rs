@@ -14,7 +14,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;

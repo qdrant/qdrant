@@ -241,7 +241,7 @@ mod tests {
     use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{Distance, PayloadSchemaType, SegmentType, VectorNameBuf};
-    use shard::segment_holder::LockedSegmentHolder;
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 

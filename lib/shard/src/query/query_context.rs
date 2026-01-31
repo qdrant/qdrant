@@ -9,7 +9,7 @@ use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
 use crate::search::CoreSearchRequest;
-use crate::segment_holder::LockedSegmentHolder;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn init_query_context(
     batch_request: &[CoreSearchRequest],

@@ -177,7 +177,7 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
-    use shard::segment_holder::LockedSegmentHolder;
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;
