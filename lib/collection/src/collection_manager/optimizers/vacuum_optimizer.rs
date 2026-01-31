@@ -178,16 +178,15 @@ impl SegmentOptimizer for VacuumOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
-    use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
     use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;
     use shard::locked_segment::LockedSegment;
+    use shard::segment_holder::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;
@@ -276,7 +275,7 @@ mod tests {
                 .unwrap();
         }
 
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -406,7 +405,7 @@ mod tests {
             .unwrap();
 
         let mut segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
             m: 16,

@@ -21,7 +21,6 @@ pub mod testing;
 mod wal_ops;
 
 use std::collections::{BTreeSet, HashMap};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -42,7 +41,7 @@ use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use parking_lot::{Mutex as ParkingMutex, RwLock};
+use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
@@ -240,7 +239,7 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
     ) -> Self {
-        let segment_holder = Arc::new(RwLock::new(segment_holder));
+        let segment_holder = LockedSegmentHolder::new(segment_holder);
         let config = collection_config.read().await;
         let locked_wal = Arc::new(Mutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
@@ -327,8 +326,9 @@ impl LocalShard {
         }
     }
 
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
+    #[cfg(any(test, feature = "testing"))]
+    pub fn segments(&self) -> LockedSegmentHolder {
+        self.segments.clone()
     }
 
     /// Recovers shard from disk.
@@ -696,7 +696,6 @@ impl LocalShard {
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
-        let segments = self.segments();
 
         // Fall back to basic text output if the progress bar is hidden (e.g. not a tty)
         let show_progress_bar = !bar.is_hidden();
@@ -729,7 +728,7 @@ impl LocalShard {
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
-                segments,
+                &self.segments,
                 op_num,
                 update.operation,
                 self.update_operation_lock.clone(),

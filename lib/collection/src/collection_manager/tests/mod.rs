@@ -52,7 +52,7 @@ fn test_update_proxy_segments() {
     let sid1 = holder.add_new(segment1);
     let _sid2 = holder.add_new(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     let _proxy_id = wrap_proxy(segments.clone(), sid1);
 
@@ -109,7 +109,7 @@ fn test_move_points_to_copy_on_write() {
     let sid1 = holder.add_new(segment1);
     let sid2 = holder.add_new(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     let proxy_id = wrap_proxy(segments.clone(), sid1);
 
@@ -284,7 +284,7 @@ fn test_delete_all_point_versions() {
     let mut holder = SegmentHolder::default();
     let sid1 = holder.add_new(segment1);
     let sid2 = holder.add_new(segment2);
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     // We should be able to retrieve point 123
     let retrieved = retrieve_blocking(
@@ -443,7 +443,7 @@ fn test_proxy_shared_updates() {
         );
     }
 
-    let locked_holder = Arc::new(RwLock::new(holder));
+    let locked_holder = LockedSegmentHolder::new(holder);
 
     let is_stopped = AtomicBool::new(false);
 
@@ -579,7 +579,7 @@ fn test_proxy_shared_updates_same_version() {
         );
     }
 
-    let locked_holder = Arc::new(RwLock::new(holder));
+    let locked_holder = LockedSegmentHolder::new(holder);
 
     let is_stopped = AtomicBool::new(false);
 

@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
 use segment::types::SeqNumberType;
+use shard::segment_holder::LockedSegmentHolder;
 use shard::update::*;
 
-use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::CollectionUpdateOperations;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::update_tracker::UpdateTracker;
@@ -16,7 +15,7 @@ pub struct CollectionUpdater {}
 
 impl CollectionUpdater {
     fn handle_update_result(
-        segments: &RwLock<SegmentHolder>,
+        segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
         operation_result: &CollectionResult<usize>,
     ) {
@@ -40,7 +39,7 @@ impl CollectionUpdater {
     }
 
     pub fn update(
-        segments: &RwLock<SegmentHolder>,
+        segments: &LockedSegmentHolder,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
@@ -54,12 +53,11 @@ impl CollectionUpdater {
 
             let _update_operation_lock = update_operation_lock.blocking_write();
             let _update_guard = update_tracker.update();
-
-            let segments_guard = segments.read();
-
             // Similar to `_update_operation_lock`, but used for operations inside segment holder
             // E.g. optimization finalization may require update operation lock
-            let _another_update_lock = segments_guard.updates_lock.lock();
+            let _another_update_lock = segments.acquire_updates_lock();
+
+            let segments_guard = segments.read();
 
             match operation {
                 CollectionUpdateOperations::PointOperation(point_operation) => {
@@ -103,7 +101,6 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -127,6 +124,7 @@ mod tests {
         TEST_TIMEOUT, build_segment_1, build_segment_2, build_test_holder,
     };
     use crate::collection_manager::holders::segment_holder::LockedSegment::Original;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
     use crate::operations::point_ops::{
         PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -212,7 +210,6 @@ mod tests {
         let res = upsert_points(&segments.read(), 100, &points, &hw_counter);
         assert!(matches!(res, Ok(1)));
 
-        let segments = Arc::new(segments);
         let records = retrieve_blocking(
             segments.clone(),
             &[1.into(), 2.into(), 500.into()],
@@ -294,7 +291,6 @@ mod tests {
         )
         .unwrap();
 
-        let segments = Arc::new(segments);
         let res = retrieve_blocking(
             segments.clone(),
             &points,
@@ -426,8 +422,7 @@ mod tests {
         let mut holder = SegmentHolder::default();
         let segment_ids = vec![holder.add_new(segment1), holder.add_new(segment2)];
 
-        let segments_guard = RwLock::new(holder);
-        let segments = Arc::new(segments_guard);
+        let segments = LockedSegmentHolder::new(holder);
 
         // payload with nested structure
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
@@ -494,8 +489,7 @@ mod tests {
             holder.add_new(segment);
         }
 
-        let segments_guard = RwLock::new(holder);
-        let segments = Arc::new(segments_guard);
+        let segments = LockedSegmentHolder::new(holder);
 
         // update points nested values
         let payload: Payload = serde_json::from_str(r#"{ "color":"blue"}"#).unwrap();

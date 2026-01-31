@@ -4,11 +4,10 @@ use std::sync::Arc;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
-use parking_lot::RwLock;
 use segment::types::SnapshotFormat;
 use shard::fixtures::{build_segment_1, build_segment_2};
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
 use tempfile::Builder;
 
 use crate::shards::local_shard::snapshot::snapshot_all_segments;
@@ -25,7 +24,7 @@ fn test_snapshot_all() {
     let sid2 = holder.add_new(segment2);
     assert_ne!(sid1, sid2);
 
-    let holder = Arc::new(RwLock::new(holder));
+    let holder = LockedSegmentHolder::new(holder);
 
     let before_ids = holder
         .read()

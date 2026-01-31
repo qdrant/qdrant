@@ -719,7 +719,6 @@ mod tests {
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -798,7 +797,7 @@ mod tests {
 
         let hw_acc = HwMeasurementAcc::new();
         let result = SegmentsSearcher::search(
-            Arc::new(segment_holder),
+            segment_holder,
             Arc::new(batch_request),
             &Handle::current(),
             true,
@@ -831,7 +830,7 @@ mod tests {
         let _sid1 = holder.add_new(segment1);
         let _sid2 = holder.add_new(segment2);
 
-        let segment_holder = Arc::new(RwLock::new(holder));
+        let segment_holder = LockedSegmentHolder::new(holder);
 
         let mut rnd = rand::rng();
 
@@ -917,7 +916,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
         let records = retrieve_blocking(
-            Arc::new(segment_holder),
+            segment_holder,
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             &true.into(),
@@ -933,7 +932,6 @@ mod tests {
     fn test_retrieve_timeout() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let segment_holder = Arc::new(segment_holder);
         // keep write guard to prevent subsequent read
         let _segment_holder_write_guard = segment_holder.write();
         let records = retrieve_blocking(

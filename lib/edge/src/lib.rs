@@ -162,7 +162,7 @@ impl EdgeShard {
             path: path.into(),
             config: config.expect("config was provided or at least one segment was loaded"),
             wal: parking_lot::Mutex::new(wal),
-            segments: Arc::new(parking_lot::RwLock::new(segments)),
+            segments: LockedSegmentHolder::new(segments),
         };
 
         Ok(shard)
