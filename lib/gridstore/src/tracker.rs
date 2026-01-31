@@ -1,4 +1,4 @@
-use std::num::NonZeroU8;
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
@@ -19,13 +19,63 @@ pub type PageId = u32;
 
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+const OPTIONAL_NONE: u32 = 0;
+const OPTIONAL_SOME: u32 = 1;
+
+/// A type similar to `std::option::Option`, but with stable layout.
+///
+/// Please note that it uses 32-bit tag and is intended to be used for `ValuePointer` without padding bytes.
+/// Also, it doesn't call `Drop` on nested value.
+#[derive(Copy, zerocopy::FromBytes)]
+#[repr(C)]
+struct Optional<T> {
+    discriminant: u32,
+    value: MaybeUninit<T>,
+}
+
+impl<T: Clone> Clone for Optional<T> {
+    fn clone(&self) -> Self {
+        self.is_some().cloned().into()
+    }
+}
+
+impl<T> From<Option<T>> for Optional<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => Self::some(value),
+            None => Self::none(),
+        }
+    }
+}
+
+impl<T> Optional<T> {
+    pub const fn none() -> Self {
+        Self {
+            discriminant: OPTIONAL_NONE,
+            value: MaybeUninit::zeroed(),
+        }
+    }
+
+    pub const fn some(value: T) -> Self {
+        Self {
+            discriminant: OPTIONAL_SOME,
+            value: MaybeUninit::new(value),
+        }
+    }
+
+    pub fn is_some(&self) -> Option<&T> {
+        if self.discriminant == OPTIONAL_NONE {
+            None
+        } else {
+            // Safety: by construction, if the discriminant is not zero, value is assumed to be initialized.
+            Some(unsafe { self.value.assume_init_ref() })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, zerocopy::FromBytes)]
 #[repr(C)]
 pub struct ValuePointer {
-    /// This is an artificial field to make `Option<ValuePointer>` to have a stable ABI.
-    pub _discriminant: NonZeroU8,
-    pub _padding: [u8; 3],
-
     /// Which page the value is stored in
     pub page_id: PageId,
 
@@ -39,8 +89,6 @@ pub struct ValuePointer {
 impl ValuePointer {
     pub fn new(page_id: PageId, block_offset: BlockOffset, length: u32) -> Self {
         Self {
-            _discriminant: NonZeroU8::new(1).unwrap(),
-            _padding: [0, 0, 0],
             page_id,
             block_offset,
             length,
@@ -274,8 +322,8 @@ impl Tracker {
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
-                    if let Some(&Some(old_pointer)) = self.get_raw(point_offset) {
-                        old_pointers.push(old_pointer);
+                    if let Some(Some(old_pointer)) = self.get_raw(point_offset) {
+                        old_pointers.push(*old_pointer);
                     }
 
                     self.persist_pointer(point_offset, Some(new_pointer));
@@ -347,8 +395,8 @@ impl Tracker {
 
         let point_offset = point_offset as usize;
         let start_offset =
-            size_of::<TrackerHeader>() + point_offset * size_of::<Option<ValuePointer>>();
-        let end_offset = start_offset + size_of::<Option<ValuePointer>>();
+            size_of::<TrackerHeader>() + point_offset * size_of::<Optional<ValuePointer>>();
+        let end_offset = start_offset + size_of::<Optional<ValuePointer>>();
 
         // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
@@ -359,7 +407,8 @@ impl Tracker {
                 .unwrap();
         }
 
-        // Safety: ValuePointer has niche optimization and thus is POD type.
+        let pointer: Optional<_> = pointer.into();
+        // Safety: Optional<ValuePointer> is a POD type.
         #[expect(deprecated, reason = "legacy code")]
         self.mmap[start_offset..end_offset].copy_from_slice(unsafe { transmute_to_u8(&pointer) });
     }
@@ -389,17 +438,18 @@ impl Tracker {
     }
 
     /// Get the raw value at the given point offset
-    fn get_raw(&self, point_offset: PointOffset) -> Option<&Option<ValuePointer>> {
-        let start_offset =
-            size_of::<TrackerHeader>() + point_offset as usize * size_of::<Option<ValuePointer>>();
-        let end_offset = start_offset + size_of::<Option<ValuePointer>>();
+    fn get_raw(&self, point_offset: PointOffset) -> Option<Option<&ValuePointer>> {
+        let start_offset = size_of::<TrackerHeader>()
+            + point_offset as usize * size_of::<Optional<ValuePointer>>();
+        let end_offset = start_offset + size_of::<Optional<ValuePointer>>();
         if end_offset > self.mmap.len() {
             return None;
         }
-        // Safety: ValuePointer has a niche optimization and thus Option<ValuePointer> is a POD type.
+        // Safety: Optional<ValuePointer> is a POD type.
         #[expect(deprecated, reason = "legacy code")]
-        let page_pointer = unsafe { transmute_from_u8(&self.mmap[start_offset..end_offset]) };
-        Some(page_pointer)
+        let page_pointer: &Optional<_> =
+            unsafe { transmute_from_u8(&self.mmap[start_offset..end_offset]) };
+        Some(page_pointer.is_some())
     }
 
     /// Get the page pointer at the given point offset
@@ -408,12 +458,12 @@ impl Tracker {
             // Pending update exists but is empty, should not happen, fall back to real data
             Some(pending) if pending.is_empty() => {
                 debug_assert!(false, "pending updates must not be empty");
-                self.get_raw(point_offset).copied().flatten()
+                self.get_raw(point_offset).flatten().cloned()
             }
             // Use set from pending updates
             Some(pending) => pending.current,
             // No pending update, use real data
-            None => self.get_raw(point_offset).copied().flatten(),
+            None => self.get_raw(point_offset).flatten().cloned(),
         }
     }
 
@@ -456,7 +506,6 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU8;
     use std::path::PathBuf;
 
     #[expect(deprecated, reason = "legacy code")]
@@ -465,7 +514,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::{PointerUpdates, Tracker, ValuePointer};
-    use crate::tracker::{BlockOffset, PageId};
+    use crate::tracker::{BlockOffset, Optional, PageId};
 
     #[test]
     fn test_file_name() {
@@ -536,13 +585,13 @@ mod tests {
         assert_eq!(tracker.mapping_len(), 4);
         assert_eq!(tracker.pointer_count(), 11); // accounts for empty slots
 
-        assert_eq!(tracker.get_raw(0), Some(&Some(ValuePointer::new(1, 1, 1))));
-        assert_eq!(tracker.get_raw(1), Some(&Some(ValuePointer::new(2, 2, 2))));
-        assert_eq!(tracker.get_raw(2), Some(&Some(ValuePointer::new(3, 3, 3))));
-        assert_eq!(tracker.get_raw(3), Some(&None)); // intermediate empty slot
+        assert_eq!(tracker.get_raw(0), Some(Some(&ValuePointer::new(1, 1, 1))));
+        assert_eq!(tracker.get_raw(1), Some(Some(&ValuePointer::new(2, 2, 2))));
+        assert_eq!(tracker.get_raw(2), Some(Some(&ValuePointer::new(3, 3, 3))));
+        assert_eq!(tracker.get_raw(3), Some(None)); // intermediate empty slot
         assert_eq!(
             tracker.get_raw(10),
-            Some(&Some(ValuePointer::new(10, 10, 10)))
+            Some(Some(&ValuePointer::new(10, 10, 10)))
         );
         assert_eq!(tracker.get_raw(100_000), None); // out of bounds
 
@@ -551,7 +600,7 @@ mod tests {
         tracker.write_pending_and_flush_internal().unwrap();
 
         // the value has been cleared but the entry is still there
-        assert_eq!(tracker.get_raw(1), Some(&None));
+        assert_eq!(tracker.get_raw(1), Some(None));
         assert_eq!(tracker.get(1), None);
 
         assert_eq!(tracker.mapping_len(), 3);
@@ -767,12 +816,17 @@ mod tests {
     #[test]
     fn test_option_value_pointer_layout() {
         #[repr(align(4))]
-        struct AlignedData([u8; size_of::<Option<ValuePointer>>()]);
+        struct AlignedData([u8; size_of::<Optional<ValuePointer>>()]);
+
+        assert_eq!(
+            size_of::<Optional<ValuePointer>>(),
+            size_of::<Option<ValuePointer>>()
+        );
 
         let none_data = AlignedData([0; _]);
         #[expect(deprecated, reason = "legacy code")]
-        let none_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&none_data.0) };
-        assert!(none_val.is_none());
+        let none_val: &Optional<ValuePointer> = unsafe { transmute_from_u8(&none_data.0) };
+        assert!(none_val.is_some().is_none());
 
         let some_data = AlignedData([
             1, 0, 0, 0, // discriminant with padding
@@ -781,13 +835,11 @@ mod tests {
             0xDD, 0xCC, 0xBB, 0xAA, // length
         ]);
         #[expect(deprecated, reason = "legacy code")]
-        let some_val: &Option<ValuePointer> = unsafe { transmute_from_u8(&some_data.0) };
+        let some_val: &Optional<ValuePointer> = unsafe { transmute_from_u8(&some_data.0) };
         // N.B. fails on a big-endian machine.
         assert_eq!(
-            some_val,
-            &Some(ValuePointer {
-                _discriminant: NonZeroU8::new(1).unwrap(),
-                _padding: Default::default(),
+            some_val.is_some(),
+            Some(&ValuePointer {
                 page_id: 0x11223344,
                 block_offset: 0x55667788,
                 length: 0xAABBCCDD,
@@ -798,26 +850,13 @@ mod tests {
     #[test]
     #[ignore = "contains undefined behavior"]
     fn test_layout_compatibility() {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        #[repr(C)]
-        pub struct ValuePointerOld {
-            /// Which page the value is stored in
-            pub page_id: PageId,
-
-            /// Start offset (in blocks) of the value
-            pub block_offset: BlockOffset,
-
-            /// Length in bytes of the value
-            pub length: u32,
-        }
-
         assert_eq!(
-            size_of::<Option<ValuePointerOld>>(),
+            size_of::<Optional<ValuePointer>>(),
             size_of::<Option<ValuePointer>>()
         );
 
-        let old_none = Option::<ValuePointerOld>::None;
-        let new_none = Option::<ValuePointer>::None;
+        let old_none = Option::<ValuePointer>::None;
+        let new_none = Optional::<ValuePointer>::none();
 
         // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
         // But we don't have any better option.
@@ -827,12 +866,12 @@ mod tests {
         const BLOCK_OFFSET: BlockOffset = 1000;
         const LENGTH: u32 = 1234567;
 
-        let old_value = Some(ValuePointerOld {
+        let old_value = Some(ValuePointer {
             page_id: PAGE_ID,
             block_offset: BLOCK_OFFSET,
             length: LENGTH,
         });
-        let new_value = Some(ValuePointer::new(PAGE_ID, BLOCK_OFFSET, LENGTH));
+        let new_value = Optional::some(ValuePointer::new(PAGE_ID, BLOCK_OFFSET, LENGTH));
 
         // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
         // But we don't have any better option.
