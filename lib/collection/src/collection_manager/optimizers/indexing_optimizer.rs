@@ -229,12 +229,10 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use fs_err as fs;
     use itertools::Itertools;
-    use parking_lot::lock_api::RwLock;
     use rand::rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
@@ -243,6 +241,7 @@ mod tests {
     use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{Distance, PayloadSchemaType, SegmentType, VectorNameBuf};
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use shard::update::{process_field_index_operation, process_point_operation};
     use tempfile::Builder;
 
@@ -318,7 +317,7 @@ mod tests {
             HnswGlobalConfig::default(),
             Default::default(),
         );
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
         assert!(suggested_to_optimize.is_empty());
@@ -413,7 +412,7 @@ mod tests {
             Default::default(),
         );
 
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         // ---- check condition for MMap optimization
         let suggested_to_optimize = index_optimizer.plan_optimizations_for_test(&locked_holder);
@@ -670,7 +669,7 @@ mod tests {
             .map(|segment| holder.add_new(segment))
             .collect();
 
-        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let index_optimizer = IndexingOptimizer::new(
             number_of_segments, // Keep the same number of segments
@@ -762,7 +761,7 @@ mod tests {
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<parking_lot::RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
             m: 16,

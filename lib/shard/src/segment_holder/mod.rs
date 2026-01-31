@@ -1,4 +1,5 @@
 mod flush;
+pub mod locked;
 pub mod read_points;
 mod snapshot;
 #[cfg(test)]
@@ -86,14 +87,6 @@ pub struct SegmentHolder {
 
     /// The amount of currently running optimizations.
     pub running_optimizations: ProcessCounter,
-
-    /// Lock that prevents update operations during segment maintenance
-    ///
-    /// Currently used for:
-    ///
-    /// - Preventing update operations during finalization of segment optimizations
-    ///
-    pub updates_lock: Arc<Mutex<()>>,
 }
 
 impl Drop for SegmentHolder {
@@ -103,8 +96,6 @@ impl Drop for SegmentHolder {
         }
     }
 }
-
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl SegmentHolder {
     /// Iterate over all segments with their IDs

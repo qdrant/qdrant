@@ -26,12 +26,11 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
 
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -645,10 +644,10 @@ pub trait SegmentOptimizer {
 
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
-        // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
+        // which is an expensive operation. So we can't unlock `segments` after the check and before the insert.
         //
         // On the other hand - we do not want to hold write lock during the segment creation.
-        // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
+        // Solution in the middle - is an upgradable lock. It ensures consistency after the check and allows to perform read operation.
         let segment_holder_read = segment_holder.upgradable_read();
 
         // Find appendable segments other than optimized ones
@@ -930,8 +929,7 @@ pub trait SegmentOptimizer {
         let upgradable_segment_holder = segment_holder.upgradable_read();
 
         // This mutex prevents update operations, which could create inconsistency during transition.
-        let update_lock = upgradable_segment_holder.updates_lock.clone();
-        let update_guard = update_lock.lock();
+        let update_guard = segment_holder.acquire_updates_lock();
 
         let proxy_index_changes = self.proxy_index_changes(&locked_proxies);
 
@@ -1003,10 +1001,9 @@ pub trait SegmentOptimizer {
             writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
         }
 
+        drop(writable_segment_holder);
         // Allow updates again
         drop(update_guard);
-        drop(update_lock);
-        drop(writable_segment_holder);
 
         // Drop all pointers to proxies, so we can de-arc them
         drop(locked_proxies);

@@ -8,7 +8,8 @@ use segment::entry::SegmentEntry;
 use segment::types::PointIdType;
 
 use crate::locked_segment::LockedSegment;
-use crate::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use crate::segment_holder::SegmentHolder;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 impl SegmentHolder {
     #[inline]
