@@ -925,11 +925,11 @@ pub trait SegmentOptimizer {
         stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
-        // This mutex prevents update operations, which could create inconsistency during transition.
-        let update_guard = segment_holder.acquire_updates_lock();
-
         // This block locks all write operations with colle ction. It should be fast.
         let upgradable_segment_holder = segment_holder.upgradable_read();
+
+        // This mutex prevents update operations, which could create inconsistency during transition.
+        let update_guard = segment_holder.acquire_updates_lock();
 
         let proxy_index_changes = self.proxy_index_changes(&locked_proxies);
 
