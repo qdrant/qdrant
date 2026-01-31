@@ -49,6 +49,11 @@ impl LockedSegmentHolder {
         self.holder.try_read()
     }
 
+    // On update operation:
+    // - Should be locked before read lock on `holder`. If we can't acquire this lock,
+    //   we should not block resources for other operations.
+    // - On other operations, while acquiring this lock, make sure that it doesn't prevent
+    //   update operation. I.e. it allows read lock on `holder` while update lock is being waited on.
     pub fn acquire_updates_lock(&self) -> parking_lot::MutexGuard<'_, ()> {
         self.updates_mutex.lock()
     }

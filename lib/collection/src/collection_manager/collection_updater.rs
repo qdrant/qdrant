@@ -55,6 +55,7 @@ impl CollectionUpdater {
             let _update_guard = update_tracker.update();
             // Similar to `_update_operation_lock`, but used for operations inside segment holder
             // E.g. optimization finalization may require update operation lock
+            // Needs to be acquired before locking segments.
             let _another_update_lock = segments.acquire_updates_lock();
 
             let segments_guard = segments.read();
