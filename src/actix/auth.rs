@@ -2,7 +2,7 @@ use std::convert::Infallible;
 use std::future::{Ready, ready};
 use std::sync::Arc;
 
-use actix_web::body::{BoxBody, EitherBody};
+use actix_web::body::EitherBody;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
@@ -27,12 +27,11 @@ impl Auth {
 
 impl<S, B> Transform<S, ServiceRequest> for Auth
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
-        + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B>>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Response = ServiceResponse<EitherBody<B, BoxBody>>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type InitError = ();
     type Transform = AuthMiddleware<S>;
@@ -96,12 +95,11 @@ impl<S> AuthMiddleware<S> {
 
 impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
-        + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B>>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Response = ServiceResponse<EitherBody<B, BoxBody>>;
+    type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
