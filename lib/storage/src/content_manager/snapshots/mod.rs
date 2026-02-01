@@ -1,4 +1,5 @@
 pub mod download;
+pub mod download_tar;
 pub mod recover;
 
 use std::collections::HashMap;

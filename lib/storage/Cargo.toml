@@ -43,6 +43,7 @@ chrono = { workspace = true }
 validator = { workspace = true }
 dashmap = { workspace = true }
 semver = { workspace = true }
+sha2 = { workspace = true }
 
 # Consensus related
 atomicwrites = { workspace = true }
