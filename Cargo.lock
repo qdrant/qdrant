@@ -7203,6 +7203,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "sha2",
  "shard",
  "strum",
  "tap",
