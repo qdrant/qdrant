@@ -6,3 +6,4 @@ pub mod distributed_telemetry;
 pub mod hardware;
 pub mod memory_telemetry;
 pub mod requests_telemetry;
+pub mod telemetry_context;

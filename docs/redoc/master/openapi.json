@@ -13726,6 +13726,18 @@
                 "$ref": "#/components/schemas/OperationDurationStatistics"
               }
             }
+          },
+          "per_collection_responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
+              }
+            }
           }
         }
       },
@@ -13739,6 +13751,15 @@
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/OperationDurationStatistics"
+            }
+          },
+          "per_collection_responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
             }
           }
         }
