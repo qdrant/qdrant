@@ -4,6 +4,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Fixed-size ringbuffer with support for absolute indexing into its contents.
 ///
+/// This needs to exist, and not use external crates because we need absolute indexing.
+/// The only crate which allows that is `ringbuffer`, but it has a specific format which
+/// includes an epoch number, and cannot be constructed out of thin air. We want to be able
+/// to use u32/usize indexing directly.
+///
 /// There is explicitly no way to remove elements before they are overwritten by
 /// filling the capacity. This can be changed, but other methods like `is_in_range` would
 /// need to be reviewed carefully.
