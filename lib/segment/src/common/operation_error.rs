@@ -201,6 +201,9 @@ impl From<IoError> for OperationError {
             ErrorKind::StorageFull => OperationError::OutOfDisk {
                 description: format!("IO Error: {err}"),
             },
+            ErrorKind::FileTooLarge => OperationError::OutOfDisk {
+                description: format!("IO Error: {err}"),
+            },
             _ => OperationError::service_error(format!("IO Error: {err}")),
         }
     }

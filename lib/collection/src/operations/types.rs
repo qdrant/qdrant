@@ -1279,7 +1279,9 @@ impl From<JsonError> for CollectionError {
 
 impl From<std::io::Error> for CollectionError {
     fn from(err: std::io::Error) -> Self {
-        if err.kind() == std::io::ErrorKind::StorageFull {
+        if err.kind() == std::io::ErrorKind::StorageFull
+            || err.kind() == std::io::ErrorKind::FileTooLarge
+        {
             CollectionError::OutOfDisk {
                 description: format!("File IO error: {err}"),
             }
@@ -1432,7 +1434,9 @@ impl From<cancel::Error> for CollectionError {
 
 impl From<tempfile::PathPersistError> for CollectionError {
     fn from(err: tempfile::PathPersistError) -> Self {
-        if err.error.kind() == std::io::ErrorKind::StorageFull {
+        if err.error.kind() == std::io::ErrorKind::StorageFull
+            || err.error.kind() == std::io::ErrorKind::FileTooLarge
+        {
             Self::out_of_disk(format!(
                 "failed to persist temporary file path {}: {}",
                 err.path.display(),
