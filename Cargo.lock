@@ -4190,7 +4190,7 @@ checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 [[package]]
 name = "murmur3"
 version = "0.5.2"
-source = "git+https://github.com/stusmall/murmur3?rev=2c39087#2c39087f094ae982a463e1cda9cf4d483a09192b"
+source = "git+https://github.com/qdrant/murmur3?rev=2c39087#2c39087f094ae982a463e1cda9cf4d483a09192b"
 
 [[package]]
 name = "names"
