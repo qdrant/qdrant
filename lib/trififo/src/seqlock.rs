@@ -17,11 +17,14 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// To allow multiple readers, and ensure a single writer, a `new_reader_writer` method is provided.
 ///
 /// # SAFETY
+///
 /// While this lock ensures that a read is consistent, it does not protect against
-/// writers creating use-after-free errors. This is because readers can see the
-/// shared resource even as it is being modified. It is the user responsibility to make
-/// sure the underlying resource does not change allocations, and that the worst that
-/// can happen is a garbage/torn read.
+/// writers creating undefined behavior. This is because readers can see the
+/// shared resource even as it is being modified.
+///
+/// It is the user responsibility to make sure the underlying resource does not cause
+/// panics if it is read at any moment during modification,
+/// and that the worst that can happen is a garbage/torn read.
 ///
 /// ```
 /// use trififo::seqlock::SeqLock;
@@ -43,7 +46,7 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 ///     std::thread::spawn(move || {
 ///         unsafe {
 ///             writer.write(|value| {
-///                 *value + 10;
+///                 *value += 10;
 ///             })
 ///         };
 ///     });
@@ -101,13 +104,13 @@ impl<T> SeqLock<T> {
 
     unsafe fn write(&self, callback: impl FnOnce(&mut T)) {
         let seq = self.seq.load(Ordering::Relaxed);
-        self.seq.store(seq + 1, Ordering::Relaxed);
+        self.seq.store(seq.wrapping_add(1), Ordering::Relaxed);
         // ensure seq has been written before running the callback
         fence(Ordering::Release);
 
         callback(unsafe { &mut *self.inner.get() });
 
-        self.seq.store(seq + 2, Ordering::Release);
+        self.seq.store(seq.wrapping_add(2), Ordering::Release);
     }
 }
 
