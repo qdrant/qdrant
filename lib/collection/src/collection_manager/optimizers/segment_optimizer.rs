@@ -925,7 +925,7 @@ pub trait SegmentOptimizer {
         stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
-        // This block locks all write operations with colle ction. It should be fast.
+        // This block locks all write operations with collection. It should be fast.
         let upgradable_segment_holder = segment_holder.upgradable_read();
 
         // This mutex prevents update operations, which could create inconsistency during transition.
