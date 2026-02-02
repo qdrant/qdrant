@@ -14,13 +14,12 @@ pub struct InferenceApiKeys {
 }
 
 impl InferenceApiKeys {
-    fn from_headers(headers: &HeaderMap) -> InferenceApiKeys {
+    /// Single source of truth: extracts API keys from any iterator of (key, value) string pairs
+    fn from_key_value_pairs<'a>(iter: impl Iterator<Item = (&'a str, &'a str)>) -> Self {
         let mut api_keys = Self::default();
 
-        for (k, v) in headers {
-            if k.as_str().ends_with(EMBEDDING_API_KEY_HEADER_SUFFIX)
-                && let Some(v) = v.to_str().ok()
-            {
+        for (k, v) in iter {
+            if k.ends_with(EMBEDDING_API_KEY_HEADER_SUFFIX) {
                 api_keys.keys.insert(k.to_string(), v.to_string());
             }
         }
@@ -29,12 +28,20 @@ impl InferenceApiKeys {
     }
 
     pub fn from_http_headers(headers: &HeaderMap) -> Self {
-        Self::from_headers(headers)
+        Self::from_key_value_pairs(
+            headers
+                .iter()
+                .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str(), v))),
+        )
     }
 
     pub fn from_grpc_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
-        let header_map = HeaderMap::from(metadata.clone().into_headers());
-        Self::from_headers(&header_map)
+        Self::from_key_value_pairs(metadata.iter().filter_map(|kv| match kv {
+            tonic::metadata::KeyAndValueRef::Ascii(k, v) => {
+                v.to_str().ok().map(|v| (k.as_str(), v))
+            }
+            tonic::metadata::KeyAndValueRef::Binary(_, _) => None,
+        }))
     }
 }
 
