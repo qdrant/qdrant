@@ -54,12 +54,15 @@ fn extract_forwarded_ip(
 /// Parses the standard Forwarded header (RFC 7239) and extracts the client IP.
 /// Format: Forwarded: for=192.0.2.43;proto=https
 /// IPv6 format: Forwarded: for="[2001:db8::1]:4711"
+/// Note: RFC 7239 specifies parameter names are case-insensitive.
 fn parse_forwarded_header(header: &str) -> Option<String> {
     // Parse the first entry (original client) from comma-separated list
     let first_entry = header.split(',').next()?;
     for part in first_entry.split(';') {
         let part = part.trim();
-        if let Some(value) = part.strip_prefix("for=") {
+        // RFC 7239: parameter names are case-insensitive
+        if part.len() >= 4 && part[..4].eq_ignore_ascii_case("for=") {
+            let value = &part[4..];
             // Remove quotes if present (required for IPv6 addresses per RFC 7239)
             let value = value.trim_matches('"');
             let ip = if let Some(stripped) = value.strip_prefix('[') {
@@ -297,9 +300,20 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_forwarded_header_case_sensitivity() {
-        // RFC 7239: parameter names are case-insensitive, but we only check lowercase
-        assert_eq!(parse_forwarded_header("FOR=192.0.2.43"), None);
+    fn test_parse_forwarded_header_case_insensitive() {
+        // RFC 7239: parameter names are case-insensitive
+        assert_eq!(
+            parse_forwarded_header("FOR=192.0.2.43"),
+            Some("192.0.2.43".to_string())
+        );
+        assert_eq!(
+            parse_forwarded_header("For=192.0.2.43"),
+            Some("192.0.2.43".to_string())
+        );
+        assert_eq!(
+            parse_forwarded_header("fOr=192.0.2.43"),
+            Some("192.0.2.43".to_string())
+        );
     }
 
     #[test]
