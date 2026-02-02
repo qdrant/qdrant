@@ -111,16 +111,20 @@ pub fn extract_inference_auth<R>(req: &tonic::Request<R>) -> InferenceApiKeys {
     InferenceApiKeys::from_grpc_request(req)
 }
 
-impl From<InferenceApiKeys> for reqwest::header::HeaderMap {
-    fn from(api_keys: InferenceApiKeys) -> Self {
-        let mut headers = reqwest::header::HeaderMap::new();
+pub fn convert_to_reqwest_headers(
+    api_keys: &HashMap<String, String>,
+) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
 
-        for (k, v) in api_keys.keys {
-            let k = reqwest::header::HeaderName::from_str(&k).expect("invalid header key");
-            let v = reqwest::header::HeaderValue::from_str(&v).expect("invalid header value");
+    for (k, v) in api_keys {
+        let k = reqwest::header::HeaderName::from_str(k).ok();
+        let v = reqwest::header::HeaderValue::from_str(v).ok();
+        if let Some(k) = k
+            && let Some(v) = v
+        {
             headers.insert(k, v);
         }
-
-        headers
     }
+
+    headers
 }

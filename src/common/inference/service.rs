@@ -11,13 +11,12 @@ use common::defaults::APP_USER_AGENT;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
-use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
-use crate::common::inference::api_keys::InferenceApiKeys;
+use crate::common::inference::api_keys::{InferenceApiKeys, convert_to_reqwest_headers};
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
@@ -219,7 +218,7 @@ impl InferenceService {
 
         let mut request = request.json(&request_body);
         if !ext_api_keys.is_empty() {
-            request = request.headers(HeaderMap::from(api_keys));
+            request = request.headers(convert_to_reqwest_headers(&ext_api_keys));
         }
 
         let response = request.send().await;
