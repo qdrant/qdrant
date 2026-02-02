@@ -21,7 +21,6 @@ use crate::common::inference::query_requests_rest::{
     CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
-use crate::common::inference::token::InferenceToken;
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
@@ -35,7 +34,6 @@ async fn query_points(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequest {
         internal: query_request,
@@ -57,7 +55,7 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout(), Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =
@@ -115,7 +113,6 @@ async fn query_points_batch(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
 
@@ -130,7 +127,7 @@ async fn query_points_batch(
 
     let mut all_usages: InferenceUsage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout(), Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let mut batch = Vec::with_capacity(searches.len());
@@ -204,7 +201,6 @@ async fn query_points_groups(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryGroupsRequest {
         search_group_request,
@@ -221,7 +217,7 @@ async fn query_points_groups(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout(), Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let shard_selection = match shard_key {

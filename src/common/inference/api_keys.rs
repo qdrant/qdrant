@@ -2,46 +2,95 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::str::FromStr;
 
-use actix_web::FromRequest;
-use actix_web::http::header::HeaderMap;
+use actix_web::{FromRequest, HttpMessage};
 use futures::future::{Ready, ready};
 
 pub const EMBEDDING_API_KEY_HEADER_SUFFIX: &str = "-api-key";
 
+/// Combined inference authentication containing both the inference token (from JWT)
+/// and external API keys (from headers like `openai-api-key`).
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct InferenceApiKeys {
+    /// Token extracted from JWT claims (sub field), used for inference tracking
+    pub token: Option<String>,
+    /// External provider API keys extracted from headers ending with `-api-key`
     pub keys: HashMap<String, String>,
 }
 
 impl InferenceApiKeys {
-    /// Single source of truth: extracts API keys from any iterator of (key, value) string pairs
-    fn from_key_value_pairs<'a>(iter: impl Iterator<Item = (&'a str, &'a str)>) -> Self {
-        let mut api_keys = Self::default();
+    pub fn new(token: Option<String>) -> Self {
+        Self {
+            token,
+            keys: HashMap::new(),
+        }
+    }
 
+    /// Get the token as a string slice
+    pub fn token_as_str(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+
+    /// Single source of truth: extracts API keys from any iterator of (key, value) string pairs
+    fn extract_keys_from_pairs<'a>(&mut self, iter: impl Iterator<Item = (&'a str, &'a str)>) {
         for (k, v) in iter {
             if k.ends_with(EMBEDDING_API_KEY_HEADER_SUFFIX) {
-                api_keys.keys.insert(k.to_string(), v.to_string());
+                self.keys.insert(k.to_string(), v.to_string());
             }
         }
+    }
 
+    pub fn from_http_request(req: &actix_web::HttpRequest) -> Self {
+        // Extract token from request extensions (set by auth middleware)
+        let token = req
+            .extensions()
+            .get::<InferenceToken>()
+            .and_then(|t| t.0.clone());
+
+        let mut api_keys = Self::new(token);
+        api_keys.extract_keys_from_pairs(
+            req.headers()
+                .iter()
+                .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str(), v))),
+        );
         api_keys
     }
 
-    pub fn from_http_headers(headers: &HeaderMap) -> Self {
-        Self::from_key_value_pairs(
-            headers
-                .iter()
-                .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str(), v))),
-        )
-    }
+    pub fn from_grpc_request<R>(req: &tonic::Request<R>) -> Self {
+        // Extract token from request extensions (set by auth middleware)
+        let token = req
+            .extensions()
+            .get::<InferenceToken>()
+            .and_then(|t| t.0.clone());
 
-    pub fn from_grpc_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
-        Self::from_key_value_pairs(metadata.iter().filter_map(|kv| match kv {
+        let mut api_keys = Self::new(token);
+        api_keys.extract_keys_from_pairs(req.metadata().iter().filter_map(|kv| match kv {
             tonic::metadata::KeyAndValueRef::Ascii(k, v) => {
                 v.to_str().ok().map(|v| (k.as_str(), v))
             }
             tonic::metadata::KeyAndValueRef::Binary(_, _) => None,
-        }))
+        }));
+        api_keys
+    }
+}
+
+/// Legacy type alias for backward compatibility during transition.
+/// This will be removed once all usages are updated.
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct InferenceToken(pub Option<String>);
+
+impl InferenceToken {
+    pub fn new(key: impl Into<String>) -> Self {
+        InferenceToken(Some(key.into()))
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
+impl From<&str> for InferenceToken {
+    fn from(s: &str) -> Self {
+        InferenceToken::new(s)
     }
 }
 
@@ -53,12 +102,13 @@ impl FromRequest for InferenceApiKeys {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        ready(Ok(InferenceApiKeys::from_http_headers(req.headers())))
+        ready(Ok(InferenceApiKeys::from_http_request(req)))
     }
 }
 
-pub fn extract_api_key(metadata: &tonic::metadata::MetadataMap) -> InferenceApiKeys {
-    InferenceApiKeys::from_grpc_metadata(metadata)
+/// Extract combined inference auth from a gRPC request
+pub fn extract_inference_auth<R>(req: &tonic::Request<R>) -> InferenceApiKeys {
+    InferenceApiKeys::from_grpc_request(req)
 }
 
 impl From<InferenceApiKeys> for reqwest::header::HeaderMap {

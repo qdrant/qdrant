@@ -1,23 +1,18 @@
 use crate::common::inference::api_keys::InferenceApiKeys;
-use crate::common::inference::token::InferenceToken;
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct InferenceParams {
-    pub token: InferenceToken,
+    pub api_keys: InferenceApiKeys,
     pub timeout: Option<std::time::Duration>,
-    pub ext_api_keys: Option<InferenceApiKeys>,
 }
 
 impl InferenceParams {
-    pub fn new(
-        token: impl Into<InferenceToken>,
-        timeout: Option<std::time::Duration>,
-        ext_api_keys: Option<InferenceApiKeys>,
-    ) -> Self {
-        Self {
-            token: token.into(),
-            timeout,
-            ext_api_keys,
-        }
+    pub fn new(api_keys: InferenceApiKeys, timeout: Option<std::time::Duration>) -> Self {
+        Self { api_keys, timeout }
+    }
+
+    /// Get the inference token as a string slice
+    pub fn token_as_str(&self) -> Option<&str> {
+        self.api_keys.token_as_str()
     }
 }

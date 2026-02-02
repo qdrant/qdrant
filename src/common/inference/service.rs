@@ -17,6 +17,7 @@ use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
+use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
@@ -189,13 +190,13 @@ impl InferenceService {
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
-        let InferenceParams {
+        let InferenceParams { api_keys, timeout } = inference_params;
+        let InferenceApiKeys {
+            keys: ext_api_keys,
             token: inference_token,
-            timeout,
-            ext_api_keys,
-        } = inference_params;
+        } = api_keys;
 
-        let token = inference_token.0.or_else(|| self.config.token.clone());
+        let token = inference_token.or_else(|| self.config.token.clone());
 
         let Some(url) = self.config.address.as_ref() else {
             return Err(StorageError::service_error(
@@ -217,7 +218,7 @@ impl InferenceService {
         };
 
         let mut request = request.json(&request_body);
-        if let Some(api_keys) = ext_api_keys {
+        if !ext_api_keys.is_empty() {
             request = request.headers(HeaderMap::from(api_keys));
         }
 
@@ -406,6 +407,7 @@ mod test {
     use serde_json::{Value, json};
 
     use super::*;
+    use crate::common::inference::api_keys::InferenceApiKeys;
     use crate::common::inference::bm25::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
@@ -567,7 +569,7 @@ mod test {
             .infer(
                 inference_inputs,
                 InferenceType::Update,
-                InferenceParams::new("key", None, None),
+                InferenceParams::new(InferenceApiKeys::new(Some("key".to_string())), None),
             )
             .await
             .expect("Failed to do inference");

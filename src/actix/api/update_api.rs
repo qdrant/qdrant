@@ -19,7 +19,6 @@ use crate::actix::helpers::{
 };
 use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::params::InferenceParams;
-use crate::common::inference::token::InferenceToken;
 use crate::common::strict_mode::*;
 use crate::common::update::*;
 use crate::settings::ServiceConfig;
@@ -40,7 +39,6 @@ async fn upsert_points(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -52,7 +50,7 @@ async fn upsert_points(
     );
 
     let timing = Instant::now();
-    let inference_params = InferenceParams::new(inference_token, params.timeout, Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout);
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -122,7 +120,6 @@ async fn update_vectors(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -134,7 +131,7 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout, Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout);
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -336,7 +333,6 @@ async fn update_batch(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     api_keys: InferenceApiKeys,
-    inference_token: InferenceToken,
 ) -> impl Responder {
     let operations = operations.into_inner();
 
@@ -347,8 +343,7 @@ async fn update_batch(
         Some(params.wait),
     );
 
-    let inference_params =
-        InferenceParams::new(inference_token.clone(), params.timeout, Some(api_keys));
+    let inference_params = InferenceParams::new(api_keys, params.timeout);
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(
