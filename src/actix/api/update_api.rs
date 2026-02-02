@@ -17,7 +17,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_with_inference_usage,
 };
-use crate::common::inference::ext_api_keys::ApiKeys;
+use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::token::InferenceToken;
 use crate::common::strict_mode::*;
@@ -39,7 +39,7 @@ async fn upsert_points(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    api_keys: ApiKeys,
+    api_keys: InferenceApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -52,8 +52,7 @@ async fn upsert_points(
     );
 
     let timing = Instant::now();
-    let inference_params =
-        InferenceParams::new(inference_token, params.timeout).with_ext_api_keys(api_keys);
+    let inference_params = InferenceParams::new(inference_token, params.timeout, Some(api_keys));
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -122,7 +121,7 @@ async fn update_vectors(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    api_keys: ApiKeys,
+    api_keys: InferenceApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -135,8 +134,7 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    let inference_params =
-        InferenceParams::new(inference_token, params.timeout).with_ext_api_keys(api_keys);
+    let inference_params = InferenceParams::new(inference_token, params.timeout, Some(api_keys));
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
@@ -328,6 +326,7 @@ async fn clear_payload(
     process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[post("/collections/{name}/points/batch")]
 async fn update_batch(
     dispatcher: web::Data<Dispatcher>,
@@ -336,6 +335,7 @@ async fn update_batch(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    api_keys: InferenceApiKeys,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operations = operations.into_inner();
@@ -347,7 +347,8 @@ async fn update_batch(
         Some(params.wait),
     );
 
-    let inference_params = InferenceParams::new(inference_token.clone(), params.timeout);
+    let inference_params =
+        InferenceParams::new(inference_token.clone(), params.timeout, Some(api_keys));
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(

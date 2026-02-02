@@ -11,6 +11,7 @@ use common::defaults::APP_USER_AGENT;
 use itertools::{Either, Itertools};
 use parking_lot::RwLock;
 use reqwest::Client;
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
@@ -217,7 +218,7 @@ impl InferenceService {
 
         let mut request = request.json(&request_body);
         if let Some(api_keys) = ext_api_keys {
-            request = request.headers(api_keys.into());
+            request = request.headers(HeaderMap::from(api_keys));
         }
 
         let response = request.send().await;
@@ -566,7 +567,7 @@ mod test {
             .infer(
                 inference_inputs,
                 InferenceType::Update,
-                InferenceParams::new("key", None),
+                InferenceParams::new("key", None, None),
             )
             .await
             .expect("Failed to do inference");

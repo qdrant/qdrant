@@ -25,7 +25,7 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate;
-use crate::common::inference::ext_api_keys::extract_api_key;
+use crate::common::inference::api_keys::extract_api_key;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
@@ -72,8 +72,7 @@ impl Points for PointsService {
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_api_key(request.metadata());
-        let inference_params =
-            InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -143,8 +142,7 @@ impl Points for PointsService {
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_api_key(request.metadata());
-        let inference_params =
-            InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -288,8 +286,7 @@ impl Points for PointsService {
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_api_key(request.metadata());
-        let inference_params =
-            InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -604,8 +601,7 @@ impl Points for PointsService {
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_api_key(request.metadata());
-        let inference_params =
-            InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
@@ -631,8 +627,7 @@ impl Points for PointsService {
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_api_key(request.metadata());
-        let inference_params =
-            InferenceParams::new(inference_token, timeout).with_ext_api_keys(api_keys);
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
 
         let request = request.into_inner();
         let QueryBatchPoints {
@@ -667,7 +662,8 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
-        let inference_params = InferenceParams::new(inference_token, timeout);
+        let api_keys = extract_api_key(request.metadata());
+        let inference_params = InferenceParams::new(inference_token, timeout, Some(api_keys));
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 

@@ -9,12 +9,12 @@ use futures::future::{Ready, ready};
 pub const EMBEDDING_API_KEY_HEADER_SUFFIX: &str = "-api-key";
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct ApiKeys {
+pub struct InferenceApiKeys {
     pub keys: HashMap<String, String>,
 }
 
-impl ApiKeys {
-    fn from_headers(headers: &HeaderMap) -> ApiKeys {
+impl InferenceApiKeys {
+    fn from_headers(headers: &HeaderMap) -> InferenceApiKeys {
         let mut api_keys = Self::default();
 
         for (k, v) in headers {
@@ -33,11 +33,12 @@ impl ApiKeys {
     }
 
     pub fn from_grpc_metadata(metadata: &tonic::metadata::MetadataMap) -> Self {
-        Self::from_headers(&metadata.clone().into_headers().into())
+        let header_map = HeaderMap::from(metadata.clone().into_headers());
+        Self::from_headers(&header_map)
     }
 }
 
-impl FromRequest for ApiKeys {
+impl FromRequest for InferenceApiKeys {
     type Error = Infallible;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -45,16 +46,16 @@ impl FromRequest for ApiKeys {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        ready(Ok(ApiKeys::from_http_headers(req.headers())))
+        ready(Ok(InferenceApiKeys::from_http_headers(req.headers())))
     }
 }
 
-pub fn extract_api_key(metadata: &tonic::metadata::MetadataMap) -> ApiKeys {
-    ApiKeys::from_grpc_metadata(metadata)
+pub fn extract_api_key(metadata: &tonic::metadata::MetadataMap) -> InferenceApiKeys {
+    InferenceApiKeys::from_grpc_metadata(metadata)
 }
 
-impl From<ApiKeys> for reqwest::header::HeaderMap {
-    fn from(api_keys: ApiKeys) -> Self {
+impl From<InferenceApiKeys> for reqwest::header::HeaderMap {
+    fn from(api_keys: InferenceApiKeys) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
 
         for (k, v) in api_keys.keys {

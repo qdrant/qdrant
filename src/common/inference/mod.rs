@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
+pub mod api_keys;
 mod batch_processing;
 mod batch_processing_grpc;
 pub mod bm25;
 pub(crate) mod config;
-pub mod ext_api_keys;
 mod infer_processing;
 pub mod inference_input;
 mod local_model;

@@ -457,7 +457,7 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let inference_params = InferenceParams::new(inference_token.clone(), None, None);
 
         self.upsert_internal(request.into_inner(), inference_params)
             .await
@@ -479,7 +479,7 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let inference_params = InferenceParams::new(inference_token.clone(), None, None);
 
         self.update_vectors_internal(request.into_inner(), inference_params)
             .await
@@ -557,7 +557,7 @@ impl PointsInternal for PointsInternalService {
         let inference_token = extract_token(&request);
 
         // Update operation doesn't specify explicit timeout yet
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let inference_params = InferenceParams::new(inference_token.clone(), None, None);
 
         let request_inner = request.into_inner();
 
@@ -797,7 +797,7 @@ impl PointsInternal for PointsInternalService {
         let inference_token = extract_token(&request);
 
         // Internal operation, we don't expect timeout here
-        let inference_params = InferenceParams::new(inference_token, None);
+        let inference_params = InferenceParams::new(inference_token, None, None);
 
         self.sync_internal(request.into_inner(), inference_params)
             .await
