@@ -38,30 +38,50 @@ fn extract_forwarded_ip(
     let headers = request.headers();
 
     // Try standard Forwarded header first (RFC 7239)
-    // Format: Forwarded: for=192.0.2.43;proto=https
-    if let Some(forwarded) = headers.get(FORWARDED).and_then(|v| v.to_str().ok()) {
-        // Parse the first entry (original client) from comma-separated list
-        if let Some(first_entry) = forwarded.split(',').next() {
-            for part in first_entry.split(';') {
-                let part = part.trim();
-                if let Some(value) = part.strip_prefix("for=") {
-                    // Remove quotes and brackets if present (IPv6 addresses)
-                    let ip = value
-                        .trim_matches('"')
-                        .trim_start_matches('[')
-                        .trim_end_matches(']');
-                    return Some(ip.to_string());
-                }
-            }
-        }
+    if let Some(forwarded) = headers.get(FORWARDED).and_then(|v| v.to_str().ok())
+        && let Some(ip) = parse_forwarded_header(forwarded)
+    {
+        return Some(ip);
     }
 
     // Fallback to legacy X-Forwarded-For header
     headers
         .get(&X_FORWARDED_FOR)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|ip| ip.trim().to_string())
+        .and_then(parse_x_forwarded_for)
+}
+
+/// Parses the standard Forwarded header (RFC 7239) and extracts the client IP.
+/// Format: Forwarded: for=192.0.2.43;proto=https
+/// IPv6 format: Forwarded: for="[2001:db8::1]:4711"
+fn parse_forwarded_header(header: &str) -> Option<String> {
+    // Parse the first entry (original client) from comma-separated list
+    let first_entry = header.split(',').next()?;
+    for part in first_entry.split(';') {
+        let part = part.trim();
+        if let Some(value) = part.strip_prefix("for=") {
+            // Remove quotes if present (required for IPv6 addresses per RFC 7239)
+            let value = value.trim_matches('"');
+            let ip = if let Some(stripped) = value.strip_prefix('[') {
+                // IPv6 address in brackets, possibly with port after ']'
+                stripped
+                    .split_once(']')
+                    .map(|(ip, _)| ip)
+                    .unwrap_or(stripped)
+            } else {
+                // IPv4 or unbracketed value, strip port if present
+                value.split(':').next().unwrap_or(value)
+            };
+            return Some(ip.to_string());
+        }
+    }
+    None
+}
+
+/// Parses the legacy X-Forwarded-For header and extracts the client IP.
+/// Format: X-Forwarded-For: client, proxy1, proxy2
+fn parse_x_forwarded_for(header: &str) -> Option<String> {
+    header.split(',').next().map(|ip| ip.trim().to_string())
 }
 
 impl<S> Service<tonic::codegen::http::Request<tonic::transport::Body>> for LoggingMiddleware<S>
@@ -213,5 +233,109 @@ impl<S> Layer<S> for LoggingMiddlewareLayer {
             inner: service,
             trust_forwarded_headers: self.trust_forwarded_headers,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_forwarded_header_ipv4() {
+        assert_eq!(
+            parse_forwarded_header("for=192.0.2.43"),
+            Some("192.0.2.43".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_ipv4_with_port() {
+        assert_eq!(
+            parse_forwarded_header("for=\"192.0.2.43:8080\""),
+            Some("192.0.2.43".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_ipv4_with_proto() {
+        assert_eq!(
+            parse_forwarded_header("for=192.0.2.43;proto=https"),
+            Some("192.0.2.43".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_ipv6() {
+        assert_eq!(
+            parse_forwarded_header("for=\"[2001:db8::1]\""),
+            Some("2001:db8::1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_ipv6_with_port() {
+        assert_eq!(
+            parse_forwarded_header("for=\"[2001:db8:cafe::17]:4711\""),
+            Some("2001:db8:cafe::17".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_multiple_proxies() {
+        assert_eq!(
+            parse_forwarded_header("for=203.0.113.50, for=198.51.100.178"),
+            Some("203.0.113.50".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_complex() {
+        assert_eq!(
+            parse_forwarded_header("for=192.0.2.60;proto=http;by=203.0.113.43"),
+            Some("192.0.2.60".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_case_sensitivity() {
+        // RFC 7239: parameter names are case-insensitive, but we only check lowercase
+        assert_eq!(parse_forwarded_header("FOR=192.0.2.43"), None);
+    }
+
+    #[test]
+    fn test_parse_forwarded_header_no_for() {
+        assert_eq!(parse_forwarded_header("proto=https;by=203.0.113.43"), None);
+    }
+
+    #[test]
+    fn test_parse_x_forwarded_for_single() {
+        assert_eq!(
+            parse_x_forwarded_for("203.0.113.50"),
+            Some("203.0.113.50".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_x_forwarded_for_multiple() {
+        assert_eq!(
+            parse_x_forwarded_for("203.0.113.50, 198.51.100.178, 192.0.2.1"),
+            Some("203.0.113.50".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_x_forwarded_for_with_spaces() {
+        assert_eq!(
+            parse_x_forwarded_for("  203.0.113.50  ,  198.51.100.178  "),
+            Some("203.0.113.50".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_x_forwarded_for_ipv6() {
+        assert_eq!(
+            parse_x_forwarded_for("2001:db8::1"),
+            Some("2001:db8::1".to_string())
+        );
     }
 }
