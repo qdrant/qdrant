@@ -14,12 +14,22 @@ pub struct ImmutablePointToValues<N: Default> {
     point_to_values: Vec<Range<u32>>,
     // flattened values
     point_to_values_container: Vec<N>,
+    // When `direct_access_values_container_enabled` is true,
+    // you can get value from values_container directly without get `range` from `point_to_values`.
+    // Because the final result only has one value, we don't need to create `iter`.
+    direct_access_values_container_enabled: bool,
 }
 
 impl<N: Default> ImmutablePointToValues<N> {
     pub fn new(src: Vec<Vec<N>>) -> Self {
         let mut point_to_values = Vec::with_capacity(src.len());
-        let all_values_count = src.iter().fold(0, |acc, values| acc + values.len());
+        let mut direct_access_values_container_enabled = true;
+        let all_values_count = src.iter().fold(0, |acc, values| {
+            if values.len() != 1 {
+                direct_access_values_container_enabled = false;
+            }
+            acc + values.len()
+        });
         let mut point_to_values_container = Vec::with_capacity(all_values_count);
         for values in src {
             let container_len = point_to_values_container.len() as u32;
@@ -30,10 +40,17 @@ impl<N: Default> ImmutablePointToValues<N> {
         Self {
             point_to_values,
             point_to_values_container,
+            direct_access_values_container_enabled,
         }
     }
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl FnMut(&N) -> bool) -> bool {
+        if self.direct_access_values_container_enabled {
+            return self
+                .point_to_values_container
+                .get(idx as usize)
+                .map_or(false, check_fn);
+        }
         let Some(range) = self.point_to_values.get(idx as usize).cloned() else {
             return false;
         };
@@ -116,5 +133,39 @@ mod tests {
         values[3].clear();
 
         check(&point_to_values, values.as_slice());
+    }
+
+    #[test]
+    fn test_direct_access_values_container_enabled_feature() {
+        let values = vec![
+            vec![0, 1, 2, 3, 4],
+            vec![5, 6, 7, 8, 9],
+            vec![0, 1, 2, 3, 4],
+            vec![5, 6, 7, 8, 9],
+            vec![10, 11, 12],
+            vec![],
+            vec![13],
+            vec![14, 15],
+        ];
+
+        let point_to_values = ImmutablePointToValues::new(values.clone());
+        assert_eq!(
+            point_to_values.direct_access_values_container_enabled,
+            false
+        );
+
+        let values = vec![
+            vec![0],
+            vec![1],
+            vec![0],
+            vec![2],
+            vec![2],
+            vec![1],
+            vec![1],
+            vec![2],
+        ];
+
+        let point_to_values = ImmutablePointToValues::new(values.clone());
+        assert_eq!(point_to_values.direct_access_values_container_enabled, true);
     }
 }
