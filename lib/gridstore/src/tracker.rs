@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
@@ -9,6 +8,7 @@ use memory::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
 use smallvec::SmallVec;
+use zerocopy::FromZeros;
 
 use crate::Result;
 use crate::error::GridstoreError;
@@ -22,24 +22,20 @@ const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 const OPTIONAL_NONE: u32 = 0;
 const OPTIONAL_SOME: u32 = 1;
 
-/// A type similar to `std::option::Option`, but with stable layout.
+/// A type similar to `std::option::Option`, but with stable layout. It is intended to be compatible with older
+/// gridstore files, but it is well-defined, unlike `std::option::Option`.
 ///
 /// Please note that it uses 32-bit tag and is intended to be used for `ValuePointer` without padding bytes.
-/// Also, it doesn't call `Drop` on nested value.
-#[derive(Copy, zerocopy::FromBytes)]
+///
+/// If `T` is a POD type, then `Optional<T>` is a POD type.
+#[derive(Copy, Clone, zerocopy::FromBytes)]
 #[repr(C)]
 struct Optional<T> {
     discriminant: u32,
-    value: MaybeUninit<T>,
+    value: T,
 }
 
-impl<T: Clone> Clone for Optional<T> {
-    fn clone(&self) -> Self {
-        self.is_some().cloned().into()
-    }
-}
-
-impl<T> From<Option<T>> for Optional<T> {
+impl<T: FromZeros> From<Option<T>> for Optional<T> {
     fn from(value: Option<T>) -> Self {
         match value {
             Some(value) => Self::some(value),
@@ -48,18 +44,20 @@ impl<T> From<Option<T>> for Optional<T> {
     }
 }
 
-impl<T> Optional<T> {
-    pub const fn none() -> Self {
+impl<T: FromZeros> Optional<T> {
+    /// None value is all zeroes.
+    pub fn none() -> Self {
         Self {
             discriminant: OPTIONAL_NONE,
-            value: MaybeUninit::zeroed(),
+            value: FromZeros::new_zeroed(),
         }
     }
 
+    /// Some is 1 for the discriminant, and value is stored as is.
     pub const fn some(value: T) -> Self {
         Self {
             discriminant: OPTIONAL_SOME,
-            value: MaybeUninit::new(value),
+            value,
         }
     }
 
@@ -67,8 +65,7 @@ impl<T> Optional<T> {
         if self.discriminant == OPTIONAL_NONE {
             None
         } else {
-            // Safety: by construction, if the discriminant is not zero, value is assumed to be initialized.
-            Some(unsafe { self.value.assume_init_ref() })
+            Some(&self.value)
         }
     }
 }
