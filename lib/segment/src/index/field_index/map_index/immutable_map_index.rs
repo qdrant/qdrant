@@ -350,10 +350,7 @@ where
             if removed_values_count > 0 {
                 self.indexed_points -= 1;
             }
-            self.values_count = self
-                .values_count
-                .checked_sub(removed_values_count)
-                .unwrap_or_default();
+            self.values_count = self.values_count.saturating_sub(removed_values_count);
         }
         self.point_to_values.remove_point(idx);
         Ok(())
