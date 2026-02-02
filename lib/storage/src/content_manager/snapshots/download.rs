@@ -20,7 +20,7 @@ fn snapshot_prefix(url: &Url) -> OsString {
         .unwrap_or_default()
 }
 
-/// Download a remote file from `url` to `path`
+/// Download and unpack a snapshot from `url` into a temporary directory.
 ///
 /// Returns a `TempDir` that will delete the downloaded file once it is dropped.
 /// To persist the file, use [`keep()`](TempDir::keep).
