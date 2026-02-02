@@ -92,7 +92,7 @@ pub async fn download_snapshot(
             })
         }
         _ => Err(StorageError::bad_request(format!(
-            "URL {url} with schema {} is not supported",
+            "URL {url} with scheme {} is not supported",
             url.scheme(),
         ))),
     }
