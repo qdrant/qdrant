@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::Path;
 
+use cancel::CancellationToken;
 use common::safe_unpack::safe_unpack;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
@@ -8,6 +9,30 @@ use tokio_util::io::StreamReader;
 use url::Url;
 
 use crate::StorageError;
+
+/// A sync Read wrapper that checks a cancellation token before each read.
+struct CancellableReader<R> {
+    inner: R,
+    cancel: CancellationToken,
+}
+
+impl<R> CancellableReader<R> {
+    fn new(inner: R, cancel: CancellationToken) -> Self {
+        Self { inner, cancel }
+    }
+}
+
+impl<R: Read> Read for CancellableReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "download cancelled",
+            ));
+        }
+        self.inner.read(buf)
+    }
+}
 
 /// A sync Read wrapper that computes SHA-256 hash of the data as it's read.
 struct HashingReader<R> {
@@ -48,6 +73,11 @@ impl<R: Read> Read for HashingReader<R> {
 /// This function streams the HTTP response directly into the tar extractor,
 /// avoiding the need to store the entire tar file on disk before extraction.
 ///
+/// # Cancel safety
+///
+/// This function is cancel safe. If cancelled, the cancellation token will be triggered
+/// and the download will be interrupted at the next read operation.
+///
 /// # Arguments
 ///
 /// * `client` - The reqwest HTTP client to use for the download
@@ -86,14 +116,17 @@ pub async fn download_and_unpack_tar(
     let target_dir = target_dir.to_path_buf();
     let target_dir_for_log = target_dir.clone();
 
-    // Use spawn_blocking because tar::Archive is synchronous
-    let hash = tokio::task::spawn_blocking(move || {
+    // Use spawn_cancel_on_drop to ensure the blocking task is cancelled when the future is dropped
+    let hash = cancel::blocking::spawn_cancel_on_drop(move |cancel| {
         // SyncIoBridge converts an AsyncRead into a sync Read
         // It must be used within a tokio runtime context (spawn_blocking provides this)
         let sync_reader = tokio_util::io::SyncIoBridge::new(async_reader);
 
+        // Wrap the reader with cancellation support
+        let cancellable_reader = CancellableReader::new(sync_reader, cancel);
+
         // Wrap the reader with optional hashing
-        let hashing_reader = HashingReader::new(sync_reader, compute_checksum);
+        let hashing_reader = HashingReader::new(cancellable_reader, compute_checksum);
 
         // We need to keep access to the hashing reader to get the hash after unpacking,
         // but tar::Archive takes ownership. Use a RefCell-like pattern with take.
@@ -117,7 +150,8 @@ pub async fn download_and_unpack_tar(
 
         Ok::<Option<String>, StorageError>(hash)
     })
-    .await??;
+    .await
+    .map_err(|e| StorageError::service_error(format!("Download task failed: {e}")))??;
 
     log::debug!(
         "Successfully unpacked tar from {url} to {}",
