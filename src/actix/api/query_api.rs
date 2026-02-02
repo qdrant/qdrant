@@ -15,16 +15,17 @@ use super::CollectionPath;
 use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter};
+use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::params::InferenceParams;
 use crate::common::inference::query_requests_rest::{
     CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
-use crate::common::inference::token::InferenceToken;
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/query")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
@@ -32,7 +33,7 @@ async fn query_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    inference_token: InferenceToken,
+    api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequest {
         internal: query_request,
@@ -54,7 +55,7 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout());
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =
@@ -102,6 +103,7 @@ async fn query_points(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 #[post("/collections/{name}/points/query/batch")]
 async fn query_points_batch(
     dispatcher: web::Data<Dispatcher>,
@@ -110,7 +112,7 @@ async fn query_points_batch(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    inference_token: InferenceToken,
+    api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
 
@@ -125,7 +127,7 @@ async fn query_points_batch(
 
     let mut all_usages: InferenceUsage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout());
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let mut batch = Vec::with_capacity(searches.len());
@@ -189,6 +191,7 @@ async fn query_points_batch(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 #[post("/collections/{name}/points/query/groups")]
 async fn query_points_groups(
     dispatcher: web::Data<Dispatcher>,
@@ -197,7 +200,7 @@ async fn query_points_groups(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    inference_token: InferenceToken,
+    api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryGroupsRequest {
         search_group_request,
@@ -214,7 +217,7 @@ async fn query_points_groups(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
-    let inference_params = InferenceParams::new(inference_token, params.timeout());
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result = async {
         let shard_selection = match shard_key {
