@@ -75,7 +75,9 @@ impl LocalShard {
         let removed_records = if safe_drop_seq_num < last_wal_op_num {
             wal_lock.drop_from(safe_drop_seq_num)?;
             wal_lock.flush()?;
-            (last_wal_op_num - safe_drop_seq_num) as usize
+
+            // To calculate removed records, add 1 because both `last_wal_op_num` and `safe_drop_seq_num` are inclusive.
+            (last_wal_op_num - safe_drop_seq_num + 1) as usize
         } else {
             0
         };
