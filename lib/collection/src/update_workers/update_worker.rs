@@ -41,6 +41,9 @@ impl UpdateWorkers {
         skip_updates: Arc<AtomicBool>,
     ) {
         while let Some(signal) = receiver.recv().await {
+            // First skipped op_num while `skip_updates` is set
+            let mut first_skipped = None;
+
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -49,6 +52,10 @@ impl UpdateWorkers {
                     hw_measurements,
                 }) => {
                     if skip_updates.load(std::sync::atomic::Ordering::Relaxed) {
+                        if first_skipped.is_none() {
+                            first_skipped.replace(op_num);
+                        }
+
                         if let Some(feedback) = sender {
                             feedback.send(Err(CollectionError::service_error(
                                 format!("Operation {op_num} skipped due to ongoing WAL truncation"),
@@ -162,6 +169,12 @@ impl UpdateWorkers {
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
                     callback_sender.send(()).unwrap_or_else(|_| {
+                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
+                    });
+                }
+                UpdateSignal::SkipUpdatesPlunger(callback_sender) => {
+                    let op_num = first_skipped.take();
+                    callback_sender.send(op_num).unwrap_or_else(|_| {
                         log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }

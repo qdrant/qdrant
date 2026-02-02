@@ -56,6 +56,8 @@ pub enum UpdateSignal {
     Nop,
     /// Ensures that previous updates are applied
     Plunger(oneshot::Sender<()>),
+    /// Ensures that previous updates are applied
+    SkipUpdatesPlunger(oneshot::Sender<Option<SeqNumberType>>),
 }
 
 /// Signal, used to inform Optimization process

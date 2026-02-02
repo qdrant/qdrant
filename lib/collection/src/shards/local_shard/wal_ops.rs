@@ -55,32 +55,26 @@ impl LocalShard {
         // Then, Send the plunger signal to the update handler.
         // It a marker that all previous updates are processed or skipped.
         let (tx, rx) = oneshot::channel();
-        let plunger = UpdateSignal::Plunger(tx);
+        let plunger = UpdateSignal::SkipUpdatesPlunger(tx);
         self.update_sender.load().send(plunger).await?;
-        rx.await?;
+        let truncate_from_op_num = rx.await?;
 
         // The update worker is now idle, and no new updates are being processed.
         // It's safe to lock and drop WAL now.
         let mut wal_lock = Mutex::lock_owned(self.wal.wal.clone()).await;
         let last_wal_op_num = wal_lock.last_index();
 
-        let applied_seq = update_handler.applied_seq();
-        let applied_seq_num = applied_seq.op_num().unwrap_or(last_wal_op_num);
-
-        // `applied_seq_num` is persisted with `APPLIED_SEQ_SAVE_INTERVAL` step.
-        // So WAL can be dropped from `applied_seq_num + APPLIED_SEQ_SAVE_INTERVAL`.
-        // Add 1 also because the last applied record must stay in the WAL.
-        let safe_drop_seq_num = applied_seq_num + APPLIED_SEQ_SAVE_INTERVAL + 1;
-
-        let removed_records = if safe_drop_seq_num < last_wal_op_num {
-            wal_lock.drop_from(safe_drop_seq_num)?;
-            wal_lock.flush()?;
-
-            // To calculate removed records, add 1 because both `last_wal_op_num` and `safe_drop_seq_num` are inclusive.
-            (last_wal_op_num - safe_drop_seq_num + 1) as usize
-        } else {
-            0
+        let Some(truncate_from_op_num) = truncate_from_op_num else {
+            return Ok(0);
         };
+
+        debug_assert!(truncate_from_op_num <= last_wal_op_num);
+
+        wal_lock.drop_from(truncate_from_op_num)?;
+        wal_lock.flush()?;
+
+        // To calculate removed records, add 1 because both `last_wal_op_num` and `safe_drop_seq_num` are inclusive.
+        let removed_records = (last_wal_op_num + 1 - truncate_from_op_num) as usize;
 
         Ok(removed_records)
     }
