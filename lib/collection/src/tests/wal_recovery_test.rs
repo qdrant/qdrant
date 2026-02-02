@@ -4,7 +4,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
@@ -13,6 +13,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;
@@ -319,6 +320,40 @@ async fn test_truncate_unapplied_wal() {
     if removed_records == 0 {
         eprintln!("Note: All updates were applied before truncation (update worker was fast)");
     }
+
+    // Count how many points were actually applied by trying to retrieve each point ID
+    let all_point_ids: Vec<_> = (0..num_points).map(|i| i.into()).collect();
+    let request = Arc::new(PointRequestInternal {
+        ids: all_point_ids,
+        with_payload: None,
+        with_vector: WithVector::Bool(false),
+    });
+
+    let retrieved = shard
+        .retrieve(
+            request,
+            &WithPayload::from(false),
+            &WithVector::Bool(false),
+            &current_runtime,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+
+    let applied_count = retrieved.len();
+    let truncated_count = removed_records as usize;
+    let total_pushed = num_points as usize;
+    let missing_count = total_pushed.saturating_sub(applied_count + truncated_count);
+
+    // Verify that the sum of applied + truncated equals total pushed
+    // This assertion may fail due to an open issue - we want to reproduce it
+    assert_eq!(
+        applied_count + truncated_count,
+        total_pushed,
+        "Sum of applied ({applied_count}) and truncated ({truncated_count}) operations \
+         should equal total pushed ({total_pushed}). Missing {missing_count} operations!"
+    );
 
     // Now verify that we can still write to the shard after truncation
     let new_point = PointStructPersisted {
