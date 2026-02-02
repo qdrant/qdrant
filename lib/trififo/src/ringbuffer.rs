@@ -101,7 +101,14 @@ impl<T> RingBuffer<T> {
         let offset = self.write_pos.load(Ordering::Relaxed);
 
         // Write the new value
-        self.buffer[offset].write(item);
+        if offset >= self.len.load(Ordering::Relaxed) {
+            // write into an uninitialized slot
+            self.buffer[offset].write(item);
+        } else {
+            // SAFETY: It is within initialized bounds
+            let slot = unsafe { self.buffer[offset].assume_init_mut() };
+            *slot = item;
+        }
 
         // Update write position with Release ordering to ensure the write
         // is visible to readers before they see the new position
