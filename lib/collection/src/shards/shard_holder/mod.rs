@@ -11,6 +11,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
+use common::safe_unpack::{open_snapshot_archive, safe_unpack};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use fs_err as fs;
@@ -18,9 +19,6 @@ use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use io::safe_delete::sync_parent_dir_async;
 use itertools::Itertools;
-use segment::common::validate_snapshot_archive::{
-    open_snapshot_archive, validate_snapshot_archive, validate_unpacked_snapshot,
-};
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
 use segment::utils::fs::move_all;
@@ -1203,24 +1201,6 @@ impl ShardHolder {
 
     /// # Cancel safety
     ///
-    /// This method is cancel safe.
-    pub async fn validate_shard_snapshot(
-        &self,
-        snapshot_data: &SnapshotData,
-    ) -> CollectionResult<()> {
-        match snapshot_data {
-            SnapshotData::Packed(snapshot_path) => {
-                validate_snapshot_archive(snapshot_path)?;
-            }
-            SnapshotData::Unpacked(dir) => {
-                validate_unpacked_snapshot(dir.path())?;
-            }
-        }
-        Ok(())
-    }
-
-    /// # Cancel safety
-    ///
     /// This method is *not* cancel safe.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
@@ -1255,14 +1235,12 @@ impl ShardHolder {
                 move |cancel| -> CollectionResult<_> {
                     match snapshot_data {
                         SnapshotData::Packed(snapshot_path) => {
-                            let mut ar = open_snapshot_archive(&snapshot_path)?;
+                            let ar = open_snapshot_archive(&snapshot_path)?;
 
                             if cancel.is_cancelled() {
                                 return Err(cancel::Error::Cancelled.into());
                             }
-
-                            ar.unpack(&snapshot_temp_dir)?;
-                            drop(ar);
+                            safe_unpack(ar, &snapshot_temp_dir)?;
                             snapshot_path.close()?;
                         }
                         SnapshotData::Unpacked(snapshot_dir) => {

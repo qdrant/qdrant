@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::Path;
 
+use common::safe_unpack::safe_unpack;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
 use tokio_util::io::StreamReader;
@@ -99,7 +100,7 @@ pub async fn download_and_unpack_tar(
         let mut archive = tar::Archive::new(hashing_reader);
         archive.set_overwrite(false);
 
-        archive.unpack(&target_dir).map_err(|e| {
+        let archive = safe_unpack(archive, &target_dir).map_err(|e| {
             StorageError::service_error(format!("Failed to unpack tar archive: {e}"))
         })?;
 

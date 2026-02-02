@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use common::safe_unpack::{open_snapshot_archive, safe_unpack};
 use fs_err as fs;
 use segment::common::operation_error::OperationResult;
-use segment::common::validate_snapshot_archive::open_snapshot_archive;
 use segment::segment::Segment;
 
 use crate::files::{ShardDataFiles, get_shard_data_files, segments_path};
@@ -20,8 +20,8 @@ impl SnapshotUtils {
             fs::create_dir_all(target_path)?;
         }
 
-        let mut ar = open_snapshot_archive(snapshot_path)?;
-        ar.unpack(target_path)?;
+        let ar = open_snapshot_archive(snapshot_path)?;
+        safe_unpack(ar, target_path)?;
         Self::restore_unpacked_snapshot(target_path)?;
         Ok(())
     }

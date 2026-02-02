@@ -24,6 +24,7 @@ pub mod panic;
 pub mod process_counter;
 pub mod progress_tracker;
 pub mod rate_limiting;
+pub mod safe_unpack;
 pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;

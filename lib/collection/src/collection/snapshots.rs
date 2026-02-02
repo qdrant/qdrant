@@ -1,13 +1,11 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use common::safe_unpack::{open_snapshot_archive, safe_unpack};
 use common::tar_ext::BuilderExt;
 use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
-use segment::common::validate_snapshot_archive::{
-    open_snapshot_archive_with_validation, validate_unpacked_snapshot,
-};
 use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -169,15 +167,14 @@ impl Collection {
             SnapshotData::Packed(snapshot_path) => {
                 // decompress archive
                 {
-                    let mut ar = open_snapshot_archive_with_validation(&snapshot_path)?;
-                    ar.unpack(target_dir)?;
+                    let ar = open_snapshot_archive(&snapshot_path)?;
+                    safe_unpack(ar, target_dir)?;
                 }
                 snapshot_path.close()?;
             }
             SnapshotData::Unpacked(snapshot_dir) => {
                 // already unpacked snapshot, validate files and move to target dir
                 let snapshot_dir_path = snapshot_dir.path();
-                validate_unpacked_snapshot(snapshot_dir_path)?;
                 move_all(snapshot_dir_path, target_dir)?;
             }
         }
@@ -324,14 +321,7 @@ impl Collection {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
         // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
         // when token is triggered
-        let shard_holder = cancel::future::cancel_on_token(cancel.clone(), async {
-            let shard_holder = self.shards_holder.clone().read_owned().await;
-
-            shard_holder.validate_shard_snapshot(&snapshot_data).await?;
-
-            CollectionResult::Ok(shard_holder)
-        })
-        .await??;
+        let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let collection_path = self.path.clone();
         let collection_name = self.name().to_string();
