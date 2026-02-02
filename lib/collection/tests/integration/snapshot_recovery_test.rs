@@ -1,9 +1,5 @@
 use std::sync::Arc;
 
-use crate::common::{
-    REST_PORT, TEST_OPTIMIZERS_CONFIG, dummy_abort_shard_transfer, dummy_on_replica_failure,
-    dummy_request_shard_transfer,
-};
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
@@ -24,6 +20,11 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
+
+use crate::common::{
+    REST_PORT, TEST_OPTIMIZERS_CONFIG, dummy_abort_shard_transfer, dummy_on_replica_failure,
+    dummy_request_shard_transfer,
+};
 
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let wal_config = WalConfig {

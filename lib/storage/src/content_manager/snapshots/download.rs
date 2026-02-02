@@ -1,16 +1,17 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::StorageError;
-use crate::content_manager::snapshots::download_result::DownloadResult;
-use crate::content_manager::snapshots::download_tar::download_and_unpack_tar;
 use collection::common::sha_256::hash_file;
 use common::tempfile_ext::MaybeTempPath;
+use reqwest;
 use shard::snapshots::snapshot_data::SnapshotData;
 use tap::Tap;
 use tempfile::TempDir;
 use url::Url;
-use reqwest;
+
+use crate::StorageError;
+use crate::content_manager::snapshots::download_result::DownloadResult;
+use crate::content_manager::snapshots::download_tar::download_and_unpack_tar;
 
 fn snapshot_prefix(url: &Url) -> OsString {
     Path::new(url.path())

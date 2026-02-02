@@ -1,7 +1,7 @@
 pub mod download;
+pub mod download_result;
 pub mod download_tar;
 pub mod recover;
-pub mod download_result;
 
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};

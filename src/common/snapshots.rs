@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use super::http_client::HttpClient;
 use collection::collection::Collection;
 use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
@@ -19,6 +18,8 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 use tokio::sync::OwnedRwLockWriteGuard;
+
+use super::http_client::HttpClient;
 
 /// # Cancel safety
 ///

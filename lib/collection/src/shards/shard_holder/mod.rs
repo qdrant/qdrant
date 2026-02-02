@@ -8,6 +8,30 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::AHashMap;
+use api::rest::ShardKeyWithFallback;
+use common::budget::ResourceBudget;
+use common::save_on_disk::SaveOnDisk;
+use common::tar_ext::BuilderExt;
+use fs_err as fs;
+use fs_err::{File, tokio as tokio_fs};
+use futures::{Future, StreamExt, TryStreamExt as _, stream};
+use io::safe_delete::sync_parent_dir_async;
+use itertools::Itertools;
+use segment::common::validate_snapshot_archive::{
+    open_snapshot_archive, validate_snapshot_archive, validate_unpacked_snapshot,
+};
+use segment::json_path::JsonPath;
+use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
+use segment::utils::fs::move_all;
+use shard::snapshots::snapshot_data::SnapshotData;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard_mapping::ShardKeyMapping;
+use tokio::runtime::Handle;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
+use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio_util::io::SyncIoBridge;
+
 pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
@@ -33,29 +57,6 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
-use ahash::AHashMap;
-use api::rest::ShardKeyWithFallback;
-use common::budget::ResourceBudget;
-use common::save_on_disk::SaveOnDisk;
-use common::tar_ext::BuilderExt;
-use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
-use futures::{Future, StreamExt, TryStreamExt as _, stream};
-use io::safe_delete::sync_parent_dir_async;
-use itertools::Itertools;
-use segment::common::validate_snapshot_archive::{
-    open_snapshot_archive, validate_snapshot_archive,
-};
-use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
-use segment::utils::fs::move_all;
-use shard::snapshots::snapshot_data::SnapshotData;
-use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-use shard_mapping::ShardKeyMapping;
-use tokio::runtime::Handle;
-use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
-use tokio_util::codec::{BytesCodec, FramedRead};
-use tokio_util::io::SyncIoBridge;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -1212,7 +1213,7 @@ impl ShardHolder {
                 validate_snapshot_archive(snapshot_path)?;
             }
             SnapshotData::Unpacked(dir) => {
-                todo!("validate already unpacked snapshot directory")
+                validate_unpacked_snapshot(dir.path())?;
             }
         }
         Ok(())

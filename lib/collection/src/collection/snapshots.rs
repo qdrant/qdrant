@@ -5,12 +5,15 @@ use common::tar_ext::BuilderExt;
 use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
-use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use segment::common::validate_snapshot_archive::{
+    open_snapshot_archive_with_validation, validate_unpacked_snapshot,
+};
 use segment::types::SnapshotFormat;
-use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-use tokio::sync::OwnedRwLockReadGuard;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use tokio::sync::OwnedRwLockReadGuard;
+
 use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
@@ -174,7 +177,7 @@ impl Collection {
             SnapshotData::Unpacked(snapshot_dir) => {
                 // already unpacked snapshot, validate files and move to target dir
                 let snapshot_dir_path = snapshot_dir.path();
-                // ToDo: validate snapshot contents
+                validate_unpacked_snapshot(snapshot_dir_path)?;
                 move_all(snapshot_dir_path, target_dir)?;
             }
         }
