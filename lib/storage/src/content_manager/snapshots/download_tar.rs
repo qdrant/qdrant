@@ -101,6 +101,7 @@ pub async fn download_and_unpack_tar(
         // We need to keep access to the hashing reader to get the hash after unpacking,
         // but tar::Archive takes ownership. Use a RefCell-like pattern with take.
         let mut archive = tar::Archive::new(hashing_reader);
+        archive.set_overwrite(false);
 
         archive.unpack(&target_dir).map_err(|e| {
             StorageError::service_error(format!("Failed to unpack tar archive: {e}"))
@@ -155,7 +156,7 @@ mod tests {
         );
 
         // Verify content was extracted
-        let entries: Vec<_> = std::fs::read_dir(temp_dir.path())
+        let entries: Vec<_> = fs_err::read_dir(temp_dir.path())
             .unwrap()
             .map(|res| res.unwrap().file_name().to_string_lossy().to_string())
             .collect();

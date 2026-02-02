@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::http_client::HttpClient;
 use collection::collection::Collection;
 use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
@@ -9,16 +10,15 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
-use common::tempfile_ext::MaybeTempPath;
+use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
+use storage::content_manager::snapshots::download_result::DownloadResult;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 use tokio::sync::OwnedRwLockWriteGuard;
-
-use super::http_client::HttpClient;
 
 /// # Cancel safety
 ///
@@ -166,7 +166,10 @@ pub async fn recover_shard_snapshot(
 
             let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
 
-            let snapshot_path = match snapshot_location {
+            let DownloadResult {
+                snapshot,
+                hash
+            } = match snapshot_location {
                 ShardSnapshotLocation::Url(url) => {
                     if !matches!(url.scheme(), "http" | "https") {
                         let description = format!(
@@ -179,7 +182,13 @@ pub async fn recover_shard_snapshot(
 
                     let client = client.client(api_key.as_deref())?;
 
-                    snapshots::download::download_snapshot(&client, url, &download_dir).await?
+                    snapshots::download::download_snapshot(
+                        &client,
+                        url,
+                        &download_dir,
+                        checksum.is_some(),
+                    )
+                    .await?
                 }
 
                 ShardSnapshotLocation::Path(snapshot_file_name) => {
@@ -194,26 +203,42 @@ pub async fn recover_shard_snapshot(
                         )
                         .await?;
 
-                    collection
+                    let snapshot_file = collection
                         .get_snapshots_storage_manager()?
                         .get_snapshot_file(&snapshot_path, &download_dir)
-                        .await?
+                        .await?;
+
+                    let hash = if checksum.is_some() {
+                        Some(sha_256::hash_file(&snapshot_path).await?)
+                    } else {
+                        None
+                    };
+
+                    DownloadResult {
+                        snapshot: SnapshotData::Packed(snapshot_file),
+                        hash,
+                    }
                 }
             };
 
             if let Some(checksum) = checksum {
-                let snapshot_checksum = sha_256::hash_file(&snapshot_path).await?;
-                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
-                    return Err(StorageError::bad_input(format!(
-                        "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
-                    )));
+                if let Some(snapshot_checksum) = hash {
+                    if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+                        return Err(StorageError::bad_input(format!(
+                            "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
+                        )));
+                    }
+                } else {
+                    return Err(StorageError::service_error(
+                        "Snapshot checksum could not be verified".to_string(),
+                    ));
                 }
             }
 
-            Ok((collection, snapshot_path))
+            Ok((collection, snapshot))
         };
 
-        let (collection, snapshot_path) =
+        let (collection, snapshot_data) =
             cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
@@ -221,7 +246,7 @@ pub async fn recover_shard_snapshot(
             &toc,
             &collection,
             shard_id,
-            snapshot_path,
+            snapshot_data,
             snapshot_priority,
             RecoveryType::Full,
             cancel,
@@ -240,7 +265,7 @@ pub async fn recover_shard_snapshot_impl(
     toc: &TableOfContent,
     collection: &Collection,
     shard: ShardId,
-    snapshot_path: MaybeTempPath,
+    snapshot_data: SnapshotData,
     priority: SnapshotPriority,
     recovery_type: RecoveryType,
     cancel: cancel::CancellationToken,
@@ -259,7 +284,7 @@ pub async fn recover_shard_snapshot_impl(
     collection
         .restore_shard_snapshot(
             shard,
-            snapshot_path,
+            snapshot_data,
             recovery_type,
             toc.this_peer_id,
             toc.is_distributed(),

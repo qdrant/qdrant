@@ -8,28 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ahash::AHashMap;
-use api::rest::ShardKeyWithFallback;
-use common::budget::ResourceBudget;
-use common::save_on_disk::SaveOnDisk;
-use common::tar_ext::BuilderExt;
-use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
-use futures::{Future, StreamExt, TryStreamExt as _, stream};
-use io::safe_delete::sync_parent_dir_async;
-use itertools::Itertools;
-use segment::common::validate_snapshot_archive::{
-    open_snapshot_archive, validate_snapshot_archive,
-};
-use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
-use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-use shard_mapping::ShardKeyMapping;
-use tokio::runtime::Handle;
-use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
-use tokio_util::codec::{BytesCodec, FramedRead};
-use tokio_util::io::SyncIoBridge;
-
 pub use self::shared_shard_holder::*;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardState, ReshardingStage};
@@ -55,6 +33,29 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
+use ahash::AHashMap;
+use api::rest::ShardKeyWithFallback;
+use common::budget::ResourceBudget;
+use common::save_on_disk::SaveOnDisk;
+use common::tar_ext::BuilderExt;
+use fs_err as fs;
+use fs_err::{File, tokio as tokio_fs};
+use futures::{Future, StreamExt, TryStreamExt as _, stream};
+use io::safe_delete::sync_parent_dir_async;
+use itertools::Itertools;
+use segment::common::validate_snapshot_archive::{
+    open_snapshot_archive, validate_snapshot_archive,
+};
+use segment::json_path::JsonPath;
+use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
+use segment::utils::fs::move_all;
+use shard::snapshots::snapshot_data::SnapshotData;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard_mapping::ShardKeyMapping;
+use tokio::runtime::Handle;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
+use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio_util::io::SyncIoBridge;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -1202,11 +1203,18 @@ impl ShardHolder {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn validate_shard_snapshot(&self, snapshot_path: &Path) -> CollectionResult<()> {
-        validate_snapshot_archive(snapshot_path)?;
-
-        // TODO: Validate that shard/partial snapshot is compatible with collection config!
-
+    pub async fn validate_shard_snapshot(
+        &self,
+        snapshot_data: &SnapshotData,
+    ) -> CollectionResult<()> {
+        match snapshot_data {
+            SnapshotData::Packed(snapshot_path) => {
+                validate_snapshot_archive(snapshot_path)?;
+            }
+            SnapshotData::Unpacked(dir) => {
+                todo!("validate already unpacked snapshot directory")
+            }
+        }
         Ok(())
     }
 
@@ -1216,7 +1224,7 @@ impl ShardHolder {
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
-        snapshot_path: &Path,
+        snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         collection_path: &Path,
         collection_name: &str,
@@ -1234,29 +1242,32 @@ impl ShardHolder {
             fs::create_dir_all(temp_dir)?;
         }
 
-        let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
-
         let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!(
-                "{collection_name}-shard-{shard_id}-{snapshot_file_name}"
-            ))
+            .prefix(&format!("{collection_name}-shard-{shard_id}"))
             .tempdir_in(temp_dir)?;
 
         let extract = {
-            let snapshot_path = snapshot_path.to_path_buf();
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
             cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
-                    let mut ar = open_snapshot_archive(&snapshot_path)?;
+                    match snapshot_data {
+                        SnapshotData::Packed(snapshot_path) => {
+                            let mut ar = open_snapshot_archive(&snapshot_path)?;
 
-                    if cancel.is_cancelled() {
-                        return Err(cancel::Error::Cancelled.into());
+                            if cancel.is_cancelled() {
+                                return Err(cancel::Error::Cancelled.into());
+                            }
+
+                            ar.unpack(&snapshot_temp_dir)?;
+                            drop(ar);
+                            snapshot_path.close()?;
+                        }
+                        SnapshotData::Unpacked(snapshot_dir) => {
+                            move_all(snapshot_dir.path(), &snapshot_temp_dir)?;
+                        }
                     }
-
-                    ar.unpack(&snapshot_temp_dir)?;
-                    drop(ar);
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
@@ -1289,9 +1300,7 @@ impl ShardHolder {
             .await?;
 
         if !recovered {
-            return Err(CollectionError::bad_request(format!(
-                "Invalid snapshot {snapshot_file_name}"
-            )));
+            return Err(CollectionError::bad_request("Invalid snapshot"));
         }
 
         if recovery_type.is_partial() {

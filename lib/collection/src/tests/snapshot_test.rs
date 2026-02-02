@@ -2,11 +2,6 @@ use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use ahash::AHashMap;
-use common::budget::ResourceBudget;
-use segment::types::Distance;
-use tempfile::Builder;
-
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -16,6 +11,11 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::tests::fixtures::TEST_OPTIMIZERS_CONFIG;
+use ahash::AHashMap;
+use common::budget::ResourceBudget;
+use segment::types::Distance;
+use shard::snapshots::snapshot_data::SnapshotData;
+use tempfile::Builder;
 
 pub fn dummy_on_replica_failure() -> ChangePeerFromState {
     Arc::new(move |_peer_id, _shard_id, _from_state| {})
@@ -109,15 +109,13 @@ async fn _test_snapshot_collection(node_type: NodeType) {
             .prefix("test_collection_rec")
             .tempdir()
             .unwrap();
+        let snapshot_data = SnapshotData::new_packed_persistent(
+            snapshots_path.path().join(&snapshot_description.name),
+        );
+
         // Do not recover in local mode if some shards are remote
         assert!(
-            Collection::restore_snapshot(
-                &snapshots_path.path().join(&snapshot_description.name),
-                recover_dir.path(),
-                0,
-                false,
-            )
-            .is_err(),
+            Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, false,).is_err(),
         );
     }
 
@@ -125,13 +123,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .prefix("test_collection_rec")
         .tempdir()
         .unwrap();
-
-    if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
-        recover_dir.path(),
-        0,
-        true,
-    ) {
+    let snapshot_data =
+        SnapshotData::new_packed_persistent(snapshots_path.path().join(&snapshot_description.name));
+    if let Err(err) = Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, true) {
         panic!("Failed to restore snapshot: {err}")
     }
 

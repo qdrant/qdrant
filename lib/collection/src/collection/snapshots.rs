@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use common::tar_ext::BuilderExt;
-use common::tempfile_ext::MaybeTempPath;
 use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
@@ -10,7 +9,8 @@ use segment::common::validate_snapshot_archive::open_snapshot_archive_with_valid
 use segment::types::SnapshotFormat;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
-
+use segment::utils::fs::move_all;
+use shard::snapshots::snapshot_data::SnapshotData;
 use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
@@ -157,14 +157,27 @@ impl Collection {
     ///
     /// This method performs blocking IO.
     pub fn restore_snapshot(
-        snapshot_path: &Path,
+        snapshot_data: SnapshotData,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
     ) -> CollectionResult<()> {
-        // decompress archive
-        let mut ar = open_snapshot_archive_with_validation(snapshot_path)?;
-        ar.unpack(target_dir)?;
+        match snapshot_data {
+            SnapshotData::Packed(snapshot_path) => {
+                // decompress archive
+                {
+                    let mut ar = open_snapshot_archive_with_validation(&snapshot_path)?;
+                    ar.unpack(target_dir)?;
+                }
+                snapshot_path.close()?;
+            }
+            SnapshotData::Unpacked(snapshot_dir) => {
+                // already unpacked snapshot, validate files and move to target dir
+                let snapshot_dir_path = snapshot_dir.path();
+                // ToDo: validate snapshot contents
+                move_all(snapshot_dir_path, target_dir)?;
+            }
+        }
 
         let config = CollectionConfigInternal::load(target_dir)?;
         config.validate_and_warn();
@@ -299,7 +312,7 @@ impl Collection {
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
-        snapshot_path: MaybeTempPath,
+        snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         this_peer_id: PeerId,
         is_distributed: bool,
@@ -311,7 +324,7 @@ impl Collection {
         let shard_holder = cancel::future::cancel_on_token(cancel.clone(), async {
             let shard_holder = self.shards_holder.clone().read_owned().await;
 
-            shard_holder.validate_shard_snapshot(&snapshot_path).await?;
+            shard_holder.validate_shard_snapshot(&snapshot_data).await?;
 
             CollectionResult::Ok(shard_holder)
         })
@@ -327,7 +340,7 @@ impl Collection {
         let restore = self.update_runtime.spawn(async move {
             shard_holder
                 .restore_shard_snapshot(
-                    &snapshot_path,
+                    snapshot_data,
                     recovery_type,
                     &collection_path,
                     &collection_name,
@@ -338,10 +351,6 @@ impl Collection {
                     cancel,
                 )
                 .await?;
-
-            if let Err(err) = snapshot_path.close() {
-                log::error!("Failed to remove downloaded snapshot archive after recovery: {err}");
-            }
 
             CollectionResult::Ok(())
         });

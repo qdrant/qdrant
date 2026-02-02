@@ -1,6 +1,6 @@
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
-use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::common::sha_256::hashes_equal;
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
@@ -17,6 +17,7 @@ use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
+use crate::content_manager::snapshots::download_result::DownloadResult;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::{StorageError, TableOfContent};
@@ -115,15 +116,23 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshot_path = download_snapshot(
+    let DownloadResult {
+        snapshot: snapshot_data,
+        hash: snapshot_hash,
+    } = download_snapshot(
         client,
         location,
         &toc.optional_temp_or_snapshot_temp_path()?,
+        checksum.is_some(),
     )
     .await?;
 
     if let Some(checksum) = checksum {
-        let snapshot_checksum = hash_file(&snapshot_path).await?;
+        let Some(snapshot_checksum) = snapshot_hash else {
+            return Err(StorageError::service_error(
+                "Snapshot checksum was not computed during download",
+            ));
+        };
         if !hashes_equal(&snapshot_checksum, &checksum) {
             return Err(StorageError::bad_input(format!(
                 "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
@@ -131,29 +140,17 @@ async fn _do_recover_from_snapshot(
         }
     }
 
-    log::debug!("Snapshot downloaded to {}", snapshot_path.display());
-
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
 
     let tmp_collection_dir = tempfile::Builder::new()
         .prefix(&format!("col-{collection_pass}-recovery-"))
         .tempdir_in(temp_storage_path)?;
 
-    log::debug!(
-        "Recovering collection {collection_pass} from snapshot {}",
-        snapshot_path.display(),
-    );
-
-    log::debug!(
-        "Unpacking snapshot to {}",
-        tmp_collection_dir.path().display(),
-    );
-
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
-    let snapshot_path_clone = snapshot_path.to_path_buf();
+
     let restoring = tokio::task::spawn_blocking(move || {
         Collection::restore_snapshot(
-            &snapshot_path_clone,
+            snapshot_data,
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,
@@ -396,11 +393,6 @@ async fn _do_recover_from_snapshot(
 
     // Remove tmp collection dir
     tokio_fs::remove_dir_all(&tmp_collection_dir).await?;
-
-    // Remove snapshot after recovery if downloaded
-    if let Err(err) = snapshot_path.close() {
-        log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
-    }
 
     Ok(true)
 }

@@ -8,6 +8,7 @@ use fs_err::File;
 use io::safe_delete::safe_delete_in_tmp;
 use log::info;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use shard::snapshots::snapshot_data::SnapshotData;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
 use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
@@ -39,7 +40,8 @@ pub fn recover_snapshots(
             .next()
             .unwrap_or_else(|| panic!("Snapshot path is missing: {snapshot_params}"));
 
-        let snapshot_path = Path::new(path);
+        let snapshot_data = SnapshotData::new_packed_persistent(path);
+
         let collection_name = split
             .next()
             .unwrap_or_else(|| panic!("Collection name is missing: {snapshot_params}"));
@@ -65,7 +67,7 @@ pub fn recover_snapshots(
         let collection_temp_path =
             temp_dir.map_or_else(|| collection_path.with_extension("tmp"), PathBuf::from);
         if let Err(err) = Collection::restore_snapshot(
-            snapshot_path,
+            snapshot_data,
             &collection_temp_path,
             this_peer_id,
             is_distributed,
