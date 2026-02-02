@@ -53,7 +53,7 @@ impl LocalShard {
         let _skip_updates_guard = SkipUpdatesGuard::new(update_handler.skip_updates.clone());
 
         // Then, Send the plunger signal to the update handler.
-        // It a marker that all previous updates are processed or skipped.
+        // It's a marker that all previous updates are processed or skipped.
         let (tx, rx) = oneshot::channel();
         let plunger = UpdateSignal::SkipUpdatesPlunger(tx);
         self.update_sender.load().send(plunger).await?;
@@ -73,7 +73,7 @@ impl LocalShard {
         wal_lock.drop_from(truncate_from_op_num)?;
         wal_lock.flush()?;
 
-        // To calculate removed records, add 1 because both `last_wal_op_num` and `safe_drop_seq_num` are inclusive.
+        // To calculate removed records, add 1 because both `last_wal_op_num` and `truncate_from_op_num` are inclusive.
         let removed_records = (last_wal_op_num + 1 - truncate_from_op_num) as usize;
 
         Ok(removed_records)

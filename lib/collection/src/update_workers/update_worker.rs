@@ -40,10 +40,10 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         skip_updates: Arc<AtomicBool>,
     ) {
-        while let Some(signal) = receiver.recv().await {
-            // First skipped op_num while `skip_updates` is set
-            let mut first_skipped = None;
+        // First skipped op_num while `skip_updates` is set
+        let mut first_skipped: Option<SeqNumberType> = None;
 
+        while let Some(signal) = receiver.recv().await {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,

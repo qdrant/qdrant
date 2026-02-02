@@ -56,7 +56,8 @@ pub enum UpdateSignal {
     Nop,
     /// Ensures that previous updates are applied
     Plunger(oneshot::Sender<()>),
-    /// Ensures that previous updates are applied
+    /// Ensures that previous updates are applied and returns the first `op_num`
+    /// that was skipped while `skip_updates` was set, if any.
     SkipUpdatesPlunger(oneshot::Sender<Option<SeqNumberType>>),
 }
 
