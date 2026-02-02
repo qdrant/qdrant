@@ -18,11 +18,7 @@ impl<R> HashingReader<R> {
     fn new(inner: R, compute_hash: bool) -> Self {
         Self {
             inner,
-            hasher: if compute_hash {
-                Some(Sha256::new())
-            } else {
-                None
-            },
+            hasher: compute_hash.then(Sha256::new),
         }
     }
 

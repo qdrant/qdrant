@@ -23,7 +23,7 @@ fn snapshot_prefix(url: &Url) -> OsString {
 /// Download a remote file from `url` to `path`
 ///
 /// Returns a `TempDir` that will delete the downloaded file once it is dropped.
-/// To persist the file, use `download_file(...).keep()`.
+/// To persist the file, use [`keep()`](TempDir::keep).
 #[must_use = "returns a TempDir, if dropped the downloaded file is deleted"]
 async fn _download_snapshot(
     client: &reqwest::Client,
@@ -53,8 +53,7 @@ async fn _download_snapshot(
 
 /// Download a snapshot from the given URI.
 ///
-/// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
-/// downloaded file is deleted automatically. To keep the file `keep()` may be used.
+/// Returns a `DownloadResult` containing the snapshot data and optional checksum.
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
@@ -93,9 +92,8 @@ pub async fn download_snapshot(
             })
         }
         _ => Err(StorageError::bad_request(format!(
-            "URL {} with schema {} is not supported",
-            url,
-            url.scheme()
+            "URL {url} with schema {} is not supported",
+            url.scheme(),
         ))),
     }
 }
