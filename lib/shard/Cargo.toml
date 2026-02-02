@@ -55,4 +55,3 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
 tar = { workspace = true }
-tempfile = { workspace = true }
