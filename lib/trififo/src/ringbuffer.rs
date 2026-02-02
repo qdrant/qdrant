@@ -104,9 +104,10 @@ impl<T> RingBuffer<T> {
     /// If the buffer is full, the oldest item is overwritten.
     pub fn overwriting_push(&mut self, item: T) -> usize {
         let offset = self.write_pos.load(Ordering::Relaxed);
+        let current_len = self.len.load(Ordering::Relaxed);
 
         // Write the new value
-        if offset >= self.len.load(Ordering::Relaxed) {
+        if offset >= current_len {
             // write into an uninitialized slot
             self.buffer[offset].write(item);
         } else {
@@ -121,7 +122,6 @@ impl<T> RingBuffer<T> {
         self.write_pos.store(new_write_pos, Ordering::Release);
 
         // Update length
-        let current_len = self.len.load(Ordering::Relaxed);
         if current_len < self.capacity.get() {
             self.len.store(current_len + 1, Ordering::Release);
         }
