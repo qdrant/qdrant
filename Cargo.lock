@@ -7190,6 +7190,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "memory",
+ "mockito",
  "parking_lot",
  "proptest",
  "prost 0.11.9",

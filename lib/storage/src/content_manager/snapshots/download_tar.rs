@@ -161,11 +161,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_and_unpack_tar() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/test-shard.snapshot")
+            .with_body(include_bytes!("./test-shard.snapshot"))
+            .create();
+        let url = Url::parse(&format!("{}/test-shard.snapshot", server.url())).unwrap();
+
         let client = reqwest::Client::new();
-        let url = Url::parse(
-            "https://storage.googleapis.com/qdrant-benchmark-snapshots/test-shard.snapshot",
-        )
-        .unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
 
         let hash = download_and_unpack_tar(&client, &url, temp_dir.path(), true)
@@ -177,7 +180,7 @@ mod tests {
         // Verify the expected hash
         assert_eq!(
             hash,
-            "354a18e9a30b049276524d2dd46eca5eddc612757fe4c7c7f5042dfd7437ea32"
+            "5d94eac5c1ede3994a28bc406120046c37370d5d45b489a0d2252531b4e3e1f2",
         );
 
         // Verify content was extracted
