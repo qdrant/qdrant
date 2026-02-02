@@ -50,7 +50,7 @@ impl LocalShard {
         // Next, clear the update worker channel.
         // To do this, set the skip updates flag. The guard resets it when dropped.
         // New updates won't be skipped because the update_lock is held until we're done.
-        let _skip_updates_guard = SkipUpdatesGuard::new(update_handler.skip_updates_flag.clone());
+        let _skip_updates_guard = SkipUpdatesGuard::new(update_handler.skip_updates.clone());
 
         // Then, Send the plunger signal to the update handler.
         // It a marker that all previous updates are processed or skipped.

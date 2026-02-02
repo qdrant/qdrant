@@ -38,7 +38,7 @@ impl UpdateWorkers {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
-        skip_uploads: Arc<AtomicBool>,
+        skip_updates: Arc<AtomicBool>,
     ) {
         while let Some(signal) = receiver.recv().await {
             match signal {
@@ -48,7 +48,14 @@ impl UpdateWorkers {
                     sender,
                     hw_measurements,
                 }) => {
-                    if skip_uploads.load(std::sync::atomic::Ordering::Relaxed) {
+                    if skip_updates.load(std::sync::atomic::Ordering::Relaxed) {
+                        if let Some(feedback) = sender {
+                            feedback.send(Err(CollectionError::service_error(
+                                format!("Operation {op_num} skipped due to ongoing WAL truncation"),
+                            ))).unwrap_or_else(|_| {
+                                log::debug!("Can't report operation {op_num} result. Assume already not required");
+                            });
+                        }
                         continue;
                     }
 

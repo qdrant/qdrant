@@ -134,7 +134,7 @@ pub struct UpdateHandler {
 
     /// State to indicate whether updates should be skipped.
     /// Used during WAL dropping to avoid processing updates which are about to be discarded from WAL.
-    pub(super) skip_updates_flag: Arc<AtomicBool>,
+    pub(super) skip_updates: Arc<AtomicBool>,
 }
 
 impl UpdateHandler {
@@ -185,7 +185,7 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             applied_seq_handler,
-            skip_updates_flag: Arc::new(AtomicBool::new(false)),
+            skip_updates: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -234,7 +234,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
-            self.skip_updates_flag.clone(),
+            self.skip_updates.clone(),
         )));
 
         let segments = self.segments.clone();

@@ -242,6 +242,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     pub fn drop_from(&mut self, from_index: u64) -> Result<()> {
+        debug_assert!(from_index >= self.first_index());
         self.wal
             .truncate(from_index)
             .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))

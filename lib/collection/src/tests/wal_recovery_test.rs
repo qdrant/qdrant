@@ -285,7 +285,7 @@ async fn test_truncate_unapplied_wal() {
     // Insert many individual points with wait=false to fill up the WAL.
     // We need more than APPLIED_SEQ_SAVE_INTERVAL + 1 updates to potentially have something to truncate.
     // Use a large number to increase chances of having unapplied records when truncate is called.
-    let num_points = (APPLIED_SEQ_SAVE_INTERVAL + 10) as u64 * 5;
+    let num_points = (APPLIED_SEQ_SAVE_INTERVAL + 10) * 5;
 
     // Collect all futures and execute them concurrently to maximize WAL fill-up speed
     let mut update_futures = Vec::with_capacity(num_points as usize);
@@ -336,7 +336,7 @@ async fn test_truncate_unapplied_wal() {
         .await
         .unwrap();
 
-    eprintln!("Update after truncate succeeded: {:?}", update_result);
+    eprintln!("Update after truncate succeeded: {update_result:?}");
 
     // Verify the shard is still functional
     let info = shard.info().await.unwrap();
