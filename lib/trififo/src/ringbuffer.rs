@@ -1,4 +1,5 @@
 use std::mem::MaybeUninit;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Fixed-size ringbuffer with support for absolute indexing into its contents.
@@ -11,7 +12,7 @@ pub struct RingBuffer<T> {
     buffer: Box<[MaybeUninit<T>]>,
 
     /// Maximum number of elements in the buffer
-    capacity: usize,
+    capacity: NonZeroUsize,
 
     /// Current write position (0 to capacity-1, wraps around)
     write_pos: AtomicUsize,
@@ -21,8 +22,9 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    pub fn new(capacity: usize) -> Self {
-        let buffer: Box<[MaybeUninit<T>]> = (0..capacity).map(|_| MaybeUninit::uninit()).collect();
+    pub fn new(capacity: NonZeroUsize) -> Self {
+        let buffer: Box<[MaybeUninit<T>]> =
+            (0..capacity.get()).map(|_| MaybeUninit::uninit()).collect();
 
         Self {
             buffer,
@@ -41,7 +43,7 @@ impl<T> RingBuffer<T> {
     /// Returns true if the buffer is full.
     #[inline]
     pub fn is_full(&self) -> bool {
-        self.len.load(Ordering::Acquire) == self.capacity
+        self.len.load(Ordering::Acquire) == self.capacity.get()
     }
 
     /// Returns the current write position.
@@ -57,7 +59,7 @@ impl<T> RingBuffer<T> {
         let len = self.len.load(Ordering::Acquire);
         if len == 0 {
             None
-        } else if len < self.capacity {
+        } else if len < self.capacity.get() {
             Some(0)
         } else {
             Some(self.write_pos.load(Ordering::Acquire))
@@ -108,7 +110,7 @@ impl<T> RingBuffer<T> {
 
         // Update length
         let current_len = self.len.load(Ordering::Relaxed);
-        if current_len < self.capacity {
+        if current_len < self.capacity.get() {
             self.len.store(current_len + 1, Ordering::Release);
         }
 
@@ -170,14 +172,8 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "Ring buffer capacity must be greater than 0")]
-    fn test_zero_capacity_panics() {
-        let _ = RingBuffer::<i32>::new(0);
-    }
-
-    #[test]
     fn test_push_and_get() {
-        let mut buffer = RingBuffer::<i32>::new(3);
+        let mut buffer = RingBuffer::<i32>::new(NonZeroUsize::try_from(3).unwrap());
 
         let offset0 = buffer.overwriting_push(10);
         let offset1 = buffer.overwriting_push(20);
@@ -195,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_offsets_wrap() {
-        let mut buffer = RingBuffer::<i32>::new(3);
+        let mut buffer = RingBuffer::<i32>::new(NonZeroUsize::try_from(3).unwrap());
 
         let offset0 = buffer.overwriting_push(10);
         let offset1 = buffer.overwriting_push(20);
@@ -215,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_try_push() {
-        let mut buffer = RingBuffer::<i32>::new(3);
+        let mut buffer = RingBuffer::<i32>::new(NonZeroUsize::try_from(3).unwrap());
 
         assert!(buffer.try_push(10).is_ok());
         assert!(buffer.try_push(20).is_ok());
