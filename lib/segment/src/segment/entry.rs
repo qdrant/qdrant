@@ -629,11 +629,10 @@ impl SegmentEntry for Segment {
                 let vector_index = vector_data.vector_index.borrow();
                 let is_indexed = vector_index.is_index();
 
-                let average_vector_size_bytes = if num_vectors > 0 {
-                    vector_index.size_of_searchable_vectors_in_bytes() / num_vectors
-                } else {
-                    0
-                };
+                let average_vector_size_bytes = vector_index
+                    .size_of_searchable_vectors_in_bytes()
+                    .checked_div(num_vectors)
+                    .unwrap_or(0);
                 total_average_vectors_size_bytes += average_vector_size_bytes;
 
                 let vector_data_info = VectorDataInfo {
