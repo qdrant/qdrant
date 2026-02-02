@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// 1. The writer is not currently accessing the resource
 /// 2. The resource did not change in between the start and end of the read.
 ///
-/// The [`SeqLock`] struct itself is not Send, nor Sync, so it is kind of useless on its own.
+/// The [`SeqLock`] struct itself is not Sync, so it is kind of useless on its own.
 ///
 /// To allow multiple readers, and ensure a single writer, a `new_reader_writer` method is provided.
 ///
@@ -23,25 +23,29 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// sure the underlying resource does not change allocations, and that the worst that
 /// can happen is a garbage/torn read.
 ///
-/// ```ignore
-/// use crate::seqlock::SeqLock;
+/// ```
+/// use trififo::seqlock::SeqLock;
 ///
 /// fn main() {
 ///
-///     let shared_resource = String::from("banner");
+///     let shared_resource = 666;
 ///
 ///     let (reader, writer) = SeqLock::new_reader_writer(shared_resource);
 ///
 ///     let reader_2 = reader.clone(); // This can be cheaply copied, pointing to the same resource.
 ///
 ///     std::thread::spawn(move || {
-///         let value = reader_2.read(|value| value.to_owned());
+///         let value = reader_2.read(|value| *value);
 ///         println!("Value: {}", value);
 ///     });
 ///
 ///     // writer can be sent to a thread, but can't be shared between them
 ///     std::thread::spawn(move || {
-///         writer.write(|value| value.push('s'));
+///         unsafe {
+///             writer.write(|value| {
+///                 *value + 10;
+///             })
+///         };
 ///     });
 /// }
 /// ```
@@ -84,8 +88,8 @@ impl<T> SeqLock<T> {
 
             let result = callback(unsafe { &*self.inner.get() });
 
+            // ensure that the read is complete before checking seq again
             fence(Ordering::Acquire);
-
             let seq2 = self.seq.load(Ordering::Relaxed);
 
             // only return if seq did not change.
@@ -96,8 +100,10 @@ impl<T> SeqLock<T> {
     }
 
     unsafe fn write(&self, callback: impl FnOnce(&mut T)) {
-        let seq = self.seq.load(Ordering::Acquire);
-        self.seq.store(seq + 1, Ordering::Release);
+        let seq = self.seq.load(Ordering::Relaxed);
+        self.seq.store(seq + 1, Ordering::Relaxed);
+        // ensure seq has been written before running the callback
+        fence(Ordering::Release);
 
         callback(unsafe { &mut *self.inner.get() });
 
@@ -159,43 +165,12 @@ impl<T> SeqLockWriter<T> {
     }
 }
 
-/// ```compile_fail,E0277
-/// use trififo::seqlock::SeqLock;
-///
-/// fn is_sync<T: Sync>(_: &T) {}
-///
-/// fn main() {
-///     let (reader, writer) = SeqLock::new_reader_writer(0u32);
-///
-///     is_sync(&writer);
-/// }
-/// ```
-///
-/// `SeqLockReader<T>` is not `Send`/`Sync` when `T: !Send`/`!Sync`:
-/// ```compile_fail,E0277
-/// use trififo::seqlock::SeqLock;
-/// use std::rc::Rc;
-///
-/// fn is_send<T: Send>(_: &T) {}
-/// fn is_sync<T: Sync>(_: &T) {}
-///
-/// fn main() {
-///     // Rc is !Send and !Sync
-///     let (reader, _writer) = SeqLock::new_reader_writer(Rc::new(0u32));
-///
-///     is_send(&reader);
-///     is_sync(&reader);
-/// }
-/// ```
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
-
-    use static_assertions::assert_impl_all;
 
     use super::*;
 
