@@ -4,7 +4,7 @@ use std::path::Path;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::safe_unpack::{open_snapshot_archive, safe_unpack};
+use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
@@ -685,8 +685,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         unpack_snapshot(snapshot_path)?;
     } else {
         let segment_path = segments_dir.join(segment_id);
-        let ar = open_snapshot_archive(snapshot_path)?;
-        safe_unpack(ar, &segment_path)?;
+        tar_unpack_file(snapshot_path, &segment_path)?;
 
         let inner_path = segment_path.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {

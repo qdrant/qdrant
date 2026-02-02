@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
-use common::safe_unpack::{open_snapshot_archive, safe_unpack};
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use io::safe_delete::safe_delete_in_tmp;
@@ -100,8 +100,7 @@ pub fn recover_full_snapshot(
     fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
-    let ar = open_snapshot_archive(Path::new(snapshot_path)).unwrap();
-    safe_unpack(ar, &snapshot_temp_path).unwrap();
+    tar_unpack_file(Path::new(snapshot_path), &snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");

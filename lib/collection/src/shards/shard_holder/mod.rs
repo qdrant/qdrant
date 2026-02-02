@@ -11,9 +11,9 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
-use common::safe_unpack::{open_snapshot_archive, safe_unpack};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
@@ -1235,12 +1235,10 @@ impl ShardHolder {
                 move |cancel| -> CollectionResult<_> {
                     match snapshot_data {
                         SnapshotData::Packed(snapshot_path) => {
-                            let ar = open_snapshot_archive(&snapshot_path)?;
-
                             if cancel.is_cancelled() {
                                 return Err(cancel::Error::Cancelled.into());
                             }
-                            safe_unpack(ar, &snapshot_temp_dir)?;
+                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir)?;
                             snapshot_path.close()?;
                         }
                         SnapshotData::Unpacked(snapshot_dir) => {

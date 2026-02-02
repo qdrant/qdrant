@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common::safe_unpack::{open_snapshot_archive, safe_unpack};
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use segment::common::operation_error::OperationResult;
 use segment::segment::Segment;
@@ -20,8 +20,7 @@ impl SnapshotUtils {
             fs::create_dir_all(target_path)?;
         }
 
-        let ar = open_snapshot_archive(snapshot_path)?;
-        safe_unpack(ar, target_path)?;
+        tar_unpack_file(snapshot_path, target_path)?;
         Self::restore_unpacked_snapshot(target_path)?;
         Ok(())
     }

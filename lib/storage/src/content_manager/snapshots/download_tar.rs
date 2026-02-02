@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::Path;
 
 use cancel::CancellationToken;
-use common::safe_unpack::safe_unpack;
+use common::tar_unpack::tar_unpack_reader;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
 use tokio_util::io::StreamReader;
@@ -128,18 +128,12 @@ pub async fn download_and_unpack_tar(
         // Wrap the reader with optional hashing
         let hashing_reader = HashingReader::new(cancellable_reader, compute_checksum);
 
-        // We need to keep access to the hashing reader to get the hash after unpacking,
-        // but tar::Archive takes ownership. Use a RefCell-like pattern with take.
-        let mut archive = tar::Archive::new(hashing_reader);
-        archive.set_overwrite(false);
-
-        let archive = safe_unpack(archive, &target_dir).map_err(|e| {
+        let mut reader = tar_unpack_reader(hashing_reader, &target_dir).map_err(|e| {
             StorageError::service_error(format!("Failed to unpack tar archive: {e}"))
         })?;
 
         // Drain any remaining bytes to ensure the full stream is hashed.
         // Tar files have trailing padding that Archive doesn't read.
-        let mut reader = archive.into_inner();
         if reader.hasher.is_some() {
             let mut buf = [0u8; 8192];
             while reader.read(&mut buf)? > 0 {}

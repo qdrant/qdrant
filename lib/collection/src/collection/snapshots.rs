@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use common::safe_unpack::{open_snapshot_archive, safe_unpack};
 use common::tar_ext::BuilderExt;
+use common::tar_unpack::tar_unpack_file;
 use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
@@ -165,11 +165,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         match snapshot_data {
             SnapshotData::Packed(snapshot_path) => {
-                // decompress archive
-                {
-                    let ar = open_snapshot_archive(&snapshot_path)?;
-                    safe_unpack(ar, target_dir)?;
-                }
+                tar_unpack_file(&snapshot_path, target_dir)?;
                 snapshot_path.close()?;
             }
             SnapshotData::Unpacked(snapshot_dir) => {
