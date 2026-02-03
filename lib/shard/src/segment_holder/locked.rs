@@ -6,7 +6,7 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use crate::segment_holder::SegmentHolder;
 
 /// A guard that guarantees no update operations are happening.
-/// 
+///
 /// This is a newtype wrapper around `parking_lot::MutexGuard<'_, ()>` that provides
 /// semantic meaning: while this guard is held, no concurrent update operations can proceed.
 /// This is used during critical sections like segment optimization finalization and snapshot
