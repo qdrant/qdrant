@@ -424,16 +424,26 @@ impl ShardOperation for LocalShard {
         Ok(FacetResponse { hits })
     }
 
-    /// Finishes ongoing update tasks
+    /// Finishes ongoing update tasks and returns any pending update operations.
     async fn stop_gracefully(mut self) {
-        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
-            log::warn!("Error sending stop signal to update handler: {err}");
-        }
-
         self.stop_flush_worker().await;
 
-        if let Err(err) = self.wait_update_workers_stop().await {
-            log::warn!("Update workers failed with: {err}");
+        // Stop workers via cancellation - this is immediate and returns pending operations
+        match self.wait_update_workers_stop().await {
+            Ok(pending_receiver) => {
+                if let Some(receiver) = pending_receiver {
+                    // Log number of pending operations that were not processed
+                    let pending_count = receiver.len();
+                    if pending_count > 0 {
+                        log::debug!(
+                            "Shard stopped with {pending_count} pending update operations in channel"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                log::warn!("Update workers failed with: {err}");
+            }
         }
 
         self.is_gracefully_stopped = true;

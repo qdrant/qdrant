@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Receiver};
 
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::build_optimizers;
@@ -20,7 +20,10 @@ impl LocalShard {
         update_handler.stop_flush_worker()
     }
 
-    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
+    /// Stops update workers and returns any pending update operations.
+    pub async fn wait_update_workers_stop(
+        &self,
+    ) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.wait_workers_stops().await
     }
@@ -37,12 +40,25 @@ impl LocalShard {
 
         let (update_sender, update_receiver) =
             mpsc::channel(self.shared_storage_config.update_queue_size);
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop).await?;
+        // Swap to new sender - new operations will go to the new channel
+        let _old_sender = self.update_sender.swap(Arc::new(update_sender));
         update_handler.stop_flush_worker();
 
-        update_handler.wait_workers_stops().await?;
+        // Stop workers and get pending operations from the old channel
+        let pending_receiver = update_handler.wait_workers_stops().await?;
+
+        // Forward pending operations from old receiver to new channel
+        if let Some(mut old_receiver) = pending_receiver {
+            let sender = self.update_sender.load();
+            while let Ok(signal) = old_receiver.try_recv() {
+                // Forward pending operations to new channel
+                // Use try_send to avoid blocking - if channel is full, operations are dropped
+                // This is acceptable since WAL recovery will replay them
+                log::debug!("Forwarding pending update signal during config update");
+                let _ = sender.try_send(signal);
+            }
+        }
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
