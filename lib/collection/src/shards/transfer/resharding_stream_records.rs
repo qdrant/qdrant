@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
@@ -142,6 +143,8 @@ pub(crate) async fn transfer_resharding_stream_records(
     log::trace!("Transferring points to shard {shard_id} by reshard streaming records");
 
     let mut offset = None;
+    let mut total_read = Duration::ZERO;
+    let mut total_send = Duration::ZERO;
 
     loop {
         let shard_holder = shard_holder.read().await;
@@ -154,12 +157,18 @@ pub(crate) async fn transfer_resharding_stream_records(
             )));
         };
 
-        let (new_offset, count) = replica_set
+        let result = replica_set
             .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
             .await?;
 
-        offset = new_offset;
-        progress.lock().add(count);
+        offset = result.next_page_offset;
+        total_read += result.read_duration;
+        total_send += result.send_duration;
+        {
+            let mut p = progress.lock();
+            p.add(result.count);
+            p.set_batch_durations(total_read, total_send);
+        }
 
         // If this is the last batch, finalize
         if offset.is_none() {

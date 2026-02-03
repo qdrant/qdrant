@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
@@ -29,6 +29,9 @@ pub struct TransferTaskProgress {
     // Stage tracking for profiling
     current_stage: Option<TransferStage>,
     stage_started: Option<Instant>,
+    // Cumulative batch timing breakdown (local read vs remote send)
+    batch_read_duration: Duration,
+    batch_send_duration: Duration,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -52,6 +55,8 @@ impl TransferTaskProgress {
             eta: EtaCalculator::new(),
             current_stage: None,
             stage_started: None,
+            batch_read_duration: Duration::ZERO,
+            batch_send_duration: Duration::ZERO,
         }
     }
 
@@ -81,6 +86,12 @@ impl TransferTaskProgress {
     /// Get elapsed seconds in current stage (with decimal precision)
     pub fn stage_elapsed_secs(&self) -> Option<f64> {
         self.stage_started.map(|t| t.elapsed().as_secs_f64())
+    }
+
+    /// Update cumulative batch timing breakdown (local read vs remote send)
+    pub fn set_batch_durations(&mut self, read: Duration, send: Duration) {
+        self.batch_read_duration = read;
+        self.batch_send_duration = send;
     }
 }
 
@@ -171,6 +182,20 @@ impl TransferTasksPool {
             if let Some(eta) = progress.eta.estimate(total) {
                 write!(comment, ", ETA: {:.2}s", eta.as_secs_f64()).unwrap();
             }
+        }
+
+        // Append batch timing breakdown when available
+        if !progress.batch_read_duration.is_zero() || !progress.batch_send_duration.is_zero() {
+            if !comment.is_empty() {
+                comment.push_str(" | ");
+            }
+            write!(
+                comment,
+                "read: {:.2}s, send: {:.2}s",
+                progress.batch_read_duration.as_secs_f64(),
+                progress.batch_send_duration.as_secs_f64(),
+            )
+            .unwrap();
         }
 
         Some(TransferTaskStatus { result, comment })
