@@ -180,10 +180,8 @@ impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         let len = *self.len.get_mut();
 
-        for pos in 0..len {
-            unsafe {
-                std::ptr::drop_in_place(self.buffer[pos].as_mut_ptr());
-            }
+        for slot in &mut self.buffer[..len] {
+            unsafe { slot.assume_init_drop() };
         }
     }
 }
