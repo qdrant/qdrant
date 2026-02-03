@@ -7,19 +7,16 @@ use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Data;
 use actix_web::{HttpResponse, Responder, get, post, web};
-use actix_web_validator::{Path, Query};
-use collection::operations::verification::new_unchecked_verification_pass;
+use actix_web_validator::Query;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
-use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 use validator::Validate;
 
-use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
@@ -215,39 +212,6 @@ async fn update_logger_config(
     helpers::process_response(future.await, timing, None)
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct TruncateUnappliedWalParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wait: Option<bool>,
-}
-
-#[post("/collections/{name}/truncate_unapplied_wal")]
-async fn truncate_unapplied_wal(
-    dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    params: Query<TruncateUnappliedWalParams>,
-    ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let future = async move {
-        let collection_pass = access
-            .check_global_access(AccessRequirements::new().manage())?
-            .issue_pass(&collection.name)
-            .into_static();
-
-        let pass = new_unchecked_verification_pass();
-        let collection = dispatcher
-            .toc(&access, &pass)
-            .get_collection(&collection_pass)
-            .await?;
-
-        collection
-            .truncate_unapplied_wal()
-            .await
-            .map_err(StorageError::from)
-    };
-    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
-}
-
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
@@ -257,8 +221,7 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
         .service(livez)
         .service(readyz)
         .service(get_logger_config)
-        .service(update_logger_config)
-        .service(truncate_unapplied_wal);
+        .service(update_logger_config);
 }
 
 // Dedicated service for metrics

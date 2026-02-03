@@ -55,8 +55,7 @@ pub enum UpdateSignal {
     /// Empty signal used to trigger optimizers
     Nop,
     /// Ensures that previous updates are applied
-    /// Sends back the first skipped `op_num` if `skip_updates` is set, or None otherwise.
-    Plunger(oneshot::Sender<Option<SeqNumberType>>),
+    Plunger(oneshot::Sender<()>),
 }
 
 /// Signal, used to inform Optimization process
@@ -132,10 +131,6 @@ pub struct UpdateHandler {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
-
-    /// State to indicate whether updates should be skipped.
-    /// Used during WAL dropping to avoid processing updates which are about to be discarded from WAL.
-    pub(super) skip_updates: Arc<AtomicBool>,
 }
 
 impl UpdateHandler {
@@ -186,7 +181,6 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             applied_seq_handler,
-            skip_updates: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -235,7 +229,6 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
-            self.skip_updates.clone(),
         )));
 
         let segments = self.segments.clone();
@@ -344,5 +337,10 @@ impl UpdateHandler {
             .await?;
 
         Ok(())
+    }
+
+    #[allow(unused)] // TODO for purge WAL API
+    pub fn applied_seq(&self) -> Option<u64> {
+        self.applied_seq_handler.op_num()
     }
 }

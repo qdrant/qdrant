@@ -70,9 +70,7 @@ impl ShardOperation for LocalShard {
         }
 
         let operation_id = {
-            let _update_lock = self.update_lock.read().await;
             let pending_operations_count = self.update_queue_length();
-
             let update_sender = self.update_sender.load();
             let channel_permit = update_sender.reserve().await?;
 

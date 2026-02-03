@@ -1351,27 +1351,6 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         local.as_ref().and_then(|shard| shard.optimizations())
     }
-
-    /// Truncate unapplied WAL records for the local shard (if present).
-    /// Returns amount of removed records.
-    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
-        let local = self.local.read().await;
-        let Some(local) = local.as_ref() else {
-            // No local shard to drop WAL from.
-            return Ok(0);
-        };
-
-        let removed_records_count = local.truncate_unapplied_wal().await?;
-        if removed_records_count > 0 {
-            log::debug!(
-                "Dropped {} WAL records from shard {}:{}",
-                removed_records_count,
-                self.collection_id,
-                self.shard_id,
-            );
-        }
-        Ok(removed_records_count)
-    }
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
