@@ -6,7 +6,6 @@ use tokio::sync::{Mutex, oneshot};
 use crate::operations::types::CollectionResult;
 use crate::shards::local_shard::LocalShard;
 use crate::update_handler::UpdateSignal;
-use crate::update_workers::applied_seq::APPLIED_SEQ_SAVE_INTERVAL;
 
 /// Guard that sets an atomic bool to `true` on creation and back to `false` on drop.
 /// Ensures the flag is always reset even on early return or panic.

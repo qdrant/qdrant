@@ -347,8 +347,4 @@ impl UpdateHandler {
 
         Ok(())
     }
-
-    pub fn applied_seq(&self) -> Arc<AppliedSeqHandler> {
-        self.applied_seq_handler.clone()
-    }
 }
