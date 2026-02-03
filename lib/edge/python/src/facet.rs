@@ -72,7 +72,11 @@ impl PyFacetHit {
 
 impl Repr for PyFacetHit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FacetHit(value={:?}, count={})", self.0.value, self.0.count)
+        write!(
+            f,
+            "FacetHit(value={:?}, count={})",
+            self.0.value, self.0.count
+        )
     }
 }
 
@@ -111,7 +115,7 @@ impl PyFacetResponse {
 
 impl Repr for PyFacetResponse {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FacetResponse(hits={})"  , self.0.hits.len())
+        write!(f, "FacetResponse(hits={})", self.0.hits.len())
     }
 }
 
@@ -135,7 +139,9 @@ fn facet_value_into_py<'py>(value: &FacetValue, py: Python<'py>) -> PyResult<Bou
     match value {
         FacetValue::Keyword(s) => s.into_bound_py_any(py),
         FacetValue::Int(i) => i.into_bound_py_any(py),
-        FacetValue::Uuid(uuid) => uuid::Uuid::from_u128(*uuid).to_string().into_bound_py_any(py),
+        FacetValue::Uuid(uuid) => uuid::Uuid::from_u128(*uuid)
+            .to_string()
+            .into_bound_py_any(py),
         FacetValue::Bool(b) => b.into_bound_py_any(py),
     }
 }
