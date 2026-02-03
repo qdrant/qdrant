@@ -2307,9 +2307,9 @@ dependencies = [
 
 [[package]]
 name = "foyer"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b211da7a164e35aafb84c1532ed06c85ce726cb08eabe00cc58e928626a71a2"
+checksum = "3b0abc0b87814989efa711f9becd9f26969820e2d3905db27d10969c4bd45890"
 dependencies = [
  "anyhow",
  "equivalent",
@@ -2327,9 +2327,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-common"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36f8aaf149801129aa8e01bbc434c967345622d483473d4ba3acc73976ab2254"
+checksum = "a3db80d5dece93adb7ad709c84578794724a9cba342a7e566c3551c7ec626789"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2352,9 +2352,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-memory"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daf2560d8500f2b5211ef9d8b84a2076ab77ac21589a4264d96c61263fdcde25"
+checksum = "db907f40a527ca2aa2f40a5f68b32ea58aa70f050cd233518e9ffd402cfba6ce"
 dependencies = [
  "anyhow",
  "bitflags 2.9.1",
@@ -2377,9 +2377,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-storage"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19bdc15cb359c9134b494722efb5ac69747b489d069fb8b7f4dce0ca271d4341"
+checksum = "1983f1db3d0710e9c9d5fc116d9202dccd41a2d1e032572224f1aff5520aa958"
 dependencies = [
  "allocator-api2",
  "anyhow",
@@ -2409,9 +2409,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-tokio"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddc4b13cc6bc07963bb9b5f2afb318fdc17b8c0f9c9d86c073b47d0a42137ec6"
+checksum = "f6577b05a7ffad0db555aedf00bfe52af818220fc4c1c3a7a12520896fc38627"
 dependencies = [
  "tokio",
 ]
