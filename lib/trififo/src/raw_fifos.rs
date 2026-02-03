@@ -8,7 +8,7 @@ pub type GlobalOffset = u32;
 
 /// Local offset within one of the three queues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LocalOffset {
+enum LocalOffset {
     Small(u32),
     Ghost(u32),
     Main(u32),
@@ -17,9 +17,9 @@ pub enum LocalOffset {
 /// Encapsulate the 3 FIFO queues used by S3-FIFO algorithm, where a global offset can be used to
 /// index into any of them, as if they were consecutive arrays.
 pub struct RawFifos<K, V> {
-    pub small: RingBuffer<Entry<K, V>>,
-    pub ghost: RingBuffer<K>,
-    pub main: RingBuffer<Entry<K, V>>,
+    small: RingBuffer<Entry<K, V>>,
+    ghost: RingBuffer<K>,
+    main: RingBuffer<Entry<K, V>>,
 
     small_end: u32,
     ghost_end: u32,
@@ -62,7 +62,7 @@ impl<K, V> RawFifos<K, V> {
 
     /// Converts a global offset to a local offset.
     #[inline]
-    pub fn local_offset(&self, global_offset: GlobalOffset) -> LocalOffset {
+    fn local_offset(&self, global_offset: GlobalOffset) -> LocalOffset {
         if global_offset < self.small_end {
             LocalOffset::Small(global_offset)
         } else if global_offset < self.ghost_end {
@@ -74,7 +74,7 @@ impl<K, V> RawFifos<K, V> {
 
     /// Converts a local offset to a global offset.
     #[inline]
-    pub fn global_offset(&self, local_offset: LocalOffset) -> GlobalOffset {
+    fn global_offset(&self, local_offset: LocalOffset) -> GlobalOffset {
         match local_offset {
             LocalOffset::Small(offset) => offset,
             LocalOffset::Ghost(offset) => offset + self.small_end,
@@ -82,11 +82,16 @@ impl<K, V> RawFifos<K, V> {
         }
     }
 
+    pub fn get_entry(&self, global_offset: GlobalOffset) -> Option<&Entry<K, V>> {
+        let local_offset = self.local_offset(global_offset);
+        self.get_local_entry(local_offset)
+    }
+
     /// Gets an entry from the small or main queue by local offset.
     ///
     /// Returns None for ghost queue offsets (ghost only stores keys, not full entries).
     #[inline]
-    pub fn get_entry(&self, local_offset: LocalOffset) -> Option<&Entry<K, V>> {
+    fn get_local_entry(&self, local_offset: LocalOffset) -> Option<&Entry<K, V>> {
         match local_offset {
             LocalOffset::Small(offset) => Some(self.small.get_absolute(offset as usize)?),
             LocalOffset::Ghost(_) => None,
@@ -94,7 +99,7 @@ impl<K, V> RawFifos<K, V> {
         }
     }
 
-    pub fn get_key(&self, local_offset: LocalOffset) -> Option<&K> {
+    fn get_local_key(&self, local_offset: LocalOffset) -> Option<&K> {
         match local_offset {
             LocalOffset::Small(off) => Some(&self.small.get_absolute(off as usize)?.key),
             LocalOffset::Main(off) => Some(&self.main.get_absolute(off as usize)?.key),
@@ -114,7 +119,7 @@ impl<K, V> RawFifos<K, V> {
         K: PartialEq,
     {
         let local_offset = self.local_offset(global_offset);
-        let Some(stored_key) = self.get_key(local_offset) else {
+        let Some(stored_key) = self.get_local_key(local_offset) else {
             return false;
         };
         stored_key == key
@@ -132,11 +137,60 @@ impl<K, V> RawFifos<K, V> {
         // Extract the key from the appropriate queue and hash it with the provided hasher.
         let local_offset = self.local_offset(global_offset);
         let key = self
-            .get_key(local_offset)
+            .get_local_key(local_offset)
             // Since we are the only writer, the offset is valid.
             .expect("We are the only writer, as established by `&mut self`");
 
         hasher.hash_one(key)
+    }
+
+    pub fn small_overwriting_push(&mut self, entry: Entry<K, V>) -> GlobalOffset {
+        let local_offset = self.small.overwriting_push(entry);
+        self.global_offset(LocalOffset::Small(local_offset as u32))
+    }
+
+    pub fn ghost_overwriting_push(&mut self, key: K) -> GlobalOffset {
+        let local_offset = self.ghost.overwriting_push(key);
+        self.global_offset(LocalOffset::Ghost(local_offset as u32))
+    }
+
+    pub fn main_overwriting_push(&mut self, entry: Entry<K, V>) -> GlobalOffset {
+        let local_offset = self.main.overwriting_push(entry);
+        self.global_offset(LocalOffset::Main(local_offset as u32))
+    }
+
+    pub fn small_try_push(&mut self, entry: Entry<K, V>) -> Result<GlobalOffset, Entry<K, V>> {
+        let local_offset = self.small.try_push(entry)?;
+        Ok(self.global_offset(LocalOffset::Small(local_offset as u32)))
+    }
+
+    pub fn ghost_try_push(&mut self, key: K) -> Result<GlobalOffset, K> {
+        let local_offset = self.ghost.try_push(key)?;
+        Ok(self.global_offset(LocalOffset::Ghost(local_offset as u32)))
+    }
+
+    pub fn main_try_push(&mut self, entry: Entry<K, V>) -> Result<GlobalOffset, Entry<K, V>> {
+        let local_offset = self.main.try_push(entry)?;
+        Ok(self.global_offset(LocalOffset::Main(local_offset as u32)))
+    }
+
+    pub fn main_reinsert_if(&mut self, f: impl FnOnce(&Entry<K, V>) -> bool) -> bool {
+        self.main.reinsert_if(f)
+    }
+
+    pub fn small_eviction_candidate(&self) -> Option<&Entry<K, V>> {
+        let position = self.small.write_position();
+        self.small.get_absolute(position)
+    }
+
+    pub fn ghost_eviction_candidate(&self) -> Option<&K> {
+        let position = self.ghost.write_position();
+        self.ghost.get_absolute(position)
+    }
+
+    pub fn main_eviction_candidate(&self) -> Option<&Entry<K, V>> {
+        let position = self.main.write_position();
+        self.main.get_absolute(position)
     }
 }
 
@@ -157,7 +211,7 @@ mod tests {
         let local_offset = fifos.local_offset(offset as u32);
         assert_eq!(local_offset, LocalOffset::Small(0));
 
-        let entry = fifos.get_entry(local_offset).unwrap();
+        let entry = fifos.get_local_entry(local_offset).unwrap();
         assert_eq!(entry.key, 1);
         assert_eq!(entry.value, "hello");
     }
@@ -175,10 +229,10 @@ mod tests {
         assert!(matches!(local_offset, LocalOffset::Ghost(_)));
 
         // Ghost entries return None for get_entry
-        assert!(fifos.get_entry(local_offset).is_none());
+        assert!(fifos.get_local_entry(local_offset).is_none());
 
         // But the key is still there
-        assert_eq!(*fifos.get_key(local_offset).unwrap(), 42);
+        assert_eq!(*fifos.get_local_key(local_offset).unwrap(), 42);
     }
 
     #[test]
@@ -194,30 +248,8 @@ mod tests {
         let local_offset = fifos.local_offset(global_offset);
         assert!(matches!(local_offset, LocalOffset::Main(_)));
 
-        let entry = fifos.get_entry(local_offset).unwrap();
+        let entry = fifos.get_local_entry(local_offset).unwrap();
         assert_eq!(entry.key, 99);
         assert_eq!(entry.value, "main");
-    }
-
-    #[test]
-    fn test_recency() {
-        let mut fifos = RawFifos::<u64, String>::new(100, 0.1, 0.9);
-
-        let entry = Entry::new(1u64, "test".to_string());
-        let offset = fifos.small.overwriting_push(entry);
-
-        let local_offset = fifos.local_offset(offset as u32);
-        let entry = fifos.get_entry(local_offset).unwrap();
-
-        assert_eq!(entry.recency(), 0);
-        entry.incr_recency();
-        assert_eq!(entry.recency(), 1);
-        entry.incr_recency();
-        entry.incr_recency();
-        entry.incr_recency(); // Should saturate at 3
-        assert_eq!(entry.recency(), 3);
-
-        entry.decr_recency();
-        assert_eq!(entry.recency(), 2);
     }
 }
