@@ -4,6 +4,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 use shard::count::CountRequestInternal;
 
+use super::TransferStage;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -41,6 +42,7 @@ pub(crate) async fn transfer_resharding_stream_records(
     );
 
     // Proxify local shard and create payload indexes on remote shard
+    progress.lock().set_stage(TransferStage::Proxifying);
     {
         let shard_holder = shard_holder.read().await;
 
@@ -136,6 +138,7 @@ pub(crate) async fn transfer_resharding_stream_records(
     }
 
     // Transfer contents batch by batch
+    progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transferring points to shard {shard_id} by reshard streaming records");
 
     let mut offset = None;
