@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use io::safe_delete::safe_delete_in_tmp;
 use log::info;
-use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use shard::snapshots::snapshot_data::SnapshotData;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
 use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
@@ -39,7 +40,8 @@ pub fn recover_snapshots(
             .next()
             .unwrap_or_else(|| panic!("Snapshot path is missing: {snapshot_params}"));
 
-        let snapshot_path = Path::new(path);
+        let snapshot_data = SnapshotData::new_packed_persistent(path);
+
         let collection_name = split
             .next()
             .unwrap_or_else(|| panic!("Collection name is missing: {snapshot_params}"));
@@ -65,7 +67,7 @@ pub fn recover_snapshots(
         let collection_temp_path =
             temp_dir.map_or_else(|| collection_path.with_extension("tmp"), PathBuf::from);
         if let Err(err) = Collection::restore_snapshot(
-            snapshot_path,
+            snapshot_data,
             &collection_temp_path,
             this_peer_id,
             is_distributed,
@@ -98,8 +100,7 @@ pub fn recover_full_snapshot(
     fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
-    let mut ar = open_snapshot_archive_with_validation(Path::new(snapshot_path)).unwrap();
-    ar.unpack(&snapshot_temp_path).unwrap();
+    tar_unpack_file(Path::new(snapshot_path), &snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");

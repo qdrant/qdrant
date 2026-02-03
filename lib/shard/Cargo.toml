@@ -43,6 +43,7 @@ validator = { workspace = true }
 wal = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
+tempfile = { workspace = true }
 
 
 [dev-dependencies]
@@ -54,4 +55,3 @@ proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
 tar = { workspace = true }
-tempfile = { workspace = true }

@@ -2,6 +2,7 @@
 large-error-threshold = 256
 
 disallowed-types = [
+  # Use fs_err instead of std::fs and tokio::fs
   { path = "std::fs::DirEntry", replacement = "fs_err::DirEntry" },
   { path = "std::fs::File", replacement = "fs_err::File" },
   { path = "std::fs::OpenOptions", replacement = "fs_err::OpenOptions" },
@@ -14,6 +15,9 @@ disallowed-types = [
 ]
 
 disallowed-methods = [
+  { path = "tar::Archive::unpack", replacement = "common::tar_unpack", reason = "Use safe unpackers" },
+
+  # Use fs_err instead of std::fs and tokio::fs
   { path = "std::fs::DirEntry::file_type", replacement = "fs_err::DirEntry::file_type" },
   { path = "std::fs::DirEntry::metadata", replacement = "fs_err::DirEntry::metadata" },
   { path = "std::fs::File::create", replacement = "fs_err::File::create" },
