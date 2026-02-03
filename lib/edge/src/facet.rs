@@ -21,9 +21,11 @@ impl EdgeShard {
             exact,
         } = request;
 
-        if limit == 0 {
-            return Ok(FacetResponse::default());
-        }
+        let (non_appendable, appendable) = self.segments.read().split_segments();
+        let segments = non_appendable.into_iter().chain(appendable);
+
+        let hw_counter = HwMeasurementAcc::disposable_edge().get_counter_cell();
+        let is_stopped = AtomicBool::new(false);
 
         let facet_params = FacetParams {
             key,
@@ -31,12 +33,6 @@ impl EdgeShard {
             filter,
             exact,
         };
-
-        let (non_appendable, appendable) = self.segments.read().split_segments();
-        let segments = non_appendable.into_iter().chain(appendable);
-
-        let hw_counter = HwMeasurementAcc::disposable_edge().get_counter_cell();
-        let is_stopped = AtomicBool::new(false);
 
         // Collect and merge facet results from all segments
         let mut merged_counts = HashMap::new();

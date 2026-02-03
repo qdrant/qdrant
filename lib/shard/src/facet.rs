@@ -12,6 +12,7 @@ pub struct FacetRequestInternal {
     /// Payload key to facet on
     pub key: JsonPath,
     /// Maximum number of facet hits to return. Default: 10
+    #[serde(default = "FacetRequestInternal::default_limit")]
     #[validate(range(min = 1))]
     pub limit: usize,
     /// Look only for points which satisfy these conditions
@@ -26,6 +27,10 @@ pub struct FacetRequestInternal {
 
 impl FacetRequestInternal {
     pub const DEFAULT_LIMIT: usize = 10;
+
+    pub const fn default_limit() -> usize {
+        Self::DEFAULT_LIMIT
+    }
 
     pub const fn default_exact() -> bool {
         false
