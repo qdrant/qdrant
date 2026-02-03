@@ -67,6 +67,13 @@ impl LocalShard {
             return Ok(0);
         };
 
+        // A corner case: truncate was called twice in a row without new updates in between.
+        // In this case, `truncate_from_op_num` is equal to last_wal_op_num + 1`.
+        // Because previously unapplied WAL records were already truncated up to `truncate_from_op_num` inclusive.
+        if truncate_from_op_num == last_wal_op_num + 1 {
+            return Ok(0);
+        }
+
         debug_assert!(truncate_from_op_num <= last_wal_op_num);
 
         wal_lock.drop_from(truncate_from_op_num)?;

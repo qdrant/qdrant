@@ -281,6 +281,13 @@ async fn test_truncate_unapplied_wal() {
     .await
     .unwrap();
 
+    // Try to truncate a fresh WAL with last_index = 0.
+    let removed_records = shard.truncate_unapplied_wal().await.unwrap();
+    assert_eq!(
+        removed_records, 0,
+        "Expected 0 records removed on an empty WAL"
+    );
+
     let hw_acc = HwMeasurementAcc::new();
 
     // Insert many individual points with wait=false to fill up the WAL.
@@ -346,6 +353,11 @@ async fn test_truncate_unapplied_wal() {
     let total_pushed = num_points as usize;
     let missing_count = total_pushed.saturating_sub(applied_count + truncated_count);
 
+    eprintln!(
+        "Applied points: {applied_count}, Truncated points: {truncated_count}, \
+         Total pushed: {total_pushed}, Missing: {missing_count}"
+    );
+
     // Verify that the sum of applied + truncated equals total pushed
     // This assertion may fail due to an open issue - we want to reproduce it
     assert_eq!(
@@ -353,6 +365,14 @@ async fn test_truncate_unapplied_wal() {
         total_pushed,
         "Sum of applied ({applied_count}) and truncated ({truncated_count}) operations \
          should equal total pushed ({total_pushed}). Missing {missing_count} operations!"
+    );
+
+    // Try truncate WAL with nothing to truncate
+    let removed_records = shard.truncate_unapplied_wal().await.unwrap();
+    eprintln!("Removed {removed_records} records from WAL on second truncate");
+    assert_eq!(
+        removed_records, 0,
+        "Expected 0 records removed on second truncate"
     );
 
     // Now verify that we can still write to the shard after truncation
