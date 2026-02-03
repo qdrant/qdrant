@@ -95,7 +95,7 @@ impl Repr for PyCondition {
     }
 }
 
-#[pyclass(name = "IsEmptyCondition", skip_from_py_object)]
+#[pyclass(name = "IsEmptyCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyIsEmptyCondition(pub IsEmptyCondition);
@@ -131,7 +131,7 @@ impl PyIsEmptyCondition {
     }
 }
 
-#[pyclass(name = "IsNullCondition", skip_from_py_object)]
+#[pyclass(name = "IsNullCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyIsNullCondition(pub IsNullCondition);
@@ -167,7 +167,7 @@ impl PyIsNullCondition {
     }
 }
 
-#[pyclass(name = "HasIdCondition", skip_from_py_object)]
+#[pyclass(name = "HasIdCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyHasIdCondition(pub HasIdCondition);
@@ -199,7 +199,7 @@ impl PyHasIdCondition {
     }
 }
 
-#[pyclass(name = "HasVectorCondition", skip_from_py_object)]
+#[pyclass(name = "HasVectorCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyHasVectorCondition(pub HasVectorCondition);

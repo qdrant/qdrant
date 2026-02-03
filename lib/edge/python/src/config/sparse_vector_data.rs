@@ -11,7 +11,7 @@ use segment::types::*;
 use super::vector_data::*;
 use crate::repr::*;
 
-#[pyclass(name = "SparseVectorDataConfig", skip_from_py_object)]
+#[pyclass(name = "SparseVectorDataConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySparseVectorDataConfig(pub SparseVectorDataConfig);
@@ -86,7 +86,7 @@ impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
     }
 }
 
-#[pyclass(name = "SparseIndexConfig", skip_from_py_object)]
+#[pyclass(name = "SparseIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySparseIndexConfig(SparseIndexConfig);
@@ -138,7 +138,7 @@ impl PySparseIndexConfig {
     }
 }
 
-#[pyclass(name = "SparseIndexType", skip_from_py_object)]
+#[pyclass(name = "SparseIndexType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySparseIndexType {
     MutableRam,
@@ -185,7 +185,7 @@ impl From<PySparseIndexType> for SparseIndexType {
     }
 }
 
-#[pyclass(name = "SparseVectorStorageType", skip_from_py_object)]
+#[pyclass(name = "SparseVectorStorageType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySparseVectorStorageType {
     Mmap,
@@ -227,7 +227,7 @@ impl From<PySparseVectorStorageType> for SparseVectorStorageType {
     }
 }
 
-#[pyclass(name = "Modifier", skip_from_py_object)]
+#[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {
     None,

@@ -7,7 +7,7 @@ use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::repr::*;
 use crate::{PyPayload, PyPointId, PyVector};
 
-#[pyclass(name = "Point", skip_from_py_object)]
+#[pyclass(name = "Point", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPoint(PointStructPersisted);

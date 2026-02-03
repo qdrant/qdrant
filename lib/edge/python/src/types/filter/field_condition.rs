@@ -7,7 +7,7 @@ use segment::types::*;
 use crate::repr::*;
 use crate::types::*;
 
-#[pyclass(name = "FieldCondition", skip_from_py_object)]
+#[pyclass(name = "FieldCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFieldCondition(pub FieldCondition);

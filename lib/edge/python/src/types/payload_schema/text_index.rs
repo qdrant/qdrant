@@ -9,7 +9,7 @@ use segment::data_types::index::*;
 
 use crate::repr::*;
 
-#[pyclass(name = "TextIndexParams", skip_from_py_object)]
+#[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyTextIndexParams(pub TextIndexParams);
@@ -87,7 +87,7 @@ impl PyTextIndexParams {
     }
 }
 
-#[pyclass(name = "TokenizerType", skip_from_py_object)]
+#[pyclass(name = "TokenizerType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTokenizerType {
     Prefix,
@@ -193,7 +193,7 @@ impl Repr for PyStopwords {
     }
 }
 
-#[pyclass(name = "Language", skip_from_py_object)]
+#[pyclass(name = "Language", from_py_object)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PyLanguage {
     Arabic,
@@ -341,7 +341,7 @@ impl From<PyLanguage> for Language {
     }
 }
 
-#[pyclass(name = "StopwordsSet", skip_from_py_object)]
+#[pyclass(name = "StopwordsSet", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyStopwordsSet(StopwordsSet);
@@ -442,7 +442,7 @@ impl Repr for PyStemmingAlgorithm {
     }
 }
 
-#[pyclass(name = "SnowballParams", skip_from_py_object)]
+#[pyclass(name = "SnowballParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySnowballParams(SnowballParams);
@@ -466,7 +466,7 @@ impl PySnowballParams {
     }
 }
 
-#[pyclass(name = "SnowballLanguage", skip_from_py_object)]
+#[pyclass(name = "SnowballLanguage", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySnowballLanguage {
     Arabic,

@@ -13,7 +13,7 @@ use crate::repr::*;
 use crate::types::PyJsonPath;
 use crate::types::payload_schema::*;
 
-#[pyclass(name = "ShardInfo", skip_from_py_object)]
+#[pyclass(name = "ShardInfo", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyShardInfo(pub ShardInfo);
 
@@ -57,7 +57,7 @@ impl PyShardInfo {
     }
 }
 
-#[pyclass(name = "PayloadIndexInfo", skip_from_py_object)]
+#[pyclass(name = "PayloadIndexInfo", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPayloadIndexInfo(PayloadIndexInfo);

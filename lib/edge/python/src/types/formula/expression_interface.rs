@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use crate::repr::*;
 use crate::*;
 
-#[pyclass(name = "Expression", skip_from_py_object)]
+#[pyclass(name = "Expression", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyExpressionInterface {
     Constant {

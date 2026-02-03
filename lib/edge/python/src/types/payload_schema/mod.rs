@@ -12,7 +12,7 @@ use segment::types::{PayloadSchemaParams, PayloadSchemaType};
 pub use self::text_index::*;
 use crate::repr::*;
 
-#[pyclass(name = "PayloadSchemaType", skip_from_py_object)]
+#[pyclass(name = "PayloadSchemaType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadSchemaType {
     Keyword,
@@ -170,7 +170,7 @@ impl Repr for PyPayloadSchemaParams {
     }
 }
 
-#[pyclass(name = "KeywordIndexParams", skip_from_py_object)]
+#[pyclass(name = "KeywordIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyKeywordIndexParams(KeywordIndexParams);
@@ -206,7 +206,7 @@ impl PyKeywordIndexParams {
     }
 }
 
-#[pyclass(name = "IntegerIndexParams", skip_from_py_object)]
+#[pyclass(name = "IntegerIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyIntegerIndexParams(IntegerIndexParams);
@@ -254,7 +254,7 @@ impl PyIntegerIndexParams {
     }
 }
 
-#[pyclass(name = "FloatIndexParams", skip_from_py_object)]
+#[pyclass(name = "FloatIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyFloatIndexParams(FloatIndexParams);
@@ -290,7 +290,7 @@ impl PyFloatIndexParams {
     }
 }
 
-#[pyclass(name = "GeoIndexParams", skip_from_py_object)]
+#[pyclass(name = "GeoIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyGeoIndexParams(GeoIndexParams);
@@ -320,7 +320,7 @@ impl PyGeoIndexParams {
     }
 }
 
-#[pyclass(name = "BoolIndexParams", skip_from_py_object)]
+#[pyclass(name = "BoolIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyBoolIndexParams(BoolIndexParams);
@@ -350,7 +350,7 @@ impl PyBoolIndexParams {
     }
 }
 
-#[pyclass(name = "DatetimeIndexParams", skip_from_py_object)]
+#[pyclass(name = "DatetimeIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyDatetimeIndexParams(DatetimeIndexParams);
@@ -386,7 +386,7 @@ impl PyDatetimeIndexParams {
     }
 }
 
-#[pyclass(name = "UuidIndexParams", skip_from_py_object)]
+#[pyclass(name = "UuidIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 struct PyUuidIndexParams(UuidIndexParams);

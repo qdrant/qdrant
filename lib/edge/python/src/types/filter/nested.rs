@@ -7,7 +7,7 @@ use segment::types::{Filter, Nested, NestedCondition};
 use crate::repr::*;
 use crate::types::*;
 
-#[pyclass(name = "NestedCondition", skip_from_py_object)]
+#[pyclass(name = "NestedCondition", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyNestedCondition(pub NestedCondition);

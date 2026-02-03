@@ -8,7 +8,7 @@ use crate::query::PyOrderBy;
 use crate::repr::*;
 use crate::types::*;
 
-#[pyclass(name = "ScrollRequest", skip_from_py_object)]
+#[pyclass(name = "ScrollRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyScrollRequest(ScrollRequestInternal);
 
