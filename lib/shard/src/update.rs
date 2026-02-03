@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::{RwLock, RwLockWriteGuard};
+use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
@@ -24,7 +24,7 @@ use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, Vect
 use crate::segment_holder::SegmentHolder;
 
 pub fn process_point_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
@@ -32,21 +32,19 @@ pub fn process_point_operation(
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            let res = upsert_points(&segments.read(), op_num, points.iter(), hw_counter)?;
+            let res = upsert_points(segments, op_num, points.iter(), hw_counter)?;
             Ok(res)
         }
         PointOperations::UpsertPointsConditional(operation) => {
-            conditional_upsert(&segments.read(), op_num, operation, hw_counter)
+            conditional_upsert(segments, op_num, operation, hw_counter)
         }
-        PointOperations::DeletePoints { ids } => {
-            delete_points(&segments.read(), op_num, &ids, hw_counter)
-        }
+        PointOperations::DeletePoints { ids } => delete_points(segments, op_num, &ids, hw_counter),
         PointOperations::DeletePointsByFilter(filter) => {
-            delete_points_by_filter(&segments.read(), op_num, &filter, hw_counter)
+            delete_points_by_filter(segments, op_num, &filter, hw_counter)
         }
         PointOperations::SyncPoints(operation) => {
             let (deleted, new, updated) = sync_points(
-                &segments.read(),
+                segments,
                 op_num,
                 operation.from_id,
                 operation.to_id,
@@ -60,7 +58,7 @@ pub fn process_point_operation(
 
 #[cfg(feature = "staging")]
 pub fn process_staging_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     operation: crate::operations::staging::StagingOperations,
 ) -> OperationResult<usize> {
@@ -71,36 +69,32 @@ pub fn process_staging_operation(
     }
 
     // This operation doesn't directly affect segment/point versions, so we bump it here
-    segments.read().bump_max_segment_version_overwrite(op_num);
+    segments.bump_max_segment_version_overwrite(op_num);
 
     Ok(0)
 }
 
 pub fn process_vector_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     vector_operation: VectorOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match vector_operation {
         VectorOperations::UpdateVectors(update_vectors) => {
-            update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
+            update_vectors_conditional(segments, op_num, update_vectors, hw_counter)
         }
-        VectorOperations::DeleteVectors(ids, vector_names) => delete_vectors(
-            &segments.read(),
-            op_num,
-            &ids.points,
-            &vector_names,
-            hw_counter,
-        ),
+        VectorOperations::DeleteVectors(ids, vector_names) => {
+            delete_vectors(segments, op_num, &ids.points, &vector_names, hw_counter)
+        }
         VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-            delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names, hw_counter)
+            delete_vectors_by_filter(segments, op_num, &filter, &vector_names, hw_counter)
         }
     }
 }
 
 pub fn process_payload_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     payload_operation: PayloadOps,
     hw_counter: &HardwareCounterCell,
@@ -109,23 +103,9 @@ pub fn process_payload_operation(
         PayloadOps::SetPayload(sp) => {
             let payload: Payload = sp.payload;
             if let Some(points) = sp.points {
-                set_payload(
-                    &segments.read(),
-                    op_num,
-                    &payload,
-                    &points,
-                    &sp.key,
-                    hw_counter,
-                )
+                set_payload(segments, op_num, &payload, &points, &sp.key, hw_counter)
             } else if let Some(filter) = sp.filter {
-                set_payload_by_filter(
-                    &segments.read(),
-                    op_num,
-                    &payload,
-                    &filter,
-                    &sp.key,
-                    hw_counter,
-                )
+                set_payload_by_filter(segments, op_num, &payload, &filter, &sp.key, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -135,9 +115,9 @@ pub fn process_payload_operation(
         }
         PayloadOps::DeletePayload(dp) => {
             if let Some(points) = dp.points {
-                delete_payload(&segments.read(), op_num, &points, &dp.keys, hw_counter)
+                delete_payload(segments, op_num, &points, &dp.keys, hw_counter)
             } else if let Some(filter) = dp.filter {
-                delete_payload_by_filter(&segments.read(), op_num, &filter, &dp.keys, hw_counter)
+                delete_payload_by_filter(segments, op_num, &filter, &dp.keys, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -146,17 +126,17 @@ pub fn process_payload_operation(
             }
         }
         PayloadOps::ClearPayload { ref points, .. } => {
-            clear_payload(&segments.read(), op_num, points, hw_counter)
+            clear_payload(segments, op_num, points, hw_counter)
         }
         PayloadOps::ClearPayloadByFilter(ref filter) => {
-            clear_payload_by_filter(&segments.read(), op_num, filter, hw_counter)
+            clear_payload_by_filter(segments, op_num, filter, hw_counter)
         }
         PayloadOps::OverwritePayload(sp) => {
             let payload: Payload = sp.payload;
             if let Some(points) = sp.points {
-                overwrite_payload(&segments.read(), op_num, &payload, &points, hw_counter)
+                overwrite_payload(segments, op_num, &payload, &points, hw_counter)
             } else if let Some(filter) = sp.filter {
-                overwrite_payload_by_filter(&segments.read(), op_num, &payload, &filter, hw_counter)
+                overwrite_payload_by_filter(segments, op_num, &payload, &filter, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -168,21 +148,21 @@ pub fn process_payload_operation(
 }
 
 pub fn process_field_index_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_index_operation: &FieldIndexOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match field_index_operation {
         FieldIndexOperations::CreateIndex(index_data) => create_field_index(
-            &segments.read(),
+            segments,
             op_num,
             &index_data.field_name,
             index_data.field_schema.as_ref(),
             hw_counter,
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
-            delete_field_index(&segments.read(), op_num, field_name)
+            delete_field_index(segments, op_num, field_name)
         }
     }
 }

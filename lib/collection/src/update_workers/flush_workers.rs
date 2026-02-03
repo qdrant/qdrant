@@ -7,7 +7,7 @@ use std::time::Duration;
 use common::panic;
 use segment::common::operation_error::OperationResult;
 use segment::types::SeqNumberType;
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::WalError;
 use tokio::sync::oneshot;
 

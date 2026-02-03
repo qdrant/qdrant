@@ -1,4 +1,6 @@
 mod flush;
+pub mod locked;
+pub mod read_points;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -9,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -20,7 +22,6 @@ use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
-use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
@@ -95,8 +96,6 @@ impl Drop for SegmentHolder {
         }
     }
 }
-
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl SegmentHolder {
     /// Iterate over all segments with their IDs
@@ -707,47 +706,6 @@ impl SegmentHolder {
         Ok(applied_points)
     }
 
-    /// Provides an entry point of reading multiple points in all segments.
-    ///
-    pub fn read_points<F>(
-        &self,
-        ids: &[PointIdType],
-        is_stopped: &AtomicBool,
-        mut f: F,
-    ) -> OperationResult<usize>
-    where
-        F: FnMut(&[PointIdType], &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<usize>,
-    {
-        // We must go over non-appendable segments first, then go over appendable segments after
-        // Points may be moved from non-appendable to appendable, because we don't lock all
-        // segments together read ordering is very important here!
-        //
-        // Consider the following sequence:
-        //
-        // 1. Read-lock non-appendable segment A
-        // 2. Atomic move from A to B
-        // 3. Read-lock appendable segment B
-        //
-        // We are guaranteed to read all data consistently, and don't lose any points
-        let segments = self.non_appendable_then_appendable_segments();
-
-        let mut read_points = 0;
-        for segment in segments {
-            let segment_arc = segment.get();
-            let read_segment = segment_arc.read();
-            let segment_point_ids: Vec<PointIdType> = ids
-                .iter()
-                .copied()
-                .filter(|id| read_segment.has_point(*id))
-                .collect();
-            check_stopped(is_stopped)?;
-            if !segment_point_ids.is_empty() {
-                read_points += f(&segment_point_ids, &read_segment)?;
-            }
-        }
-        Ok(read_points)
-    }
-
     /// Out of a list of point IDs, select only those that exist in at least one segment.
     ///
     /// Optimized for many segments and long lists of IDs:
@@ -821,7 +779,7 @@ impl SegmentHolder {
     /// This builds a segment on disk, but does NOT add it to the current segment holder. That must
     /// be done explicitly. `save_version` must be true for the segment to be loaded when Qdrant
     /// restarts.
-    fn build_tmp_segment(
+    pub fn build_tmp_segment(
         &self,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,

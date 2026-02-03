@@ -233,15 +233,14 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::sync::Arc;
 
-    use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::types::{
         CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
         ScalarQuantizationConfig, ScalarType,
     };
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;
@@ -293,7 +292,7 @@ mod tests {
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config = HnswConfig {
             m: 16,
@@ -432,7 +431,7 @@ mod tests {
         );
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let hnsw_config_collection = HnswConfig {
             m: 16,
@@ -586,7 +585,7 @@ mod tests {
         );
 
         let segment_id = holder.add_new(segment);
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let quantization_config_collection =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {

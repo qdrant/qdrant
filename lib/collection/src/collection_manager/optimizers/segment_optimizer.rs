@@ -12,7 +12,6 @@ use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
-use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
@@ -27,12 +26,11 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
 
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -646,10 +644,10 @@ pub trait SegmentOptimizer {
 
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
-        // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
+        // which is an expensive operation. So we can't unlock `segments` after the check and before the insert.
         //
         // On the other hand - we do not want to hold write lock during the segment creation.
-        // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
+        // Solution in the middle - is an upgradable lock. It ensures consistency after the check and allows to perform read operation.
         let segment_holder_read = segment_holder.upgradable_read();
 
         // Find appendable segments other than optimized ones
@@ -762,8 +760,7 @@ pub trait SegmentOptimizer {
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
         let result = self.optimize_segment_propagate_changes(
-            &segment_holder,
-            &input_segments,
+            input_segments,
             output_segment_uuid,
             &locked_proxies,
             permit,
@@ -772,7 +769,8 @@ pub trait SegmentOptimizer {
             &hw_counter,
             progress,
         );
-        let (optimized_segment, mut write_segments_guard) = match result {
+
+        let (optimized_segment, deleted_points) = match result {
             Ok(segment) => segment,
             Err(err) => {
                 // Properly cancel optimization on all error kinds
@@ -782,41 +780,31 @@ pub trait SegmentOptimizer {
             }
         };
 
-        // Replace proxy segments with new optimized segment
-        let point_count = optimized_segment.available_point_count();
-        let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
-        drop(counter_handler); // Decrease optimization counter
-        debug_assert_eq!(
-            proxies.len(),
-            proxy_ids.len(),
-            "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
-        );
+        // Fast part: blocks updates, propagates rest of the changes, swaps optimized segment
+        let points_count = match self.finish_optimization(
+            &segment_holder,
+            locked_proxies,
+            optimized_segment,
+            &deleted_points,
+            &proxy_ids,
+            cow_segment_id_opt,
+            stopped,
+            &hw_counter,
+        ) {
+            Ok(points_count) => points_count,
+            Err(err) => {
+                // Properly cancel optimization on all error kinds
+                // Unwrap proxies and add temp segment to holder
+                self.unwrap_proxy(&segment_holder, &proxy_ids)?;
+                return Err(err);
+            }
+        };
 
-        if let Some(cow_segment_id) = cow_segment_id_opt {
-            // Temp segment might be taken into another parallel optimization
-            // so it is not necessary exist by this time
-            write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
-        }
-
-        // Release reference counter for each optimized segment
-        drop(input_segments);
-
-        // Unlock collection for search and updates
-        // After the collection is unlocked - we can remove data as slow as we want
-        drop(write_segments_guard);
-
-        // Drop all pointers to proxies, so we can de-arc them
-        drop(locked_proxies);
-
-        // Only remove data after we ensure the consistency of the collection.
-        // If remove fails - we will still have operational collection with reported error.
-        for proxy in proxies {
-            proxy.drop_data()?;
-        }
+        drop(counter_handler);
 
         timer.set_success(true);
 
-        Ok(point_count)
+        Ok(points_count)
     }
 
     /// Accumulates approximate set of points deleted in a given set of proxies
@@ -881,10 +869,9 @@ pub trait SegmentOptimizer {
     ///
     /// This function is slow and must only be used on an optimization worker.
     #[allow(clippy::too_many_arguments)]
-    fn optimize_segment_propagate_changes<'a>(
+    fn optimize_segment_propagate_changes(
         &self,
-        segment_holder: &'a LockedSegmentHolder,
-        optimizing_segments: &[LockedSegment],
+        optimizing_segments: Vec<LockedSegment>,
         output_segment_uuid: Uuid,
         proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
@@ -892,16 +879,13 @@ pub trait SegmentOptimizer {
         stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         progress: ProgressTracker,
-    ) -> CollectionResult<(
-        Segment,
-        RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
-    )> {
+    ) -> CollectionResult<(Segment, DeletedPoints)> {
         check_process_stopped(stopped)?;
 
         // ---- SLOW PART -----
 
-        let mut optimized_segment = self.build_new_segment(
-            optimizing_segments,
+        let optimized_segment = self.build_new_segment(
+            &optimizing_segments,
             output_segment_uuid,
             proxies,
             permit,
@@ -926,10 +910,28 @@ pub trait SegmentOptimizer {
 
         check_process_stopped(stopped)?;
 
-        // This block locks all operations with collection. It should be fast
-        let segment_holder_write = segment_holder.write();
+        Ok((optimized_segment, already_remove_points))
+    }
 
-        let proxy_index_changes = self.proxy_index_changes(proxies);
+    #[allow(clippy::too_many_arguments)]
+    fn finish_optimization(
+        &self,
+        segment_holder: &LockedSegmentHolder,
+        locked_proxies: Vec<LockedSegment>,
+        mut optimized_segment: Segment,
+        already_remove_points: &DeletedPoints,
+        proxy_ids: &[SegmentId],
+        cow_segment_id_opt: Option<SegmentId>,
+        stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> CollectionResult<usize> {
+        // This block locks all write operations with collection. It should be fast.
+        let upgradable_segment_holder = segment_holder.upgradable_read();
+
+        // This mutex prevents update operations, which could create inconsistency during transition.
+        let update_guard = segment_holder.acquire_updates_lock();
+
+        let proxy_index_changes = self.proxy_index_changes(&locked_proxies);
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
@@ -958,7 +960,7 @@ pub trait SegmentOptimizer {
             check_process_stopped(stopped)?;
         }
 
-        let deleted_points = self.proxy_deleted_points(proxies);
+        let deleted_points = self.proxy_deleted_points(&locked_proxies);
 
         let points_diff = deleted_points
             .iter()
@@ -980,7 +982,39 @@ pub trait SegmentOptimizer {
                 .unwrap();
         }
 
-        Ok((optimized_segment, segment_holder_write))
+        // Replace proxy segments with new optimized segment
+        let point_count = optimized_segment.available_point_count();
+
+        let mut writable_segment_holder =
+            RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
+
+        let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
+        debug_assert_eq!(
+            proxies.len(),
+            proxy_ids.len(),
+            "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
+        );
+
+        if let Some(cow_segment_id) = cow_segment_id_opt {
+            // Temp segment might be taken into another parallel optimization
+            // so it is not necessary exist by this time
+            writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
+        }
+
+        drop(writable_segment_holder);
+        // Allow updates again
+        drop(update_guard);
+
+        // Drop all pointers to proxies, so we can de-arc them
+        drop(locked_proxies);
+
+        // Only remove data after we ensure the consistency of the collection.
+        // If remove fails - we will still have operational collection with reported error.
+        for proxy in proxies {
+            proxy.drop_data()?;
+        }
+
+        Ok(point_count)
     }
 }
 

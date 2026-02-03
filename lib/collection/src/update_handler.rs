@@ -8,13 +8,13 @@ use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::{
     SegmentOptimizer, plan_optimizations,
