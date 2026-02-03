@@ -118,7 +118,7 @@ impl<T> RingBuffer<T> {
 
         // Update write position with Release ordering to ensure the write
         // is visible to readers before they see the new position
-        let new_write_pos = (offset + 1) % self.capacity;
+        let new_write_pos = self.next_position(offset);
         self.write_pos.store(new_write_pos, Ordering::Release);
 
         // Update length
@@ -159,10 +159,20 @@ impl<T> RingBuffer<T> {
         }
 
         // Advance write position (entry stays in place, effectively reinserted)
-        let new_write_pos = (write_pos + 1) % self.capacity;
+        let new_write_pos = self.next_position(write_pos);
         self.write_pos.store(new_write_pos, Ordering::Release);
 
         true
+    }
+
+    #[inline]
+    fn next_position(&self, position: usize) -> usize {
+        let next_position = position + 1;
+        if next_position < self.capacity.get() {
+            next_position
+        } else {
+            0
+        }
     }
 }
 
