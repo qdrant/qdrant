@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
+use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
@@ -18,6 +19,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;
 use crate::update_workers::applied_seq::APPLIED_SEQ_SAVE_INTERVAL;
+use crate::operations::shared_storage_config::SharedStorageConfig;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard_trait::ShardOperation;
+use crate::tests::fixtures::*;
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {

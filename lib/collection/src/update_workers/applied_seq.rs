@@ -75,6 +75,14 @@ impl AppliedSeqHandler {
         persisted
     }
 
+    /// Test helper: force set the op_num and immediately persist to disk.
+    /// This bypasses the interval-based persistence.
+    #[cfg(test)]
+    pub fn force_set_and_persist(&self, op_num: u64) -> CollectionResult<()> {
+        self.op_num.store(op_num, Ordering::Relaxed);
+        self.save(op_num)
+    }
+
     /// Load or create the underlying applied seq file.
     pub fn load_or_init(shard_path: &Path, wal_last_index: u64) -> Self {
         let update_count = AtomicU64::new(0);
