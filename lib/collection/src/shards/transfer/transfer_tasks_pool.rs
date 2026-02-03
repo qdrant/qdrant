@@ -151,28 +151,26 @@ impl TransferTasksPool {
         let progress = task.progress.lock();
         let total = max(progress.points_transferred, progress.points_total);
 
-        // Build comment with stage prefix if available
         let mut comment = String::new();
         if let Some(stage) = progress.current_stage() {
             let elapsed = progress.stage_elapsed_secs().unwrap_or(0.0);
-            write!(comment, "{} ({:.2}s) | ", stage.as_str(), elapsed).unwrap();
+            write!(comment, "{} ({:.2}s)", stage.as_str(), elapsed).unwrap();
         }
 
-        write!(
-            comment,
-            "Transferring records ({}/{}), started {}s ago, ETA: ",
-            progress.points_transferred,
-            total,
-            chrono::Utc::now()
-                .signed_duration_since(task.started_at)
-                .num_seconds(),
-        )
-        .unwrap();
-
-        if let Some(eta) = progress.eta.estimate(total) {
-            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
-        } else {
-            comment.push('-');
+        // Append records progress only when points are actually tracked
+        if total > 0 {
+            if !comment.is_empty() {
+                comment.push_str(" | ");
+            }
+            write!(
+                comment,
+                "Transferring records ({}/{})",
+                progress.points_transferred, total
+            )
+            .unwrap();
+            if let Some(eta) = progress.eta.estimate(total) {
+                write!(comment, ", ETA: {:.2}s", eta.as_secs_f64()).unwrap();
+            }
         }
 
         Some(TransferTaskStatus { result, comment })
