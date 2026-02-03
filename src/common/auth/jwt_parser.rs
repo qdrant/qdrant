@@ -160,6 +160,24 @@ mod tests {
     }
 
     #[test]
+    fn test_no_exp() {
+        let claims = Claims {
+            sub: None,
+            // Empty expiration is not allowed
+            exp: None,
+            access: Access::Global(GlobalAccessMode::Read),
+            value_exists: None,
+        };
+
+        let token = create_token(&claims);
+
+        let secret = "secret";
+        let parser = JwtParser::new(secret);
+
+        assert!(parser.decode(&token).is_none());
+    }
+
+    #[test]
     fn test_invalid_token() {
         let claims = Claims {
             sub: None,
