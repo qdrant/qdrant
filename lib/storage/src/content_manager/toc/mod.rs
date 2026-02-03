@@ -702,24 +702,4 @@ impl TableOfContent {
     pub fn general_runtime_handle(&self) -> &Handle {
         self.general_runtime.handle()
     }
-
-    /// Truncate unapplied WAL records for a given collection.
-    /// Returns amount of removed records.
-    pub async fn truncate_unapplied_wal(
-        &self,
-        collection_name: &str,
-        access: Access,
-    ) -> Result<usize, StorageError> {
-        let requirements = AccessRequirements::new().manage();
-        let collection_pass = access
-            .check_collection_access(collection_name, requirements)?
-            .into_static();
-
-        let collection = self.get_collection(&collection_pass).await?;
-
-        collection
-            .truncate_unapplied_wal()
-            .await
-            .map_err(StorageError::from)
-    }
 }

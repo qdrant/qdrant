@@ -274,11 +274,6 @@ impl Collection {
             })
             .await?;
 
-        let mut total_dropped_records = 0;
-        for result in results {
-            total_dropped_records += result?;
-        }
-
-        Ok(total_dropped_records)
+        results.into_iter().sum()
     }
 }

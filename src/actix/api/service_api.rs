@@ -229,12 +229,21 @@ async fn truncate_unapplied_wal(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let future = async move {
-        let _ = access.check_global_access(AccessRequirements::new().manage())?;
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().manage())?
+            .issue_pass(&collection.name)
+            .into_static();
+
         let pass = new_unchecked_verification_pass();
-        dispatcher
+        let collection = dispatcher
             .toc(&access, &pass)
-            .truncate_unapplied_wal(&collection.name, access)
+            .get_collection(&collection_pass)
+            .await?;
+
+        collection
+            .truncate_unapplied_wal()
             .await
+            .map_err(StorageError::from)
     };
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
