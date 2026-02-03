@@ -12,6 +12,7 @@ use io::storage_version::StorageVersion;
 use memmap2::Mmap;
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{
     create_and_ensure_length, open_read_mmap, transmute_from_u8_to_slice, transmute_to_u8,
     transmute_to_u8_slice,
@@ -192,9 +193,13 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             return None;
         }
 
-        let header: PostingListFileHeader<W> = self
-            .slice_part::<PostingListFileHeader<W>>(u64::from(id) * Self::HEADER_SIZE as u64, 1u32)
-            [0]
+        // TODO Safety.
+        let header: PostingListFileHeader<W> = unsafe {
+            self.slice_part::<PostingListFileHeader<W>>(
+                u64::from(id) * Self::HEADER_SIZE as u64,
+                1u32,
+            )
+        }[0]
         .clone();
 
         hw_counter.vector_io_read().incr_delta(Self::HEADER_SIZE);
@@ -204,11 +209,14 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             + u64::from(header.chunks_count) * size_of::<CompressedPostingChunk<W>>() as u64;
 
         let remainders_end = if id + 1 < self.file_header.posting_count as DimId {
-            self.slice_part::<PostingListFileHeader<W>>(
-                u64::from(id + 1) * Self::HEADER_SIZE as u64,
-                1u32,
-            )[0]
-            .ids_start
+            // TODO Safety
+            (unsafe {
+                self.slice_part::<PostingListFileHeader<W>>(
+                    u64::from(id + 1) * Self::HEADER_SIZE as u64,
+                    1u32,
+                )
+            })[0]
+                .ids_start
         } else {
             self.mmap.len() as u64
         };
@@ -221,24 +229,37 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         }
 
         Some(CompressedPostingListView::new(
-            self.slice_part(header.ids_start, header.ids_len),
-            self.slice_part(
-                header.ids_start + u64::from(header.ids_len),
-                header.chunks_count,
-            ),
-            transmute_from_u8_to_slice(
-                &self.mmap[remainders_start as usize..remainders_end as usize],
-            ),
+            // TODO Safety
+            unsafe { self.slice_part(header.ids_start, header.ids_len) },
+            // TODO Safety
+            unsafe {
+                self.slice_part(
+                    header.ids_start + u64::from(header.ids_len),
+                    header.chunks_count,
+                )
+            },
+            // TODO Safety
+            unsafe {
+                #[expect(deprecated, reason = "legacy code")]
+                transmute_from_u8_to_slice(
+                    &self.mmap[remainders_start as usize..remainders_end as usize],
+                )
+            },
             header.last_id.checked_sub(1),
             header.quantization_params,
             hw_counter,
         ))
     }
 
-    fn slice_part<T>(&self, start: impl Into<u64>, count: impl Into<u64>) -> &[T] {
+    // TODO Safety
+    unsafe fn slice_part<T>(&self, start: impl Into<u64>, count: impl Into<u64>) -> &[T] {
         let start = start.into() as usize;
         let end = start + count.into() as usize * size_of::<T>();
-        transmute_from_u8_to_slice(&self.mmap[start..end])
+        // Safety: safe because of the method safety invariants.
+        #[expect(deprecated, reason = "legacy code")]
+        unsafe {
+            transmute_from_u8_to_slice(&self.mmap[start..end])
+        }
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
@@ -274,7 +295,9 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
                 last_id: posting.view(&hw_counter).last_id().map_or(0, |id| id + 1),
                 quantization_params: posting.view(&hw_counter).multiplier(),
             };
-            buf.write_all(transmute_to_u8(&posting_header))?;
+            // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
+            buf.write_all(unsafe { transmute_to_u8(&posting_header) })?;
             offset += store_size.total;
         }
 
@@ -283,8 +306,12 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             let posting_view = posting.view(&hw_counter);
             let (id_data, chunks, remainders) = posting_view.parts();
             buf.write_all(id_data)?;
-            buf.write_all(transmute_to_u8_slice(chunks))?;
-            buf.write_all(transmute_to_u8_slice(remainders))?;
+            // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
+            buf.write_all(unsafe { transmute_to_u8_slice(chunks) })?;
+            // TODO Safety
+            #[expect(deprecated, reason = "legacy code")]
+            buf.write_all(unsafe { transmute_to_u8_slice(remainders) })?;
         }
 
         // Explicitly fsync file contents to ensure durability
