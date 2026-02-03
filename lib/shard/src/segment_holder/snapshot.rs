@@ -13,6 +13,7 @@ use segment::types::SegmentConfig;
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 use crate::proxy_segment::ProxySegment;
+use crate::segment_holder::locked::UpdatesGuard;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::snapshots::snapshot_manifest::SnapshotManifest;
 
@@ -117,7 +118,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segment_id: SegmentId,
         proxy_segment: LockedSegment,
-        updates_guard: parking_lot::MutexGuard<'a, ()>, // Guarantee no updates are happening
+        updates_guard: UpdatesGuard<'a>,
     ) -> Result<
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
@@ -161,7 +162,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment_id: SegmentId,
-        updates_guard: parking_lot::MutexGuard<'_, ()>, // Guarantee no updates are happening
+        updates_guard: UpdatesGuard<'_>,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step,
