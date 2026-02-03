@@ -54,7 +54,7 @@ impl LocalShard {
         // Then, Send the plunger signal to the update handler.
         // It's a marker that all previous updates are processed or skipped.
         let (tx, rx) = oneshot::channel();
-        let plunger = UpdateSignal::SkipUpdatesPlunger(tx);
+        let plunger = UpdateSignal::Plunger(tx);
         self.update_sender.load().send(plunger).await?;
         let truncate_from_op_num = rx.await?;
 

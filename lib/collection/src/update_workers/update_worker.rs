@@ -52,9 +52,7 @@ impl UpdateWorkers {
                     hw_measurements,
                 }) => {
                     if skip_updates.load(std::sync::atomic::Ordering::Relaxed) {
-                        if first_skipped.is_none() {
-                            first_skipped.replace(op_num);
-                        }
+                        first_skipped.get_or_insert(op_num);
 
                         if let Some(feedback) = sender {
                             feedback.send(Err(CollectionError::service_error(
@@ -65,6 +63,8 @@ impl UpdateWorkers {
                         }
                         continue;
                     }
+
+                    first_skipped = None;
 
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
@@ -168,13 +168,7 @@ impl UpdateWorkers {
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(()).unwrap_or_else(|_| {
-                        log::debug!("Can't notify sender, assume nobody is waiting anymore");
-                    });
-                }
-                UpdateSignal::SkipUpdatesPlunger(callback_sender) => {
-                    let op_num = first_skipped.take();
-                    callback_sender.send(op_num).unwrap_or_else(|_| {
+                    callback_sender.send(first_skipped).unwrap_or_else(|_| {
                         log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }

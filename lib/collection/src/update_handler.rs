@@ -55,10 +55,8 @@ pub enum UpdateSignal {
     /// Empty signal used to trigger optimizers
     Nop,
     /// Ensures that previous updates are applied
-    Plunger(oneshot::Sender<()>),
-    /// Ensures that previous updates are applied and returns the first `op_num`
-    /// that was skipped while `skip_updates` was set, if any.
-    SkipUpdatesPlunger(oneshot::Sender<Option<SeqNumberType>>),
+    /// Sends back the first skipped `op_num` if `skip_updates` is set, or None otherwise.
+    Plunger(oneshot::Sender<Option<SeqNumberType>>),
 }
 
 /// Signal, used to inform Optimization process
