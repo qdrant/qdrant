@@ -531,7 +531,10 @@ def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name:
         comment = transfer["comment"]
 
         # Compare progress or total
-        current, total = re.search(r"Transferring records \((\d+)/(\d+)\), started", comment).groups()
+        m = re.search(r"Transferring records \((\d+)/(\d+)\)", comment)
+        if m is None:
+            continue
+        current, total = m.groups()
         if current is not None and expected_transfer_progress is not None and int(
                 current) >= expected_transfer_progress:
             return True
