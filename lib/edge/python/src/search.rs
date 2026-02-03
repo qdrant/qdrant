@@ -8,7 +8,7 @@ use shard::search::CoreSearchRequest;
 use crate::repr::*;
 use crate::*;
 
-#[pyclass(name = "SearchRequest")]
+#[pyclass(name = "SearchRequest", skip_from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchRequest(CoreSearchRequest);
 
@@ -110,7 +110,7 @@ impl PySearchRequest {
     }
 }
 
-#[pyclass(name = "SearchParams")]
+#[pyclass(name = "SearchParams", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
 
@@ -184,7 +184,7 @@ impl PySearchParams {
     }
 }
 
-#[pyclass(name = "QuantizationSearchParams")]
+#[pyclass(name = "QuantizationSearchParams", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 
@@ -232,7 +232,7 @@ impl PyQuantizationSearchParams {
     }
 }
 
-#[pyclass(name = "AcornSearchParams")]
+#[pyclass(name = "AcornSearchParams", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyAcornSearchParams(AcornSearchParams);
 

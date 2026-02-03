@@ -9,7 +9,7 @@ use shard::operations::{CollectionUpdateOperations, payload_ops, point_ops, vect
 use crate::*;
 
 /// Defines the mode of the upsert operation
-#[pyclass(name = "UpdateMode", eq, eq_int)]
+#[pyclass(name = "UpdateMode", eq, eq_int, skip_from_py_object)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PyUpdateMode {
     /// Default mode - insert new points, update existing points
@@ -31,7 +31,7 @@ impl From<PyUpdateMode> for UpdateMode {
     }
 }
 
-#[pyclass(name = "UpdateOperation")]
+#[pyclass(name = "UpdateOperation", skip_from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyUpdateOperation(CollectionUpdateOperations);
 

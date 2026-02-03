@@ -10,7 +10,7 @@ use segment::types::*;
 use super::quantization::*;
 use crate::repr::*;
 
-#[pyclass(name = "VectorDataConfig")]
+#[pyclass(name = "VectorDataConfig", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyVectorDataConfig(pub VectorDataConfig);
@@ -119,7 +119,7 @@ impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
     }
 }
 
-#[pyclass(name = "Distance")]
+#[pyclass(name = "Distance", skip_from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDistance {
     Cosine,
@@ -170,7 +170,7 @@ impl From<PyDistance> for Distance {
     }
 }
 
-#[pyclass(name = "VectorStorageType")]
+#[pyclass(name = "VectorStorageType", skip_from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageType {
     Memory,
@@ -277,7 +277,7 @@ impl Repr for PyIndexes {
     }
 }
 
-#[pyclass(name = "PlainIndexConfig")]
+#[pyclass(name = "PlainIndexConfig", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
 
@@ -294,7 +294,7 @@ impl PyPlainIndexConfig {
     }
 }
 
-#[pyclass(name = "HnswIndexConfig")]
+#[pyclass(name = "HnswIndexConfig", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyHnswIndexConfig(HnswConfig);
@@ -373,7 +373,7 @@ impl PyHnswIndexConfig {
     }
 }
 
-#[pyclass(name = "MultiVectorConfig")]
+#[pyclass(name = "MultiVectorConfig", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMultiVectorConfig(MultiVectorConfig);
@@ -405,7 +405,7 @@ impl PyMultiVectorConfig {
     }
 }
 
-#[pyclass(name = "MultiVectorComparator")]
+#[pyclass(name = "MultiVectorComparator", skip_from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
     MaxSim,
@@ -444,7 +444,7 @@ impl From<PyMultiVectorComparator> for MultiVectorComparator {
     }
 }
 
-#[pyclass(name = "VectorStorageDatatype")]
+#[pyclass(name = "VectorStorageDatatype", skip_from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageDatatype {
     Float32,

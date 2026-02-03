@@ -7,7 +7,7 @@ use shard::count::CountRequestInternal;
 use crate::repr::*;
 use crate::types::PyFilter;
 
-#[pyclass(name = "CountRequest")]
+#[pyclass(name = "CountRequest", skip_from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyCountRequest(CountRequestInternal);
 

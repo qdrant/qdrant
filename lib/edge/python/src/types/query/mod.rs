@@ -157,7 +157,7 @@ impl Repr for PyQuery {
     }
 }
 
-#[pyclass(name = "Query")]
+#[pyclass(name = "Query", skip_from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyQueryInterface {
     #[pyo3(constructor = (query, using = None))]
@@ -223,7 +223,7 @@ impl Repr for PyQueryInterface {
     }
 }
 
-#[pyclass(name = "RecommendQuery")]
+#[pyclass(name = "RecommendQuery", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyRecommendQuery(RecoQuery<VectorInternal>);
@@ -267,7 +267,7 @@ impl PyRecommendQuery {
     }
 }
 
-#[pyclass(name = "DiscoverQuery")]
+#[pyclass(name = "DiscoverQuery", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
@@ -308,7 +308,7 @@ impl PyDiscoverQuery {
     }
 }
 
-#[pyclass(name = "ContextQuery")]
+#[pyclass(name = "ContextQuery", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyContextQuery(ContextQuery<VectorInternal>);
@@ -340,7 +340,7 @@ impl PyContextQuery {
     }
 }
 
-#[pyclass(name = "ContextPair")]
+#[pyclass(name = "ContextPair", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyContextPair(ContextPair<VectorInternal>);
@@ -391,7 +391,7 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     }
 }
 
-#[pyclass(name = "FeedbackNaiveQuery")]
+#[pyclass(name = "FeedbackNaiveQuery", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFeedbackNaiveQuery(NaiveFeedbackQuery<VectorInternal>);
@@ -443,7 +443,7 @@ impl PyFeedbackNaiveQuery {
     }
 }
 
-#[pyclass(name = "FeedbackItem")]
+#[pyclass(name = "FeedbackItem", skip_from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
@@ -494,7 +494,7 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     }
 }
 
-#[pyclass(name = "NaiveFeedbackStrategy")]
+#[pyclass(name = "NaiveFeedbackStrategy", skip_from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyNaiveFeedbackCoefficients(NaiveFeedbackCoefficients);
 
