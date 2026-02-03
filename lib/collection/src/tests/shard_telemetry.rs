@@ -55,7 +55,8 @@ async fn test_shard_telemetry() {
         assert_eq!(telemetry.num_points, Some(0));
 
         // test that it timeouts if the segment_holder lock can't be acquired
-        let write_segment_holder_guard = shard.segments().write();
+        let segments = shard.segments();
+        let write_segment_holder_guard = segments.write();
         let telemetry = shard
             .get_telemetry_data(details, Duration::from_millis(10))
             .await;

@@ -3,7 +3,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use segment::data_types::named_vectors::NamedVectors;
@@ -15,6 +14,7 @@ use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
 use segment::types::{Distance, HnswGlobalConfig, Payload, PointIdType, SeqNumberType};
+use shard::segment_holder::locked::LockedSegmentHolder;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -210,7 +210,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2
 }
 
-pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
+pub fn build_test_holder(path: &Path) -> LockedSegmentHolder {
     let segment1 = build_segment_1(path);
     let segment2 = build_segment_2(path);
 
@@ -219,7 +219,7 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
     let _sid1 = holder.add_new(segment1);
     let _sid2 = holder.add_new(segment2);
 
-    RwLock::new(holder)
+    LockedSegmentHolder::new(holder)
 }
 
 pub(crate) fn get_merge_optimizer(

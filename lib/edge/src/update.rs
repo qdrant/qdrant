@@ -14,13 +14,15 @@ impl EdgeShard {
         let operation_id = wal.write(&operation).map_err(service_error)?;
         let hw_counter = HardwareCounterCell::disposable();
 
+        let segments_guard = self.segments.read();
+
         let result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(&self.segments, operation_id, point_operation, &hw_counter)
+                process_point_operation(&segments_guard, operation_id, point_operation, &hw_counter)
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(
-                    &self.segments,
+                    &segments_guard,
                     operation_id,
                     vector_operation,
                     &hw_counter,
@@ -28,7 +30,7 @@ impl EdgeShard {
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
                 process_payload_operation(
-                    &self.segments,
+                    &segments_guard,
                     operation_id,
                     payload_operation,
                     &hw_counter,
@@ -36,7 +38,7 @@ impl EdgeShard {
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                 process_field_index_operation(
-                    &self.segments,
+                    &segments_guard,
                     operation_id,
                     &index_operation,
                     &hw_counter,
@@ -45,7 +47,7 @@ impl EdgeShard {
             #[cfg(feature = "staging")]
             CollectionUpdateOperations::StagingOperation(staging_operation) => {
                 shard::update::process_staging_operation(
-                    &self.segments,
+                    &segments_guard,
                     operation_id,
                     staging_operation,
                 )

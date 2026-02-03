@@ -173,12 +173,11 @@ impl SegmentOptimizer for MergeOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::Arc;
 
-    use parking_lot::RwLock;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
+    use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;
@@ -201,7 +200,7 @@ mod tests {
 
         let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         merge_optimizer.default_segments_number = 1;
 
@@ -242,7 +241,7 @@ mod tests {
 
         let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
-        let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         let suggested_to_merge = merge_optimizer.plan_optimizations_for_test(&locked_holder);
         let suggested_for_merge = suggested_to_merge.into_iter().exactly_one().unwrap();
@@ -340,7 +339,7 @@ mod tests {
             let segment_id = holder.add_new(random_segment(dir.path(), 100, segment_size, dim));
             segment_id_to_size.insert(segment_id, segment_size);
         }
-        let locked_holder = Arc::new(RwLock::new(holder));
+        let locked_holder = LockedSegmentHolder::new(holder);
 
         for &(default_segment_number, max_segment_size, expected) in TEST_TABLE {
             let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);

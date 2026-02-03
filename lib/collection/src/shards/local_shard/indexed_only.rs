@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use segment::common::BYTES_IN_KB;
 use segment::types::VectorNameBuf;
+use shard::locked_segment::LockedSegment;
 use shard::segment_holder::SegmentHolder;
 
 use crate::config::CollectionConfigInternal;
@@ -12,7 +13,7 @@ use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 ///
 /// This effectively counts vectors in large unindexed segments.
 pub fn get_index_only_excluded_vectors(
-    segment_holder: &SegmentHolder,
+    segment_holder: &[LockedSegment],
     collection_config: &CollectionConfigInternal,
 ) -> HashMap<VectorNameBuf, usize> {
     let indexing_threshold = collection_config
@@ -29,7 +30,7 @@ pub fn get_index_only_excluded_vectors(
 
     segment_holder
         .iter()
-        .flat_map(|(_, segment)| {
+        .flat_map(|segment| {
             let segment_guard = segment.get().read();
 
             // Get a map of vector-name=>vector-storage-size for unindexed vectors in this segment.
