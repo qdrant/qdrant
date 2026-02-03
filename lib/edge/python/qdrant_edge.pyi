@@ -133,6 +133,18 @@ class EdgeShard:
         """
         ...
 
+    def facet(self, facet: "FacetRequest") -> "FacetResponse":
+        """
+        Get facets for a payload field.
+
+        Args:
+            facet: The facet request.
+
+        Returns:
+            Facet response with hits and counts.
+        """
+        ...
+
     def retrieve(
             self,
             point_ids: List[PointId],
@@ -1167,6 +1179,79 @@ class CountRequest:
     @property
     def exact(self) -> bool:
         """Exact count flag."""
+        ...
+
+
+class FacetRequest:
+    """Request for facet operation."""
+
+    def __init__(
+            self,
+            key: JsonPath,
+            limit: int = 10,
+            exact: bool = False,
+            filter: Optional["Filter"] = None,
+    ) -> None:
+        """
+        Create a FacetRequest.
+
+        Args:
+            key: Payload field key to facet on.
+            limit: Maximum number of facet hits to return.
+            exact: Whether to count exactly or estimate.
+            filter: Filter conditions.
+        """
+        ...
+
+    @property
+    def key(self) -> str:
+        """Facet key."""
+        ...
+
+    @property
+    def limit(self) -> int:
+        """Result limit."""
+        ...
+
+    @property
+    def exact(self) -> bool:
+        """Exact count flag."""
+        ...
+
+    @property
+    def filter(self) -> Optional["Filter"]:
+        """Filter."""
+        ...
+
+
+class FacetHit:
+    """A facet hit with value and count."""
+
+    @property
+    def value(self) -> Union[str, int, bool]:
+        """Facet value."""
+        ...
+
+    @property
+    def count(self) -> int:
+        """Count of points with this value."""
+        ...
+
+
+class FacetResponse:
+    """Response for facet operation."""
+
+    @property
+    def hits(self) -> List["FacetHit"]:
+        """Facet hits."""
+        ...
+
+    def __len__(self) -> int:
+        """Number of hits."""
+        ...
+
+    def __iter__(self) -> Any:
+        """Iterate over hits."""
         ...
 
 
