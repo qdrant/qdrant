@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::facets::{FacetParams, FacetResponse, FacetValue, FacetValueHit};
+use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
 use shard::facet::FacetRequestInternal;
 
 use super::EdgeShard;
@@ -40,7 +40,7 @@ impl EdgeShard {
         let is_stopped = AtomicBool::new(false);
 
         // Collect facet results from all segments
-        let segment_results: Vec<HashMap<FacetValue, usize>> = segments
+        let segment_results = segments
             .map(|segment| {
                 segment
                     .get()
@@ -50,7 +50,7 @@ impl EdgeShard {
             .collect::<Result<Vec<_>, _>>()?;
 
         // Merge results by summing counts for each value
-        let mut merged_counts: HashMap<FacetValue, usize> = HashMap::new();
+        let mut merged_counts = HashMap::new();
         for segment_result in segment_results {
             for (value, count) in segment_result {
                 *merged_counts.entry(value).or_insert(0) += count;
@@ -58,7 +58,7 @@ impl EdgeShard {
         }
 
         // Sort by count descending, then by value ascending, and take top `limit`
-        let hits: Vec<FacetValueHit> = merged_counts
+        let hits = merged_counts
             .into_iter()
             .map(|(value, count)| FacetValueHit { value, count })
             .k_largest(limit)
