@@ -120,16 +120,22 @@ pub fn init(
                 // Normalize path
                 .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))
-                .wrap(
+                .wrap({
                     // Set up logger, but avoid logging hot status endpoints
-                    Logger::default()
+                    // Use real IP from X-Forwarded-For if trust_forwarded_headers is enabled
+                    let logger = if settings.service.trust_forwarded_headers {
+                        Logger::new(r#"%{r}a "%r" %s %b "%{Referer}i" "%{User-Agent}i" %T"#)
+                    } else {
+                        Logger::default()
+                    };
+                    logger
                         .exclude("/")
                         .exclude("/metrics")
                         .exclude("/telemetry")
                         .exclude("/healthz")
                         .exclude("/readyz")
-                        .exclude("/livez"),
-                )
+                        .exclude("/livez")
+                })
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
                 ))
