@@ -154,6 +154,7 @@ impl ReprStr for str {}
 impl ReprStr for String {}
 
 pub trait WriteExt: fmt::Write {
+    #[allow(deprecated)]
     fn class<T: PyTypeInfo>(&mut self, fields: &[(&str, &dyn Repr)]) -> fmt::Result {
         write!(self, "{}(", T::NAME)?;
 
@@ -168,6 +169,7 @@ pub trait WriteExt: fmt::Write {
         Ok(())
     }
 
+    #[allow(deprecated)]
     fn complex_enum<T: PyTypeInfo>(
         &mut self,
         variant: &str,
@@ -186,6 +188,7 @@ pub trait WriteExt: fmt::Write {
         Ok(())
     }
 
+    #[allow(deprecated)]
     fn simple_enum<T: PyTypeInfo>(&mut self, variant: &str) -> fmt::Result {
         write!(self, "{}.{}", T::NAME, variant)
     }
