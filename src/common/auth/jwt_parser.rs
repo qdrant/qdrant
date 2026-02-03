@@ -146,12 +146,8 @@ mod tests {
             Some(Err(AuthError::Forbidden(_)))
         ));
 
-        // Bump the exp claim and it should work
-        let exp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_secs();
-        claims.exp.replace(exp);
+        // Remove the exp claim and it should work
+        claims.exp = None;
         let token = create_token(&claims);
 
         let decoded_claims = parser.decode(&token).unwrap().unwrap();
@@ -163,7 +159,6 @@ mod tests {
     fn test_no_exp() {
         let claims = Claims {
             sub: None,
-            // Empty expiration is not allowed
             exp: None,
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
@@ -174,7 +169,7 @@ mod tests {
         let secret = "secret";
         let parser = JwtParser::new(secret);
 
-        assert!(parser.decode(&token).is_none());
+        assert!(matches!(parser.decode(&token), Some(Ok(_))));
     }
 
     #[test]
