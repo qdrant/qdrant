@@ -43,12 +43,11 @@ staging = ["collection/staging", "storage/staging", "shard/staging"]
 serde_urlencoded = "0.7"
 sealed_test = "1.1.0"
 
+mockito = { workspace = true }
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
 nix = { workspace = true, features = ["process"] }
 fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] } # for nicer error messages
-
-mockito = "1.7"
 
 
 [dependencies]
@@ -238,6 +237,7 @@ integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.29"
 memmap2 = "0.9.9"
+mockito = "1.7"
 nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }

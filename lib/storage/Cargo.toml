@@ -18,6 +18,7 @@ staging = ["collection/staging"]
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
+mockito = { workspace = true }
 env_logger = "0.11"
 
 [dependencies]
@@ -43,6 +44,7 @@ chrono = { workspace = true }
 validator = { workspace = true }
 dashmap = { workspace = true }
 semver = { workspace = true }
+sha2 = { workspace = true }
 
 # Consensus related
 atomicwrites = { workspace = true }

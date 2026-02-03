@@ -4,6 +4,7 @@ use std::path::Path;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
@@ -12,7 +13,6 @@ use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{
     OperationError, OperationResult, SegmentFailedState, get_service_error,
 };
-use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
@@ -685,7 +685,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         unpack_snapshot(snapshot_path)?;
     } else {
         let segment_path = segments_dir.join(segment_id);
-        open_snapshot_archive_with_validation(snapshot_path)?.unpack(&segment_path)?;
+        tar_unpack_file(snapshot_path, &segment_path)?;
 
         let inner_path = segment_path.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use segment::types::Distance;
+use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -109,15 +110,13 @@ async fn _test_snapshot_collection(node_type: NodeType) {
             .prefix("test_collection_rec")
             .tempdir()
             .unwrap();
+        let snapshot_data = SnapshotData::new_packed_persistent(
+            snapshots_path.path().join(&snapshot_description.name),
+        );
+
         // Do not recover in local mode if some shards are remote
         assert!(
-            Collection::restore_snapshot(
-                &snapshots_path.path().join(&snapshot_description.name),
-                recover_dir.path(),
-                0,
-                false,
-            )
-            .is_err(),
+            Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, false,).is_err(),
         );
     }
 
@@ -125,13 +124,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .prefix("test_collection_rec")
         .tempdir()
         .unwrap();
-
-    if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
-        recover_dir.path(),
-        0,
-        true,
-    ) {
+    let snapshot_data =
+        SnapshotData::new_packed_persistent(snapshots_path.path().join(&snapshot_description.name));
+    if let Err(err) = Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, true) {
         panic!("Failed to restore snapshot: {err}")
     }
 

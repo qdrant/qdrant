@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::tar_ext;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use rstest::rstest;
@@ -162,9 +163,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     tar.blocking_finish().unwrap();
 
     let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
-    tar::Archive::new(File::open(parent_snapshot_tar.path()).unwrap())
-        .unpack(parent_snapshot_unpacked.path())
-        .unwrap();
+
+    tar_unpack_file(parent_snapshot_tar.path(), parent_snapshot_unpacked.path()).unwrap();
 
     // Should be exactly one entry in the snapshot.
     let mut entries = fs::read_dir(parent_snapshot_unpacked.path()).unwrap();

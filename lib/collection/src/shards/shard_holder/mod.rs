@@ -13,16 +13,16 @@ use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::{File, tokio as tokio_fs};
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use io::safe_delete::sync_parent_dir_async;
 use itertools::Itertools;
-use segment::common::validate_snapshot_archive::{
-    open_snapshot_archive, validate_snapshot_archive,
-};
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, ShardKey, SnapshotFormat};
+use segment::utils::fs::move_all;
+use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
@@ -1201,22 +1201,11 @@ impl ShardHolder {
 
     /// # Cancel safety
     ///
-    /// This method is cancel safe.
-    pub async fn validate_shard_snapshot(&self, snapshot_path: &Path) -> CollectionResult<()> {
-        validate_snapshot_archive(snapshot_path)?;
-
-        // TODO: Validate that shard/partial snapshot is compatible with collection config!
-
-        Ok(())
-    }
-
-    /// # Cancel safety
-    ///
     /// This method is *not* cancel safe.
     #[allow(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
-        snapshot_path: &Path,
+        snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         collection_path: &Path,
         collection_name: &str,
@@ -1234,29 +1223,28 @@ impl ShardHolder {
             fs::create_dir_all(temp_dir)?;
         }
 
-        let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
-
         let snapshot_temp_dir = tempfile::Builder::new()
-            .prefix(&format!(
-                "{collection_name}-shard-{shard_id}-{snapshot_file_name}"
-            ))
+            .prefix(&format!("{collection_name}-shard-{shard_id}"))
             .tempdir_in(temp_dir)?;
 
         let extract = {
-            let snapshot_path = snapshot_path.to_path_buf();
             let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
 
             cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
-                    let mut ar = open_snapshot_archive(&snapshot_path)?;
-
-                    if cancel.is_cancelled() {
-                        return Err(cancel::Error::Cancelled.into());
+                    match snapshot_data {
+                        SnapshotData::Packed(snapshot_path) => {
+                            if cancel.is_cancelled() {
+                                return Err(cancel::Error::Cancelled.into());
+                            }
+                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir)?;
+                            snapshot_path.close()?;
+                        }
+                        SnapshotData::Unpacked(snapshot_dir) => {
+                            move_all(snapshot_dir.path(), &snapshot_temp_dir)?;
+                        }
                     }
-
-                    ar.unpack(&snapshot_temp_dir)?;
-                    drop(ar);
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
@@ -1289,9 +1277,7 @@ impl ShardHolder {
             .await?;
 
         if !recovered {
-            return Err(CollectionError::bad_request(format!(
-                "Invalid snapshot {snapshot_file_name}"
-            )));
+            return Err(CollectionError::bad_request("Invalid snapshot"));
         }
 
         if recovery_type.is_partial() {

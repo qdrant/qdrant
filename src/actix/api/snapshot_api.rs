@@ -21,6 +21,7 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use segment::common::BYTES_IN_MB;
 use serde::{Deserialize, Serialize};
+use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
@@ -499,12 +500,15 @@ async fn upload_shard_snapshot(
 
         let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
+        let snapshot_data =
+            SnapshotData::Packed(MaybeTempPath::from(form.snapshot.file.into_temp_path()));
+
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
             dispatcher.toc(&access, &pass),
             &collection,
             shard,
-            MaybeTempPath::from(form.snapshot.file.into_temp_path()),
+            snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Full,
             cancel,
@@ -657,12 +661,15 @@ async fn recover_partial_snapshot(
 
         let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
+        let snapshot_data =
+            SnapshotData::Packed(MaybeTempPath::from(form.snapshot.file.into_temp_path()));
+
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
             dispatcher.toc(&access, &pass),
             &collection,
             shard,
-            MaybeTempPath::from(form.snapshot.file.into_temp_path()),
+            snapshot_data,
             priority.unwrap_or_default(),
             RecoveryType::Partial,
             cancel,
@@ -818,11 +825,14 @@ async fn recover_partial_snapshot_from(
             shard_id
         );
 
+        let snapshot_data =
+            SnapshotData::Packed(MaybeTempPath::from(partial_snapshot_temp_path));
+
         common::snapshots::recover_shard_snapshot_impl(
             dispatcher.toc(&access, &pass),
             &collection,
             shard_id,
-            MaybeTempPath::from(partial_snapshot_temp_path),
+            snapshot_data,
             SnapshotPriority::NoSync,
             RecoveryType::Partial,
             cancel,
