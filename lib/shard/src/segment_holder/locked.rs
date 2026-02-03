@@ -5,6 +5,15 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 
 use crate::segment_holder::SegmentHolder;
 
+/// A guard that guarantees no update operations are happening.
+///
+/// This is a newtype wrapper around `parking_lot::MutexGuard<'_, ()>` that provides
+/// semantic meaning: while this guard is held, no concurrent update operations can proceed.
+/// This is used during critical sections like segment optimization finalization and snapshot
+/// operations to ensure consistency.
+#[allow(dead_code)] // Field is held for its RAII Drop behavior, not for reading
+pub struct UpdatesGuard<'a>(parking_lot::MutexGuard<'a, ()>);
+
 #[derive(Clone, Debug)]
 pub struct LockedSegmentHolder {
     holder: Arc<RwLock<SegmentHolder>>,
@@ -54,7 +63,7 @@ impl LockedSegmentHolder {
     //   we should not block resources for other operations.
     // - On other operations, while acquiring this lock, make sure that it doesn't prevent
     //   update operation. I.e. it allows read lock on `holder` while update lock is being waited on.
-    pub fn acquire_updates_lock(&self) -> parking_lot::MutexGuard<'_, ()> {
-        self.updates_mutex.lock()
+    pub fn acquire_updates_lock(&self) -> UpdatesGuard<'_> {
+        UpdatesGuard(self.updates_mutex.lock())
     }
 }
