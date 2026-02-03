@@ -32,10 +32,19 @@ impl InMemoryIdTracker {
     /// Generate a random [`InMemoryIdTracker`].
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
-        Self {
+        let mappings = PointMappings::random_with_params(rand, size, bits_in_id);
+
+        let mut id_tracker = Self {
             internal_to_version: vec![rand.random(); size as usize],
-            mappings: PointMappings::random_with_params(rand, size, preserved_size, bits_in_id),
+            mappings,
+        };
+
+        // Delete points after creating the id tracker completely to maintain consistency.
+        for to_delete_internal_id in preserved_size..size {
+            id_tracker.drop_internal(to_delete_internal_id).unwrap();
         }
+
+        id_tracker
     }
 }
 
@@ -165,5 +174,52 @@ impl IdTracker for InMemoryIdTracker {
     fn files(&self) -> Vec<PathBuf> {
         debug_assert!(false, "InMemoryIdTracker should not be persisted");
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::SeedableRng;
+
+    use super::*;
+
+    /// This test checks that the deleted points in a randomly initialized `InMemoryTracker` are consistent with points
+    /// which were deleted using `.drop()`.
+    #[test]
+    fn test_random_id_tracker_drop_consistency() {
+        let mut rand = StdRng::seed_from_u64(42);
+
+        // Create a random ID tracker with 32 points and half of them deleted.
+        const ID_TRACKER_SIZE: u32 = 32;
+        let mut id_tracker =
+            InMemoryIdTracker::random(&mut rand, ID_TRACKER_SIZE, ID_TRACKER_SIZE / 2, 10);
+
+        // Find a deleted and a non-deleted point in the random id tracker.
+        let mut deleted_point_id = None;
+        let mut available_point_id = None;
+        for internal_id in 0..ID_TRACKER_SIZE {
+            let is_deleted = id_tracker.external_id(internal_id).is_none();
+            if is_deleted {
+                deleted_point_id = Some(internal_id);
+            } else {
+                available_point_id = Some(internal_id);
+            }
+        }
+
+        let available_point_id = available_point_id.unwrap();
+        let deleted_point_id = deleted_point_id.unwrap();
+
+        // We drop the available point and assert that it has the same `internal_version` as the deleted one from the `id_tracker`
+        // and that both don't have an external ID anymore.
+        id_tracker.drop_internal(available_point_id).unwrap();
+
+        for internal_id in [available_point_id, deleted_point_id] {
+            // Assert the dropped point's version has been set to `DELETED_POINT_VERSION`.
+            assert_eq!(
+                id_tracker.internal_version(internal_id).unwrap(),
+                DELETED_POINT_VERSION
+            );
+            assert!(id_tracker.external_id(internal_id).is_none());
+        }
     }
 }
