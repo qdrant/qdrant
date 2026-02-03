@@ -40,6 +40,9 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         skip_updates: Arc<AtomicBool>,
     ) {
+        // First skipped op_num while `skip_updates` is set
+        let mut first_skipped: Option<SeqNumberType> = None;
+
         while let Some(signal) = receiver.recv().await {
             match signal {
                 UpdateSignal::Operation(OperationData {
@@ -49,6 +52,8 @@ impl UpdateWorkers {
                     hw_measurements,
                 }) => {
                     if skip_updates.load(std::sync::atomic::Ordering::Relaxed) {
+                        first_skipped.get_or_insert(op_num);
+
                         if let Some(feedback) = sender {
                             feedback.send(Err(CollectionError::service_error(
                                 format!("Operation {op_num} skipped due to ongoing WAL truncation"),
@@ -58,6 +63,8 @@ impl UpdateWorkers {
                         }
                         continue;
                     }
+
+                    first_skipped = None;
 
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
@@ -161,7 +168,7 @@ impl UpdateWorkers {
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(()).unwrap_or_else(|_| {
+                    callback_sender.send(first_skipped).unwrap_or_else(|_| {
                         log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }

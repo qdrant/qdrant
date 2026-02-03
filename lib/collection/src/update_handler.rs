@@ -55,7 +55,8 @@ pub enum UpdateSignal {
     /// Empty signal used to trigger optimizers
     Nop,
     /// Ensures that previous updates are applied
-    Plunger(oneshot::Sender<()>),
+    /// Sends back the first skipped `op_num` if `skip_updates` is set, or None otherwise.
+    Plunger(oneshot::Sender<Option<SeqNumberType>>),
 }
 
 /// Signal, used to inform Optimization process
@@ -343,9 +344,5 @@ impl UpdateHandler {
             .await?;
 
         Ok(())
-    }
-
-    pub fn applied_seq(&self) -> Arc<AppliedSeqHandler> {
-        self.applied_seq_handler.clone()
     }
 }
