@@ -146,8 +146,12 @@ mod tests {
             Some(Err(AuthError::Forbidden(_)))
         ));
 
-        // Remove the exp claim and it should work
-        claims.exp = None;
+        // Bump the exp claim and it should work
+        let exp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        claims.exp.replace(exp);
         let token = create_token(&claims);
 
         let decoded_claims = parser.decode(&token).unwrap().unwrap();
