@@ -13,13 +13,6 @@ use crate::segment_holder::SegmentHolder;
 /// operations to ensure consistency.
 pub struct UpdatesGuard<'a>(parking_lot::MutexGuard<'a, ()>);
 
-impl<'a> UpdatesGuard<'a> {
-    /// Create a new UpdatesGuard from a MutexGuard.
-    fn new(guard: parking_lot::MutexGuard<'a, ()>) -> Self {
-        Self(guard)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct LockedSegmentHolder {
     holder: Arc<RwLock<SegmentHolder>>,
@@ -70,6 +63,6 @@ impl LockedSegmentHolder {
     // - On other operations, while acquiring this lock, make sure that it doesn't prevent
     //   update operation. I.e. it allows read lock on `holder` while update lock is being waited on.
     pub fn acquire_updates_lock(&self) -> UpdatesGuard<'_> {
-        UpdatesGuard::new(self.updates_mutex.lock())
+        UpdatesGuard(self.updates_mutex.lock())
     }
 }
