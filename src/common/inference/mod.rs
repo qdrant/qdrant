@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod api_keys;
 mod batch_processing;
 mod batch_processing_grpc;
 pub mod bm25;
@@ -11,5 +12,4 @@ pub mod params;
 pub mod query_requests_grpc;
 pub mod query_requests_rest;
 pub mod service;
-pub mod token;
 pub mod update_requests;

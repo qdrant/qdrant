@@ -520,9 +520,9 @@ dependencies = [
 
 [[package]]
 name = "arc-swap"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d03449bb8ca2cc2ef70869af31463d1ae5ccc8fa3e334b307203fbf815207e"
+checksum = "9ded5f9a03ac8f24d1b8a25101ee812cd32cdc8c50a4c50237de2c4915850e73"
 dependencies = [
  "rustversion",
 ]
@@ -913,9 +913,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.24.0"
+version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fbdf580320f38b612e485521afda1ee26d10cc9884efaaa750d383e13e3c5f4"
+checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -986,9 +986,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.54"
+version = "1.2.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6354c81bbfd62d9cfa9cb3c773c2b7b2a3a482d569de977fd0e961f6e7c00583"
+checksum = "47b26a0954ae34af09b50f0de26458fa95369a0d478d8236d3f93082b219bd29"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1121,9 +1121,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.54"
+version = "4.5.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6e6ff9dcd79cff5cd969a17a545d79e84ab086e444102a591e288a8aa3ce394"
+checksum = "a75ca66430e33a14957acc24c5077b503e7d374151b2b4b3a10c83b4ceb4be0e"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1131,9 +1131,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.54"
+version = "4.5.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa42cf4d2b7a41bc8f663a7cab4031ebafa1bf3875705bfaf8466dc60ab52c00"
+checksum = "793207c7fa6300a0608d1080b858e5fdbe713cdc1c8db9fb17777d8a13e63df0"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1143,9 +1143,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.49"
+version = "4.5.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a0b5487afeab2deb2ff4e03a807ad1a03ac532ff5a2cee5d86884440c7f7671"
+checksum = "a92793da1a46a5f2a02a6f4c46c6496b28c43638adea8306fcb0caa1634f24e5"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -1316,7 +1316,7 @@ dependencies = [
  "tokio",
  "validator",
  "walkdir",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -2013,6 +2013,7 @@ dependencies = [
  "parking_lot",
  "rand 0.9.2",
  "segment",
+ "serde_json",
  "shard",
  "wal",
 ]
@@ -2212,9 +2213,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8591b0bcc8a98a64310a2fae1bb3e9b8564dd10e381e6e28010fde8e8e8568db"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "findshlibs"
@@ -2306,9 +2307,9 @@ dependencies = [
 
 [[package]]
 name = "foyer"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b211da7a164e35aafb84c1532ed06c85ce726cb08eabe00cc58e928626a71a2"
+checksum = "3b0abc0b87814989efa711f9becd9f26969820e2d3905db27d10969c4bd45890"
 dependencies = [
  "anyhow",
  "equivalent",
@@ -2326,9 +2327,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-common"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36f8aaf149801129aa8e01bbc434c967345622d483473d4ba3acc73976ab2254"
+checksum = "a3db80d5dece93adb7ad709c84578794724a9cba342a7e566c3551c7ec626789"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2351,9 +2352,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-memory"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daf2560d8500f2b5211ef9d8b84a2076ab77ac21589a4264d96c61263fdcde25"
+checksum = "db907f40a527ca2aa2f40a5f68b32ea58aa70f050cd233518e9ffd402cfba6ce"
 dependencies = [
  "anyhow",
  "bitflags 2.9.1",
@@ -2376,9 +2377,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-storage"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19bdc15cb359c9134b494722efb5ac69747b489d069fb8b7f4dce0ca271d4341"
+checksum = "1983f1db3d0710e9c9d5fc116d9202dccd41a2d1e032572224f1aff5520aa958"
 dependencies = [
  "allocator-api2",
  "anyhow",
@@ -2408,9 +2409,9 @@ dependencies = [
 
 [[package]]
 name = "foyer-tokio"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddc4b13cc6bc07963bb9b5f2afb318fdc17b8c0f9c9d86c073b47d0a42137ec6"
+checksum = "f6577b05a7ffad0db555aedf00bfe52af818220fc4c1c3a7a12520896fc38627"
 dependencies = [
  "tokio",
 ]
@@ -2738,7 +2739,7 @@ dependencies = [
  "log",
  "parking_lot",
  "shaderc",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -2785,7 +2786,7 @@ dependencies = [
  "smallvec",
  "tempfile",
  "thiserror 2.0.18",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -2853,7 +2854,7 @@ dependencies = [
  "crunchy",
  "num-traits",
  "serde",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -4158,9 +4159,9 @@ dependencies = [
 
 [[package]]
 name = "mockito"
-version = "1.7.1"
+version = "1.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e0603425789b4a70fcc4ac4f5a46a566c116ee3e2a6b768dc623f7719c611de"
+checksum = "90820618712cab19cfc46b274c6c22546a82affcb3c3bdf0f29e3db8e1bb92c0"
 dependencies = [
  "assert-json-diff",
  "bytes",
@@ -4887,7 +4888,7 @@ dependencies = [
  "bitpacking",
  "common",
  "rand 0.9.2",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -5768,7 +5769,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08f3c9802962f7e1b25113931d94f43ed9725bebc59db9d0c3e9a23b67e15ff"
 dependencies = [
  "getrandom 0.3.0",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -6638,7 +6639,7 @@ dependencies = [
  "validator",
  "vaporetto",
  "walkdir",
- "zerocopy 0.8.33",
+ "zerocopy 0.8.37",
 ]
 
 [[package]]
@@ -7190,6 +7191,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "memory",
+ "mockito",
  "parking_lot",
  "proptest",
  "prost 0.11.9",
@@ -7203,6 +7205,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "sha2",
  "shard",
  "strum",
  "tap",
@@ -9164,11 +9167,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.33"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "668f5168d10b9ee831de31933dc111a459c97ec93225beb307aed970d1372dfd"
+checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
 dependencies = [
- "zerocopy-derive 0.8.33",
+ "zerocopy-derive 0.8.37",
 ]
 
 [[package]]
@@ -9184,9 +9187,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.33"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7962b26b0a8685668b671ee4b54d007a67d4eaf05fda79ac0ecf41e32270f1"
+checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
 dependencies = [
  "proc-macro2",
  "quote",

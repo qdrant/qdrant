@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -67,7 +68,7 @@ impl Segment {
                     Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit),
                     None => values_ids_iterator.collect(),
                 };
-                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_a.cmp(value_b));
+                page.sort_unstable_by_key(|(value, _)| *value);
                 page
             }
             Direction::Desc => {
@@ -75,7 +76,7 @@ impl Segment {
                     Some(limit) => peek_top_largest_iterable(values_ids_iterator, limit),
                     None => values_ids_iterator.collect(),
                 };
-                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_b.cmp(value_a));
+                page.sort_unstable_by_key(|(value, _)| Reverse(*value));
                 page
             }
         };

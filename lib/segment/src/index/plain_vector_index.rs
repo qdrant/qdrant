@@ -60,22 +60,22 @@ impl PlainVectorIndex {
     ) -> bool {
         let vector_storage = self.vector_storage.borrow();
         let available_vector_count = vector_storage.available_vector_count();
-        if available_vector_count > 0 {
-            let vector_size_bytes =
-                vector_storage.size_of_available_vectors_in_bytes() / available_vector_count;
-            let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
+        if available_vector_count == 0 {
+            return true;
+        }
 
-            if let Some(payload_filter) = filter {
-                let payload_index = self.payload_index.borrow();
-                let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter);
-                let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
-                scan_size <= indexing_threshold_bytes
-            } else {
-                let vector_storage_size = vector_size_bytes.saturating_mul(available_vector_count);
-                vector_storage_size <= indexing_threshold_bytes
-            }
+        let vector_size_bytes =
+            vector_storage.size_of_available_vectors_in_bytes() / available_vector_count;
+        let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
+
+        if let Some(payload_filter) = filter {
+            let payload_index = self.payload_index.borrow();
+            let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter);
+            let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
+            scan_size <= indexing_threshold_bytes
         } else {
-            true
+            let vector_storage_size = vector_size_bytes.saturating_mul(available_vector_count);
+            vector_storage_size <= indexing_threshold_bytes
         }
     }
 }
