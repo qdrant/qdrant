@@ -10,6 +10,7 @@ use io::storage_version::StorageVersion;
 use memmap2::{Mmap, MmapMut};
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{
     create_and_ensure_length, open_read_mmap, open_write_mmap, transmute_from_u8,
     transmute_from_u8_to_slice, transmute_to_u8, transmute_to_u8_slice,
@@ -52,6 +53,7 @@ pub struct InvertedIndexMmap {
 }
 
 #[derive(Debug, Default, Clone)]
+#[repr(C)]
 struct PostingListFileHeader {
     pub start_offset: u64,
     pub end_offset: u64,
@@ -172,12 +174,19 @@ impl InvertedIndexMmap {
             return None;
         }
         let header_start = *id as usize * POSTING_HEADER_SIZE;
-        let header = transmute_from_u8::<PostingListFileHeader>(
-            &self.mmap[header_start..header_start + POSTING_HEADER_SIZE],
-        )
+        // Safety: memory has correct size and alignment for the type.
+        #[expect(deprecated, reason = "legacy code")]
+        let header = unsafe {
+            transmute_from_u8::<PostingListFileHeader>(
+                &self.mmap[header_start..header_start + POSTING_HEADER_SIZE],
+            )
+        }
         .clone();
         let elements_bytes = &self.mmap[header.start_offset as usize..header.end_offset as usize];
-        Some(transmute_from_u8_to_slice(elements_bytes))
+        // TODO Is not safe, do not use with untrusted files.
+        // TODO add a check for alignment.
+        #[expect(deprecated, reason = "legacy code")]
+        Some(unsafe { transmute_from_u8_to_slice(elements_bytes) })
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
@@ -261,7 +270,9 @@ impl InvertedIndexMmap {
             elements_offset = posting_header.end_offset as usize;
 
             // save posting header
-            let posting_header_bytes = transmute_to_u8(&posting_header);
+            // Safety: posting_header is a POD type.
+            #[expect(deprecated, reason = "legacy code")]
+            let posting_header_bytes = unsafe { transmute_to_u8(&posting_header) };
             let start_posting_offset = id * POSTING_HEADER_SIZE;
             let end_posting_offset = (id + 1) * POSTING_HEADER_SIZE;
             mmap[start_posting_offset..end_posting_offset].copy_from_slice(posting_header_bytes);
@@ -276,7 +287,9 @@ impl InvertedIndexMmap {
         let mut offset = total_posting_headers_size;
         for posting in &inverted_index_ram.postings {
             // save posting element
-            let posting_elements_bytes = transmute_to_u8_slice(&posting.elements);
+            // Safety: `PostingElementEx` is a POD type.
+            #[expect(deprecated, reason = "legacy code")]
+            let posting_elements_bytes = unsafe { transmute_to_u8_slice(&posting.elements) };
             mmap[offset..offset + posting_elements_bytes.len()]
                 .copy_from_slice(posting_elements_bytes);
             offset += posting_elements_bytes.len();
