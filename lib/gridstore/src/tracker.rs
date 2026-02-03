@@ -19,11 +19,8 @@ pub type PageId = u32;
 
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
-const OPTIONAL_NONE: u32 = 0;
-const OPTIONAL_SOME: u32 = 1;
-
-/// A type similar to `std::option::Option`, but with stable layout. It is intended to be compatible with older
-/// gridstore files, but it is well-defined, unlike `std::option::Option`.
+/// A type similar to [`std::option::Option`], but with stable layout. It is intended to be compatible with older
+/// gridstore files, but it is well-defined, unlike [`std::option::Option`].
 ///
 /// Please note that it uses 32-bit tag and is intended to be used for `ValuePointer` without padding bytes.
 ///
@@ -45,10 +42,13 @@ impl<T: FromZeros> From<Option<T>> for Optional<T> {
 }
 
 impl<T: FromZeros> Optional<T> {
+    const OPTIONAL_NONE: u32 = 0;
+    const OPTIONAL_SOME: u32 = 1;
+
     /// None value is all zeroes.
     pub fn none() -> Self {
         Self {
-            discriminant: OPTIONAL_NONE,
+            discriminant: Self::OPTIONAL_NONE,
             value: FromZeros::new_zeroed(),
         }
     }
@@ -56,13 +56,13 @@ impl<T: FromZeros> Optional<T> {
     /// Some is 1 for the discriminant, and value is stored as is.
     pub const fn some(value: T) -> Self {
         Self {
-            discriminant: OPTIONAL_SOME,
+            discriminant: Self::OPTIONAL_SOME,
             value,
         }
     }
 
     pub fn is_some(&self) -> Option<&T> {
-        if self.discriminant == OPTIONAL_NONE {
+        if self.discriminant == Self::OPTIONAL_NONE {
             None
         } else {
             Some(&self.value)
