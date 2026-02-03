@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use itertools::Itertools;
 use segment::common::operation_error::OperationResult;
-use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
+use segment::data_types::facets::{FacetParams, FacetResponse};
 use shard::facet::FacetRequestInternal;
 
 use super::EdgeShard;
@@ -23,7 +22,7 @@ impl EdgeShard {
         } = request;
 
         if limit == 0 {
-            return Ok(FacetResponse { hits: vec![] });
+            return Ok(FacetResponse::default());
         }
 
         let facet_params = FacetParams {
@@ -39,31 +38,20 @@ impl EdgeShard {
         let hw_counter = HwMeasurementAcc::disposable_edge().get_counter_cell();
         let is_stopped = AtomicBool::new(false);
 
-        // Collect facet results from all segments
-        let segment_results = segments
-            .map(|segment| {
+        // Collect and merge facet results from all segments
+        let mut merged_counts = HashMap::new();
+        for segment in segments {
+            let segment_result =
                 segment
                     .get()
                     .read()
-                    .facet(&facet_params, &is_stopped, &hw_counter)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                    .facet(&facet_params, &is_stopped, &hw_counter)?;
 
-        // Merge results by summing counts for each value
-        let mut merged_counts = HashMap::new();
-        for segment_result in segment_results {
             for (value, count) in segment_result {
                 *merged_counts.entry(value).or_insert(0) += count;
             }
         }
 
-        // Sort by count descending, then by value ascending, and take top `limit`
-        let hits = merged_counts
-            .into_iter()
-            .map(|(value, count)| FacetValueHit { value, count })
-            .k_largest(limit)
-            .collect();
-
-        Ok(FacetResponse { hits })
+        Ok(FacetResponse::top_hits(merged_counts, limit))
     }
 }
