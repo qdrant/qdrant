@@ -39,7 +39,7 @@ impl SegmentHolder {
         Ok(read_points)
     }
 
-    fn segments_for_retrieval(&self) -> impl Iterator<Item = LockedSegment> + '_ {
+    fn segments_for_retrieval(&self) -> impl Iterator<Item = LockedSegment> {
         // We must go over non-appendable segments first, then go over appendable segments after
         // Points may be moved from non-appendable to appendable, because we don't lock all
         // segments together read ordering is very important here!
