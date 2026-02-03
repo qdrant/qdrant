@@ -43,6 +43,12 @@ pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -
         .count()
 }
 
+/// Integration test helper for quantized HNSW search.
+///
+/// Covers three invariants:
+/// - quantized search stays reasonably close to exact search (recall/overlap),
+/// - oversampling doesn't make results worse,
+/// - rescoring really uses base vectors (e.g. scores become ~0 after zeroing vectors).
 fn hnsw_quantized_search_test(
     distance: Distance,
     num_vectors: u64,

@@ -995,6 +995,11 @@ impl HNSWIndex {
         }
     }
 
+    /// Perform HNSW graph search for a single query vector.
+    ///
+    /// This method chooses between the "graph-with-vectors" traversal path and the regular
+    /// traversal path. Important invariant: when quantization rescoring is enabled, results must
+    /// go through `postprocess_search_result` so rescoring is applied to the oversampled top-k.
     #[allow(clippy::too_many_arguments)]
     fn search_with_graph(
         &self,
