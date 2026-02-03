@@ -26,6 +26,9 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// panics if it is read at any moment during modification,
 /// and that the worst that can happen is a garbage/torn read.
 ///
+/// To opt-in to making this promise, the wrapped type must implement `SeqLockSafe`, which
+/// means it is safe to use within this SeqLock.
+///
 /// ```
 /// use trififo::seqlock::SeqLock;
 ///
@@ -57,7 +60,30 @@ pub struct SeqLock<T> {
     inner: UnsafeCell<T>,
 }
 
-impl<T> SeqLock<T> {
+/// Marker trait to promise that a type won't panic if it is read while it is being
+/// concurrently mutated.
+///
+/// The way a seqlock can prevent lock contention, is by allowing reader to access
+/// the protected resource even during modification. Implementing this trait makes it
+/// explicit that the wrapped type will never crash during a read, even if the inner data
+/// is inconsistent. This contract includes, but is not limited to:
+/// - Not reallocating, to prevent use-after-free.
+/// - Checking bounds.
+/// - Graceful handle of panics.
+/// - ...
+///
+/// However, it is fine to let readers return garbage/torn reads, as it is the seqlock responsibility
+/// to ensure this garbage is never considered valid; in such case the read is repeated.
+///
+/// The type must only expose functions/fields that satisfy these requirements. Anything that takes
+/// `&self` is considered a read, and `&mut self` is considered a write.
+pub unsafe trait SeqLockSafe {}
+
+// Blanket implementation for all types that are Send and Sync.
+// It is trivial to know the type is also SeqLockSafe if it is already Sync.
+unsafe impl<T: Send + Sync> SeqLockSafe for T {}
+
+impl<T: SeqLockSafe> SeqLock<T> {
     fn new(v: T) -> Self {
         SeqLock {
             seq: AtomicUsize::new(0),
@@ -102,7 +128,7 @@ impl<T> SeqLock<T> {
         }
     }
 
-    unsafe fn write(&self, callback: impl FnOnce(&mut T)) {
+    fn write(&self, callback: impl FnOnce(&mut T)) {
         let seq = self.seq.load(Ordering::Relaxed);
         self.seq.store(seq.wrapping_add(1), Ordering::Relaxed);
         // ensure seq has been written before running the callback
@@ -133,7 +159,7 @@ impl<T> Clone for SeqLockReader<T> {
     }
 }
 
-impl<T> SeqLockReader<T> {
+impl<T: SeqLockSafe> SeqLockReader<T> {
     pub fn read<U, F: Fn(&T) -> U>(&self, callback: F) -> U {
         self.lock.read(callback)
     }
@@ -151,20 +177,10 @@ pub struct SeqLockWriter<T> {
 
 unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
 
-impl<T> SeqLockWriter<T> {
+impl<T: SeqLockSafe> SeqLockWriter<T> {
     /// Get mutable access to the protected resource through a closure.
-    ///
-    /// # SAFETY
-    /// The caller must ensure that at ANY point during the mutation, a reader
-    /// will not get into a panic. This might mean:
-    /// - No use-after-free errors. Which includes not changing allocations.
-    /// - No out-of-bounds indexing.
-    /// - ...etc.
-    ///
-    /// It is fine if the reader reads garbage or get torn reads, since it
-    /// will know that a mutation took place, and retry the operation.
-    pub unsafe fn write<F: FnOnce(&mut T)>(&self, callback: F) {
-        unsafe { self.lock.write(callback) }
+    pub fn write<F: FnOnce(&mut T)>(&self, callback: F) {
+        self.lock.write(callback)
     }
 }
 
@@ -227,14 +243,12 @@ mod tests {
                 // perform a split update (write 'a' then sleep then write 'b')
                 // to create a window where a naive reader could observe inconsistent state.
                 for i in 1..=num_writes {
-                    unsafe {
-                        writer.write(|p| {
-                            p.a = i;
-                            // Small pause to widen the race window if seqlock were broken.
-                            thread::sleep(Duration::from_nanos(100));
-                            p.b = i;
-                        })
-                    };
+                    writer.write(|p| {
+                        p.a = i;
+                        // Small pause to widen the race window if seqlock were broken.
+                        thread::sleep(Duration::from_nanos(100));
+                        p.b = i;
+                    });
                     // Give readers some time to run between writes.
                     if i % 100 == 0 {
                         thread::sleep(Duration::from_micros(10));
