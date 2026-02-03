@@ -1,5 +1,6 @@
 pub mod config;
 pub mod count;
+pub mod facet;
 pub mod info;
 pub mod query;
 pub mod repr;
@@ -20,6 +21,7 @@ use segment::types::*;
 
 use self::config::*;
 use self::count::*;
+use self::facet::*;
 use self::info::*;
 use self::query::*;
 use self::scroll::*;
@@ -51,6 +53,8 @@ mod qdrant_edge {
     use super::config::{PyEdgeConfig, PyPayloadStorageType};
     #[pymodule_export]
     use super::count::PyCountRequest;
+    #[pymodule_export]
+    use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
@@ -130,6 +134,11 @@ impl PyEdgeShard {
     pub fn count(&self, count: PyCountRequest) -> Result<usize> {
         let points_count = self.get_shard()?.count(count.into())?;
         Ok(points_count)
+    }
+
+    pub fn facet(&self, facet: PyFacetRequest) -> Result<PyFacetResponse> {
+        let response = self.get_shard()?.facet(facet.into())?;
+        Ok(PyFacetResponse::new(response))
     }
 
     pub fn retrieve(

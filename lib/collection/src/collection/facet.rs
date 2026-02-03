@@ -5,8 +5,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
-use itertools::Itertools;
-use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
+use segment::data_types::facets::{FacetParams, FacetResponse, FacetValue};
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -23,9 +22,10 @@ impl Collection {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         if request.limit == 0 {
-            return Ok(FacetResponse { hits: vec![] });
+            return Ok(FacetResponse::default());
         }
 
+        let limit = request.limit;
         let request = Arc::new(request);
 
         let shard_holder = self.shards_holder.read().await;
@@ -44,19 +44,14 @@ impl Collection {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let mut aggregated_results = HashMap::new();
+        // Collect results from all shards into a single map
+        let mut aggregated_results: HashMap<FacetValue, usize> = HashMap::new();
         while let Some(response) = shards_reads_f.try_next().await? {
             for hit in response.hits {
                 *aggregated_results.entry(hit.value).or_insert(0) += hit.count;
             }
         }
 
-        let hits = aggregated_results
-            .into_iter()
-            .map(|(value, count)| FacetValueHit { value, count })
-            .k_largest(request.limit)
-            .collect();
-
-        Ok(FacetResponse { hits })
+        Ok(FacetResponse::top_hits(aggregated_results, limit))
     }
 }
