@@ -32,28 +32,25 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// ```
 /// use trififo::seqlock::SeqLock;
 ///
-/// fn main() {
+/// let shared_resource = 666;
 ///
-///     let shared_resource = 666;
+/// let (reader, writer) = SeqLock::new_reader_writer(shared_resource);
 ///
-///     let (reader, writer) = SeqLock::new_reader_writer(shared_resource);
+/// let reader_2 = reader.clone(); // This can be cheaply copied, pointing to the same resource.
 ///
-///     let reader_2 = reader.clone(); // This can be cheaply copied, pointing to the same resource.
+/// std::thread::spawn(move || {
+///     let value = reader_2.read(|value| *value);
+///     println!("Value: {}", value);
+/// });
 ///
-///     std::thread::spawn(move || {
-///         let value = reader_2.read(|value| *value);
-///         println!("Value: {}", value);
-///     });
-///
-///     // writer can be sent to a thread, but can't be shared between them
-///     std::thread::spawn(move || {
-///         unsafe {
-///             writer.write(|value| {
-///                 *value += 10;
-///             })
-///         };
-///     });
-/// }
+/// // writer can be sent to a thread, but can't be shared between them
+/// std::thread::spawn(move || {
+///     unsafe {
+///        writer.write(|value| {
+///            *value += 10;
+///        })
+///     };
+/// });
 /// ```
 pub struct SeqLock<T> {
     seq: AtomicUsize,
@@ -62,6 +59,8 @@ pub struct SeqLock<T> {
 
 /// Marker trait to promise that a type won't panic if it is read while it is being
 /// concurrently mutated.
+///
+/// # SAFETY
 ///
 /// The way a seqlock can prevent lock contention, is by allowing reader to access
 /// the protected resource even during modification. Implementing this trait makes it
