@@ -116,7 +116,7 @@ fn hnsw_quantized_search_test(
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,
-        inline_storage: None,
+        inline_storage: Some(true),
     };
 
     let permit_cpu_count = 1; // single-threaded for deterministic build

@@ -1029,6 +1029,16 @@ impl HNSWIndex {
 
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
+        let quantization_enabled = is_quantized_search(quantized_vectors.as_ref(), params);
+        let default_rescoring = quantized_vectors
+            .as_ref()
+            .map(|q| q.default_rescoring())
+            .unwrap_or(false);
+        let rescore = quantization_enabled
+            && params
+                .and_then(|p| p.quantization)
+                .and_then(|q| q.rescore)
+                .unwrap_or(default_rescoring);
 
         let mut algorithm = SearchAlgorithm::Hnsw;
         if acorn_enabled
@@ -1063,6 +1073,12 @@ impl HNSWIndex {
                 SearchAlgorithm::Hnsw => (),
                 // ACORN is not implemented for graph with vectors yet (but possible)
                 SearchAlgorithm::Acorn => return Ok(None),
+            }
+            // If we are going to rescore anyway, avoid computing base scores for every visited
+            // HNSW candidate inside `search_with_vectors`. We'll pick candidates using the
+            // quantized scorer and rescore only the oversampled top-k in `postprocess_search_result`.
+            if rescore {
+                return Ok(None);
             }
             if !self.graph.has_inline_vectors()
                 || !is_quantized_search(quantized_vectors.as_ref(), params)
