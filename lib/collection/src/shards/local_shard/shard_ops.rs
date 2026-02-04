@@ -424,11 +424,10 @@ impl ShardOperation for LocalShard {
         Ok(FacetResponse { hits })
     }
 
-    /// Finishes ongoing update tasks and returns any pending update operations.
+    /// Finishes ongoing update tasks
     async fn stop_gracefully(mut self) {
         self.stop_flush_worker().await;
 
-        // Stop workers via cancellation - this is immediate and returns pending operations
         match self.wait_update_workers_stop().await {
             Ok(pending_receiver) => {
                 if let Some(receiver) = pending_receiver {

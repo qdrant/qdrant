@@ -54,7 +54,6 @@ pub enum UpdateSignal {
     /// Empty signal used to trigger optimizers
     Nop,
     /// Barrier signal that ensures all previous updates are processed.
-    /// Sends back `()` when all previous operations in the queue have been handled.
     Plunger(oneshot::Sender<()>),
 }
 
@@ -280,18 +279,12 @@ impl UpdateHandler {
     }
 
     /// Signal the update worker to stop without waiting.
-    ///
-    /// This is immediate and does not block. The worker will stop at the next
-    /// opportunity and return the receiver with pending operations.
-    /// Use this in contexts where async is not available (e.g., Drop).
     pub fn signal_update_worker_stop(&self) {
         self.update_worker_cancel.cancel();
     }
 
     /// Stops the update worker and returns the receiver with any pending updates.
-    ///
-    /// This allows the caller to take ownership of pending operations for graceful handling.
-    /// The stop is immediate - it does not wait for pending operations in the channel.
+    /// Returns None if the update worker was not running.
     pub async fn stop_update_worker(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         // Signal the update worker to stop
         self.update_worker_cancel.cancel();
@@ -306,8 +299,7 @@ impl UpdateHandler {
 
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
-    ///
-    /// Returns the receiver with any pending update operations.
+    /// Returns the receiver with any pending update operations. None if there were no update worker.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         // Stop update worker and get pending receiver
         let pending_receiver = self.stop_update_worker().await?;

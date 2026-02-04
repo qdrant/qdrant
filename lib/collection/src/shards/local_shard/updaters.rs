@@ -53,8 +53,6 @@ impl LocalShard {
             while let Ok(signal) = old_receiver.try_recv() {
                 // Forward pending operations to new channel
                 // Use try_send to avoid blocking - if channel is full, operations are dropped
-                // This is acceptable since WAL recovery will replay them
-                log::debug!("Forwarding pending update signal during config update");
                 let _ = sender.try_send(signal);
             }
         }

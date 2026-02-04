@@ -45,8 +45,6 @@ impl Drop for LocalShard {
                 }
                 update_handler.stop_flush_worker();
                 update_handler.notify_optimization_handles_to_stop();
-                // Signal update worker to stop via cancellation token - this is immediate
-                // and doesn't require waiting for the channel to drain
                 update_handler.signal_update_worker_stop();
                 false
             });

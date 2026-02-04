@@ -25,10 +25,6 @@ use crate::wal_delta::LockedWal;
 const BYTES_IN_KB: usize = 1024;
 
 impl UpdateWorkers {
-    /// Runs the update worker loop, processing updates from the receiver.
-    ///
-    /// Returns the receiver with any pending updates when cancelled via the token.
-    /// This allows the caller to take ownership of pending operations for graceful handling.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_worker_fn(
         collection_name: CollectionId,
@@ -44,23 +40,17 @@ impl UpdateWorkers {
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
     ) -> Receiver<UpdateSignal> {
-        loop {
+        let receiver = loop {
             let signal = tokio::select! {
-                biased;
+                biased; // biased to check cancellation first
                 _ = cancel.cancelled() => {
-                    // Cancellation requested - stop the optimizer and return receiver
-                    optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
-                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
-                    return receiver;
+                    break receiver;
                 }
                 signal = receiver.recv() => signal,
             };
 
             let Some(signal) = signal else {
-                // Transmitter was destroyed
-                break;
+                break receiver;
             };
 
             match signal {
@@ -170,7 +160,7 @@ impl UpdateWorkers {
                     });
                 }
             }
-        }
+        };
         // Transmitter was destroyed
         optimize_sender
             .send(OptimizerSignal::Stop)
