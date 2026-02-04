@@ -23,11 +23,10 @@ impl LocalShard {
         update_handler.stop_flush_worker()
     }
 
-    /// Stops update workers and returns any pending update operations.
-    pub async fn stop_update_workers(&self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
+    pub async fn wait_update_workers_stop(
+        &self,
+    ) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let mut update_handler = self.update_handler.lock().await;
-        update_handler.stop_flush_worker();
-        update_handler.stop_update_worker();
         update_handler.wait_workers_stops().await
     }
 
