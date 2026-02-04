@@ -7952,6 +7952,7 @@ dependencies = [
  "cap",
  "criterion",
  "foyer",
+ "hashbrown 0.16.1",
  "itertools 0.14.0",
  "parking_lot",
  "quick_cache",

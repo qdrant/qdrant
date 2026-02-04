@@ -13,7 +13,8 @@ workspace = true
 bench_all = []
 
 [dependencies]
-ahash = {workspace = true}
+ahash = { workspace = true }
+hashbrown = { version = "0.16.1" }
 
 [dev-dependencies]
 itertools = { workspace = true }
