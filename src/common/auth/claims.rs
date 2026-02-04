@@ -10,6 +10,7 @@ pub struct Claims {
     pub sub: Option<String>,
 
     /// Expiration time (seconds since UNIX epoch)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<u64>,
 
     #[serde(default = "default_access")]
