@@ -19,7 +19,7 @@ staging = ["collection/staging"]
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 mockito = { workspace = true }
-env_logger = "0.11"
+env_logger = { workspace = true }
 
 [dependencies]
 ahash = { workspace = true }

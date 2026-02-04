@@ -24,7 +24,7 @@ cc = "1.2"
 clap = { workspace = true }
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
-env_logger = "0.11"
+env_logger = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }

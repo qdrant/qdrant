@@ -217,6 +217,7 @@ criterion = "0.8.1"
 data-encoding = "2.10.0"
 delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
+env_logger = "0.11"
 fnv = "1.0"
 fs-err = { version = "3.2.2", features = ["tokio"] }
 fs_extra = "1.3.0"
