@@ -16,9 +16,6 @@ pub static QDRANT_VERSION: LazyLock<Version> =
 pub static APP_USER_AGENT: LazyLock<String> =
     LazyLock::new(|| format!("Qdrant/{QDRANT_VERSION_STRING}"));
 
-/// Maximum number of segments to load concurrently when loading a collection.
-pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
-
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
 
