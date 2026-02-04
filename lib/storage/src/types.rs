@@ -14,7 +14,7 @@ use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
-use common::concurrent_loads::ConcurrentLoadConfig;
+use common::load_concurrency::LoadConcurrencyConfig;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -54,9 +54,8 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
-
     #[serde(default, flatten)]
-    pub concurrent_loads: ConcurrentLoadConfig,
+    pub load_concurrency: LoadConcurrencyConfig,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
@@ -136,7 +135,7 @@ impl StorageConfig {
             self.snapshots_path.clone(),
             self.snapshots_config.clone(),
             self.hnsw_global_config.clone(),
-            self.performance.concurrent_loads.clone(),
+            self.performance.load_concurrency.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
         )
     }

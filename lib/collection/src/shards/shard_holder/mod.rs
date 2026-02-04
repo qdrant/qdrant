@@ -928,7 +928,7 @@ impl ShardHolder {
         });
         let mut shard_stream = stream::iter(shard_futures).buffer_unordered(
             shared_storage_config
-                .concurrent_load_config
+                .load_concurrency_config
                 .get_concurrent_shards(),
         );
         while let Some((replica_set, shard_key)) = shard_stream.next().await {

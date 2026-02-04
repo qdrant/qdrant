@@ -10,7 +10,7 @@ const DEFAULT_MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
 
 /// Configuration for concurrent load limits.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
-pub struct ConcurrentLoadConfig {
+pub struct LoadConcurrencyConfig {
     /// Maximum number of collections to load concurrently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_concurrent_collection_loads: Option<NonZeroUsize>,
@@ -22,7 +22,7 @@ pub struct ConcurrentLoadConfig {
     pub max_concurrent_segment_loads: Option<NonZeroUsize>,
 }
 
-impl ConcurrentLoadConfig {
+impl LoadConcurrencyConfig {
     pub fn get_concurrent_collections(&self) -> usize {
         self.max_concurrent_collection_loads
             .map(NonZeroUsize::get)

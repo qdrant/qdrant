@@ -422,7 +422,7 @@ impl LocalShard {
             })
             .buffer_unordered(
                 shared_storage_config
-                    .concurrent_load_config
+                    .load_concurrency_config
                     .get_concurrent_segments(),
             );
 

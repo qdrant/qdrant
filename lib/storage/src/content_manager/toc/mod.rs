@@ -187,7 +187,7 @@ impl TableOfContent {
         let mut collection_stream = stream::iter(collection_load_tasks).buffer_unordered(
             storage_config
                 .performance
-                .concurrent_loads
+                .load_concurrency
                 .get_concurrent_collections(),
         );
 
