@@ -274,6 +274,7 @@ schemars = { version = "0.8.22", features = [
     "indexmap2",
 ] }
 semver = { version = "1.0", features = ["serde"] }
+self_cell = "1.2.2"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11.2"
 serde_variant = "0.1.3"
