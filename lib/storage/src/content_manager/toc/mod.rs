@@ -149,9 +149,9 @@ impl TableOfContent {
             let update_runtime_handle = update_runtime.handle().clone();
             let optimizer_resource_budget = optimizer_resource_budget.clone();
 
-            collection_load_tasks.push((collection_name.clone(), async move {
+            collection_load_tasks.push(async move {
                 log::info!("Loading collection: {collection_name}");
-                Collection::load(
+                let collection = Collection::load(
                     collection_name.clone(),
                     this_peer_id,
                     &collection_path,
@@ -178,18 +178,13 @@ impl TableOfContent {
                     optimizer_resource_budget,
                     storage_config.optimizers_overwrite.clone(),
                 )
-                .await
-            }));
+                .await;
+                (collection_name.clone(), collection)
+            });
         }
 
-        // Load collections concurrently
-        let collection_futures = collection_load_tasks
-            .into_iter()
-            .map(|(name, fut)| async move {
-                let collection = fut.await;
-                (name, collection)
-            });
-        let mut collection_stream = stream::iter(collection_futures).buffer_unordered(
+        // Load collections with specified concurrency
+        let mut collection_stream = stream::iter(collection_load_tasks).buffer_unordered(
             storage_config
                 .performance
                 .concurrent_loads
