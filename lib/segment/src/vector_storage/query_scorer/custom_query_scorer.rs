@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::typelevel::True;
@@ -95,16 +94,10 @@ impl<
         debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
         debug_assert_eq!(ids.len(), scores.len());
 
-        let mut vectors = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
-        let vectors = self
-            .vector_storage
-            .get_dense_batch(ids, &mut vectors[..ids.len()]);
-
         self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
-        for idx in 0..ids.len() {
-            scores[idx] = self.score(vectors[idx]);
-        }
+        self.vector_storage
+            .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector));
     }
 
     #[inline]
