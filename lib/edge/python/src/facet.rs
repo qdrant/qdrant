@@ -9,7 +9,7 @@ use shard::facet::FacetRequestInternal;
 use crate::repr::*;
 use crate::types::{PyFilter, PyJsonPath};
 
-#[pyclass(name = "FacetRequest")]
+#[pyclass(name = "FacetRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyFacetRequest(FacetRequestInternal);
 
@@ -48,7 +48,7 @@ impl PyFacetRequest {
     }
 }
 
-#[pyclass(name = "FacetHit")]
+#[pyclass(name = "FacetHit", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFacetHit(FacetValueHit);
@@ -80,7 +80,7 @@ impl Repr for PyFacetHit {
     }
 }
 
-#[pyclass(name = "FacetResponse")]
+#[pyclass(name = "FacetResponse", from_py_object)]
 #[derive(Clone, Debug, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFacetResponse(FacetResponse);
