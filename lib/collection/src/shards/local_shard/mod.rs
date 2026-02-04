@@ -29,9 +29,9 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
+use common::concurrent_loads::max_concurrent_segment_loads;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::max_concurrent_segment_loads;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};

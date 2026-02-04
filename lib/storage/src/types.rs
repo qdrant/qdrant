@@ -14,6 +14,7 @@ use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
+use common::concurrent_loads::ConcurrentLoadConfig;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -34,12 +35,6 @@ pub struct PerformanceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_concurrent_collection_loads: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_concurrent_shard_loads: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_concurrent_segment_loads: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_timeout_sec: Option<usize>,
     /// CPU budget, how many CPUs (threads) to allocate for an optimization job.
     /// If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
@@ -59,6 +54,9 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
+
+    #[serde(default, flatten)]
+    pub concurrent_loads: ConcurrentLoadConfig,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {

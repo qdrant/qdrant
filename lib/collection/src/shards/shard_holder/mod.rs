@@ -11,7 +11,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
-use common::defaults::max_concurrent_shard_loads;
+use common::concurrent_loads::max_concurrent_shard_loads;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;

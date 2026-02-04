@@ -3,6 +3,7 @@ pub mod bitpacking_links;
 pub mod bitpacking_ordered;
 pub mod budget;
 pub mod bytes;
+pub mod concurrent_loads;
 pub mod counter;
 pub mod cow;
 pub mod cpu;
