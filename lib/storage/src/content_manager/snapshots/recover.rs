@@ -122,7 +122,8 @@ async fn _do_recover_from_snapshot(
     } = download_snapshot(
         client,
         location,
-        &toc.optional_temp_or_snapshot_temp_path()?,
+        // Default temporary path to storage dir, to allow faster recovery within the same volume
+        &toc.optional_temp_or_storage_temp_path()?,
         checksum.is_some(),
     )
     .await?;
