@@ -68,6 +68,6 @@ uuid = { workspace = true }
 url = "2.5.8"
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 
 tracing = { workspace = true, optional = true }
