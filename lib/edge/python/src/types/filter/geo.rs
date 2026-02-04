@@ -9,7 +9,7 @@ use segment::types::*;
 
 use crate::repr::*;
 
-#[pyclass(name = "GeoPoint")]
+#[pyclass(name = "GeoPoint", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyGeoPoint(pub GeoPoint);
@@ -57,7 +57,7 @@ impl<'py> IntoPyObject<'py> for &PyGeoPoint {
     }
 }
 
-#[pyclass(name = "GeoBoundingBox")]
+#[pyclass(name = "GeoBoundingBox", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoBoundingBox(pub GeoBoundingBox);
 
@@ -97,7 +97,7 @@ impl PyGeoBoundingBox {
     }
 }
 
-#[pyclass(name = "GeoRadius")]
+#[pyclass(name = "GeoRadius", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyGeoRadius(pub GeoRadius);
 
@@ -137,7 +137,7 @@ impl PyGeoRadius {
     }
 }
 
-#[pyclass(name = "GeoPolygon")]
+#[pyclass(name = "GeoPolygon", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyGeoPolygon(pub GeoPolygon);
 

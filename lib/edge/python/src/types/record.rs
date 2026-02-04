@@ -6,7 +6,7 @@ use shard::retrieve::record_internal::RecordInternal;
 use crate::repr::*;
 use crate::*;
 
-#[pyclass(name = "Record")]
+#[pyclass(name = "Record", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyRecord(pub RecordInternal);
