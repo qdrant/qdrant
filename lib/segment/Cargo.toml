@@ -82,7 +82,7 @@ seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }
 fs_extra = { workspace = true }
-tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
+tinyvec = { workspace = true }
 validator = { workspace = true }
 chrono = { workspace = true }
 ecow = { workspace = true }

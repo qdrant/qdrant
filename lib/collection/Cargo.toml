@@ -47,7 +47,7 @@ rmp-serde = { workspace = true }
 wal = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
-tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
+tinyvec = { workspace = true }
 siphasher = "1.0.1"
 smallvec = { workspace = true }
 count-min-sketch = "0.1.8"
