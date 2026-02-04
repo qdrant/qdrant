@@ -21,6 +21,8 @@ impl SegmentHolder {
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
         let mut manifest = SnapshotManifest::default();
 
+        // TODO(Jonas): Maybe make this function take a Vec of locked segments and remove the `&self` reference
+        // to reduce the time SegmentHolder needs to be locked.
         for (_, segment) in self.iter() {
             let segment_manifest = segment.get().read().get_segment_manifest()?;
             manifest.add(segment_manifest);
