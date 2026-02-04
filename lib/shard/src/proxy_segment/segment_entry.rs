@@ -15,7 +15,7 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -25,7 +25,7 @@ use uuid::Uuid;
 use super::{ProxyDeletedPoint, ProxyIndexChange, ProxySegment};
 use crate::locked_segment::LockedSegment;
 
-impl ImmutableSegmentEntry for ProxySegment {
+impl NonAppendableSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(self.wrapped_segment.get().read().version(), self.version)
     }
@@ -601,6 +601,63 @@ impl ImmutableSegmentEntry for ProxySegment {
         Ok(true)
     }
 
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        let mut was_deleted = false;
+
+        self.version = cmp::max(self.version, op_num);
+
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let point_offset = raw_segment.read().get_internal_id(point_id);
+                if point_offset.is_some() {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                point_offset
+            }
+            LockedSegment::Proxy(proxy) => {
+                if proxy.read().has_point(point_id) {
+                    let prev = self.deleted_points.insert(
+                        point_id,
+                        ProxyDeletedPoint {
+                            local_version: op_num,
+                            operation_version: op_num,
+                        },
+                    );
+                    was_deleted = prev.is_none();
+                    if let Some(prev) = prev {
+                        debug_assert!(
+                            prev.operation_version < op_num,
+                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
+                        )
+                    }
+                }
+                None
+            }
+        };
+
+        self.set_deleted_offset(point_offset);
+
+        Ok(was_deleted)
+    }
+
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
 
@@ -657,63 +714,6 @@ impl SegmentEntry for ProxySegment {
         Err(OperationError::service_error(format!(
             "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
         )))
-    }
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let mut was_deleted = false;
-
-        self.version = cmp::max(self.version, op_num);
-
-        let point_offset = match &self.wrapped_segment {
-            LockedSegment::Original(raw_segment) => {
-                let point_offset = raw_segment.read().get_internal_id(point_id);
-                if point_offset.is_some() {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                point_offset
-            }
-            LockedSegment::Proxy(proxy) => {
-                if proxy.read().has_point(point_id) {
-                    let prev = self.deleted_points.insert(
-                        point_id,
-                        ProxyDeletedPoint {
-                            local_version: op_num,
-                            operation_version: op_num,
-                        },
-                    );
-                    was_deleted = prev.is_none();
-                    if let Some(prev) = prev {
-                        debug_assert!(
-                            prev.operation_version < op_num,
-                            "Overriding deleted flag {prev:?} with older op_num:{op_num}",
-                        )
-                    }
-                }
-                None
-            }
-        };
-
-        self.set_deleted_offset(point_offset);
-
-        Ok(was_deleted)
     }
 
     fn update_vectors(

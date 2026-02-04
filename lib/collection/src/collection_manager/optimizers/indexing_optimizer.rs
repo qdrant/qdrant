@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::ImmutableSegmentEntry as _;
+use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment::Segment;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 
@@ -235,7 +235,7 @@ mod tests {
     use itertools::Itertools;
     use rand::rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::entry::entry_point::ImmutableSegmentEntry;
+    use segment::entry::entry_point::NonAppendableSegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::json_path::JsonPath;
     use segment::payload_json;

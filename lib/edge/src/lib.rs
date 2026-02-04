@@ -17,7 +17,7 @@ use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::ImmutableSegmentEntry as _;
+use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;

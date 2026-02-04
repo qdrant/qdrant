@@ -12,7 +12,7 @@ use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};

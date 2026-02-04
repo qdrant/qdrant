@@ -24,7 +24,7 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwL
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};

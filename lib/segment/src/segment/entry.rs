@@ -23,7 +23,7 @@ use crate::data_types::query_context::{
 };
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
@@ -38,7 +38,7 @@ use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of `ImmutableSegmentEntry`, meaning that it implements the _actual_ operations with data and
 /// not any kind of proxy or wrapping.
-impl ImmutableSegmentEntry for Segment {
+impl NonAppendableSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
     }
@@ -786,6 +786,28 @@ impl ImmutableSegmentEntry for Segment {
         })
     }
 
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool> {
+        let internal_id = self.id_tracker.borrow().internal_id(point_id);
+        match internal_id {
+            // Point does already not exist anymore
+            None => Ok(false),
+            Some(internal_id) => {
+                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+                    segment.delete_point_internal(internal_id, hw_counter)?;
+
+                    segment.version_tracker.set_payload(Some(op_num));
+
+                    Ok((true, Some(internal_id)))
+                })
+            }
+        }
+    }
+
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         self.payload_index.borrow().indexed_fields()
     }
@@ -867,28 +889,6 @@ impl SegmentEntry for Segment {
                 Ok((false, Some(new_index)))
             }
         })
-    }
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
-        let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        match internal_id {
-            // Point does already not exist anymore
-            None => Ok(false),
-            Some(internal_id) => {
-                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.delete_point_internal(internal_id, hw_counter)?;
-
-                    segment.version_tracker.set_payload(Some(op_num));
-
-                    Ok((true, Some(internal_id)))
-                })
-            }
-        }
     }
 
     fn update_vectors(

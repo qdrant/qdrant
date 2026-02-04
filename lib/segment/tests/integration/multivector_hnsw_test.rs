@@ -13,7 +13,7 @@ use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorRef, only_default_vector,
 };
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::VectorIndex;

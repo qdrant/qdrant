@@ -26,11 +26,11 @@ use crate::types::{
     VectorNameBuf, WithPayload, WithVector,
 };
 
-/// Define all operations which can be performed with Segment or Segment-like entity.
+/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait ImmutableSegmentEntry: SnapshotEntry {
+pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -319,6 +319,13 @@ pub trait ImmutableSegmentEntry: SnapshotEntry {
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
 
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
@@ -335,19 +342,12 @@ pub trait ImmutableSegmentEntry: SnapshotEntry {
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SegmentEntry: ImmutableSegmentEntry {
+pub trait SegmentEntry: NonAppendableSegmentEntry {
     fn upsert_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 

@@ -17,7 +17,7 @@ use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::NonAppendableSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;

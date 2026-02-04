@@ -8,7 +8,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
-use segment::entry::entry_point::{ImmutableSegmentEntry, SegmentEntry};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};

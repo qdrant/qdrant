@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::{ImmutableSegmentEntry as _, SegmentEntry};
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry};
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, VectorName};
 

@@ -12,7 +12,7 @@ use crate::data_types::segment_record::SegmentRecord;
 #[cfg(feature = "testing")]
 use crate::data_types::vectors::QueryVector;
 use crate::data_types::vectors::VectorStructInternal;
-use crate::entry::entry_point::ImmutableSegmentEntry;
+use crate::entry::entry_point::NonAppendableSegmentEntry;
 #[cfg(feature = "testing")]
 use crate::types::VectorName;
 #[cfg(feature = "testing")]
