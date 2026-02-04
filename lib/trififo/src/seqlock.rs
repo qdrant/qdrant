@@ -30,11 +30,11 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 /// means it is safe to use within this SeqLock.
 ///
 /// ```
-/// use trififo::seqlock::SeqLock;
+/// use trififo::seqlock::{SeqLockSafe, SeqLock};
 ///
 /// let shared_resource = 666;
 ///
-/// let (reader, writer) = SeqLock::new_reader_writer(shared_resource);
+/// let (reader, mut writer) = SeqLock::new_reader_writer(shared_resource);
 ///
 /// let reader_2 = reader.clone(); // This can be cheaply copied, pointing to the same resource.
 ///
@@ -78,9 +78,7 @@ pub struct SeqLock<T> {
 /// `&self` is considered a read, and `&mut self` is considered a write.
 pub unsafe trait SeqLockSafe {}
 
-// Blanket implementation for all types that are Send and Sync.
-// It is trivial to know the type is also SeqLockSafe if it is already Sync.
-unsafe impl<T: Send + Sync> SeqLockSafe for T {}
+unsafe impl SeqLockSafe for usize {} // for docstring
 
 impl<T: SeqLockSafe> SeqLock<T> {
     fn new(v: T) -> Self {
@@ -178,7 +176,7 @@ unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
 
 impl<T: SeqLockSafe> SeqLockWriter<T> {
     /// Get mutable access to the protected resource through a closure.
-    pub fn write<F: FnOnce(&mut T)>(&self, callback: F) {
+    pub fn write<F: FnOnce(&mut T)>(&mut self, callback: F) {
         self.lock.write(callback)
     }
 }
@@ -198,10 +196,12 @@ mod tests {
         b: usize,
     }
 
+    unsafe impl SeqLockSafe for Pair {}
+
     #[test]
     fn multi_threaded_readers_consistent() {
         // Create a seqlock-wrapped Pair.
-        let (reader, writer) = SeqLock::new_reader_writer(Pair { a: 0, b: 0 });
+        let (reader, mut writer) = SeqLock::new_reader_writer(Pair { a: 0, b: 0 });
 
         // Signal to readers when the writer is finished.
         let writer_done = Arc::new(AtomicBool::new(false));
