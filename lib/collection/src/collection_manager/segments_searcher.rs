@@ -465,6 +465,7 @@ impl SegmentsSearcher {
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
                     return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
                 };
+                // Collect the segments first so we don't lock the segment holder during the operations.
                 segments_guard
                     .non_appendable_then_appendable_segments()
                     .collect::<Vec<_>>()
