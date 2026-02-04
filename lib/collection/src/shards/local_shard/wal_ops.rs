@@ -38,21 +38,13 @@ impl LocalShard {
         // Wait for workers to finish and get pending operations from the old channel
         let pending_receiver = update_handler.wait_workers_stops().await?;
 
-        // Find the minimum op_num from pending operations - this is where we truncate from
-        let truncate_from_op_num = if let Some(mut old_receiver) = pending_receiver {
-            let mut min_op_num: Option<SeqNumberType> = None;
-            while let Ok(signal) = old_receiver.try_recv() {
-                if let UpdateSignal::Operation(op_data) = signal {
-                    min_op_num = Some(match min_op_num {
-                        Some(current_min) => current_min.min(op_data.op_num),
-                        None => op_data.op_num,
-                    });
-                }
-            }
-            min_op_num
-        } else {
-            None
-        };
+        // Find first pending operation's op_num - this is where we truncate from
+        let truncate_from_op_num = pending_receiver.and_then(|mut receiver| {
+            std::iter::from_fn(|| receiver.try_recv().ok()).find_map(|signal| match signal {
+                UpdateSignal::Operation(op_data) => Some(op_data.op_num),
+                UpdateSignal::Nop | UpdateSignal::Plunger(_) => None,
+            })
+        });
 
         // Lock WAL and perform truncation
         let mut wal_lock = Mutex::lock_owned(self.wal.wal.clone()).await;

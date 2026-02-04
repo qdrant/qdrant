@@ -53,7 +53,7 @@ pub enum UpdateSignal {
     Operation(OperationData),
     /// Empty signal used to trigger optimizers
     Nop,
-    /// Barrier signal that ensures all previous updates are processed.
+    /// Ensures that previous updates are applied
     Plunger(oneshot::Sender<()>),
 }
 
