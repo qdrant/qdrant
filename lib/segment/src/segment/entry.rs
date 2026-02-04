@@ -36,8 +36,8 @@ use crate::types::{
 };
 use crate::vector_storage::VectorStorage;
 
-/// This is a basic implementation of `ImmutableSegmentEntry`, meaning that it implements the _actual_ operations with data and
-/// not any kind of proxy or wrapping.
+/// This is a basic implementation of the trait, meaning that it implements the _actual_ operations with data and not
+/// any kind of proxy or wrapping.
 impl NonAppendableSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
         self.version.unwrap_or(0)
