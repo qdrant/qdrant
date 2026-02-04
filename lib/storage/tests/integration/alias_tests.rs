@@ -6,6 +6,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
+use common::load_concurrency::LoadConcurrencyConfig;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -56,6 +57,7 @@ fn test_alias_operation() {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            load_concurrency: LoadConcurrencyConfig::default(),
         },
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),
