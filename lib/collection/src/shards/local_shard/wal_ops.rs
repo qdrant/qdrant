@@ -30,9 +30,12 @@ impl LocalShard {
         let (update_sender, update_receiver) =
             mpsc::channel(self.shared_storage_config.update_queue_size);
         let _old_sender = self.update_sender.swap(Arc::new(update_sender));
-        update_handler.stop_flush_worker();
 
-        // Stop workers and get pending operations from the old channel
+        // Signal all workers to stop
+        update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
+
+        // Wait for workers to finish and get pending operations from the old channel
         let pending_receiver = update_handler.wait_workers_stops().await?;
 
         // Find the minimum op_num from pending operations - this is where we truncate from

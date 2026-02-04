@@ -445,6 +445,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     .await
     .unwrap();
 
+    // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
     let hw_acc = HwMeasurementAcc::new();

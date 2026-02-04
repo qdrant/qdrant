@@ -267,6 +267,11 @@ impl UpdateHandler {
         }
     }
 
+    /// Signal the update worker to stop *without* waiting
+    pub fn stop_update_worker(&self) {
+        self.update_worker_cancel.cancel();
+    }
+
     /// Notify optimization handles to stop *without* waiting
     ///
     /// Blocking operation
@@ -278,36 +283,22 @@ impl UpdateHandler {
         }
     }
 
-    /// Signal the update worker to stop without waiting.
-    pub fn signal_update_worker_stop(&self) {
-        self.update_worker_cancel.cancel();
-    }
-
-    /// Stops the update worker and returns the receiver with any pending updates.
-    /// Returns None if the update worker was not running.
-    pub async fn stop_update_worker(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
-        // Signal the update worker to stop
-        self.update_worker_cancel.cancel();
-
-        let maybe_handle = self.update_worker.take();
-        if let Some(handle) = maybe_handle {
-            let receiver = handle.await?;
-            return Ok(Some(receiver));
-        }
-        Ok(None)
-    }
-
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
     /// Returns the receiver with any pending update operations. None if there were no update worker.
     pub async fn wait_workers_stops(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
-        // Stop update worker and get pending receiver
-        let pending_receiver = self.stop_update_worker().await?;
+        let maybe_handle = self.update_worker.take();
+        let pending_receiver = if let Some(handle) = maybe_handle {
+            Some(handle.await?)
+        } else {
+            None
+        };
 
         let maybe_handle = self.optimizer_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
+
         let maybe_handle = self.flush_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;

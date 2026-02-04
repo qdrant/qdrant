@@ -426,9 +426,7 @@ impl ShardOperation for LocalShard {
 
     /// Finishes ongoing update tasks
     async fn stop_gracefully(mut self) {
-        self.stop_flush_worker().await;
-
-        match self.wait_update_workers_stop().await {
+        match self.stop_update_workers().await {
             Ok(pending_receiver) => {
                 if let Some(receiver) = pending_receiver {
                     // Log number of pending operations that were not processed

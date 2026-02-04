@@ -15,16 +15,19 @@ impl LocalShard {
         let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
+    /// Stops flush worker only.
+    /// This is useful for testing purposes to prevent background flushes.
+    #[cfg(feature = "testing")]
     pub async fn stop_flush_worker(&self) {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.stop_flush_worker()
     }
 
     /// Stops update workers and returns any pending update operations.
-    pub async fn wait_update_workers_stop(
-        &self,
-    ) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
+    pub async fn stop_update_workers(&self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let mut update_handler = self.update_handler.lock().await;
+        update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
         update_handler.wait_workers_stops().await
     }
 
@@ -42,9 +45,11 @@ impl LocalShard {
             mpsc::channel(self.shared_storage_config.update_queue_size);
         // Swap to new sender - new operations will go to the new channel
         let _old_sender = self.update_sender.swap(Arc::new(update_sender));
+        // Signal all workers to stop
         update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
 
-        // Stop workers and get pending operations from the old channel
+        // Wait for workers to finish and get pending operations from the old channel
         let pending_receiver = update_handler.wait_workers_stops().await?;
 
         // Forward pending operations from old receiver to new channel
