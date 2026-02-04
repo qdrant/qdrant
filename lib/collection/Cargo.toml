@@ -62,7 +62,7 @@ async-trait = { workspace = true }
 arc-swap = "1.8.1"
 tonic = { workspace = true }
 uuid = { workspace = true }
-url = { version = "2", features = ["serde"] }
+url = { workspace = true }
 validator = { workspace = true }
 http = { workspace = true }
 actix-web-validator = "7.0.0"
