@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use segment::types::SeqNumberType;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::operations::types::CollectionResult;
