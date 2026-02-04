@@ -188,7 +188,8 @@ impl TableOfContent {
             storage_config
                 .performance
                 .load_concurrency
-                .get_concurrent_collections(),
+                .get_concurrent_collections()
+                .get(),
         );
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();

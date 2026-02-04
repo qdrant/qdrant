@@ -929,7 +929,8 @@ impl ShardHolder {
         let mut shard_stream = stream::iter(shard_futures).buffer_unordered(
             shared_storage_config
                 .load_concurrency_config
-                .get_concurrent_shards(),
+                .get_concurrent_shards()
+                .get(),
         );
         while let Some((replica_set, shard_key)) = shard_stream.next().await {
             // Change local shards stuck in Initializing state to Active

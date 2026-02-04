@@ -423,7 +423,8 @@ impl LocalShard {
             .buffer_unordered(
                 shared_storage_config
                     .load_concurrency_config
-                    .get_concurrent_segments(),
+                    .get_concurrent_segments()
+                    .get(),
             );
 
         let mut segment_holder = SegmentHolder::default();

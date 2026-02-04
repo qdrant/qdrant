@@ -27,7 +27,7 @@ use validator::{Validate, ValidationError};
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Validate)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default)]
