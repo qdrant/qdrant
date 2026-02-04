@@ -77,15 +77,6 @@ storage:
     # If null - auto selection.
     update_rate_limit: null
 
-    # Maximum number of collections to load concurrently.
-    #max_concurrent_collection_loads: 1
-
-    # Maximum number of shards to load concurrently when loading a collection.
-    #max_concurrent_shard_loads: 1
-
-    # Maximum number of segments to load concurrently when loading a shard.
-    #max_concurrent_segment_loads: 8
-
     # Limit for number of incoming automatic shard transfers per collection on this node, does not affect user-requested transfers.
     # The same value should be used on all nodes in a cluster.
     # Default is to allow 1 transfer.
@@ -102,6 +93,13 @@ storage:
     # Only supported on Linux, must be enabled in your kernel.
     # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
     #async_scorer: false
+    # concurrent_loads:
+    #   # Maximum number of collections to load concurrently.
+    #   max_concurrent_collection_loads: 1
+    #   # Maximum number of shards to load concurrently when loading a collection.
+    #   max_concurrent_shard_loads: 1
+    #   # Maximum number of segments to load concurrently when loading a shard.
+    #   max_concurrent_segment_loads: 8
 
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
