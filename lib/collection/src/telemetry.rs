@@ -498,6 +498,7 @@ mod internal_conversions {
                 optimizations: _, // not included in grpc
                 async_scorer: _,  // not included in grpc
                 indexed_only_excluded_vectors,
+                update_queue: _, // not included in grpc
             } = value;
 
             grpc::LocalShardTelemetry {
@@ -667,6 +668,7 @@ mod internal_conversions {
                             .collect()
                     },
                 ),
+                update_queue: None, // Not included in grpc
             })
         }
     }
