@@ -15,7 +15,7 @@ pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
 use crate::repr::*;
 
-#[pyclass(name = "EdgeConfig")]
+#[pyclass(name = "EdgeConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyEdgeConfig(SegmentConfig);
@@ -73,7 +73,7 @@ impl PyEdgeConfig {
     }
 }
 
-#[pyclass(name = "PayloadStorageType")]
+#[pyclass(name = "PayloadStorageType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadStorageType {
     Mmap,

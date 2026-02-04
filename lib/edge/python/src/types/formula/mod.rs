@@ -18,7 +18,7 @@ pub use self::expression_interface::*;
 use crate::repr::*;
 use crate::types::PyValue;
 
-#[pyclass(name = "Formula")]
+#[pyclass(name = "Formula", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFormula(pub ParsedFormula);
@@ -48,7 +48,7 @@ impl PyFormula {
     }
 }
 
-#[pyclass(name = "DecayKind")]
+#[pyclass(name = "DecayKind", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDecayKind {
     /// Linear decay function

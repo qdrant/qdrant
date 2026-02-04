@@ -82,7 +82,7 @@ impl Repr for PyMatch {
     }
 }
 
-#[pyclass(name = "MatchValue")]
+#[pyclass(name = "MatchValue", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchValue(pub MatchValue);
@@ -177,7 +177,7 @@ impl Repr for PyValueVariants {
     }
 }
 
-#[pyclass(name = "MatchText")]
+#[pyclass(name = "MatchText", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchText(pub MatchText);
@@ -207,7 +207,7 @@ impl PyMatchText {
     }
 }
 
-#[pyclass(name = "MatchTextAny")]
+#[pyclass(name = "MatchTextAny", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchTextAny(pub MatchTextAny);
@@ -237,7 +237,7 @@ impl PyMatchTextAny {
     }
 }
 
-#[pyclass(name = "MatchPhrase")]
+#[pyclass(name = "MatchPhrase", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchPhrase(pub MatchPhrase);
@@ -267,7 +267,7 @@ impl PyMatchPhrase {
     }
 }
 
-#[pyclass(name = "MatchAny")]
+#[pyclass(name = "MatchAny", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchAny(pub MatchAny);
@@ -299,7 +299,7 @@ impl PyMatchAny {
     }
 }
 
-#[pyclass(name = "MatchExcept")]
+#[pyclass(name = "MatchExcept", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMatchExcept(pub MatchExcept);

@@ -4,7 +4,7 @@ use segment::types::ValuesCount;
 
 use crate::repr::*;
 
-#[pyclass(name = "ValuesCount")]
+#[pyclass(name = "ValuesCount", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyValuesCount(pub ValuesCount);
 

@@ -41,7 +41,7 @@ impl From<PyRange> for RangeInterface {
     }
 }
 
-#[pyclass(name = "RangeFloat")]
+#[pyclass(name = "RangeFloat", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeFloat(pub Range<OrderedFloat<FloatPayloadType>>);
 
@@ -97,7 +97,7 @@ impl PyRangeFloat {
     }
 }
 
-#[pyclass(name = "RangeDateTime")]
+#[pyclass(name = "RangeDateTime", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyRangeDateTime(pub Range<DateTimePayloadType>);
 

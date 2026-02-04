@@ -22,7 +22,7 @@ pub use self::range::*;
 pub use self::value_count::*;
 use crate::repr::*;
 
-#[pyclass(name = "Filter")]
+#[pyclass(name = "Filter", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFilter(pub Filter);
