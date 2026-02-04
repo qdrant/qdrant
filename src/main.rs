@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
+use ::common::defaults::{ConcurrentLoadsOptions, set_concurrent_loads_config};
 use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -177,7 +178,16 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
-
+    // Set max concurrent for collection load
+    set_concurrent_loads_config(ConcurrentLoadsOptions {
+        max_concurrent_collection_loads: settings
+            .storage
+            .performance
+            .max_concurrent_collection_loads,
+        max_concurrent_shard_loads: settings.storage.performance.max_concurrent_shard_loads,
+        max_concurrent_segment_loads: settings.storage.performance.max_concurrent_segment_loads,
+    })
+    .unwrap();
     welcome(&settings);
 
     #[cfg(feature = "gpu")]

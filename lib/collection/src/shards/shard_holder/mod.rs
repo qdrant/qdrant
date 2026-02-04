@@ -11,6 +11,7 @@ use std::time::Duration;
 use ahash::AHashMap;
 use api::rest::ShardKeyWithFallback;
 use common::budget::ResourceBudget;
+use common::defaults::max_concurrent_shard_loads;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
@@ -871,41 +872,64 @@ impl ShardHolder {
             }
         };
 
-        for shard_id in shard_ids_list {
+        // Concurrently load all shards.
+        let shard_id_to_key_mapping_clone = shard_id_to_key_mapping.clone();
+        let shard_futures = shard_ids_list.into_iter().map(|shard_id| {
             // Check if shard is fully initialized on disk
             // The initialization flag should be absent for a well-formed replica set
-            let initializing_flag = shard_initializing_flag_path(collection_path, shard_id);
-            let is_dirty_shard = tokio_fs::try_exists(&initializing_flag)
-                .await
-                .unwrap_or(false);
+            let initializing_flag = shard_initializing_flag_path(collection_path, shard_id).clone();
+            let collection_id = collection_id.clone();
+            let collection_config = collection_config.clone();
+            let effective_optimizers_config = effective_optimizers_config.clone();
+            let shared_storage_config = shared_storage_config.clone();
+            let payload_index_schema = payload_index_schema.clone();
+            let channel_service = channel_service.clone();
+            let on_peer_failure = on_peer_failure.clone();
+            let abort_shard_transfer = abort_shard_transfer.clone();
+            let update_runtime = update_runtime.clone();
+            let search_runtime = search_runtime.clone();
+            let shard_key = shard_id_to_key_mapping_clone.get(&shard_id).cloned();
+            let optimizer_resource_budget = optimizer_resource_budget.clone();
+            async move {
+                let shard_key_for_add = shard_key.clone();
 
-            // Validate that shard exists on disk
-            let shard_path = check_shard_path(collection_path, shard_id)
-                .await
-                .expect("Failed to check shard path");
+                // Check if shard is fully initialized on disk
+                let is_dirty_shard = tokio_fs::try_exists(&initializing_flag)
+                    .await
+                    .unwrap_or(false);
 
-            // Load replica set
-            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
-            let replica_set = ShardReplicaSet::load(
-                shard_id,
-                shard_key.cloned(),
-                collection_id.clone(),
-                &shard_path,
-                is_dirty_shard,
-                collection_config.clone(),
-                effective_optimizers_config.clone(),
-                shared_storage_config.clone(),
-                payload_index_schema.clone(),
-                channel_service.clone(),
-                on_peer_failure.clone(),
-                abort_shard_transfer.clone(),
-                this_peer_id,
-                update_runtime.clone(),
-                search_runtime.clone(),
-                optimizer_resource_budget.clone(),
-            )
-            .await;
+                // Validate that shard exists on disk
+                let shard_path = check_shard_path(collection_path, shard_id)
+                    .await
+                    .expect("Failed to check shard path");
 
+                // Load replica set
+                let replica_set = ShardReplicaSet::load(
+                    shard_id,
+                    shard_key,
+                    collection_id,
+                    &shard_path,
+                    is_dirty_shard,
+                    collection_config,
+                    effective_optimizers_config,
+                    shared_storage_config,
+                    payload_index_schema,
+                    channel_service,
+                    on_peer_failure,
+                    abort_shard_transfer,
+                    this_peer_id,
+                    update_runtime,
+                    search_runtime,
+                    optimizer_resource_budget,
+                )
+                .await;
+
+                (replica_set, shard_key_for_add)
+            }
+        });
+        let mut shard_stream =
+            stream::iter(shard_futures).buffer_unordered(max_concurrent_shard_loads());
+        while let Some((replica_set, shard_key)) = shard_stream.next().await {
             // Change local shards stuck in Initializing state to Active
             let local_peer_id = replica_set.this_peer_id();
             let not_distributed = !shared_storage_config.is_distributed;
@@ -923,8 +947,7 @@ impl ShardHolder {
                     .await
                     .expect("Failed to set local shard state");
             }
-            let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
-            self.add_shard(shard_id, replica_set, shard_key)
+            self.add_shard(replica_set.shard_id, replica_set, shard_key)
                 .await
                 .unwrap();
         }

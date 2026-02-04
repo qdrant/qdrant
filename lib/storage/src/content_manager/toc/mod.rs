@@ -31,9 +31,11 @@ use collection::shards::{CollectionId, replica_set};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
+use common::defaults::max_concurrent_collection_loads;
 use dashmap::DashMap;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
+use futures::{StreamExt, stream};
 use io::safe_delete::safe_delete_in_tmp;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
@@ -114,8 +116,10 @@ impl TableOfContent {
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
-        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
+
+        // Collect valid collection paths for loading
+        let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
@@ -139,37 +143,62 @@ impl TableOfContent {
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&storage_config.snapshots_path, &collection_name);
 
-            log::info!("Loading collection: {collection_name}");
-            let collection = general_runtime.block_on(Collection::load(
-                collection_name.clone(),
-                this_peer_id,
-                &collection_path,
-                &collection_snapshots_path,
-                storage_config
-                    .to_shared_storage_config(is_distributed)
-                    .into(),
-                channel_service.clone(),
-                Self::change_peer_from_state_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                    ReplicaState::Dead,
-                ),
-                Self::request_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Self::abort_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Some(search_runtime.handle().clone()),
-                Some(update_runtime.handle().clone()),
-                optimizer_resource_budget.clone(),
-                storage_config.optimizers_overwrite.clone(),
-            ));
+            let consensus_proposal_sender = consensus_proposal_sender.clone();
+            let channel_service = channel_service.clone();
+            let storage_config = storage_config.clone();
+            let search_runtime_handle = search_runtime.handle().clone();
+            let update_runtime_handle = update_runtime.handle().clone();
+            let optimizer_resource_budget = optimizer_resource_budget.clone();
 
-            collections.insert(collection_name.clone(), Arc::new(collection));
+            collection_load_tasks.push((collection_name.clone(), async move {
+                log::info!("Loading collection: {collection_name}");
+                Collection::load(
+                    collection_name.clone(),
+                    this_peer_id,
+                    &collection_path,
+                    &collection_snapshots_path,
+                    storage_config
+                        .to_shared_storage_config(is_distributed)
+                        .into(),
+                    channel_service,
+                    Self::change_peer_from_state_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                        ReplicaState::Dead,
+                    ),
+                    Self::request_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Self::abort_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Some(search_runtime_handle),
+                    Some(update_runtime_handle),
+                    optimizer_resource_budget,
+                    storage_config.optimizers_overwrite.clone(),
+                )
+                .await
+            }));
         }
+
+        // Load collections concurrently
+        let collection_futures = collection_load_tasks
+            .into_iter()
+            .map(|(name, fut)| async move {
+                let collection = fut.await;
+                (name, collection)
+            });
+        let mut collection_stream =
+            stream::iter(collection_futures).buffer_unordered(max_concurrent_collection_loads());
+
+        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+        general_runtime.block_on(async {
+            while let Some((collection_name, collection)) = collection_stream.next().await {
+                collections.insert(collection_name, Arc::new(collection));
+            }
+        });
 
         // Initialize snapshot telemetry for all loaded collections.
         let telemetry = TocTelemetryCollector::default();

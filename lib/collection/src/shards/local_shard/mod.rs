@@ -31,7 +31,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
+use common::defaults::max_concurrent_segment_loads;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
@@ -421,7 +421,7 @@ impl LocalShard {
                 });
                 AbortOnDropHandle::new(handle)
             })
-            .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
+            .buffer_unordered(max_concurrent_segment_loads());
 
         let mut segment_holder = SegmentHolder::default();
 
