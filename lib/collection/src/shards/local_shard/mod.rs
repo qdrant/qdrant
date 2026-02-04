@@ -29,7 +29,6 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
-use common::concurrent_loads::max_concurrent_segment_loads;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
@@ -421,7 +420,11 @@ impl LocalShard {
                 });
                 AbortOnDropHandle::new(handle)
             })
-            .buffer_unordered(max_concurrent_segment_loads());
+            .buffer_unordered(
+                shared_storage_config
+                    .concurrent_load_config
+                    .get_concurrent_segments(),
+            );
 
         let mut segment_holder = SegmentHolder::default();
 

@@ -136,6 +136,7 @@ impl StorageConfig {
             self.snapshots_path.clone(),
             self.snapshots_config.clone(),
             self.hnsw_global_config.clone(),
+            self.performance.concurrent_loads.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
         )
     }

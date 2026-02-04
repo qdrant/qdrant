@@ -29,7 +29,6 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
 use common::budget::ResourceBudget;
-use common::concurrent_loads::max_concurrent_collection_loads;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
 use dashmap::DashMap;
@@ -190,8 +189,12 @@ impl TableOfContent {
                 let collection = fut.await;
                 (name, collection)
             });
-        let mut collection_stream =
-            stream::iter(collection_futures).buffer_unordered(max_concurrent_collection_loads());
+        let mut collection_stream = stream::iter(collection_futures).buffer_unordered(
+            storage_config
+                .performance
+                .concurrent_loads
+                .get_concurrent_collections(),
+        );
 
         let mut collections: HashMap<String, Arc<Collection>> = Default::default();
         general_runtime.block_on(async {

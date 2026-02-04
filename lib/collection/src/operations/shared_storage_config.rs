@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use common::concurrent_loads::ConcurrentLoadConfig;
 use segment::types::HnswGlobalConfig;
 
 use crate::common::snapshots_manager::SnapshotsConfig;
@@ -39,6 +40,7 @@ pub struct SharedStorageConfig {
     pub snapshots_path: PathBuf,
     pub snapshots_config: SnapshotsConfig,
     pub hnsw_global_config: HnswGlobalConfig,
+    pub concurrent_load_config: ConcurrentLoadConfig,
     pub search_thread_count: usize,
 }
 
@@ -58,6 +60,7 @@ impl Default for SharedStorageConfig {
             snapshots_path: PathBuf::from(DEFAULT_SNAPSHOTS_PATH),
             snapshots_config: default::Default::default(),
             hnsw_global_config: HnswGlobalConfig::default(),
+            concurrent_load_config: ConcurrentLoadConfig::default(),
             search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
         }
     }
@@ -79,6 +82,7 @@ impl SharedStorageConfig {
         snapshots_path: PathBuf,
         snapshots_config: SnapshotsConfig,
         hnsw_global_config: HnswGlobalConfig,
+        load_concurrency_config: ConcurrentLoadConfig,
         search_thread_count: usize,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
@@ -99,6 +103,7 @@ impl SharedStorageConfig {
             snapshots_path,
             snapshots_config,
             hnsw_global_config,
+            concurrent_load_config: load_concurrency_config,
             search_thread_count,
         }
     }

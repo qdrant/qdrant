@@ -17,7 +17,6 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
-use ::common::concurrent_loads::set_concurrent_loads_config;
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
@@ -178,8 +177,6 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
-    // Set max concurrent for collection load
-    set_concurrent_loads_config(&settings.storage.performance.concurrent_loads);
     welcome(&settings);
 
     #[cfg(feature = "gpu")]
