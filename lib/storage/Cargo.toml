@@ -63,7 +63,7 @@ collection = { path = "../collection" }
 shard = { path = "../shard" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.100"
+anyhow = { workspace = true }
 uuid = { workspace = true }
 url = "2.5.8"
 reqwest = { workspace = true }

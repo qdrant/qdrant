@@ -28,6 +28,6 @@ wal = { workspace = true }
 
 
 [dev-dependencies]
-anyhow = "1.0"
+anyhow = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 serde_json = { workspace = true }
