@@ -50,7 +50,10 @@ impl LocalShard {
         let update_receiver = match update_receiver {
             Some(receiver) => receiver,
             None => {
-                // Receiver is destroyed, create a new channel
+                // Receiver is destroyed, create a new channel.
+                // It's not expected to happen in normal operation,
+                // Because it means that there were no update workers running.
+                // Just in case, we create a new channel to avoid panics in update handler.
                 let (update_sender, update_receiver) =
                     mpsc::channel(self.shared_storage_config.update_queue_size);
                 let _old_sender = self.update_sender.swap(Arc::new(update_sender));
