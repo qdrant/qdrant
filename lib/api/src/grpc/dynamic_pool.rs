@@ -24,6 +24,8 @@ impl<T: Clone> ItemWithStats<T> {
 
 pub struct DynamicPool<T: Clone> {
     items: HashMap<u64, Arc<ItemWithStats<T>>>,
+    /// Place to store elements in a draining phase
+    draining: Vec<Arc<ItemWithStats<T>>>,
     /// How many times one item can be used
     max_usage_per_item: usize,
     /// Minimal number of items in the pool
@@ -89,8 +91,10 @@ impl<T: Clone> DynamicPool<T> {
                 (Self::random_idx(), item)
             })
             .collect();
+        let draining = vec![];
         Self {
             items,
+            draining,
             max_usage_per_item,
             min_items,
             init_at,
@@ -118,6 +122,10 @@ impl<T: Clone> DynamicPool<T> {
             return None;
         }
 
+        // Only retain still used draining items
+        self.draining
+            .retain(|item| item.usage.load(Ordering::Acquire) > 0);
+
         // If all items are used too much, we cannot use any of them so we return None
         let mut total_usage = 0;
         let min_usage_idx = *self
@@ -143,6 +151,8 @@ impl<T: Clone> DynamicPool<T> {
                 .items
                 .remove(&min_usage_idx)
                 .expect("Item must exist, as we just found it");
+            // Item enters a draining phase for a graceful shutdown
+            self.draining.push(item.clone());
             return Some(CountedItem::new(min_usage_idx, item, self.init_at));
         }
 
