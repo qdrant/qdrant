@@ -34,6 +34,11 @@ pub struct IndexingOptimizer {
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::segment_constructor::segment_builder::SegmentBuilder;
+use shard::locked_segment::LockedSegment;
+use shard::optimize::OptimizationStrategy;
+
 impl IndexingOptimizer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -118,6 +123,21 @@ impl IndexingOptimizer {
         }
 
         false
+    }
+}
+
+impl OptimizationStrategy for IndexingOptimizer {
+    fn create_segment_builder(
+        &self,
+        input_segments: &[LockedSegment],
+    ) -> OperationResult<SegmentBuilder> {
+        self.optimized_segment_builder(input_segments)
+            .map_err(|e| OperationError::service_error(e.to_string()))
+    }
+
+    fn create_temp_segment(&self) -> OperationResult<LockedSegment> {
+        self.temp_segment(false)
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 }
 

@@ -8,7 +8,6 @@ use common::progress_tracker::ProgressTracker;
 #[cfg(test)]
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use segment::common::operation_error::OperationResult;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
@@ -19,7 +18,7 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::operations::optimization::OptimizerThresholds;
-use shard::optimize::{OptimizationPaths, OptimizationPolicy, execute_optimization};
+use shard::optimize::{OptimizationPaths, OptimizationStrategy, execute_optimization};
 use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
 
@@ -39,7 +38,7 @@ const BYTES_IN_KB: usize = 1024;
 /// Process of the optimization is same for all optimizers.
 /// The selection of the candidates for optimization and the configuration
 /// of resulting segment are up to concrete implementations.
-pub trait SegmentOptimizer: OptimizationPolicy + Sync {
+pub trait SegmentOptimizer: OptimizationStrategy + Sync {
     /// Get name describing this optimizer
     fn name(&self) -> &'static str;
 
@@ -346,23 +345,7 @@ pub trait SegmentOptimizer: OptimizationPolicy + Sync {
     }
 }
 
-    fn create_segment_builder(
-        &self,
-        input_segments: &[LockedSegment],
-    ) -> OperationResult<SegmentBuilder> {
-        // Reuse policy logic and map errors into OperationError for shard
-        self.0
-            .optimized_segment_builder(input_segments)
-            .map_err(|e| segment::common::operation_error::OperationError::service_error(e.to_string()))
-    }
-
-    fn create_temp_segment(&self) -> OperationResult<LockedSegment> {
-        self.0
-            .temp_segment(false)
-            .map_err(|e| segment::common::operation_error::OperationError::service_error(e.to_string()))
-    }
-}
-
+// Blanket impl not needed due to supertrait; coercion is handled via generic fn
 
 pub struct OptimizationPlanner<'a> {
     /// Segments that could be scheduled for optimization.

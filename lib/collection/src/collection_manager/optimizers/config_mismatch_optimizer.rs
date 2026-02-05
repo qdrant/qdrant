@@ -32,6 +32,11 @@ pub struct ConfigMismatchOptimizer {
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::segment_constructor::segment_builder::SegmentBuilder;
+use shard::locked_segment::LockedSegment;
+use shard::optimize::OptimizationStrategy;
+
 impl ConfigMismatchOptimizer {
     pub fn new(
         thresholds_config: OptimizerThresholds,
@@ -169,6 +174,21 @@ impl ConfigMismatchOptimizer {
                 });
 
         sparse_has_mismatch || dense_has_mismatch
+    }
+}
+
+impl OptimizationStrategy for ConfigMismatchOptimizer {
+    fn create_segment_builder(
+        &self,
+        input_segments: &[LockedSegment],
+    ) -> OperationResult<SegmentBuilder> {
+        self.optimized_segment_builder(input_segments)
+            .map_err(|e| OperationError::service_error(e.to_string()))
+    }
+
+    fn create_temp_segment(&self) -> OperationResult<LockedSegment> {
+        self.temp_segment(false)
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 }
 
