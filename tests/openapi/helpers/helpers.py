@@ -118,23 +118,34 @@ def request_with_validation(
 # from client implementation:
 # https://github.com/qdrant/qdrant-client/blob/d18cb1702f4cf8155766c7b32d1e4a68af11cd6a/qdrant_client/hybrid/fusion.py#L6C1-L31C25
 def reciprocal_rank_fusion(
-    responses: List[List[Any]], limit: int = 10
+    responses: List[List[Any]], limit: int = 10, weights: List[float] = None
 ) -> List[Any]:
-    def compute_score(pos: int) -> float:
-        ranking_constant = (
-            2  # the constant mitigates the impact of high rankings by outlier systems
-        )
-        return 1 / (ranking_constant + pos)
+    """
+    Compute RRF scores for multiple results from different sources.
+    
+    Args:
+        responses: List of response lists from different sources
+        limit: Maximum number of results to return
+        weights: Optional weights for each source. Higher weight = more influence.
+                 If None, all sources are weighted equally (weight = 1.0).
+    """
+    ranking_constant = 2  # the constant mitigates the impact of high rankings by outlier systems
+
+    def compute_score(pos: int, weight: float = 1.0) -> float:
+        if weight <= 0:
+            return 0.0
+        return 1 / (pos * (1.0 / weight) + ranking_constant)
 
     scores: Dict[Any, float] = {} # id -> score
     point_pile = {}
-    for response in responses:
+    for source_idx, response in enumerate(responses):
+        weight = weights[source_idx] if weights else 1.0
         for i, scored_point in enumerate(response):
             if scored_point["id"] in scores:
-                scores[scored_point["id"]] += compute_score(i)
+                scores[scored_point["id"]] += compute_score(i, weight)
             else:
                 point_pile[scored_point["id"]] = scored_point
-                scores[scored_point["id"]] = compute_score(i)
+                scores[scored_point["id"]] = compute_score(i, weight)
 
     sorted_scores = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     sorted_points = []
