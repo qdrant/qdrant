@@ -27,8 +27,10 @@ impl MergePlan {
 
         // Recursively validate nested prefetches
         for source in &self.sources {
-            if let Source::Prefetch(nested_plan) = source {
-                nested_plan.validate()?;
+            match source {
+                Source::SearchesIdx(_) => {}
+                Source::ScrollsIdx(_) => {}
+                Source::Prefetch(nested_plan) => nested_plan.validate()?,
             }
         }
 
