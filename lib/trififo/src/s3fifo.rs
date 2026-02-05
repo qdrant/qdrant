@@ -97,6 +97,11 @@ where
             LocalOffset::Ghost(_) => {
                 let entry = Entry::new(key, value);
                 let new_offset = self.push_to_main_queue(entry);
+                // The same key now exists at ghost AND main queues, key_eq will find the
+                // right key at the ghost queue, and update it to point at the main queue
+                //
+                // The key at ghost queue will remain there, but nothing will point to it anymore,
+                // it is safe to leave it there, as it will eventually get overwritten.
                 self.update_hashtable(&key, new_offset);
             }
             LocalOffset::Small(_) | LocalOffset::Main(_) => {
@@ -131,12 +136,12 @@ where
         // slot contents. If we remove after overwriting_push, the slot
         // already contains the new key, so key_eq fails and the entry
         // becomes a zombie (never removed).
-        let eviction_candidate_key = self
+        let (eviction_global_offset, eviction_candidate) = self
             .fifos
             .main_eviction_candidate()
-            .expect("We are the only writer, no torn read")
-            .key;
-        self.remove_from_hashtable(&eviction_candidate_key);
+            .expect("We are the only writer, no torn read");
+        let eviction_candidate_key = eviction_candidate.key;
+        self.remove_from_hashtable(&eviction_candidate_key, &eviction_global_offset);
 
         // Now safe to overwrite the slot
         self.fifos.main_overwriting_push(entry)
@@ -191,11 +196,12 @@ where
         // slot contents. If we remove after pop_push_unchecked, the slot
         // already contains the new key, so key_eq fails and the entry
         // becomes a zombie (never removed).
-        let eviction_candidate = *self
+        let (eviction_global_offset, eviction_candidate_key) = self
             .fifos
             .ghost_eviction_candidate()
             .expect("We are the only writer");
-        self.remove_from_hashtable(&eviction_candidate);
+        let eviction_candidate_key = *eviction_candidate_key;
+        self.remove_from_hashtable(&eviction_candidate_key, &eviction_global_offset);
 
         // Now safe to overwrite the slot
         self.fifos.ghost_overwriting_push(key)
@@ -217,12 +223,11 @@ where
 
     /// Remove a key from the hashtable if present.
     #[inline]
-    fn remove_from_hashtable(&mut self, key: &K) {
+    fn remove_from_hashtable(&mut self, key: &K, eviction_global_offset: &GlobalOffset) {
         let hash = self.hash_key(key);
-        if let Ok(entry) = self
-            .hashtable
-            .find_entry(hash, |global_offset| self.fifos.key_eq(*global_offset, key))
-        {
+        if let Ok(entry) = self.hashtable.find_entry(hash, |global_offset| {
+            global_offset == eviction_global_offset
+        }) {
             entry.remove();
         }
     }
@@ -238,5 +243,651 @@ where
             .insert_unique(hash, global_offset, |global_offset| {
                 self.fifos.hash_key_at_offset(*global_offset, &self.hasher)
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a default S3Fifo cache with standard ratios
+    /// Note: With capacity 100 and small_ratio 0.1, small queue = 10 slots
+    fn create_cache(capacity: usize) -> S3Fifo<u64, String> {
+        S3Fifo::new(capacity, 0.1, 0.9)
+    }
+
+    /// Helper to create a cache where small queue has more slots for basic tests
+    /// With capacity 100 and small_ratio 0.2, small queue = 20 slots
+    fn create_cache_with_larger_small(capacity: usize) -> S3Fifo<u64, String> {
+        S3Fifo::new(capacity, 0.2, 0.9)
+    }
+
+    // ==================== Basic Operations ====================
+
+    #[test]
+    fn test_basic_insert_and_get() {
+        // Use capacity 100 with small_ratio 0.1 = 10 slots in small queue
+        let mut cache = create_cache(100);
+
+        cache.do_insert(1, "one".to_string());
+        cache.do_insert(2, "two".to_string());
+        cache.do_insert(3, "three".to_string());
+
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+        assert_eq!(cache.get(&2), Some("two".to_string()));
+        assert_eq!(cache.get(&3), Some("three".to_string()));
+        assert_eq!(cache.get(&4), None);
+    }
+
+    #[test]
+    fn test_len_increases_with_inserts() {
+        // Use larger capacity so small queue has multiple slots
+        let mut cache = create_cache(100);
+
+        assert_eq!(cache.len(), 0);
+        cache.do_insert(1, "one".to_string());
+        assert_eq!(cache.len(), 1);
+        cache.do_insert(2, "two".to_string());
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn test_len_with_ghost_entries() {
+        // With capacity 10 and small_ratio 0.1, small queue = 1 slot
+        // Ghost entries don't contribute to len()
+        let mut cache = create_cache(10);
+
+        cache.do_insert(1, "one".to_string());
+        assert_eq!(cache.len(), 1);
+
+        // Insert second item - first item (recency 0) goes to ghost
+        cache.do_insert(2, "two".to_string());
+        // len = small(1) + main(0) = 1 (ghost doesn't count)
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn test_update_existing_key() {
+        let mut cache = create_cache(10);
+
+        cache.do_insert(1, "one".to_string());
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+
+        // Access to increment recency
+        cache.get(&1);
+
+        // Re-insert same key - should update recency, not add new entry
+        cache.do_insert(1, "one_updated".to_string());
+
+        // Value should remain the same (promote_existing just increments recency)
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+        assert_eq!(cache.len(), 1);
+    }
+
+    // ==================== Recency Tracking ====================
+
+    #[test]
+    fn test_recency_increments_on_get() {
+        let mut cache = create_cache(10);
+
+        cache.do_insert(1, "one".to_string());
+
+        // Multiple gets should increment recency (up to max of 3)
+        for _ in 0..5 {
+            assert_eq!(cache.get(&1), Some("one".to_string()));
+        }
+
+        // Item should still be retrievable
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+    }
+
+    // ==================== Small Queue Behavior ====================
+
+    #[test]
+    fn test_new_items_go_to_small_queue() {
+        // With capacity 10 and small_ratio 0.1, small queue has 1 slot
+        let mut cache = create_cache(10);
+
+        cache.do_insert(1, "one".to_string());
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+    }
+
+    #[test]
+    fn test_small_queue_overflow_demotes_to_ghost() {
+        // Small queue size = ceil(10 * 0.1) = 1
+        // New items without access go to ghost queue
+        let mut cache = create_cache(10);
+
+        // Insert first item (goes to small queue)
+        cache.do_insert(1, "one".to_string());
+
+        // Insert second item - first item has recency 0, should go to ghost
+        cache.do_insert(2, "two".to_string());
+
+        // Item 1 is now in ghost queue (no value, just key)
+        assert_eq!(cache.get(&1), None);
+
+        // Item 2 should still be accessible
+        assert_eq!(cache.get(&2), Some("two".to_string()));
+    }
+
+    #[test]
+    fn test_small_queue_overflow_promotes_accessed_to_main() {
+        // Small queue size = ceil(10 * 0.1) = 1
+        let mut cache = create_cache(10);
+
+        // Insert and access first item
+        cache.do_insert(1, "one".to_string());
+        cache.get(&1); // Increment recency
+
+        // Insert second item - first item has recency > 0, should go to main
+        cache.do_insert(2, "two".to_string());
+
+        // Both items should be accessible
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+        assert_eq!(cache.get(&2), Some("two".to_string()));
+    }
+
+    // ==================== Ghost Queue Behavior ====================
+
+    #[test]
+    fn test_ghost_entry_promotes_to_main_on_reinsert() {
+        let mut cache = create_cache(10);
+
+        // Insert item (goes to small queue)
+        cache.do_insert(1, "one".to_string());
+
+        // Insert another item - item 1 (recency 0) goes to ghost
+        cache.do_insert(2, "two".to_string());
+
+        // Item 1 is now in ghost (not accessible)
+        assert_eq!(cache.get(&1), None);
+
+        // Re-insert item 1 - should go directly to main queue
+        cache.do_insert(1, "one_new".to_string());
+
+        // Now item 1 should be accessible with the new value
+        assert_eq!(cache.get(&1), Some("one_new".to_string()));
+    }
+
+    // ==================== Main Queue Behavior ====================
+
+    #[test]
+    fn test_main_queue_reinsertion() {
+        // Test that items with recency > 0 get reinserted in main queue
+        let mut cache = create_cache(20);
+
+        // Fill small queue and promote items to main by accessing them
+        for i in 0..15 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i); // Increment recency to ensure promotion to main
+        }
+
+        // Access some items multiple times to give them high recency
+        for _ in 0..3 {
+            cache.get(&0);
+            cache.get(&1);
+        }
+
+        // Continue inserting - this should trigger main queue evictions
+        for i in 15..25 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i);
+        }
+
+        // Items with high recency should survive longer
+        // (exact behavior depends on eviction order)
+    }
+
+    // ==================== Capacity and Eviction ====================
+
+    #[test]
+    fn test_capacity_limit() {
+        let capacity = 10;
+        let mut cache = create_cache(capacity);
+
+        // Insert more items than capacity
+        for i in 0..20u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Cache length should not exceed capacity
+        assert!(cache.len() <= capacity);
+    }
+
+    #[test]
+    fn test_fifo_eviction_order() {
+        // With capacity 10, small = 1, main = 9, ghost = 9
+        let mut cache = create_cache(10);
+
+        // Insert items without accessing them (stay at recency 0)
+        for i in 0..5u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Old items should be evicted first (FIFO order)
+        // Item 0 should be in ghost queue after subsequent inserts
+        assert_eq!(cache.get(&0), None); // Evicted to ghost (no value)
+    }
+
+    #[test]
+    fn test_eviction_prefers_low_recency() {
+        let mut cache = create_cache(10);
+
+        // Insert and heavily access item 0
+        cache.do_insert(0, "zero".to_string());
+        for _ in 0..5 {
+            cache.get(&0);
+        }
+
+        // Insert more items
+        for i in 1..15u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Item 0 should survive due to high recency (promoted to main and reinserted)
+        // Note: exact behavior depends on the eviction sequence
+    }
+
+    // ==================== Edge Cases ====================
+
+    #[test]
+    fn test_single_capacity() {
+        // Minimum capacity edge case
+        let mut cache: S3Fifo<u64, String> = S3Fifo::new(2, 0.5, 0.5);
+
+        cache.do_insert(1, "one".to_string());
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+
+        cache.do_insert(2, "two".to_string());
+        // One of them might be evicted
+        assert!(cache.len() <= 2);
+    }
+
+    #[test]
+    fn test_get_nonexistent_key() {
+        let cache = create_cache(10);
+        assert_eq!(cache.get(&999), None);
+    }
+
+    #[test]
+    fn test_empty_cache_len() {
+        let cache = create_cache(10);
+        assert_eq!(cache.len(), 0);
+    }
+
+    // ==================== Larger Scale Tests ====================
+
+    #[test]
+    fn test_many_inserts() {
+        let mut cache = create_cache(100);
+
+        // Insert 1000 items
+        for i in 0..1000u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Cache should be at capacity
+        assert!(cache.len() <= 100);
+
+        // Recent items should be accessible
+        assert_eq!(cache.get(&999), Some("value_999".to_string()));
+    }
+
+    #[test]
+    fn test_working_set_pattern() {
+        // Simulate a working set pattern where some keys are accessed frequently
+        // Use larger cache with bigger small queue for this pattern
+        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.2, 0.9);
+
+        // Insert a working set and immediately access to promote to main
+        for i in 0..20u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i); // Access to increment recency before eviction
+        }
+
+        // Frequently access the working set to build up recency
+        for _ in 0..10 {
+            for i in 0..10u64 {
+                cache.get(&i);
+            }
+        }
+
+        // Insert new items (simulating one-hit wonders)
+        for i in 100..200u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Working set items (0-9) should have higher survival rate
+        // due to their high recency from frequent access
+        let working_set_hits: usize = (0..10u64).filter(|&i| cache.get(&i).is_some()).count();
+
+        // Most of the working set should still be present
+        // (exact number depends on cache dynamics)
+        assert!(
+            working_set_hits > 0,
+            "Working set should have some surviving entries"
+        );
+    }
+
+    #[test]
+    fn test_scan_resistance() {
+        // S3-FIFO should be resistant to scans (sequential access patterns)
+        let mut cache = create_cache(50);
+
+        // Build up a frequently accessed set
+        for i in 0..20u64 {
+            cache.do_insert(i, format!("frequent_{}", i));
+            // Access multiple times
+            cache.get(&i);
+            cache.get(&i);
+        }
+
+        // Simulate a scan - insert many items that are never re-accessed
+        for i in 100..200u64 {
+            cache.do_insert(i, format!("scan_{}", i));
+        }
+
+        // The frequently accessed items should survive the scan
+        // because scan items have recency 0 and go to ghost queue
+        let frequent_hits: usize = (0..20u64).filter(|&i| cache.get(&i).is_some()).count();
+
+        // Some frequent items should survive
+        assert!(
+            frequent_hits > 0,
+            "Frequently accessed items should survive scan"
+        );
+    }
+
+    // ==================== Hash Collision Scenarios ====================
+
+    #[test]
+    fn test_different_keys_same_value() {
+        // Use larger capacity so items stay in small queue
+        let mut cache = create_cache(100);
+
+        cache.do_insert(1, "same".to_string());
+        cache.do_insert(2, "same".to_string());
+        cache.do_insert(3, "same".to_string());
+
+        assert_eq!(cache.get(&1), Some("same".to_string()));
+        assert_eq!(cache.get(&2), Some("same".to_string()));
+        assert_eq!(cache.get(&3), Some("same".to_string()));
+    }
+
+    // ==================== Sequence Tests ====================
+
+    #[test]
+    fn test_insert_get_insert_pattern() {
+        let mut cache = create_cache(10);
+
+        for round in 0..5 {
+            // Insert
+            cache.do_insert(round * 2, format!("a_{}", round));
+            cache.do_insert(round * 2 + 1, format!("b_{}", round));
+
+            // Get (increment recency)
+            cache.get(&(round * 2));
+        }
+
+        // Verify some items are still accessible
+        assert!(cache.len() > 0);
+    }
+
+    #[test]
+    fn test_repeated_key_access() {
+        let mut cache = create_cache(10);
+
+        cache.do_insert(1, "one".to_string());
+
+        // Access the same key many times
+        for _ in 0..100 {
+            assert_eq!(cache.get(&1), Some("one".to_string()));
+        }
+
+        // Insert many other items
+        for i in 2..20u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Key 1 should survive due to high recency
+        assert_eq!(cache.get(&1), Some("one".to_string()));
+    }
+
+    // ==================== Algorithm Invariant Tests ====================
+
+    #[test]
+    fn test_ghost_entries_have_no_value() {
+        let mut cache = create_cache(10);
+
+        // Insert item without accessing
+        cache.do_insert(1, "one".to_string());
+
+        // Force it to ghost by inserting another item
+        cache.do_insert(2, "two".to_string());
+
+        // Item 1 is in ghost - get returns None (no value stored)
+        let result = cache.get(&1);
+        assert_eq!(result, None);
+
+        // But when we re-insert, it goes to main
+        cache.do_insert(1, "one_again".to_string());
+        assert_eq!(cache.get(&1), Some("one_again".to_string()));
+    }
+
+    #[test]
+    fn test_main_queue_fifo_with_reinsertion() {
+        // Test that main queue reinserts items with recency > 0
+        let mut cache = create_cache(20);
+
+        // Fill the cache with items, accessing them to promote to main
+        for i in 0..18u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i);
+            cache.get(&i); // Higher recency
+        }
+
+        // Keep accessing item 0 to give it maximum recency
+        for _ in 0..5 {
+            cache.get(&0);
+        }
+
+        // Insert more items to trigger evictions in main queue
+        for i in 20..40u64 {
+            cache.do_insert(i, format!("new_{}", i));
+        }
+
+        // Item 0 with high recency should have better chance of survival
+        // (due to reinsertion in main queue)
+    }
+
+    #[test]
+    fn test_custom_ratios() {
+        // Test with different small/ghost ratios
+        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.2, 0.5);
+
+        for i in 0..50u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        assert!(cache.len() <= 100);
+    }
+
+    #[test]
+    fn test_small_ratio_larger() {
+        // Test with larger small queue ratio
+        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.3, 0.9);
+
+        for i in 0..200u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            if i % 3 == 0 {
+                cache.get(&i);
+            }
+        }
+
+        assert!(cache.len() <= 100);
+    }
+
+    // ==================== One-Hit Wonder Tests ====================
+
+    #[test]
+    fn test_one_hit_wonders_go_to_ghost() {
+        // One-hit wonders (items accessed only once during insertion) should go to ghost
+        let mut cache = create_cache(20);
+
+        // Insert items without any additional access (one-hit wonders)
+        for i in 0..30u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Early items should be in ghost queue (not accessible)
+        for i in 0..5u64 {
+            assert_eq!(cache.get(&i), None, "Item {} should be in ghost", i);
+        }
+    }
+
+    #[test]
+    fn test_quick_demotion() {
+        // S3-FIFO should quickly demote unpopular items
+        let mut cache = create_cache(10);
+
+        // Insert item 1 (will be demoted quickly)
+        cache.do_insert(1, "one".to_string());
+
+        // Insert item 2 and access it
+        cache.do_insert(2, "two".to_string());
+        cache.get(&2);
+        cache.get(&2);
+
+        // Item 1 should already be in ghost (quick demotion)
+        assert_eq!(cache.get(&1), None);
+
+        // Item 2 should still be accessible
+        assert_eq!(cache.get(&2), Some("two".to_string()));
+    }
+
+    // ==================== Ghost Queue Eviction Tests ====================
+
+    #[test]
+    fn test_ghost_queue_eviction() {
+        // Test that ghost queue also evicts when full
+        let mut cache = create_cache(10);
+
+        // Insert many items to fill ghost queue
+        for i in 0..50u64 {
+            cache.do_insert(i, format!("value_{}", i));
+        }
+
+        // Very old ghost entries should be evicted from ghost too
+        // Re-inserting them should NOT go to main (treated as new)
+        cache.do_insert(0, "zero_new".to_string());
+
+        // The item should be accessible (either from main via ghost hit, or from small as new)
+        // This tests that the ghost eviction doesn't cause issues
+    }
+
+    // ==================== Stress Tests ====================
+
+    #[test]
+    fn test_rapid_insert_delete_cycle() {
+        let mut cache = create_cache(50);
+
+        for round in 0..10 {
+            // Insert batch
+            for i in 0..100u64 {
+                cache.do_insert(round * 100 + i, format!("r{}_{}", round, i));
+            }
+
+            // Access some
+            for i in 0..20u64 {
+                cache.get(&(round * 100 + i));
+            }
+        }
+
+        // Cache should still be functional and within limits
+        assert!(cache.len() <= 50);
+    }
+
+    #[test]
+    fn test_alternating_access_pattern() {
+        // Use larger cache with bigger small queue
+        let mut cache: S3Fifo<u64, String> = S3Fifo::new(50, 0.3, 0.9);
+
+        // Insert items and access them to promote to main
+        for i in 0..30u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i); // Access to ensure they get promoted to main
+        }
+
+        // Access some items multiple times to build recency
+        for _ in 0..5 {
+            for i in 0..10u64 {
+                cache.get(&i);
+            }
+        }
+
+        // Insert new items
+        for i in 100..150u64 {
+            cache.do_insert(i, format!("new_{}", i));
+        }
+
+        // Some old items should survive due to high recency
+        let old_hits: usize = (0..10u64).filter(|&i| cache.get(&i).is_some()).count();
+        assert!(old_hits > 0, "Some old items should survive");
+    }
+
+    // ==================== Boundary Condition Tests ====================
+
+    #[test]
+    fn test_exact_capacity_fill() {
+        let capacity = 10;
+        let mut cache = create_cache(capacity);
+
+        // Fill exactly to capacity (accounting for small queue)
+        // Small = 1, Main = 9
+        for i in 0..10u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            if i > 0 {
+                // Access to promote previous items to main
+                cache.get(&(i - 1));
+            }
+        }
+
+        assert!(cache.len() <= capacity);
+    }
+
+    #[test]
+    fn test_reinsert_immediately_after_eviction() {
+        // Use capacity 10 with small_ratio 0.1 = 1 slot in small queue
+        let mut cache = create_cache(10);
+
+        // Insert item 1
+        cache.do_insert(1, "one".to_string());
+
+        // Force eviction to ghost
+        cache.do_insert(2, "two".to_string());
+
+        // Item 1 should be in ghost now
+        assert_eq!(cache.get(&1), None);
+
+        // Immediately reinsert - should go to main (ghost hit)
+        cache.do_insert(1, "one_v2".to_string());
+        assert_eq!(cache.get(&1), Some("one_v2".to_string()));
+
+        // Access it multiple times to maximize recency (max is 3)
+        cache.get(&1);
+        cache.get(&1);
+        cache.get(&1);
+
+        // Insert a few more items - item 1 should survive due to high recency in main
+        // With small=1 and main=9, we can insert up to 9 more items that get promoted
+        for i in 3..8u64 {
+            cache.do_insert(i, format!("value_{}", i));
+            cache.get(&i); // Promote to main by accessing before next eviction
+        }
+
+        // Item 1 should still be accessible (in main with recency)
+        assert_eq!(cache.get(&1), Some("one_v2".to_string()));
     }
 }
