@@ -136,11 +136,13 @@ pub struct CollectionWarning {
     pub message: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Default)]
+#[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
 pub struct UpdateQueueInfo {
     /// Number of elements in the queue
+    #[anonymize(false)]
     pub length: usize,
     /// last operation number processed
+    #[anonymize(false)]
     pub op_num: Option<usize>,
 }
 
