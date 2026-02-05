@@ -12603,6 +12603,17 @@
               "minimum": 0
             },
             "nullable": true
+          },
+          "update_queue": {
+            "description": "Update queue status",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateQueueInfo"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

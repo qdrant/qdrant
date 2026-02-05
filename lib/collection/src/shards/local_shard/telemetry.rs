@@ -113,6 +113,7 @@ impl LocalShard {
             async_scorer: Some(get_async_scorer()),
             indexed_only_excluded_vectors: (!index_only_excluded_vectors.is_empty())
                 .then_some(index_only_excluded_vectors),
+            update_queue: Some(self.local_update_queue_info()),
         })
     }
 
