@@ -442,6 +442,9 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         }
     };
 
+    // Release references to original segments before deleting proxy data later
+    drop(input_segments);
+
     // Compute already removed points to avoid duplicate work
     let already_remove_points = {
         let mut all_removed_points = proxy_deleted_points(&locked_proxies);
