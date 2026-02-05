@@ -15,7 +15,7 @@ workspace = true
 testing = ["common/testing"]
 
 [build-dependencies]
-cc = "1.0"
+cc = { workspace = true }
 
 [dependencies]
 fs-err = { workspace = true }

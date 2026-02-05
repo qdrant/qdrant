@@ -19,7 +19,7 @@ staging = ["collection/staging"]
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 mockito = { workspace = true }
-env_logger = "0.11"
+env_logger = { workspace = true }
 
 [dependencies]
 ahash = { workspace = true }
@@ -63,11 +63,11 @@ collection = { path = "../collection" }
 shard = { path = "../shard" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.100"
+anyhow = { workspace = true }
 uuid = { workspace = true }
-url = "2.5.8"
+url = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 
 tracing = { workspace = true, optional = true }
