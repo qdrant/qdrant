@@ -18,25 +18,25 @@ gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]
 
 [build-dependencies]
-cc = "1.2"
+cc = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true }
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
-env_logger = "0.11"
+env_logger = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 ndarray = "0.17.2"
 ndarray-npy = { version = "0.10.0", default-features = false }
-rmp-serde = "~1.3"
+rmp-serde = { workspace = true }
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
 rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
-anyhow = "1.0.100"
+anyhow = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -82,14 +82,14 @@ seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }
 fs_extra = { workspace = true }
-tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
+tinyvec = { workspace = true }
 validator = { workspace = true }
 chrono = { workspace = true }
 ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = "1.2.2"
+self_cell = { workspace = true }
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 is_sorted = "0.1.1"
