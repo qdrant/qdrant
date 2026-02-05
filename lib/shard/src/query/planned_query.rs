@@ -206,11 +206,8 @@ impl PlannedQuery {
             filter,
         )?];
 
-        let merge_plan = MergePlan {
-            sources,
-            // Root-level query without prefetches means we won't do any extra rescoring
-            rescore_stages,
-        };
+        // Root-level query without prefetches means we won't do any extra rescoring
+        let merge_plan = MergePlan::new(sources, rescore_stages)?;
         Ok(RootPlan {
             merge_plan,
             with_vector,
@@ -279,9 +276,9 @@ impl PlannedQuery {
                 params,
             })),
             // We will propagate the intermediate results. Fusion will take place at collection level.
-            fusion @ ScoringQuery::Fusion(_) => {
+            ScoringQuery::Fusion(fusion_internal) => {
                 Some(RescoreStages::collection_level(RescoreParams {
-                    rescore: fusion,
+                    rescore: ScoringQuery::Fusion(fusion_internal),
                     limit,
                     score_threshold: score_threshold.map(OrderedFloat),
                     params,
@@ -289,10 +286,7 @@ impl PlannedQuery {
             }
         };
 
-        let merge_plan = MergePlan {
-            sources,
-            rescore_stages,
-        };
+        let merge_plan = MergePlan::new(sources, rescore_stages)?;
 
         Ok(RootPlan {
             merge_plan,
@@ -359,10 +353,7 @@ fn recurse_prefetches(
                 params,
             });
 
-            let merge_plan = MergePlan {
-                sources: inner_sources,
-                rescore_stages: Some(rescore_stages),
-            };
+            let merge_plan = MergePlan::new(inner_sources, Some(rescore_stages))?;
 
             Source::Prefetch(Box::new(merge_plan))
         };

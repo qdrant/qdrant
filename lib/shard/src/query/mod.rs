@@ -3,6 +3,7 @@ pub mod mmr;
 pub mod planned_query;
 pub mod query_enum;
 pub mod scroll;
+mod validation;
 
 pub mod query_context;
 #[cfg(test)]
