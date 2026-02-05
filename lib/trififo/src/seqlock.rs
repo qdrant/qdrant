@@ -76,7 +76,7 @@ pub struct SeqLock<T> {
 /// `&self` is considered a read, and `&mut self` is considered a write.
 pub unsafe trait SeqLockSafe {}
 
-unsafe impl SeqLockSafe for usize {} // for docstring
+unsafe impl SeqLockSafe for usize {} // for main doc comment
 
 impl<T: SeqLockSafe> SeqLock<T> {
     fn new(v: T) -> Self {
@@ -122,17 +122,6 @@ impl<T: SeqLockSafe> SeqLock<T> {
             }
         }
     }
-
-    fn write(&self, callback: impl FnOnce(&mut T)) {
-        let seq = self.seq.load(Ordering::Relaxed);
-        self.seq.store(seq.wrapping_add(1), Ordering::Relaxed);
-        // ensure seq has been written before running the callback
-        fence(Ordering::Release);
-
-        callback(unsafe { &mut *self.inner.get() });
-
-        self.seq.store(seq.wrapping_add(2), Ordering::Release);
-    }
 }
 
 /// This structure can read the protected resource at any time, but it will:
@@ -173,9 +162,20 @@ pub struct SeqLockWriter<T> {
 unsafe impl<T> Send for SeqLockWriter<T> where T: Send {}
 
 impl<T: SeqLockSafe> SeqLockWriter<T> {
+    pub fn read<U, F: Fn(&T) -> U>(&self, callback: F) -> U {
+        self.lock.read(callback)
+    }
+
     /// Get mutable access to the protected resource through a closure.
     pub fn write<F: FnOnce(&mut T)>(&mut self, callback: F) {
-        self.lock.write(callback)
+        let seq = self.lock.seq.load(Ordering::Relaxed);
+        self.lock.seq.store(seq.wrapping_add(1), Ordering::Relaxed);
+        // ensure seq has been written before running the callback
+        fence(Ordering::Release);
+
+        callback(unsafe { &mut *self.lock.inner.get() });
+
+        self.lock.seq.store(seq.wrapping_add(2), Ordering::Release);
     }
 }
 
