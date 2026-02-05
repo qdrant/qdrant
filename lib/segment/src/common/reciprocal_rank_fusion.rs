@@ -227,9 +227,7 @@ mod tests {
         // A and B should have equal scores
         assert!(
             (a_score - b_score).abs() < 1e-6,
-            "Expected equal scores for A and B, got A={}, B={}",
-            a_score,
-            b_score
+            "Expected equal scores for A and B, got A={a_score}, B={b_score}",
         );
     }
 
