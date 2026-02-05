@@ -50,6 +50,7 @@ use segment::types::{
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
+use shard::operations::optimization::{OptimizationSegmentInfo, PendingOptimization};
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
@@ -72,9 +73,8 @@ use crate::config::CollectionConfigInternal;
 use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizationSegmentInfo, OptimizersStatus,
-    PendingOptimization, ShardInfoInternal, ShardStatus, ShardUpdateQueueInfo,
-    check_sparse_compatible_with_segment_config,
+    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
+    UpdateQueueInfo, check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;

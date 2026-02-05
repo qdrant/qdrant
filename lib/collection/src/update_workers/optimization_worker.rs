@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
+use shard::operations::optimization::OptimizerThresholds;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -24,9 +25,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, plan_optimizations,
-};
+use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::optimizers::{
     Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
 };

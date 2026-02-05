@@ -25,6 +25,7 @@ use rand::Rng;
 use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
+use shard::operations::optimization::OptimizerThresholds;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tempfile::Builder;
 use tokio::time::{Instant, sleep};
@@ -36,7 +37,6 @@ use crate::collection_manager::fixtures::{
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::TrackerStatus;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;

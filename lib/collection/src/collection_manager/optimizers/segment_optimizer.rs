@@ -25,6 +25,7 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
+use shard::operations::optimization::OptimizerThresholds;
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
 use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
@@ -37,13 +38,6 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::update_handler::Optimizer;
 
 const BYTES_IN_KB: usize = 1024;
-
-#[derive(Debug, Clone, Copy)]
-pub struct OptimizerThresholds {
-    pub max_segment_size_kb: usize,
-    pub memmap_threshold_kb: usize,
-    pub indexing_threshold_kb: usize,
-}
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
 ///

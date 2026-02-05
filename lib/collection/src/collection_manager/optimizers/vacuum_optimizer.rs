@@ -10,9 +10,10 @@ use segment::index::VectorIndex;
 use segment::segment::Segment;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use segment::vector_storage::VectorStorage;
+use shard::operations::optimization::OptimizerThresholds;
 
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 

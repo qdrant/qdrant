@@ -6871,6 +6871,7 @@ dependencies = [
  "ahash",
  "api",
  "bitvec",
+ "chrono",
  "common",
  "fs-err",
  "indexmap 2.13.0",

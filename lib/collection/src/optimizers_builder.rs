@@ -7,12 +7,12 @@ use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
+use shard::operations::optimization::OptimizerThresholds;
 use validator::Validate;
 
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;

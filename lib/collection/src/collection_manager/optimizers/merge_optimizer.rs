@@ -6,9 +6,10 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
+use shard::operations::optimization::OptimizerThresholds;
 
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 

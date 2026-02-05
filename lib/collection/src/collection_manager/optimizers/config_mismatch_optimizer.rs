@@ -8,9 +8,10 @@ use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, VectorName};
+use shard::operations::optimization::OptimizerThresholds;
 
 use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
+    OptimizationPlanner, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
