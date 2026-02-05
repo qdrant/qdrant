@@ -313,10 +313,7 @@ impl Repr for PyScoringQuery {
 #[pyclass(name = "Fusion", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyFusion {
-    Rrf {
-        k: usize,
-        weights: Option<Vec<f32>>,
-    },
+    Rrf { k: usize, weights: Option<Vec<f32>> },
     Dbsf {},
 }
 

@@ -59,7 +59,10 @@ async fn test_shard_query_rrf_rescoring() {
     // RRF query without prefetches
     let query = ShardQueryRequest {
         prefetches: vec![],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
         filter: None,
         score_threshold: None,
         limit: 0,
@@ -95,7 +98,10 @@ async fn test_shard_query_rrf_rescoring() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![nearest_query_prefetch.clone()],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -142,7 +148,10 @@ async fn test_shard_query_rrf_rescoring() {
             nearest_query_prefetch.clone(),
             nearest_query_prefetch.clone(),
         ],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -186,7 +195,10 @@ async fn test_shard_query_rrf_rescoring() {
                 ..nearest_query_prefetch.clone()
             },
         ],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+            k: DEFAULT_RRF_K,
+            weights: None,
+        })),
         filter: None,
         score_threshold: None,
         limit: outer_limit,

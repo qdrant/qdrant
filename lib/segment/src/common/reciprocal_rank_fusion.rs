@@ -213,8 +213,16 @@ mod tests {
         let weights = [3.0, 1.0];
         let scored_points = rrf_scoring(responses, k, Some(&weights));
 
-        let a_score = scored_points.iter().find(|p| p.id == 1.into()).unwrap().score;
-        let b_score = scored_points.iter().find(|p| p.id == 2.into()).unwrap().score;
+        let a_score = scored_points
+            .iter()
+            .find(|p| p.id == 1.into())
+            .unwrap()
+            .score;
+        let b_score = scored_points
+            .iter()
+            .find(|p| p.id == 2.into())
+            .unwrap()
+            .score;
 
         // A and B should have equal scores
         assert!(
