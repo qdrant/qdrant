@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::optimize::TrackerStatus;
+use crate::tracker::TrackerStatus;
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct Optimization {

@@ -15,6 +15,7 @@ pub mod search;
 pub mod search_result_aggregator;
 pub mod segment_holder;
 pub mod snapshots;
+pub mod tracker;
 pub mod update;
 pub mod wal;
 
