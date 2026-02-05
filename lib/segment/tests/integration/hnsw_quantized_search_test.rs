@@ -12,7 +12,7 @@ use common::types::{ScoreType, ScoredPointOffset};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_fixtures::{STR_KEY, random_vector};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{VectorIndex, VectorIndexEnum};

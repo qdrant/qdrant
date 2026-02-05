@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,

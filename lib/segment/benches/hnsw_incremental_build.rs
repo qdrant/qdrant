@@ -28,7 +28,7 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorElementType, VectorInternal, only_default_vector,
 };
-use segment::entry::SegmentEntry as _;
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::id_tracker::IdTrackerSS;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};

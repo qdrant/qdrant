@@ -6,7 +6,7 @@ use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
-use segment::entry::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment::SegmentVersion;
 use segment::types::SegmentConfig;
 

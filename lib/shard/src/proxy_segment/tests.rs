@@ -6,7 +6,7 @@ use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-use segment::entry::{SegmentEntry, SnapshotEntry as _};
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _};
 use segment::types::{FieldCondition, PayloadSchemaType};
 use tempfile::Builder;
 

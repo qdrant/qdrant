@@ -4,7 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 
 use super::Segment;
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::NonAppendableSegmentEntry;
 use crate::index::PayloadIndex;
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::types::{Filter, PointIdType};

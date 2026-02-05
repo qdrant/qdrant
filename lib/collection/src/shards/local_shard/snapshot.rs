@@ -9,7 +9,7 @@ use fs_err as fs;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
-use segment::entry::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry;
 use segment::types::{SegmentConfig, SnapshotFormat};
 use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
@@ -279,7 +279,7 @@ pub fn proxy_all_segments_and_apply<F>(
     mut operation: F,
 ) -> OperationResult<()>
 where
-    F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
+    F: FnMut(&RwLock<dyn NonAppendableSegmentEntry>) -> OperationResult<()>,
 {
     let segments_lock = segments.upgradable_read();
 

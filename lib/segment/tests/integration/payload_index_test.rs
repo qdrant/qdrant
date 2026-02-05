@@ -20,7 +20,7 @@ use segment::data_types::index::{
     KeywordIndexType, TextIndexParams, TextIndexType,
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
     FLICKING_KEY, FLT_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE, LON_RANGE, STR_KEY,
