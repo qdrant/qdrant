@@ -14,7 +14,7 @@ use common::progress_tracker::ProgressTracker;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{check_process_stopped, OperationResult};
+use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -25,8 +25,8 @@ use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
 use crate::proxy_segment::{DeletedPoints, ProxyIndexChange, ProxyIndexChanges, ProxySegment};
-use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_holder::SegmentId;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 /// Result of optimization execution
 #[derive(Debug)]
@@ -49,14 +49,20 @@ pub struct OptimizationPaths {
 /// This abstracts policy decisions (what config to use) from the execution logic.
 pub trait OptimizationStrategy: Send {
     /// Create a segment builder for the given input segments.
-    fn create_segment_builder(&self, input_segments: &[LockedSegment]) -> OperationResult<SegmentBuilder>;
+    fn create_segment_builder(
+        &self,
+        input_segments: &[LockedSegment],
+    ) -> OperationResult<SegmentBuilder>;
 
     /// Create a temporary COW segment for writes during optimization.
     fn create_temp_segment(&self) -> OperationResult<LockedSegment>;
 }
 
 /// Restores original segments from proxies
-pub fn unwrap_proxy(segments: &LockedSegmentHolder, proxy_ids: &[SegmentId]) -> OperationResult<()> {
+pub fn unwrap_proxy(
+    segments: &LockedSegmentHolder,
+    proxy_ids: &[SegmentId],
+) -> OperationResult<()> {
     let mut segments_lock = segments.write();
     for &proxy_id in proxy_ids {
         if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
@@ -89,7 +95,8 @@ pub fn proxy_deleted_points(proxies: &[LockedSegment]) -> DeletedPoints {
                 let proxy_read = proxy.read();
                 for (point_id, versions) in proxy_read.get_deleted_points() {
                     let entry = deleted_points.entry(*point_id).or_insert(*versions);
-                    entry.operation_version = entry.operation_version.max(versions.operation_version);
+                    entry.operation_version =
+                        entry.operation_version.max(versions.operation_version);
                     entry.local_version = entry.local_version.max(versions.local_version);
                 }
             }
@@ -143,7 +150,9 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         .iter()
         .map(|i| match i {
             LockedSegment::Original(o) => o.clone(),
-            LockedSegment::Proxy(_) => panic!("Trying to optimize a segment that is already being optimized!"),
+            LockedSegment::Proxy(_) => {
+                panic!("Trying to optimize a segment that is already being optimized!")
+            }
         })
         .collect();
 
@@ -167,7 +176,10 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     {
         progress_copy_data.start();
         let segment_guards = segments.iter().map(|segment| segment.read()).collect_vec();
-        segment_builder.update(&segment_guards.iter().map(Deref::deref).collect_vec(), stopped)?;
+        segment_builder.update(
+            &segment_guards.iter().map(Deref::deref).collect_vec(),
+            stopped,
+        )?;
         drop(progress_copy_data);
     }
 
@@ -198,9 +210,11 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let desired_cpus = permit.num_io as usize;
     let indexing_permit = resource_budget
         .replace_with(permit, desired_cpus, 0, stopped)
-        .map_err(|_| segment::common::operation_error::OperationError::service_error(
-            "optimization cancelled while waiting for budget",
-        ))?;
+        .map_err(|_| {
+            segment::common::operation_error::OperationError::service_error(
+                "optimization cancelled while waiting for budget",
+            )
+        })?;
     drop(progress_wait_permit);
 
     let mut rng = rand::rng();
@@ -227,13 +241,19 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
         );
         match change {
             ProxyIndexChange::Create(schema, version) => {
-                optimized_segment.create_field_index(*version, field_name, Some(schema), hw_counter)?;
+                optimized_segment.create_field_index(
+                    *version,
+                    field_name,
+                    Some(schema),
+                    hw_counter,
+                )?;
             }
             ProxyIndexChange::Delete(version) => {
                 optimized_segment.delete_field_index(*version, field_name)?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment.delete_field_index_if_incompatible(*version, field_name, schema)?;
+                optimized_segment
+                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
             }
         }
         check_process_stopped(stopped)?;
@@ -271,13 +291,19 @@ fn finish_optimization(
     for (field_name, change) in index_changes.iter_ordered() {
         match change {
             ProxyIndexChange::Create(schema, version) => {
-                optimized_segment.create_field_index(*version, field_name, Some(schema), hw_counter)?;
+                optimized_segment.create_field_index(
+                    *version,
+                    field_name,
+                    Some(schema),
+                    hw_counter,
+                )?;
             }
             ProxyIndexChange::Delete(version) => {
                 optimized_segment.delete_field_index(*version, field_name)?;
             }
             ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
-                optimized_segment.delete_field_index_if_incompatible(*version, field_name, schema)?;
+                optimized_segment
+                    .delete_field_index_if_incompatible(*version, field_name, schema)?;
             }
         }
         check_process_stopped(stopped)?;
@@ -303,7 +329,11 @@ fn finish_optimization(
     let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
     let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
-    debug_assert_eq!(proxies.len(), proxy_ids.len(), "swapped different number of proxies");
+    debug_assert_eq!(
+        proxies.len(),
+        proxy_ids.len(),
+        "swapped different number of proxies"
+    );
 
     if let Some(cow_segment_id) = cow_segment_id_opt {
         writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
@@ -314,7 +344,9 @@ fn finish_optimization(
 
     drop(locked_proxies);
 
-    for proxy in proxies { proxy.drop_data()?; }
+    for proxy in proxies {
+        proxy.drop_data()?;
+    }
 
     Ok(point_count)
 }
@@ -358,7 +390,9 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     // Check that all segments exist and are not already under optimization
     let all_segments_ok = input_segments.len() == input_segment_ids.len()
-        && input_segments.iter().all(|s| matches!(s, LockedSegment::Original(_)));
+        && input_segments
+            .iter()
+            .all(|s| matches!(s, LockedSegment::Original(_)));
     if !all_segments_ok {
         return Ok(OptimizationResult { points_count: 0 });
     }
@@ -398,8 +432,10 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         let mut segment_holder_write = RwLockUpgradableReadGuard::upgrade(segment_holder_read);
         let mut proxy_ids = Vec::new();
         for (proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
-            debug_assert!(matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
-                "during optimization, wrapped segment must not be another proxy segment");
+            debug_assert!(
+                matches!(proxy.wrapped_segment, LockedSegment::Original(_)),
+                "during optimization, wrapped segment must not be another proxy segment"
+            );
 
             if let Some(extra_cow_segment) = &extra_cow_segment_opt {
                 proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?;
