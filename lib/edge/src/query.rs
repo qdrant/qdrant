@@ -276,7 +276,12 @@ impl EdgeShard {
         limit: usize,
     ) -> Vec<ScoredPoint> {
         let fused = match fusion {
-            FusionInternal::RrfK(k) => rrf_scoring(sources, k),
+            FusionInternal::Rrf { k, ref weights } => {
+                let weights_slice = weights
+                    .as_ref()
+                    .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
+                rrf_scoring(sources, k, weights_slice.as_deref())
+            }
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 

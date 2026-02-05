@@ -537,6 +537,12 @@ pub struct Rrf {
     #[validate(range(min = 1))]
     #[serde(default)]
     pub k: Option<usize>,
+
+    /// Weights for each prefetch source. Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

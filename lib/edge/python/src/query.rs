@@ -301,7 +301,7 @@ impl Repr for PyScoringQuery {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             ScoringQuery::Vector(vector) => PyQuery::wrap_ref(vector).fmt(f),
-            ScoringQuery::Fusion(fusion) => PyFusion::from(*fusion).fmt(f),
+            ScoringQuery::Fusion(fusion) => PyFusion::from(fusion.clone()).fmt(f),
             ScoringQuery::OrderBy(order_by) => PyOrderBy::wrap_ref(order_by).fmt(f),
             ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
             ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
@@ -311,9 +311,12 @@ impl Repr for PyScoringQuery {
 }
 
 #[pyclass(name = "Fusion", from_py_object)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum PyFusion {
-    Rrfk { rrfk: usize },
+    Rrf {
+        k: usize,
+        weights: Option<Vec<f32>>,
+    },
     Dbsf {},
 }
 
@@ -326,19 +329,26 @@ impl PyFusion {
 
 impl Repr for PyFusion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (repr, fields): (_, &[(_, &dyn Repr)]) = match self {
-            PyFusion::Rrfk { rrfk } => ("Rrfk", &[("rrfk", rrfk)]),
-            PyFusion::Dbsf {} => ("Dbsf", &[]),
-        };
-
-        f.complex_enum::<Self>(repr, fields)
+        match self {
+            PyFusion::Rrf { k, weights: None } => {
+                f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr)])
+            }
+            PyFusion::Rrf {
+                k,
+                weights: Some(weights),
+            } => f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr), ("weights", weights)]),
+            PyFusion::Dbsf {} => f.complex_enum::<Self>("Dbsf", &[]),
+        }
     }
 }
 
 impl From<FusionInternal> for PyFusion {
     fn from(fusion: FusionInternal) -> Self {
         match fusion {
-            FusionInternal::RrfK(rrfk) => PyFusion::Rrfk { rrfk },
+            FusionInternal::Rrf { k, weights } => PyFusion::Rrf {
+                k,
+                weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
+            },
             FusionInternal::Dbsf => PyFusion::Dbsf {},
         }
     }
@@ -347,7 +357,10 @@ impl From<FusionInternal> for PyFusion {
 impl From<PyFusion> for FusionInternal {
     fn from(fusion: PyFusion) -> Self {
         match fusion {
-            PyFusion::Rrfk { rrfk } => FusionInternal::RrfK(rrfk),
+            PyFusion::Rrf { k, weights } => FusionInternal::Rrf {
+                k,
+                weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
+            },
             PyFusion::Dbsf {} => FusionInternal::Dbsf,
         }
     }

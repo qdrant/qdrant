@@ -23,7 +23,7 @@ pub fn query_result_order(
                 }
             }
             ScoringQuery::Fusion(fusion) => match fusion {
-                FusionInternal::RrfK(_) | FusionInternal::Dbsf => Some(Order::LargeBetter),
+                FusionInternal::Rrf { .. } | FusionInternal::Dbsf => Some(Order::LargeBetter),
             },
             // Score boosting formulas are always have descending order,
             // Euclidean scores can be negated within the formula

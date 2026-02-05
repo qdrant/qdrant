@@ -216,7 +216,7 @@ fn test_try_from_hybrid_query() {
                 score_threshold: None,
             },
         ],
-        query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
         filter: Some(filter_outer.clone()),
         score_threshold: None,
         limit: 50,
@@ -268,7 +268,7 @@ fn test_try_from_hybrid_query() {
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
                 rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
-                    rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                    rescore: ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None }),
                     limit: 50,
                     score_threshold: None,
                     params: None,
@@ -282,7 +282,7 @@ fn test_try_from_hybrid_query() {
 fn test_try_from_rrf_without_source() {
     let request = ShardQueryRequest {
         prefetches: vec![],
-        query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
         filter: Some(Filter::default()),
         score_threshold: None,
         limit: 50,
@@ -328,7 +328,7 @@ fn test_base_params_mapping_in_try_from() {
             filter: dummy_filter.clone(),
             score_threshold: Some(OrderedFloat(0.1)),
         }],
-        query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
         filter: Some(Filter::default()),
         score_threshold: Some(OrderedFloat(0.666)),
         limit: 50,
@@ -350,7 +350,7 @@ fn test_base_params_mapping_in_try_from() {
             merge_plan: MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
                 rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
-                    rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                    rescore: ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None }),
                     limit: 99,
                     score_threshold: Some(OrderedFloat(0.666)),
                     params: top_level_params,
@@ -546,7 +546,7 @@ fn test_from_batch_of_requests() {
             prefetches: vec![
                 ShardPrefetch {
                     prefetches: vec![dummy_core_prefetch(30), dummy_core_prefetch(40)],
-                    query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+                    query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
                     filter: None,
                     params: None,
                     score_threshold: None,
@@ -554,7 +554,7 @@ fn test_from_batch_of_requests() {
                 },
                 dummy_scroll_prefetch(50),
             ],
-            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None })),
             filter: None,
             score_threshold: None,
             limit: 10,
@@ -597,7 +597,7 @@ fn test_from_batch_of_requests() {
                         Source::Prefetch(Box::from(MergePlan {
                             sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
                             rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
-                                rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                                rescore: ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None }),
                                 limit: 10,
                                 score_threshold: None,
                                 params: None,
@@ -606,7 +606,7 @@ fn test_from_batch_of_requests() {
                         Source::ScrollsIdx(1),
                     ],
                     rescore_stages: Some(RescoreStages::collection_level(RescoreParams {
-                        rescore: ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K)),
+                        rescore: ScoringQuery::Fusion(FusionInternal::Rrf { k: DEFAULT_RRF_K, weights: None }),
                         limit: 10,
                         score_threshold: None,
                         params: None,

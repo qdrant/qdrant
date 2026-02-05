@@ -266,7 +266,10 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                                     score_threshold: None,
                                 },
                             ],
-                            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+                            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                                k: DEFAULT_RRF_K,
+                                weights: None,
+                            })),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,
