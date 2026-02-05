@@ -1,7 +1,8 @@
-pub mod seqlock;
-
+mod cache;
 mod entry;
 mod raw_fifos;
 mod ringbuffer;
-#[expect(dead_code)]
 mod s3fifo;
+pub mod seqlock;
+
+pub use cache::Cache;

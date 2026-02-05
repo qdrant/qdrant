@@ -14,7 +14,11 @@ bench_all = []
 
 [dependencies]
 ahash = { workspace = true }
-hashbrown = { version = "0.16.1" }
+
+# when bumping hashbrown, make sure this condition hasn't changed, since it may compromise concurrent readers
+# https://github.com/rust-lang/hashbrown/blob/9641fb3eea9a07933fb631da6e4f5070d2f7e1da/src/raw.rs#L2775
+hashbrown = "0.16.1"
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 itertools = { workspace = true }
@@ -30,6 +34,9 @@ static_assertions = { version = "1.1.0" }
 quick_cache = "0.6"
 schnellru = "0.2"
 foyer = "0.22"
+
+# For ring buffer comparison test
+ringbuf = "0.4"
 
 # For memory measurement
 cap = "0.1"

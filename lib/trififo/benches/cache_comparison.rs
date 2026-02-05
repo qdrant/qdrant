@@ -18,22 +18,26 @@ use std::sync::Arc;
 
 use cap::Cap;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+#[cfg(feature = "bench_all")]
 use foyer::{EvictionConfig, S3FifoConfig};
 use itertools::Itertools;
+#[cfg(feature = "bench_all")]
 use parking_lot::Mutex;
+#[cfg(feature = "bench_all")]
 use quick_cache::sync::Cache as QuickCache;
 use rand::distr::Distribution;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::Zipf;
 use rayon::prelude::*;
+#[cfg(feature = "bench_all")]
 use schnellru::{ByLength, LruMap};
 use strum::{EnumIter, IntoEnumIterator};
 
 /// Cache key representing a file descriptor and page offset.
 ///
 /// Total size: 8 bytes (i32 + u32)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Key {
     /// File descriptor
     pub fd: i32,
@@ -154,10 +158,12 @@ trait CacheBench: Send + Sync {
 }
 
 // Quick Cache wrapper
+#[cfg(feature = "bench_all")]
 struct QuickCacheWrapper {
     cache: QuickCache<Key, u32>,
 }
 
+#[cfg(feature = "bench_all")]
 impl QuickCacheWrapper {
     fn new(capacity: usize) -> Self {
         let options = quick_cache::OptionsBuilder::new()
@@ -177,6 +183,7 @@ impl QuickCacheWrapper {
     }
 }
 
+#[cfg(feature = "bench_all")]
 impl CacheBench for QuickCacheWrapper {
     fn insert(&self, key: Key, value: u32) {
         self.cache.insert(key, value);
@@ -194,10 +201,12 @@ impl CacheBench for QuickCacheWrapper {
 }
 
 // Schnellru wrapper (needs mutex for thread safety)
+#[cfg(feature = "bench_all")]
 struct SchnellruWrapper {
     cache: Mutex<LruMap<Key, u32, ByLength>>,
 }
 
+#[cfg(feature = "bench_all")]
 impl SchnellruWrapper {
     fn new(capacity: u32) -> Self {
         Self {
@@ -206,6 +215,7 @@ impl SchnellruWrapper {
     }
 }
 
+#[cfg(feature = "bench_all")]
 impl CacheBench for SchnellruWrapper {
     fn insert(&self, key: Key, value: u32) {
         self.cache.lock().insert(key, value);
@@ -224,10 +234,12 @@ impl CacheBench for SchnellruWrapper {
 }
 
 // Foyer in-memory cache wrapper
+#[cfg(feature = "bench_all")]
 struct FoyerWrapper {
     cache: foyer::Cache<Key, u32>,
 }
 
+#[cfg(feature = "bench_all")]
 impl FoyerWrapper {
     fn new(capacity: usize) -> Self {
         Self {
@@ -242,6 +254,7 @@ impl FoyerWrapper {
     }
 }
 
+#[cfg(feature = "bench_all")]
 impl CacheBench for FoyerWrapper {
     fn insert(&self, key: Key, value: u32) {
         self.cache.insert(key, value);
@@ -262,57 +275,72 @@ impl CacheBench for FoyerWrapper {
     }
 }
 
-// TODO: trififo wrapper
-// struct TrififoWrapper {
-//     cache: trififo::Cache,
-// }
-//
-// impl TrififoWrapper {
-//     fn new(capacity: usize) -> Self {
-//         Self {
-//             cache: trififo::Cache::new(capacity),
-//         }
-//     }
-// }
-//
-// impl CacheBench for TrififoWrapper {
-//     fn insert(&self, key: Key, value: u32) {
-//         self.cache.insert(key, value);
-//     }
-//
-//     fn get(&self, key: &Key) -> Option<u32> {
-//         self.cache.get(key)
-//     }
-//
-// }
+struct TrififoWrapper {
+    cache: trififo::Cache<Key, u32>,
+}
+
+impl TrififoWrapper {
+    fn new(capacity: usize) -> Self {
+        Self {
+            cache: trififo::Cache::with_config(capacity, 0.1, 0.5),
+        }
+    }
+}
+
+impl CacheBench for TrififoWrapper {
+    fn get(&self, key: &Key) -> Option<u32> {
+        self.cache.get(key)
+    }
+
+    fn insert(&self, key: Key, value: u32) {
+        self.cache.insert(key, value);
+    }
+
+    fn get_or_insert(&self, key: Key, value: u32) -> u32 {
+        if let Some(value) = self.get(&key) {
+            value
+        } else {
+            self.insert(key, value);
+            value
+        }
+    }
+}
 
 /// List of cache implementations to benchmark.
-/// Add "trififo" here when implementation is ready.
 #[derive(EnumIter, Copy, Clone)]
 enum CacheName {
+    Trififo,
+    #[cfg(feature = "bench_all")]
     QuickCache,
+    #[cfg(feature = "bench_all")]
     Schnellru,
+    #[cfg(feature = "bench_all")]
     Foyer,
-    // Trififo,
 }
 
 impl std::fmt::Display for CacheName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CacheName::Trififo => write!(f, "trififo"),
+            #[cfg(feature = "bench_all")]
             CacheName::QuickCache => write!(f, "quick_cache"),
+            #[cfg(feature = "bench_all")]
             CacheName::Schnellru => write!(f, "schnellru"),
+            #[cfg(feature = "bench_all")]
             CacheName::Foyer => write!(f, "foyer"),
-            // CacheName::Trififo => write!(f, "trififo"),
         }
     }
 }
 
 fn create_cache(name: CacheName, capacity: usize) -> Arc<dyn CacheBench> {
     match name {
+        CacheName::Trififo => Arc::new(TrififoWrapper::new(capacity)),
+        #[cfg(feature = "bench_all")]
         CacheName::QuickCache => Arc::new(QuickCacheWrapper::new(capacity)),
+        #[cfg(feature = "bench_all")]
         CacheName::Schnellru => Arc::new(SchnellruWrapper::new(capacity as u32)),
+        #[cfg(feature = "bench_all")]
         CacheName::Foyer => Arc::new(FoyerWrapper::new(capacity)),
-        // CacheName::Trififo => Arc::new(TrififoWrapper::new(capacity)),
     }
 }
 

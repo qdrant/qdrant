@@ -4,6 +4,7 @@ use hashbrown::HashTable;
 
 use crate::entry::Entry;
 use crate::raw_fifos::{GlobalOffset, LocalOffset, RawFifos};
+use crate::seqlock::SeqLockSafe;
 
 pub(crate) struct S3Fifo<K, V, S = ahash::RandomState> {
     /// Non-concurrent hashtable mapping key -> global offset in the FIFOs.
@@ -15,6 +16,8 @@ pub(crate) struct S3Fifo<K, V, S = ahash::RandomState> {
     /// Hasher state used to compute the hash for lookups.
     hasher: S,
 }
+
+unsafe impl<K, V, S> SeqLockSafe for S3Fifo<K, V, S> {}
 
 impl<K, V, S> S3Fifo<K, V, S>
 where
