@@ -128,14 +128,14 @@ impl<T: SeqLockSafe> SeqLock<T> {
 /// - busy-wait if a write is taking place.
 /// - or repeat the read if a write took place in between the start and end
 ///   of the read.
-pub struct SeqLockReader<T> {
+pub struct SeqLockReader<T: SeqLockSafe> {
     lock: Arc<SeqLock<T>>,
 }
 
-unsafe impl<T: Send> Send for SeqLockReader<T> {}
-unsafe impl<T: Sync> Sync for SeqLockReader<T> {}
+unsafe impl<T: Send + SeqLockSafe> Send for SeqLockReader<T> {}
+unsafe impl<T: Sync + SeqLockSafe> Sync for SeqLockReader<T> {}
 
-impl<T> Clone for SeqLockReader<T> {
+impl<T: SeqLockSafe> Clone for SeqLockReader<T> {
     fn clone(&self) -> Self {
         SeqLockReader {
             lock: Arc::clone(&self.lock),
@@ -284,30 +284,35 @@ mod tests {
     }
 
     fn assert_correct_send_sync() {
-        use std::cell::Cell;
         use std::rc::Rc;
         use std::sync::Mutex;
 
         use static_assertions::{assert_impl_all, assert_not_impl_any};
 
+        // ==============
+        // SeqLockWriter
+        // ==============
+
         // Writer is Send but not Sync
-        assert_impl_all!(SeqLockWriter<u32>: Send);
-        assert_not_impl_any!(SeqLockWriter<u32>: Sync);
-        // it works only if we wrap it in a sync abstraction.
-        assert_impl_all!(Mutex<SeqLockWriter<u32>>: Sync);
-        // if the wrapped type is not Send, Send doesn't work.
-        assert_not_impl_any!(SeqLockWriter<Rc<u32>>: Send);
-
-        // Reader is Send AND Sync
-        assert_impl_all!(SeqLockReader<u32>: Sync, Send);
-
-        // but only if the wrapped type is also Sync/Send
         //
-        // Cell is Send, but not Sync
-        assert_impl_all!(SeqLockReader<Cell<u32>>: Send);
-        assert_not_impl_any!(SeqLockReader<Cell<u32>>: Sync);
-        // Rc is neither
-        assert_not_impl_any!(SeqLockReader<Rc<u32>>: Sync, Send);
-        assert_not_impl_any!(SeqLockReader<Arc<Cell<u32>>>: Sync, Send);
+        // The way we ensure SeqLockWriter can't write concurrently
+        // is by making it `!Sync`
+        assert_not_impl_any!(SeqLockWriter<usize>: Sync);
+
+        // However, it can be shared between threads if it is wrapped
+        // in a `Sync` abstraction.
+        assert_impl_all!(SeqLockWriter<usize>: Send);
+        assert_impl_all!(Mutex<SeqLockWriter<usize>>: Send, Sync);
+
+        // if the wrapped type is not Send, Send doesn't work.
+        assert_not_impl_any!(SeqLockWriter<Rc<usize>>: Send);
+
+        // ==============
+        // SeqLockReader
+        // ==============
+
+        // SeqLockReader is Send AND Sync, and T needs to be SeqLockSafe
+        assert_impl_all!(usize: SeqLockSafe);
+        assert_impl_all!(SeqLockReader<usize>: Sync, Send);
     }
 }
