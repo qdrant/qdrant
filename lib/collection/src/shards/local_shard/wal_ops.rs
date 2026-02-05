@@ -49,7 +49,7 @@ impl LocalShard {
         let mut wal_lock = Mutex::lock_owned(self.wal.wal.clone()).await;
         let last_wal_op_num = wal_lock.last_index();
 
-        let truncation_result: CollectionResult<usize> = (|| {
+        let truncation_result: CollectionResult<usize> =
             if let Some(truncate_from_op_num) = truncate_from_op_num {
                 debug_assert!(truncate_from_op_num <= last_wal_op_num);
 
@@ -60,8 +60,7 @@ impl LocalShard {
                 Ok((last_wal_op_num + 1 - truncate_from_op_num) as usize)
             } else {
                 Ok(0)
-            }
-        })();
+            };
 
         // Release WAL lock before restarting workers
         drop(wal_lock);
