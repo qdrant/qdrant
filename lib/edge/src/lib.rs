@@ -1,7 +1,6 @@
 pub mod count;
 pub mod facet;
 pub mod info;
-pub mod optimize;
 pub mod query;
 pub mod retrieve;
 pub mod scroll;
