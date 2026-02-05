@@ -125,7 +125,7 @@ mod tests {
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::only_default_vector;
-    use crate::entry::entry_point::SegmentEntry;
+    use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
     use crate::payload_json;
 
     #[test]

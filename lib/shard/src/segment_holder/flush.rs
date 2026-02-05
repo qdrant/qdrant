@@ -6,7 +6,7 @@ use common::sort_utils::sort_permutation;
 use log::trace;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry;
 use segment::types::SeqNumberType;
 
 use crate::locked_segment::LockedSegment;
@@ -24,7 +24,7 @@ impl SegmentHolder {
         let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function
-        let segments = self.segment_locks(lock_order.iter().cloned())?;
+        let segments = self.read_segment_locks(lock_order.iter().cloned())?;
 
         // We can never have zero segments
         // Having zero segments could permanently corrupt the WAL by acknowledging u64::MAX
@@ -182,7 +182,7 @@ impl SegmentHolder {
     /// If all changes are saved - returns max version.
     fn get_max_persisted_version(
         &self,
-        segment_reads: Vec<RwLockReadGuard<'_, dyn SegmentEntry>>,
+        segment_reads: Vec<RwLockReadGuard<'_, dyn NonAppendableSegmentEntry>>,
         lock_order: Vec<SegmentId>,
     ) -> SeqNumberType {
         // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
@@ -230,10 +230,10 @@ impl SegmentHolder {
     }
 
     /// Grab the RwLock's for all the given segment IDs.
-    fn segment_locks(
+    fn read_segment_locks(
         &self,
         segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> OperationResult<Vec<&RwLock<dyn SegmentEntry>>> {
+    ) -> OperationResult<Vec<&RwLock<dyn NonAppendableSegmentEntry>>> {
         segment_ids
             .into_iter()
             .map(|segment_id| {
@@ -241,7 +241,7 @@ impl SegmentHolder {
                     .ok_or_else(|| {
                         OperationError::service_error(format!("No segment with ID {segment_id}"))
                     })
-                    .map(LockedSegment::get)
+                    .map(LockedSegment::get_non_appendable)
             })
             .collect()
     }

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::NonAppendableSegmentEntry;
 use segment::index::VectorIndex;
 use segment::segment::Segment;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
@@ -181,7 +181,7 @@ mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
-    use segment::entry::entry_point::SegmentEntry;
+    use segment::entry::entry_point::NonAppendableSegmentEntry as _;
     use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;
