@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
@@ -136,7 +136,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     stopped: &AtomicBool,
     hw_counter: &HardwareCounterCell,
     progress: ProgressTracker,
-    segments_path: &PathBuf,
+    segments_path: &Path,
 ) -> OperationResult<Segment> {
     let mut segment_builder = factory.create_segment_builder(input_segments)?;
 
