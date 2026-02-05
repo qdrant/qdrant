@@ -5,8 +5,6 @@ use std::time::{Duration, Instant};
 
 use rand::Rng;
 
-const DRAINING_DURATION: Duration = Duration::from_secs(10);
-
 #[derive(Debug)]
 struct ItemWithStats<T: Clone> {
     pub item: T,
@@ -124,21 +122,9 @@ impl<T: Clone> DynamicPool<T> {
             return None;
         }
 
-        // Clean drained item
-        let now = Instant::now();
-        let now_ms = now.duration_since(self.init_at).as_millis() as usize;
-
-        self.draining.retain(|item| {
-            let usage = item.usage.load(Ordering::Acquire);
-            if usage > 0 {
-                return true; // Still has inflight requests
-            }
-
-            let last_ok = item.last_success.load(Ordering::Acquire);
-            let age = Duration::from_millis((now_ms.saturating_sub(last_ok)) as u64);
-
-            age < DRAINING_DURATION // Keep if it hasn't reached the timeout
-        });
+        // Only retain still used draining items
+        self.draining
+            .retain(|item| item.usage.load(Ordering::Acquire) > 0);
 
         // If all items are used too much, we cannot use any of them so we return None
         let mut total_usage = 0;
