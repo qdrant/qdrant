@@ -189,14 +189,21 @@ impl<K, V> RawFifos<K, V> {
         self.small.get_absolute(position)
     }
 
-    pub fn ghost_eviction_candidate(&self) -> Option<&K> {
+    pub fn ghost_eviction_candidate(&self) -> Option<(GlobalOffset, &K)> {
         let position = self.ghost.write_position();
-        self.ghost.get_absolute(position)
+
+        let key = self.ghost.get_absolute(position)?;
+        let global_offset = self.global_offset(LocalOffset::Ghost(position as u32));
+
+        Some((global_offset, key))
     }
 
-    pub fn main_eviction_candidate(&self) -> Option<&Entry<K, V>> {
+    pub fn main_eviction_candidate(&self) -> Option<(GlobalOffset, &Entry<K, V>)> {
         let position = self.main.write_position();
-        self.main.get_absolute(position)
+        let entry = self.main.get_absolute(position)?;
+        let global_offset = self.global_offset(LocalOffset::Main(position as u32));
+
+        Some((global_offset, entry))
     }
 }
 
