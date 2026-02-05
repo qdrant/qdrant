@@ -54,7 +54,10 @@ impl LocalShard {
                 // It's not expected to happen in normal operation,
                 // Because it means that there were no update workers running.
                 // Just in case, we create a new channel to avoid panics in update handler.
-                debug_assert!(false, "Update receiver was None during optimizer config update");
+                debug_assert!(
+                    false,
+                    "Update receiver was None during optimizer config update"
+                );
                 let (update_sender, update_receiver) =
                     mpsc::channel(self.shared_storage_config.update_queue_size);
                 let _old_sender = self.update_sender.swap(Arc::new(update_sender));
