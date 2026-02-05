@@ -374,7 +374,7 @@ impl Collection {
                         let weights_slice = weights
                             .as_ref()
                             .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
-                        rrf_scoring(intermediates, *k, weights_slice.as_deref())
+                        rrf_scoring(intermediates, *k, weights_slice.as_deref())?
                     }
                     FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };

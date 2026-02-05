@@ -4,8 +4,10 @@
 use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
+use itertools::Either;
 use ordered_float::OrderedFloat;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{ExtendedPointId, ScoredPoint};
 
 /// Mitigates the impact of high rankings by outlier systems
@@ -28,7 +30,7 @@ fn position_score(position: usize, k: usize, weight: f32) -> f32 {
     if weight <= 0.0 {
         return 0.0;
     }
-    1.0 / (position as f32 * (1.0 / weight) + k as f32)
+    1.0 / (position as f32 / weight + k as f32)
 }
 
 /// Compute RRF scores for multiple results from different sources.
@@ -45,18 +47,27 @@ fn position_score(position: usize, k: usize, weight: f32) -> f32 {
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
 pub fn rrf_scoring(
-    responses: impl IntoIterator<Item = Vec<ScoredPoint>>,
+    responses: Vec<Vec<ScoredPoint>>,
     k: usize,
     weights: Option<&[f32]>,
-) -> Vec<ScoredPoint> {
+) -> OperationResult<Vec<ScoredPoint>> {
     // track scored points by id
     let mut points_by_id: AHashMap<ExtendedPointId, ScoredPoint> = AHashMap::new();
 
-    for (source_idx, response) in responses.into_iter().enumerate() {
-        let weight = weights
-            .and_then(|w| w.get(source_idx).copied())
-            .unwrap_or(1.0);
+    let weights = if let Some(weights) = weights {
+        if weights.len() != responses.len() {
+            return Err(OperationError::validation_error(format!(
+                "Number of weights in RRF should match number of pre-fetches: got {}, expected {}",
+                weights.len(),
+                responses.len()
+            )));
+        }
+        Either::Left(weights.iter().copied())
+    } else {
+        Either::Right(std::iter::repeat(1.0f32))
+    };
 
+    for (response, weight) in responses.into_iter().zip(weights) {
         for (pos, mut point) in response.into_iter().enumerate() {
             let rrf_score = position_score(pos, k, weight);
             match points_by_id.entry(point.id) {
@@ -79,7 +90,7 @@ pub fn rrf_scoring(
         OrderedFloat(b.score).cmp(&OrderedFloat(a.score))
     });
 
-    scores
+    Ok(scores)
 }
 
 #[cfg(test)]
@@ -102,14 +113,14 @@ mod tests {
     #[test]
     fn test_rrf_scoring_empty() {
         let responses = vec![];
-        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None).unwrap();
         assert_eq!(scored_points.len(), 0);
     }
 
     #[test]
     fn test_rrf_scoring_one() {
         let responses = vec![vec![make_scored_point(1, 0.9)]];
-        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None).unwrap();
         assert_eq!(scored_points.len(), 1);
         assert_eq!(scored_points[0].id, 1.into());
         assert_eq!(scored_points[0].score, 0.5); // 1 / (0 + 2)
@@ -132,7 +143,7 @@ mod tests {
         ];
 
         // top 10
-        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None);
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None).unwrap();
         assert_eq!(scored_points.len(), 4);
         // assert that the list is sorted
         assert!(scored_points.windows(2).all(|w| w[0].score >= w[1].score));
@@ -161,7 +172,7 @@ mod tests {
         ];
 
         // Without weights - both equal
-        let scored_points = rrf_scoring(responses.clone(), DEFAULT_RRF_K, None);
+        let scored_points = rrf_scoring(responses.clone(), DEFAULT_RRF_K, None).unwrap();
         // Point 1: 1/(0+2) + 1/(1+2) = 0.5 + 0.333 = 0.833
         // Point 2: 1/(1+2) + 1/(0+2) = 0.333 + 0.5 = 0.833
         // They should be equal
@@ -171,7 +182,7 @@ mod tests {
         // Higher weight means positions are "compressed" - position N with weight W
         // contributes like position N/W would with weight 1.
         let weights = [3.0, 1.0];
-        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, Some(&weights));
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, Some(&weights)).unwrap();
         // Point 1: pos=0 in source 0 (w=3), pos=1 in source 1 (w=1)
         //   score = 1/(0*(1/3)+2) + 1/(1*(1/1)+2) = 1/2 + 1/3 = 0.5 + 0.333 = 0.833
         // Point 2: pos=1 in source 0 (w=3), pos=0 in source 1 (w=1)
@@ -211,7 +222,7 @@ mod tests {
         // Item B: 1/(3*(1/3)+60) + 1/(0*1+60) = 1/61 + 1/60
         // They should be equal!
         let weights = [3.0, 1.0];
-        let scored_points = rrf_scoring(responses, k, Some(&weights));
+        let scored_points = rrf_scoring(responses, k, Some(&weights)).unwrap();
 
         let a_score = scored_points
             .iter()
@@ -232,6 +243,24 @@ mod tests {
     }
 
     #[test]
+    fn test_rrf_scoring_weights_length_mismatch() {
+        let responses = vec![
+            vec![make_scored_point(1, 0.9)],
+            vec![make_scored_point(2, 0.9)],
+        ];
+
+        // 3 weights for 2 responses should fail
+        let weights = [1.0, 2.0, 3.0];
+        let result = rrf_scoring(responses.clone(), DEFAULT_RRF_K, Some(&weights));
+        assert!(result.is_err());
+
+        // 1 weight for 2 responses should fail
+        let weights = [1.0];
+        let result = rrf_scoring(responses, DEFAULT_RRF_K, Some(&weights));
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_rrf_scoring_zero_weight() {
         // Test that zero weight source contributes nothing
         let responses = vec![
@@ -240,7 +269,7 @@ mod tests {
         ];
 
         let weights = [1.0, 0.0];
-        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, Some(&weights));
+        let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, Some(&weights)).unwrap();
 
         // Only point 1 should have a score, point 2 should have 0
         let p1 = scored_points.iter().find(|p| p.id == 1.into()).unwrap();

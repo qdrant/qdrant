@@ -148,7 +148,7 @@ impl ScoringQuery {
         match self {
             Self::Fusion(fusion) => match fusion {
                 // We need the ranking information of each prefetch
-                FusionInternal::Rrf { .. } => true,
+                FusionInternal::Rrf { k: _, weights: _ } => true,
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
