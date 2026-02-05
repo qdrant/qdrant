@@ -45,11 +45,9 @@ use std::sync::atomic::{AtomicUsize, Ordering, fence};
 ///
 /// // writer can be sent to a thread, but can't be shared between them
 /// std::thread::spawn(move || {
-///     unsafe {
-///        writer.write(|value| {
-///            *value += 10;
-///        })
-///     };
+///    writer.write(|value| {
+///        *value += 10;
+///    });
 /// });
 /// ```
 pub struct SeqLock<T> {
