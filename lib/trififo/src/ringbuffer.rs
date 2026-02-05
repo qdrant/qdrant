@@ -40,7 +40,6 @@ impl<T> RingBuffer<T> {
     }
 
     /// Returns the number of elements currently stored in the buffer.
-    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Acquire)
     }

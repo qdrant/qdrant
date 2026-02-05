@@ -8,7 +8,7 @@ pub type GlobalOffset = u32;
 
 /// Local offset within one of the three queues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LocalOffset {
+pub enum LocalOffset {
     Small(u32),
     Ghost(u32),
     Main(u32),
@@ -60,9 +60,16 @@ impl<K, V> RawFifos<K, V> {
         }
     }
 
+    /// Returns number of entries currently cached.
+    ///
+    /// I.e. the ones which have a value, not including the ones in ghost queue.
+    pub fn entries_len(&self) -> usize {
+        self.small.len() + self.main.len()
+    }
+
     /// Converts a global offset to a local offset.
     #[inline]
-    fn local_offset(&self, global_offset: GlobalOffset) -> LocalOffset {
+    pub fn local_offset(&self, global_offset: GlobalOffset) -> LocalOffset {
         if global_offset < self.small_end {
             LocalOffset::Small(global_offset)
         } else if global_offset < self.ghost_end {
@@ -91,19 +98,19 @@ impl<K, V> RawFifos<K, V> {
     ///
     /// Returns None for ghost queue offsets (ghost only stores keys, not full entries).
     #[inline]
-    fn get_local_entry(&self, local_offset: LocalOffset) -> Option<&Entry<K, V>> {
+    pub fn get_local_entry(&self, local_offset: LocalOffset) -> Option<&Entry<K, V>> {
         match local_offset {
-            LocalOffset::Small(offset) => Some(self.small.get_absolute(offset as usize)?),
+            LocalOffset::Small(position) => Some(self.small.get_absolute(position as usize)?),
             LocalOffset::Ghost(_) => None,
-            LocalOffset::Main(offset) => Some(self.main.get_absolute(offset as usize)?),
+            LocalOffset::Main(position) => Some(self.main.get_absolute(position as usize)?),
         }
     }
 
     fn get_local_key(&self, local_offset: LocalOffset) -> Option<&K> {
         match local_offset {
-            LocalOffset::Small(off) => Some(&self.small.get_absolute(off as usize)?.key),
-            LocalOffset::Main(off) => Some(&self.main.get_absolute(off as usize)?.key),
-            LocalOffset::Ghost(off) => self.ghost.get_absolute(off as usize),
+            LocalOffset::Small(position) => Some(&self.small.get_absolute(position as usize)?.key),
+            LocalOffset::Main(position) => Some(&self.main.get_absolute(position as usize)?.key),
+            LocalOffset::Ghost(position) => self.ghost.get_absolute(position as usize),
         }
     }
 
@@ -128,8 +135,7 @@ impl<K, V> RawFifos<K, V> {
     /// Compute the hash for the key stored at `global_offset` using the given
     /// `hasher`. This function is used by a hashtable for insertion.
     #[inline]
-    #[expect(clippy::needless_pass_by_ref_mut)]
-    pub fn hash_key_at_offset<S>(&mut self, global_offset: GlobalOffset, hasher: &S) -> u64
+    pub fn hash_key_at_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
     where
         S: BuildHasher,
         K: Copy + Hash,
@@ -139,7 +145,7 @@ impl<K, V> RawFifos<K, V> {
         let key = self
             .get_local_key(local_offset)
             // Since we are the only writer, the offset is valid.
-            .expect("We are the only writer, as established by `&mut self`");
+            .expect("This is used for rehashing, which means we must be the only writer");
 
         hasher.hash_one(key)
     }
