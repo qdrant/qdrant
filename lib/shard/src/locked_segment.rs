@@ -57,6 +57,13 @@ impl LockedSegment {
         }
     }
 
+    pub fn get_non_appendable(&self) -> &RwLock<dyn NonAppendableSegmentEntry> {
+        match self {
+            LockedSegment::Original(segment) => segment.as_ref(),
+            LockedSegment::Proxy(proxy) => proxy.as_ref(),
+        }
+    }
+
     pub fn is_original(&self) -> bool {
         match self {
             LockedSegment::Original(_) => true,

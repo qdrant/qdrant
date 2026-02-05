@@ -355,7 +355,10 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(
+        ids: &[PointIdType],
+        segment: &dyn NonAppendableSegmentEntry,
+    ) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -458,11 +461,13 @@ impl SegmentHolder {
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
+        F: FnMut(
+            &RwLockReadGuard<dyn NonAppendableSegmentEntry + 'static>,
+        ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&segment.get().read())?;
+            let is_applied = f(&segment.get_non_appendable().read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -471,12 +476,12 @@ impl SegmentHolder {
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
-            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
+            &mut RwLockUpgradableReadGuard<dyn NonAppendableSegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get().upgradable_read())?;
+            let is_applied = f(&mut segment.get_non_appendable().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -566,8 +571,8 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ RwLock<dyn SegmentEntry>,
-    ) -> RwLockReadGuard<'_, dyn SegmentEntry> {
+        segment: &'_ RwLock<dyn NonAppendableSegmentEntry>,
+    ) -> RwLockReadGuard<'_, dyn NonAppendableSegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
