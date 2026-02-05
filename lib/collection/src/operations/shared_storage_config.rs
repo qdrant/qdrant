@@ -13,8 +13,8 @@ use crate::shards::transfer::ShardTransferMethod;
 /// Default timeout for search requests.
 /// In cluster mode, this should be aligned with collection timeout.
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
-const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
-const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
+const DEFAULT_UPDATE_QUEUE_SIZE: usize = 1_000_000;
+const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = DEFAULT_UPDATE_QUEUE_SIZE;
 /// Maximum number of operations which are stored in RAM in update worker queue.
 /// If there are more pending operations, operation data
 /// will be read from WAL when processing the operation.
