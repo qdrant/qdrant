@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
@@ -100,9 +101,15 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
 
         let to = self.first_index() + self.len(false);
+        self.read_range(from..to)
+    }
 
-        (from..to).map(move |idx| {
-            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+    pub fn read_range(&self, range: Range<u64>) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        range.map(move |idx| {
+            let record_bin = self
+                .wal
+                .entry(idx)
+                .unwrap_or_else(|| panic!("Can't read entry {idx} from WAL"));
 
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))
@@ -240,6 +247,13 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         let normal_retention = self.options.retain_closed.get();
         self.wal.set_retention(normal_retention);
     }
+
+    pub fn drop_from(&mut self, from_index: u64) -> Result<()> {
+        debug_assert!(from_index >= self.first_index());
+        self.wal
+            .truncate(from_index)
+            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -360,6 +374,36 @@ mod tests {
             TestRecord::Struct2(x) => {
                 assert_eq!(x.a, 12);
                 assert_eq!(x.b, 13);
+            }
+        }
+    }
+
+    #[test]
+    fn test_wal_drop() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let capacity = 32 * 1024 * 1024;
+        let wal_options = WalOptions {
+            segment_capacity: capacity,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        for i in 0..10 {
+            let record = TestRecord::Struct1(TestInternalStruct1 { data: i });
+            serde_wal.write(&record).expect("Can't write");
+        }
+        assert_eq!(serde_wal.len(false), 10);
+
+        serde_wal.drop_from(5).expect("Can't drop WAL from index");
+        assert_eq!(serde_wal.len(false), 5);
+
+        for (idx, record) in serde_wal.read(0) {
+            assert!(idx <= 4);
+            match record {
+                TestRecord::Struct1(x) => assert_eq!(x.data, idx as usize),
+                TestRecord::Struct2(_) => panic!("Wrong structure"),
             }
         }
     }

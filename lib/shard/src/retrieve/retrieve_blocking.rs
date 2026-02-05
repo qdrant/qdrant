@@ -8,7 +8,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{PointIdType, SeqNumberType, WithPayload, WithVector};
 
 use crate::retrieve::record_internal::RecordInternal;
-use crate::segment_holder::LockedSegmentHolder;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn retrieve_blocking(
     segments: LockedSegmentHolder,

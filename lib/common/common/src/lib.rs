@@ -16,6 +16,7 @@ pub mod flags;
 pub mod fs;
 pub mod is_alive_lock;
 pub mod iterator_ext;
+pub mod load_concurrency;
 pub mod math;
 pub mod maybe_uninit;
 pub mod mmap_hashmap;

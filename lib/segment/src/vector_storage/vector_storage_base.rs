@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::fmt;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -35,9 +36,26 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMma
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
-/// In case of simple vector storage, vector offset is the same as PointOffsetType.
+/// In case of simple vector storage, vector offset is the same as [`PointOffsetType`].
 /// But in case of multivectors, it requires an additional lookup.
 pub type VectorOffsetType = usize;
+
+/// Generalized vector offset.
+pub trait VectorOffset: Copy + fmt::Display + fmt::Debug {
+    fn offset(self) -> VectorOffsetType;
+}
+
+impl VectorOffset for PointOffsetType {
+    fn offset(self) -> VectorOffsetType {
+        self as VectorOffsetType
+    }
+}
+
+impl VectorOffset for VectorOffsetType {
+    fn offset(self) -> VectorOffsetType {
+        self
+    }
+}
 
 pub trait AccessPattern: Copy {
     const IS_SEQUENTIAL: bool;
@@ -177,16 +195,13 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
             .map_err(|_| OperationError::service_error("Layout is too big"))
     }
 
-    /// Get the dense vectors by the given keys
+    /// Run given function for each vector in the dense batch.
     ///
     /// Implementation can assume that the keys are consecutive
-    fn get_dense_batch<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        let iter = keys.iter().map(|key| self.get_dense::<Random>(*key));
-        maybe_uninit_fill_from(vectors, iter).0
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
+        for (idx, &key) in keys.iter().enumerate() {
+            f(idx, self.get_dense::<Random>(key));
+        }
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {

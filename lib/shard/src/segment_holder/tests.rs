@@ -12,6 +12,7 @@ use tempfile::Builder;
 
 use super::*;
 use crate::fixtures::*;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 #[test]
 fn test_add_and_swap() {
@@ -528,7 +529,7 @@ fn test_double_proxies() {
 
     let _sid1 = holder.add_new_locked(locked_segment1.clone());
 
-    let holder = Arc::new(RwLock::new(holder));
+    let holder = LockedSegmentHolder::new(holder);
 
     let before_segment_ids = holder
         .read()
@@ -597,12 +598,22 @@ fn test_double_proxies() {
     assert!(has_point, "Point should be present in double proxy");
 
     // Unproxy once
-    SegmentHolder::unproxy_all_segments(outer_segments_lock, outer_proxies, outer_tmp_segment)
-        .unwrap();
+    SegmentHolder::unproxy_all_segments(
+        outer_segments_lock,
+        outer_proxies,
+        outer_tmp_segment,
+        holder.acquire_updates_lock(),
+    )
+    .unwrap();
 
     // Unproxy twice
-    SegmentHolder::unproxy_all_segments(holder.upgradable_read(), inner_proxies, inner_tmp_segment)
-        .unwrap();
+    SegmentHolder::unproxy_all_segments(
+        holder.upgradable_read(),
+        inner_proxies,
+        inner_tmp_segment,
+        holder.acquire_updates_lock(),
+    )
+    .unwrap();
 
     let after_segment_ids = holder
         .read()

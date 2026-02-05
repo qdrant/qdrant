@@ -51,6 +51,18 @@ impl AppliedSeqHandler {
         }
     }
 
+    /// Get the op_num upper bound for the last_applied_seq adjusted to the persistence interval
+    ///
+    /// Returns None if the handler is not active.
+    pub fn op_num_upper_bound(&self) -> Option<u64> {
+        if self.file.is_some() {
+            let adjusted = self.op_num.load(Ordering::Relaxed) + APPLIED_SEQ_SAVE_INTERVAL + 1;
+            Some(adjusted)
+        } else {
+            None
+        }
+    }
+
     /// Path for the applied_seq json file
     pub fn path(&self) -> &Path {
         self.path.as_path()
@@ -61,6 +73,14 @@ impl AppliedSeqHandler {
         let persisted = read_json::<AppliedSeq>(&self.path).unwrap().op_num;
         debug_assert!(persisted <= self.op_num.load(Ordering::Relaxed));
         persisted
+    }
+
+    /// Test helper: force set the op_num and immediately persist to disk.
+    /// This bypasses the interval-based persistence.
+    #[cfg(test)]
+    pub fn force_set_and_persist(&self, op_num: u64) -> CollectionResult<()> {
+        self.op_num.store(op_num, Ordering::Relaxed);
+        self.save(op_num)
     }
 
     /// Load or create the underlying applied seq file.

@@ -10,6 +10,7 @@ use segment::types::{
 };
 use serde_json::{Value, json};
 use shard::count::CountRequestInternal;
+use shard::facet::FacetRequestInternal;
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use shard::operations::point_ops::PointOperations::UpsertPoints;
@@ -97,6 +98,31 @@ fn main() -> Result<(), Box<dyn Error>> {
         exact: true,
     })?;
     println!("Total points: {count}");
+
+    println!("---- Facet (requires payload index) ----");
+    // Note: Facet requires a payload index on the field being faceted.
+    // In Edge, payload indexes cannot be created directly - you need to:
+    // 1. Create the index in a full Qdrant instance
+    // 2. Create a shard snapshot
+    // 3. Load the snapshot into Edge
+    let facet_result = shard.facet(FacetRequestInternal {
+        key: "color".try_into().unwrap(),
+        limit: 10,
+        filter: None,
+        exact: false,
+    });
+    match facet_result {
+        Ok(response) => {
+            println!("Facet results:");
+            for hit in &response.hits {
+                println!("  {:?}: {}", hit.value, hit.count);
+            }
+        }
+        Err(e) => {
+            // Expected error when no payload index exists
+            println!("Facet error (expected without payload index): {e}");
+        }
+    }
 
     println!("---- Info ----");
     let info = shard.info();

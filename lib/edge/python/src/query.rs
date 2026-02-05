@@ -17,7 +17,7 @@ use shard::scroll::OrderByInterface;
 use super::*;
 use crate::repr::*;
 
-#[pyclass(name = "QueryRequest")]
+#[pyclass(name = "QueryRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryRequest(ShardQueryRequest);
 
@@ -132,7 +132,7 @@ impl PyQueryRequest {
     }
 }
 
-#[pyclass(name = "Prefetch")]
+#[pyclass(name = "Prefetch", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPrefetch(ShardPrefetch);
@@ -310,7 +310,7 @@ impl Repr for PyScoringQuery {
     }
 }
 
-#[pyclass(name = "Fusion")]
+#[pyclass(name = "Fusion", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyFusion {
     Rrfk { rrfk: usize },
@@ -353,7 +353,7 @@ impl From<PyFusion> for FusionInternal {
     }
 }
 
-#[pyclass(name = "OrderBy")]
+#[pyclass(name = "OrderBy", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyOrderBy(OrderBy);
@@ -420,7 +420,7 @@ impl From<PyOrderBy> for OrderByInterface {
     }
 }
 
-#[pyclass(name = "Direction")]
+#[pyclass(name = "Direction", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDirection {
     Asc,
@@ -535,7 +535,7 @@ impl Repr for PyStartFrom {
     }
 }
 
-#[pyclass(name = "Sample")]
+#[pyclass(name = "Sample", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySample {
     Random,
@@ -574,7 +574,7 @@ impl From<PySample> for SampleInternal {
     }
 }
 
-#[pyclass(name = "Mmr")]
+#[pyclass(name = "Mmr", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMmr(MmrInternal);

@@ -21,7 +21,6 @@ pub mod testing;
 mod wal_ops;
 
 use std::collections::{BTreeSet, HashMap};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
@@ -32,7 +31,6 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::defaults::MAX_CONCURRENT_SEGMENT_LOADS;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::{panic, tar_ext};
@@ -42,7 +40,7 @@ use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use parking_lot::{Mutex as ParkingMutex, RwLock};
+use parking_lot::Mutex as ParkingMutex;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
@@ -52,6 +50,7 @@ use segment::types::{
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::point_ops::{PointInsertOperationsInternal, PointOperations};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -63,9 +62,7 @@ use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::optimizers::segment_optimizer::plan_optimizations;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -82,7 +79,7 @@ use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_s
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
-use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
+use crate::update_handler::{OperationData, Optimizer, UpdateHandler, UpdateSignal};
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::RecoverableWal;
 
@@ -105,6 +102,7 @@ pub struct LocalShard {
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
+    pub(super) update_lock: tokio::sync::RwLock<()>,
     pub(super) path: PathBuf,
     pub(super) optimizers: ArcSwap<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
@@ -240,7 +238,7 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
     ) -> Self {
-        let segment_holder = Arc::new(RwLock::new(segment_holder));
+        let segment_holder = LockedSegmentHolder::new(segment_holder);
         let config = collection_config.read().await;
         let locked_wal = Arc::new(Mutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
@@ -314,6 +312,7 @@ impl LocalShard {
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
+            update_lock: tokio::sync::RwLock::new(()),
             path: shard_path.to_owned(),
             search_runtime,
             optimizers: ArcSwap::new(optimizers),
@@ -327,8 +326,9 @@ impl LocalShard {
         }
     }
 
-    pub fn segments(&self) -> &RwLock<SegmentHolder> {
-        self.segments.deref()
+    #[cfg(any(test, feature = "testing"))]
+    pub fn segments(&self) -> LockedSegmentHolder {
+        self.segments.clone()
     }
 
     /// Recovers shard from disk.
@@ -420,7 +420,12 @@ impl LocalShard {
                 });
                 AbortOnDropHandle::new(handle)
             })
-            .buffer_unordered(MAX_CONCURRENT_SEGMENT_LOADS);
+            .buffer_unordered(
+                shared_storage_config
+                    .load_concurrency_config
+                    .get_concurrent_segments()
+                    .get(),
+            );
 
         let mut segment_holder = SegmentHolder::default();
 
@@ -681,7 +686,17 @@ impl LocalShard {
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock().await;
-        let bar = ProgressBar::new(wal.len(false));
+
+        let from = wal.first_index();
+        let last_wal_index = from + wal.len(false);
+        let to = self
+            .applied_seq_handler
+            .op_num_upper_bound()
+            .unwrap_or(last_wal_index);
+        let to = std::cmp::min(to, last_wal_index);
+        let wal_entries_to_replay = to - from;
+
+        let bar = ProgressBar::new(wal_entries_to_replay);
 
         let progress_style = ProgressStyle::default_bar()
             .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
@@ -689,14 +704,14 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         log::debug!(
-            "Recovering shard {} starting reading WAL from {} up to {}",
+            "Recovering shard {} starting reading WAL from {} up to {} (last_applied_seq:{:?})",
             self.path.display(),
-            wal.first_index(),
-            wal.last_index(),
+            from,
+            to,
+            self.applied_seq_handler.op_num(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
-        let segments = self.segments();
 
         // Fall back to basic text output if the progress bar is hidden (e.g. not a tty)
         let show_progress_bar = !bar.is_hidden();
@@ -705,7 +720,7 @@ impl LocalShard {
             log::info!(
                 "Recovering shard {}: 0/{} (0%)",
                 self.path.display(),
-                wal.len(false),
+                wal_entries_to_replay,
             );
         }
 
@@ -722,14 +737,14 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_all(false) {
+        for (op_num, update) in wal.read_range(from..to) {
             if let Some(clock_tag) = update.clock_tag {
                 newest_clocks.advance_clock(clock_tag);
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(
-                segments,
+                &self.segments,
                 op_num,
                 update.operation,
                 self.update_operation_lock.clone(),
@@ -767,8 +782,8 @@ impl LocalShard {
                 let progress = bar.position();
                 log::info!(
                     "{progress}/{} ({}%)",
-                    wal.len(false),
-                    (progress as f32 / wal.len(false) as f32 * 100.0) as usize,
+                    wal_entries_to_replay,
+                    (progress as f32 / wal_entries_to_replay as f32 * 100.0) as usize,
                 );
                 last_progress_report = Instant::now();
             }
@@ -786,14 +801,34 @@ impl LocalShard {
         bar.finish();
         if !show_progress_bar {
             log::info!(
-                "Recovered collection {collection_id}: {0}/{0} (100%)",
-                wal.len(false),
+                "Recovered collection {collection_id}: {wal_entries_to_replay}/{wal_entries_to_replay} (100%)"
             );
         }
 
         // The storage is expected to be consistent after WAL recovery
         #[cfg(feature = "data-consistency-check")]
         self.check_data_consistency()?;
+
+        // Send remaining pending WAL elements to the update channel
+        if to < last_wal_index {
+            log::info!(
+                "Loading remaining {} WAL entries from:{to} into update queue",
+                last_wal_index - to
+            );
+            let update_sender = self.update_sender.load();
+            // TODO use proper collection's hardware measurement
+            let hw_measurements = HwMeasurementAcc::disposable();
+            for op_num in to..=last_wal_index {
+                update_sender
+                    .send(UpdateSignal::Operation(OperationData {
+                        op_num,
+                        operation: None,
+                        sender: None,
+                        hw_measurements: hw_measurements.clone(),
+                    }))
+                    .await?;
+            }
+        }
 
         Ok(())
     }

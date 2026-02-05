@@ -6,7 +6,7 @@ use segment::types::MinShould;
 use crate::repr::*;
 use crate::types::filter::condition::PyCondition;
 
-#[pyclass(name = "MinShould")]
+#[pyclass(name = "MinShould", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyMinShould(pub MinShould);
 

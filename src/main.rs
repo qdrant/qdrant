@@ -177,7 +177,6 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
-
     welcome(&settings);
 
     #[cfg(feature = "gpu")]

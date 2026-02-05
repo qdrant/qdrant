@@ -8,7 +8,7 @@ use shard::operations::vector_ops::PointVectorsPersisted;
 use crate::repr::*;
 use crate::types::{PyPointId, PyVector};
 
-#[pyclass(name = "PointVectors")]
+#[pyclass(name = "PointVectors", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPointVectors(pub PointVectorsPersisted);

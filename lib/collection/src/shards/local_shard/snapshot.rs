@@ -14,7 +14,8 @@ use segment::types::{SegmentConfig, SnapshotFormat};
 use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
 use tokio::sync::oneshot;
@@ -76,7 +77,6 @@ impl LocalShard {
         let temp_path = temp_path.to_owned();
 
         let tar_c = tar.clone();
-        let update_lock = self.update_operation_lock.clone();
         let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
 
         let handle = tokio::task::spawn_blocking(move || {
@@ -90,7 +90,6 @@ impl LocalShard {
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
                 format,
                 manifest.as_ref(),
-                update_lock,
             )?;
 
             if save_wal {
@@ -218,9 +217,6 @@ pub fn snapshot_all_segments(
     tar: &tar_ext::BuilderExt,
     format: SnapshotFormat,
     manifest: Option<&SnapshotManifest>,
-    // Update lock prevents segment operations during update.
-    // For instance, we can't unproxy segments while update operation is in progress.
-    update_lock: Arc<tokio::sync::RwLock<()>>,
 ) -> OperationResult<()> {
     // Snapshotting may take long-running read locks on segments blocking incoming writes, do
     // this through proxied segments to allow writes to continue.
@@ -247,7 +243,6 @@ pub fn snapshot_all_segments(
             read_segment.take_snapshot(temp_dir, tar, format, segment_manifest_ref)?;
             Ok(())
         },
-        update_lock,
     )
 }
 
@@ -282,7 +277,6 @@ pub fn proxy_all_segments_and_apply<F>(
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     mut operation: F,
-    update_lock: Arc<tokio::sync::RwLock<()>>,
 ) -> OperationResult<()>
 where
     F: FnMut(&RwLock<dyn SegmentEntry>) -> OperationResult<()>,
@@ -343,11 +337,11 @@ where
         // by `Self::unproxy_all_segments` afterwards to maintain the read consistency.
         let remaining = proxies.len() - unproxied_segment_ids.len();
         if remaining > 1 {
-            let _update_guard = update_lock.blocking_write();
             match SegmentHolder::try_unproxy_segment(
                 segments_lock,
                 *segment_id,
                 proxy_segment.clone(),
+                segments.acquire_updates_lock(),
             ) {
                 Ok(lock) => {
                     segments_lock = lock;
@@ -362,8 +356,12 @@ where
     // Unproxy all segments
     // Always do this to prevent leaving proxy segments behind
     log::trace!("Unproxying all shard segments after function is applied");
-    let _update_guard = update_lock.blocking_write();
-    SegmentHolder::unproxy_all_segments(segments_lock, proxies, tmp_segment_id)?;
+    SegmentHolder::unproxy_all_segments(
+        segments_lock,
+        proxies,
+        tmp_segment_id,
+        segments.acquire_updates_lock(),
+    )?;
 
     result
 }

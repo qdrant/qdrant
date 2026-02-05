@@ -14,7 +14,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::LockedSegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
@@ -474,11 +474,15 @@ impl UpdateWorkers {
                 .to_base_segment_config(collection_quantization)
                 .map_err(|err| OperationError::service_error(err.to_string()))?;
 
-            segments.write().create_appendable_segment(
+            let segments_guard = segments.upgradable_read();
+            let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                segment_config,
+                Some(segment_config),
                 payload_index_schema,
+                true,
             )?;
+            let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
+            write_guard.add_new_locked(new_segment);
         }
 
         Ok(())

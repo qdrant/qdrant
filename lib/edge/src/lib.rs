@@ -1,4 +1,5 @@
 pub mod count;
+pub mod facet;
 pub mod info;
 pub mod query;
 pub mod retrieve;
@@ -21,7 +22,8 @@ use segment::entry::SegmentEntry;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 
@@ -162,7 +164,7 @@ impl EdgeShard {
             path: path.into(),
             config: config.expect("config was provided or at least one segment was loaded"),
             wal: parking_lot::Mutex::new(wal),
-            segments: Arc::new(parking_lot::RwLock::new(segments)),
+            segments: LockedSegmentHolder::new(segments),
         };
 
         Ok(shard)

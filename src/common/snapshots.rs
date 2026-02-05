@@ -173,7 +173,8 @@ pub async fn recover_shard_snapshot(
                 .await
                 .start_shard_recovery(shard_id);
 
-            let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
+            // Default temporary path to storage dir, to allow faster recovery within the same volume
+            let download_dir = toc.optional_temp_or_storage_temp_path()?;
 
             let DownloadResult {
                 snapshot,
@@ -310,7 +311,8 @@ pub async fn recover_shard_snapshot_impl(
             recovery_type,
             toc.this_peer_id,
             toc.is_distributed(),
-            &toc.optional_temp_or_snapshot_temp_path()?,
+            // Default temporary path to storage dir, to allow faster recovery within the same volume
+            &toc.optional_temp_or_storage_temp_path()?,
             cancel,
         )
         .await?

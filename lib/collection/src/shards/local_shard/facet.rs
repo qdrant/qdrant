@@ -44,7 +44,7 @@ impl LocalShard {
         };
 
         let all_reads = {
-            let segments_lock = self.segments().read();
+            let segments_lock = self.segments.read();
 
             let hw_counter = hw_measurement_acc.get_counter_cell();
 
@@ -176,7 +176,7 @@ impl LocalShard {
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = {
-            let segments_lock = self.segments().read();
+            let segments_lock = self.segments.read();
 
             tokio::time::timeout(
                 timeout,

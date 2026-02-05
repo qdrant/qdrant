@@ -11,7 +11,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.92"
 default-run = "qdrant"
 
 [lints]
@@ -210,7 +210,7 @@ bytemuck = { version = "1.25.0", features = [
     "must_cast",
     "transparentwrapper_extra",
 ] }
-bytes = "1.11.0"
+bytes = "1.11.1"
 chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.56", features = ["derive", "env"] }
 criterion = "0.8.1"

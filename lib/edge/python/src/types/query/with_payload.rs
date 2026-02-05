@@ -147,7 +147,7 @@ impl Repr for PyPayloadSelector {
     }
 }
 
-#[pyclass(name = "PayloadSelector")]
+#[pyclass(name = "PayloadSelector", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyPayloadSelectorInterface {
     Include { keys: Vec<PyJsonPath> },
