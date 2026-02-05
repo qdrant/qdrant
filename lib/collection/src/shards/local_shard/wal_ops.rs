@@ -1,30 +1,10 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::operations::types::CollectionResult;
 use crate::shards::local_shard::LocalShard;
 use crate::update_handler::UpdateSignal;
-
-/// Guard that sets an atomic bool to `true` on creation and back to `false` on drop.
-/// Ensures the flag is always reset even on early return or panic.
-struct SkipUpdatesGuard {
-    flag: Arc<AtomicBool>,
-}
-
-impl SkipUpdatesGuard {
-    fn new(flag: Arc<AtomicBool>) -> Self {
-        flag.store(true, Ordering::Relaxed);
-        Self { flag }
-    }
-}
-
-impl Drop for SkipUpdatesGuard {
-    fn drop(&mut self) {
-        self.flag.store(false, Ordering::Relaxed);
-    }
-}
 
 impl LocalShard {
     /// WAL is keeping more data, even if truncated.
@@ -42,46 +22,55 @@ impl LocalShard {
     /// Returns amount of removed records.
     pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
         // First, lock the `update_lock` to prevent new updates while dropping WAL.
-        // Lock also `update_handler` to access its state.
         let _update_lock = self.update_lock.write().await;
-        let update_handler = self.update_handler.lock().await;
+        let mut update_handler = self.update_handler.lock().await;
 
-        // Next, clear the update worker channel.
-        // To do this, set the skip updates flag. The guard resets it when dropped.
-        // New updates won't be skipped because the update_lock is held until we're done.
-        let _skip_updates_guard = SkipUpdatesGuard::new(update_handler.skip_updates.clone());
+        // Create new channel - new operations will go to the new channel
+        let (update_sender, update_receiver) =
+            mpsc::channel(self.shared_storage_config.update_queue_size);
+        let _old_sender = self.update_sender.swap(Arc::new(update_sender));
 
-        // Then, Send the plunger signal to the update handler.
-        // It's a marker that all previous updates are processed or skipped.
-        let (tx, rx) = oneshot::channel();
-        let plunger = UpdateSignal::Plunger(tx);
-        self.update_sender.load().send(plunger).await?;
-        let truncate_from_op_num = rx.await?;
+        // Signal all workers to stop
+        update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
 
-        // The update worker is now idle, and no new updates are being processed.
-        // It's safe to lock and drop WAL now.
+        // Wait for workers to finish and get pending operations from the old channel
+        let pending_receiver = update_handler.wait_workers_stops().await?;
+
+        // Find first pending operation's op_num - this is where we truncate from
+        let truncate_from_op_num = pending_receiver.and_then(|mut receiver| {
+            std::iter::from_fn(|| receiver.try_recv().ok()).find_map(|signal| match signal {
+                UpdateSignal::Operation(op_data) => Some(op_data.op_num),
+                UpdateSignal::Nop | UpdateSignal::Plunger(_) => None,
+            })
+        });
+
+        // Lock WAL and perform truncation
         let mut wal_lock = Mutex::lock_owned(self.wal.wal.clone()).await;
         let last_wal_op_num = wal_lock.last_index();
 
-        let Some(truncate_from_op_num) = truncate_from_op_num else {
-            return Ok(0);
-        };
+        let truncation_result: CollectionResult<usize> =
+            if let Some(truncate_from_op_num) = truncate_from_op_num {
+                debug_assert!(truncate_from_op_num <= last_wal_op_num);
 
-        // A corner case: truncate was called twice in a row without new updates in between.
-        // In this case, `truncate_from_op_num` is equal to last_wal_op_num + 1`.
-        // Because previously unapplied WAL records were already truncated up to `truncate_from_op_num` inclusive.
-        if truncate_from_op_num == last_wal_op_num + 1 {
-            return Ok(0);
-        }
+                wal_lock.drop_from(truncate_from_op_num)?;
+                wal_lock.flush()?;
 
-        debug_assert!(truncate_from_op_num <= last_wal_op_num);
+                // To calculate removed records, add 1 because both are inclusive
+                Ok((last_wal_op_num + 1 - truncate_from_op_num) as usize)
+            } else {
+                Ok(0)
+            };
 
-        wal_lock.drop_from(truncate_from_op_num)?;
-        wal_lock.flush()?;
+        // Release WAL lock before restarting workers
+        drop(wal_lock);
 
-        // To calculate removed records, add 1 because both `last_wal_op_num` and `truncate_from_op_num` are inclusive.
-        let removed_records = (last_wal_op_num + 1 - truncate_from_op_num) as usize;
+        // Restart workers with new channel (pending operations are intentionally not forwarded)
+        update_handler.run_workers(update_receiver);
 
-        Ok(removed_records)
+        // Trigger optimizers
+        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
+
+        truncation_result
     }
 }

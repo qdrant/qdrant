@@ -1,7 +1,6 @@
 use std::thread;
 
 use crate::shards::local_shard::LocalShard;
-use crate::update_handler::UpdateSignal;
 
 impl Drop for LocalShard {
     fn drop(&mut self) {
@@ -35,26 +34,18 @@ impl Drop for LocalShard {
         // But we still want to call explicit shutdown on all removes and internal operations.
 
         let update_handler = self.update_handler.clone();
-        let update_sender = self.update_sender.load().clone();
 
         // Operation might happen in the runtime, so we need to spawn a thread to do blocking operations.
         let handle_res = thread::Builder::new()
             .name("drop-shard".to_string())
             .spawn(move || {
-                {
-                    let mut update_handler = update_handler.blocking_lock();
-                    if update_handler.is_stopped() {
-                        return true;
-                    }
-                    update_handler.stop_flush_worker();
-                    update_handler.notify_optimization_handles_to_stop();
+                let mut update_handler = update_handler.blocking_lock();
+                if update_handler.is_stopped() {
+                    return true;
                 }
-
-                // This can block longer, if the channel is full
-                // If channel is closed, assume it is already stopped
-                if let Err(err) = update_sender.blocking_send(UpdateSignal::Stop) {
-                    log::trace!("Error sending update signal to update handler: {err}");
-                }
+                update_handler.stop_flush_worker();
+                update_handler.stop_update_worker();
+                update_handler.notify_optimization_handles_to_stop();
                 false
             });
 
