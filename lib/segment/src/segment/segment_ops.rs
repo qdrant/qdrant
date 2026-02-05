@@ -253,7 +253,7 @@ impl Segment {
         F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         // Global version to check if operation has already been applied, then skip without execution
-        if self.version.unwrap_or(0) > op_num {
+        if self.version.lock().unwrap_or(0) > op_num {
             return Ok(false);
         }
 
@@ -326,7 +326,9 @@ impl Segment {
     }
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
-        self.version.replace(max(op_num, self.version.unwrap_or(0)));
+        let mut version_guard = self.version.lock();
+        let new_version = max(op_num, version_guard.unwrap_or(0));
+        version_guard.replace(new_version);
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
@@ -353,7 +355,7 @@ impl Segment {
     pub(super) fn get_state(&self) -> SegmentState {
         SegmentState {
             initial_version: self.initial_version,
-            version: self.version,
+            version: *self.version.lock(),
             config: self.segment_config.clone(),
         }
     }

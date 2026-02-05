@@ -632,7 +632,7 @@ fn create_segment(
     Ok(Segment {
         uuid,
         initial_version,
-        version,
+        version: Arc::new(Mutex::new(version)),
         persisted_version: Arc::new(Mutex::new(version)),
         is_alive_flush_lock: IsAliveLock::new(),
         segment_path: segment_path.to_owned(),

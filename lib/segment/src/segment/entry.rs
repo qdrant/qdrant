@@ -40,7 +40,7 @@ use crate::vector_storage::VectorStorage;
 /// any kind of proxy or wrapping.
 impl NonAppendableSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
-        self.version.unwrap_or(0)
+        self.version.lock().unwrap_or(0)
     }
 
     fn persistent_version(&self) -> SeqNumberType {
@@ -516,7 +516,7 @@ impl NonAppendableSegmentEntry for Segment {
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
-        match (self.version, current_persisted_version) {
+        match (*self.version.lock(), current_persisted_version) {
             (None, _) => {
                 // Segment is empty, nothing to flush
                 return None;
@@ -742,7 +742,7 @@ impl NonAppendableSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult> {
         // Check version without updating it
-        if self.version.unwrap_or(0) > op_num {
+        if self.version.lock().unwrap_or(0) > op_num {
             return Ok(BuildFieldIndexResult::SkippedByVersion);
         }
 
