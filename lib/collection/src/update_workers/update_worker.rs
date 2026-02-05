@@ -25,6 +25,9 @@ use crate::wal_delta::LockedWal;
 const BYTES_IN_KB: usize = 1024;
 
 impl UpdateWorkers {
+    /// Main loop of the update worker.
+    ///
+    /// Returns the receiver when the worker is stopped.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_worker_fn(
         collection_name: CollectionId,
@@ -46,11 +49,10 @@ impl UpdateWorkers {
                 _ = cancel.cancelled() => {
                     break receiver;
                 }
-                signal = receiver.recv() => signal,
-            };
-
-            let Some(signal) = signal else {
-                break receiver;
+                signal = receiver.recv() => match signal {
+                    Some(signal) => signal,
+                    None => break receiver,
+                }
             };
 
             match signal {
@@ -161,11 +163,13 @@ impl UpdateWorkers {
                 }
             }
         };
+
         // Transmitter was destroyed
         optimize_sender
             .send(OptimizerSignal::Stop)
             .await
             .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+
         receiver
     }
 
