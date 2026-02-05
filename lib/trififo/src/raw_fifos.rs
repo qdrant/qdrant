@@ -184,9 +184,13 @@ impl<K, V> RawFifos<K, V> {
         self.main.reinsert_if(f)
     }
 
-    pub fn small_eviction_candidate(&self) -> Option<&Entry<K, V>> {
+    pub fn small_eviction_candidate(&self) -> Option<(GlobalOffset, &Entry<K, V>)> {
         let position = self.small.write_position();
-        self.small.get_absolute(position)
+
+        let entry = self.small.get_absolute(position)?;
+        let global_offset = self.global_offset(LocalOffset::Small(position as u32));
+
+        Some((global_offset, entry))
     }
 
     pub fn ghost_eviction_candidate(&self) -> Option<(GlobalOffset, &K)> {

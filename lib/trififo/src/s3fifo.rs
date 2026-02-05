@@ -97,12 +97,12 @@ where
             LocalOffset::Ghost(_) => {
                 let entry = Entry::new(key, value);
                 let new_offset = self.push_to_main_queue(entry);
-                // The same key now exists at ghost AND main queues, key_eq will find the
-                // right key at the ghost queue, and update it to point at the main queue
+                // The same key now exists at ghost AND main queues, so we find the hashtable
+                // entry that has the old offset, and update it to the offset in main queue
                 //
                 // The key at ghost queue will remain there, but nothing will point to it anymore,
                 // it is safe to leave it there, as it will eventually get overwritten.
-                self.update_hashtable(&key, new_offset);
+                self.update_hashtable(&key, global_offset, new_offset);
             }
             LocalOffset::Small(_) | LocalOffset::Main(_) => {
                 if let Some(entry) = self.fifos.get_local_entry(local_offset) {
@@ -136,6 +136,8 @@ where
         // slot contents. If we remove after overwriting_push, the slot
         // already contains the new key, so key_eq fails and the entry
         // becomes a zombie (never removed).
+        //
+        // todo(luis): think about using pop_push here
         let (eviction_global_offset, eviction_candidate) = self
             .fifos
             .main_eviction_candidate()
@@ -160,7 +162,7 @@ where
         // overwriting the slot. This is because update_hashtable use key_eq
         // which reads the current slot contents. If we do this after overwriting_push,
         // the slot contains the new key, so key_eq fails and we fail to update the hashtable.
-        let oldest_entry = self
+        let (old_offset, oldest_entry) = self
             .fifos
             .small_eviction_candidate()
             .expect("We are the only writer");
@@ -178,7 +180,7 @@ where
         // SAFETY: Entry is currently at two places, but:
         // 1. We have removed the bucket pointing to the overwritten position in main/ghost.
         // 2. So key_eq will only succeed with the one in small queue.
-        self.update_hashtable(&oldest_key, new_offset);
+        self.update_hashtable(&oldest_key, old_offset, new_offset);
 
         // Now safe to overwrite the slot
         self.fifos.small_overwriting_push(entry)
@@ -208,16 +210,16 @@ where
     }
 
     /// Update hashtable entry for `key`. If it did not exist, does nothing.
-    fn update_hashtable(&mut self, key: &K, global_offset: GlobalOffset) {
+    fn update_hashtable(&mut self, key: &K, old_offset: GlobalOffset, new_offset: GlobalOffset) {
         let hash = self.hash_key(key);
 
         // Use the find_entry API to update.
         let entry = self
             .hashtable
-            .find_entry(hash, |global_offset| self.fifos.key_eq(*global_offset, key));
+            .find_entry(hash, |global_offset| global_offset == &old_offset);
 
         if let Ok(mut occupied) = entry {
-            *occupied.get_mut() = global_offset;
+            *occupied.get_mut() = new_offset;
         }
     }
 
