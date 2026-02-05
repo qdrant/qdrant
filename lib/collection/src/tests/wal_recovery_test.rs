@@ -396,9 +396,10 @@ async fn test_truncate_unapplied_wal() {
 
     // Verify the shard is still functional
     let info = shard.info().await.unwrap();
-    assert!(
-        info.points_count.unwrap_or(0) > 0,
-        "Shard should have points after update"
+    assert_eq!(
+        info.points_count.unwrap_or(0) as usize,
+        applied_count + 1,
+        "Shard should have applied_count + 1 points after update"
     );
 
     shard.stop_gracefully().await;
@@ -444,6 +445,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     .await
     .unwrap();
 
+    // Stop flush worker to prevent automatic WAL truncation.
     shard.stop_flush_worker().await;
 
     let hw_acc = HwMeasurementAcc::new();

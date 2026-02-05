@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
+use cancel::CancellationToken;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
@@ -50,13 +51,10 @@ pub struct OperationData {
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
-    /// Stop all optimizers and listening
-    Stop,
     /// Empty signal used to trigger optimizers
     Nop,
     /// Ensures that previous updates are applied
-    /// Sends back the first skipped `op_num` if `skip_updates` is set, or None otherwise.
-    Plunger(oneshot::Sender<Option<SeqNumberType>>),
+    Plunger(oneshot::Sender<()>),
 }
 
 /// Signal, used to inform Optimization process
@@ -88,8 +86,11 @@ pub struct UpdateHandler {
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
-    /// Process, that listens updates signals and perform updates
-    update_worker: Option<JoinHandle<()>>,
+    /// Process, that listens updates signals and perform updates.
+    /// Returns the receiver with pending updates when stopped.
+    update_worker: Option<JoinHandle<Receiver<UpdateSignal>>>,
+    /// Cancellation token for the update worker
+    update_worker_cancel: CancellationToken,
     /// Process, that listens for post-update signals and performs optimization
     optimizer_worker: Option<JoinHandle<()>>,
     /// Process that periodically flushes segments and tries to truncate wal
@@ -132,10 +133,6 @@ pub struct UpdateHandler {
 
     /// Persist the applied op_num sequence number
     applied_seq_handler: Arc<AppliedSeqHandler>,
-
-    /// State to indicate whether updates should be skipped.
-    /// Used during WAL dropping to avoid processing updates which are about to be discarded from WAL.
-    pub(super) skip_updates: Arc<AtomicBool>,
 }
 
 impl UpdateHandler {
@@ -167,6 +164,7 @@ impl UpdateHandler {
             optimizers,
             segments,
             update_worker: None,
+            update_worker_cancel: CancellationToken::new(),
             optimizer_worker: None,
             optimizers_log,
             total_optimized_points,
@@ -186,7 +184,6 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             applied_seq_handler,
-            skip_updates: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -223,6 +220,10 @@ impl UpdateHandler {
         let collection_name = self.collection_name.clone();
         let applied_seq_handler = self.applied_seq_handler.clone();
 
+        // Create a new cancellation token for this worker
+        self.update_worker_cancel = CancellationToken::new();
+        let cancel = self.update_worker_cancel.clone();
+
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
             update_receiver,
@@ -235,7 +236,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
-            self.skip_updates.clone(),
+            cancel,
         )));
 
         let segments = self.segments.clone();
@@ -266,6 +267,11 @@ impl UpdateHandler {
         }
     }
 
+    /// Signal the update worker to stop *without* waiting
+    pub fn stop_update_worker(&self) {
+        self.update_worker_cancel.cancel();
+    }
+
     /// Notify optimization handles to stop *without* waiting
     ///
     /// Blocking operation
@@ -279,15 +285,20 @@ impl UpdateHandler {
 
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
-    pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
+    /// Returns the receiver with any pending update operations. None if there were no update worker.
+    pub async fn wait_workers_stops(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let maybe_handle = self.update_worker.take();
-        if let Some(handle) = maybe_handle {
-            handle.await?;
-        }
+        let pending_receiver = if let Some(handle) = maybe_handle {
+            Some(handle.await?)
+        } else {
+            None
+        };
+
         let maybe_handle = self.optimizer_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
+
         let maybe_handle = self.flush_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
@@ -305,7 +316,7 @@ impl UpdateHandler {
                 join_handle.await?;
             }
         }
-        Ok(())
+        Ok(pending_receiver)
     }
 
     /// Checks whether all update-related workers have stopped.

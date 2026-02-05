@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use cancel::CancellationToken;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
@@ -25,6 +25,9 @@ use crate::wal_delta::LockedWal;
 const BYTES_IN_KB: usize = 1024;
 
 impl UpdateWorkers {
+    /// Main loop of the update worker.
+    ///
+    /// Returns the receiver when the worker is stopped.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_worker_fn(
         collection_name: CollectionId,
@@ -38,12 +41,20 @@ impl UpdateWorkers {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
-        skip_updates: Arc<AtomicBool>,
-    ) {
-        // First skipped op_num while `skip_updates` is set
-        let mut first_skipped: Option<SeqNumberType> = None;
+        cancel: CancellationToken,
+    ) -> Receiver<UpdateSignal> {
+        let receiver = loop {
+            let signal = tokio::select! {
+                biased; // biased to check cancellation first
+                _ = cancel.cancelled() => {
+                    break receiver;
+                }
+                signal = receiver.recv() => match signal {
+                    Some(signal) => signal,
+                    None => break receiver,
+                }
+            };
 
-        while let Some(signal) = receiver.recv().await {
             match signal {
                 UpdateSignal::Operation(OperationData {
                     op_num,
@@ -51,21 +62,6 @@ impl UpdateWorkers {
                     sender,
                     hw_measurements,
                 }) => {
-                    if skip_updates.load(std::sync::atomic::Ordering::Relaxed) {
-                        first_skipped.get_or_insert(op_num);
-
-                        if let Some(feedback) = sender {
-                            feedback.send(Err(CollectionError::service_error(
-                                format!("Operation {op_num} skipped due to ongoing WAL truncation"),
-                            ))).unwrap_or_else(|_| {
-                                log::debug!("Can't report operation {op_num} result. Assume already not required");
-                            });
-                        }
-                        continue;
-                    }
-
-                    first_skipped = None;
-
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
                     let segments_clone = segments.clone();
@@ -152,13 +148,6 @@ impl UpdateWorkers {
                         });
                     };
                 }
-                UpdateSignal::Stop => {
-                    optimize_sender
-                        .send(OptimizerSignal::Stop)
-                        .await
-                        .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
-                    break;
-                }
                 UpdateSignal::Nop => optimize_sender
                     .send(OptimizerSignal::Nop)
                     .await
@@ -168,17 +157,20 @@ impl UpdateWorkers {
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(first_skipped).unwrap_or_else(|_| {
+                    callback_sender.send(()).unwrap_or_else(|_| {
                         log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }
             }
-        }
+        };
+
         // Transmitter was destroyed
         optimize_sender
             .send(OptimizerSignal::Stop)
             .await
             .unwrap_or_else(|_| log::debug!("Optimizer already stopped"));
+
+        receiver
     }
 
     /// Checks that unoptimized segments are small enough, so that we can effectively
