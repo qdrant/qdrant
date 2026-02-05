@@ -40,26 +40,23 @@ impl LocalShard {
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
-        let (update_sender, update_receiver) =
-            mpsc::channel(self.shared_storage_config.update_queue_size);
-        // Swap to new sender - new operations will go to the new channel
-        let _old_sender = self.update_sender.swap(Arc::new(update_sender));
         // Signal all workers to stop
         update_handler.stop_flush_worker();
         update_handler.stop_update_worker();
 
         // Wait for workers to finish and get pending operations from the old channel
-        let pending_receiver = update_handler.wait_workers_stops().await?;
+        let update_receiver = update_handler.wait_workers_stops().await?;
 
-        // Forward pending operations from old receiver to new channel
-        if let Some(mut old_receiver) = pending_receiver {
-            let sender = self.update_sender.load();
-            while let Ok(signal) = old_receiver.try_recv() {
-                // Forward pending operations to new channel
-                // Use try_send to avoid blocking - if channel is full, operations are dropped
-                let _ = sender.try_send(signal);
+        let update_receiver = match update_receiver {
+            Some(receiver) => receiver,
+            None => {
+                // Receiver is destroyed, create a new channel
+                let (update_sender, update_receiver) =
+                    mpsc::channel(self.shared_storage_config.update_queue_size);
+                let _old_sender = self.update_sender.swap(Arc::new(update_sender));
+                update_receiver
             }
-        }
+        };
 
         let new_optimizers = build_optimizers(
             &self.path,
