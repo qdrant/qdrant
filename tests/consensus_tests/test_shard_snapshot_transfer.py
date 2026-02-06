@@ -110,7 +110,7 @@ def test_shard_snapshot_transfer_shows_stage_in_comment(tmp_path: pathlib.Path):
     replicate_shard(peer_api_uris[0], COLLECTION_NAME, src['local_shards'][0]['shard_id'],
                     src['peer_id'], dst['peer_id'], method="snapshot")
 
-    stage_re = re.compile(r"^(proxifying|creating snapshot|transferring|recovering|flushing queue|waiting consensus|finalizing) \(\d+s\) \|")
+    stage_re = re.compile(r"^(proxifying|creating snapshot|transferring|recovering|flushing queue|waiting consensus|finalizing) \(\d+\.\d+s\)")
 
     def get_cluster_comments():
         return [t.get("comment", "") for t in get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME).get("shard_transfers", [])]

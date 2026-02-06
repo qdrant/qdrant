@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use async_trait::async_trait;
@@ -42,6 +42,16 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+
+/// Result of a single batch transfer, including timing breakdown.
+pub struct TransferBatchResult {
+    pub next_page_offset: Option<PointIdType>,
+    pub count: usize,
+    /// Time spent reading points from local storage (scroll + retrieve).
+    pub read_duration: Duration,
+    /// Time spent sending points to the remote shard (gRPC upsert).
+    pub send_duration: Duration,
+}
 
 /// ForwardProxyShard
 ///
@@ -145,10 +155,11 @@ impl ForwardProxyShard {
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
-    ) -> CollectionResult<(Option<PointIdType>, usize)> {
+    ) -> CollectionResult<TransferBatchResult> {
         debug_assert!(batch_size > 0);
         let _update_lock = self.update_lock.lock().await;
 
+        let read_start = Instant::now();
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
                 self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
@@ -159,6 +170,7 @@ impl ForwardProxyShard {
                     .await?
             }
         };
+        let read_duration = read_start.elapsed();
 
         // Only wait on last batch
         let wait = next_page_offset.is_none();
@@ -179,6 +191,7 @@ impl ForwardProxyShard {
         };
         let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
+        let send_start = Instant::now();
         self.remote_shard
             .update(
                 // Don't add clock tag, this transfers points out of regular order (SyncPoints)
@@ -188,8 +201,14 @@ impl ForwardProxyShard {
                 HwMeasurementAcc::disposable(), // Internal operation
             )
             .await?;
+        let send_duration = send_start.elapsed();
 
-        Ok((next_page_offset, count))
+        Ok(TransferBatchResult {
+            next_page_offset,
+            count,
+            read_duration,
+            send_duration,
+        })
     }
 
     /// Read a batch of points to transfer to the remote shard
