@@ -186,7 +186,6 @@ impl StableHash for ExtendedPointId {
 }
 
 impl ExtendedPointId {
-
     #[cfg(any(test, feature = "testing"))]
     pub fn as_u64(&self) -> u64 {
         match self {
