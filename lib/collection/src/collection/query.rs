@@ -370,7 +370,12 @@ impl Collection {
             Some(ScoringQuery::Fusion(fusion)) => {
                 // If the root query is a Fusion, the returned results correspond to each the prefetches.
                 let mut fused = match fusion {
-                    FusionInternal::RrfK(k) => rrf_scoring(intermediates, *k),
+                    FusionInternal::Rrf { k, weights } => {
+                        let weights_slice = weights
+                            .as_ref()
+                            .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
+                        rrf_scoring(intermediates, *k, weights_slice.as_deref())?
+                    }
                     FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {

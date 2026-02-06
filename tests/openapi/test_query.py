@@ -434,6 +434,87 @@ def test_basic_rrf(collection_name):
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
 
 
+def test_weighted_rrf(collection_name):
+    """Test RRF with weights parameter."""
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.1, 0.2, 0.3, 0.4],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_1 = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.5, 0.6, 0.7, 0.8],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_2 = response.json()["result"]
+
+    # Test with weights [3.0, 1.0] - first source has 3x weight
+    weights = [3.0, 1.0]
+    rrf_expected = reciprocal_rank_fusion([search_result_1, search_result_2], limit=10, weights=weights)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                { "query": [0.1, 0.2, 0.3, 0.4] },
+                { "query": [0.5, 0.6, 0.7, 0.8] },
+            ],
+            "query": {
+                "rrf": {
+                    "weights": weights
+                }
+            },
+        },
+    )
+    assert response.ok, response.json()
+    rrf_result = response.json()["result"]["points"]
+
+    def get_id(x):
+        return x["id"]
+
+    # rrf order is not deterministic with same scores, so we need to sort by id
+    for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_result, key=get_id)):
+        assert expected["id"] == result["id"]
+        assert expected.get("payload") == result.get("payload")
+        assert isclose(expected["score"], result["score"], rel_tol=1e-5)
+
+    # Test with custom k parameter as well
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                { "query": [0.1, 0.2, 0.3, 0.4] },
+                { "query": [0.5, 0.6, 0.7, 0.8] },
+            ],
+            "query": {
+                "rrf": {
+                    "k": 60,
+                    "weights": [80, 20]
+                }
+            },
+        },
+    )
+    assert response.ok, response.json()
+    # Just verify it returns results without error
+    assert len(response.json()["result"]["points"]) > 0
+
+
 def test_basic_dbsf(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",

@@ -3,6 +3,7 @@ pub mod mmr;
 pub mod planned_query;
 pub mod query_enum;
 pub mod scroll;
+mod validation;
 
 pub mod query_context;
 #[cfg(test)]
@@ -147,7 +148,7 @@ impl ScoringQuery {
         match self {
             Self::Fusion(fusion) => match fusion {
                 // We need the ranking information of each prefetch
-                FusionInternal::RrfK(_) => true,
+                FusionInternal::Rrf { k: _, weights: _ } => true,
                 // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
@@ -167,10 +168,15 @@ impl ScoringQuery {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize)]
+#[derive(Clone, Debug, PartialEq, Hash, Serialize)]
 pub enum FusionInternal {
-    /// Reciprocal Rank Fusion
-    RrfK(usize),
+    /// Reciprocal Rank Fusion with optional weights per prefetch
+    Rrf {
+        k: usize,
+        /// Weights for each prefetch source. Higher weight = more influence on final ranking.
+        /// If None, all sources are weighted equally.
+        weights: Option<Vec<ordered_float::OrderedFloat<f32>>>,
+    },
     /// Distribution-based score fusion
     Dbsf,
 }
@@ -385,7 +391,10 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
 impl From<rest::Fusion> for FusionInternal {
     fn from(value: rest::Fusion) -> Self {
         match value {
-            rest::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
+            rest::Fusion::Rrf => FusionInternal::Rrf {
+                k: DEFAULT_RRF_K,
+                weights: None,
+            },
             rest::Fusion::Dbsf => FusionInternal::Dbsf,
         }
     }
@@ -393,15 +402,21 @@ impl From<rest::Fusion> for FusionInternal {
 
 impl From<rest::Rrf> for FusionInternal {
     fn from(value: rest::Rrf) -> Self {
-        let rest::Rrf { k } = value;
-        FusionInternal::RrfK(k.unwrap_or(DEFAULT_RRF_K))
+        let rest::Rrf { k, weights } = value;
+        FusionInternal::Rrf {
+            k: k.unwrap_or(DEFAULT_RRF_K),
+            weights: weights.map(|w| w.into_iter().map(OrderedFloat).collect()),
+        }
     }
 }
 
 impl From<grpc::Fusion> for FusionInternal {
     fn from(fusion: grpc::Fusion) -> Self {
         match fusion {
-            grpc::Fusion::Rrf => FusionInternal::RrfK(DEFAULT_RRF_K),
+            grpc::Fusion::Rrf => FusionInternal::Rrf {
+                k: DEFAULT_RRF_K,
+                weights: None,
+            },
             grpc::Fusion::Dbsf => FusionInternal::Dbsf,
         }
     }
@@ -411,10 +426,16 @@ impl TryFrom<grpc::Rrf> for FusionInternal {
     type Error = tonic::Status;
 
     fn try_from(rrf: grpc::Rrf) -> Result<Self, Self::Error> {
-        let grpc::Rrf { k } = rrf;
-        Ok(FusionInternal::RrfK(
-            k.map(|k| k as usize).unwrap_or(DEFAULT_RRF_K),
-        ))
+        let grpc::Rrf { k, weights } = rrf;
+        let weights = if weights.is_empty() {
+            None
+        } else {
+            Some(weights.into_iter().map(OrderedFloat).collect())
+        };
+        Ok(FusionInternal::Rrf {
+            k: k.map(|k| k as usize).unwrap_or(DEFAULT_RRF_K),
+            weights,
+        })
     }
 }
 
@@ -436,12 +457,17 @@ impl From<FusionInternal> for grpc::Query {
         use grpc::{Fusion, Query, Rrf};
 
         match fusion {
-            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
-            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+            // Avoid breaking rolling upgrade by keeping case of k==2 and no weights as Fusion::Rrf
+            FusionInternal::Rrf { k, weights: None } if k == DEFAULT_RRF_K => Query {
                 variant: Some(QueryVariant::Fusion(i32::from(Fusion::Rrf))),
             },
-            FusionInternal::RrfK(k) => Query {
-                variant: Some(QueryVariant::Rrf(Rrf { k: Some(k as u32) })),
+            FusionInternal::Rrf { k, weights } => Query {
+                variant: Some(QueryVariant::Rrf(Rrf {
+                    k: Some(k as u32),
+                    weights: weights
+                        .map(|w| w.into_iter().map(|f| f.into_inner()).collect())
+                        .unwrap_or_default(),
+                })),
             },
             FusionInternal::Dbsf => Query {
                 variant: Some(QueryVariant::Fusion(i32::from(Fusion::Dbsf))),
@@ -457,12 +483,17 @@ impl From<FusionInternal> for grpc::query_shard_points::Query {
         use grpc::{Fusion, Rrf};
 
         match fusion {
-            // Avoid breaking rolling upgrade by keeping case of k==2 as Fusion::Rrf
-            FusionInternal::RrfK(k) if k == DEFAULT_RRF_K => Query {
+            // Avoid breaking rolling upgrade by keeping case of k==2 and no weights as Fusion::Rrf
+            FusionInternal::Rrf { k, weights: None } if k == DEFAULT_RRF_K => Query {
                 score: Some(Score::Fusion(i32::from(Fusion::Rrf))),
             },
-            FusionInternal::RrfK(k) => Query {
-                score: Some(Score::Rrf(Rrf { k: Some(k as u32) })),
+            FusionInternal::Rrf { k, weights } => Query {
+                score: Some(Score::Rrf(Rrf {
+                    k: Some(k as u32),
+                    weights: weights
+                        .map(|w| w.into_iter().map(|f| f.into_inner()).collect())
+                        .unwrap_or_default(),
+                })),
             },
             FusionInternal::Dbsf => Query {
                 score: Some(Score::Fusion(i32::from(Fusion::Dbsf))),
