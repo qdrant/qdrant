@@ -25,7 +25,11 @@ pub use auth_context::Auth;
 pub enum AuthType {
     Jwt,
     ApiKey,
+    /// No authentication was configured or required.
     None,
+    /// Request originated from the cluster itself (internal P2P communication).
+    /// These requests are not audit-logged.
+    Internal,
 }
 
 pub const HTTP_HEADER_API_KEY: &str = "api-key";

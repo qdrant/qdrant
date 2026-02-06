@@ -48,7 +48,7 @@ impl CollectionsInternal for CollectionsInternalService {
         let get_collection_info_request = get_collection_info_request
             .ok_or_else(|| Status::invalid_argument("GetCollectionInfoRequest is missing"))?;
 
-        let auth = Auth::new(FULL_ACCESS.clone(), None, None, AuthType::None);
+        let auth = Auth::new(FULL_ACCESS.clone(), None, None, AuthType::Internal);
         get(
             self.toc.as_ref(),
             get_collection_info_request,

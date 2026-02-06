@@ -79,7 +79,7 @@ impl Auth {
         collection: Option<&str>,
         result: &Result<T, StorageError>,
     ) {
-        if !is_audit_enabled() {
+        if !is_audit_enabled() || self.auth_type == AuthType::Internal {
             return;
         }
 
