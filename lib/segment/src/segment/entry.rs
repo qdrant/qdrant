@@ -710,7 +710,10 @@ impl NonAppendableSegmentEntry for Segment {
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
-            segment.version_tracker.set_payload_index_schema(key, None);
+            segment
+                .version_tracker
+                .borrow_mut()
+                .set_payload_index_schema(key, None);
             Ok(true)
         })
     }
@@ -728,7 +731,10 @@ impl NonAppendableSegmentEntry for Segment {
                 .drop_index_if_incompatible(key, field_schema)?;
 
             if is_incompatible {
-                segment.version_tracker.set_payload_index_schema(key, None);
+                segment
+                    .version_tracker
+                    .borrow_mut()
+                    .set_payload_index_schema(key, None);
             }
 
             Ok(true)
@@ -783,6 +789,7 @@ impl NonAppendableSegmentEntry for Segment {
 
             segment
                 .version_tracker
+                .borrow_mut()
                 .set_payload_index_schema(&key, Some(op_num));
 
             Ok(true)
@@ -803,7 +810,10 @@ impl NonAppendableSegmentEntry for Segment {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     segment.delete_point_internal(internal_id, hw_counter)?;
 
-                    segment.version_tracker.set_payload(Some(op_num));
+                    segment
+                        .version_tracker
+                        .borrow_mut()
+                        .set_payload(Some(op_num));
 
                     Ok((true, Some(internal_id)))
                 })
@@ -941,6 +951,7 @@ impl SegmentEntry for Segment {
                     if is_deleted {
                         segment
                             .version_tracker
+                            .borrow_mut()
                             .set_vector(vector_name, Some(op_num));
                     }
 
@@ -965,7 +976,10 @@ impl SegmentEntry for Segment {
                     full_payload,
                     hw_counter,
                 )?;
-                segment.version_tracker.set_payload(Some(op_num));
+                segment
+                    .version_tracker
+                    .borrow_mut()
+                    .set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -992,7 +1006,10 @@ impl SegmentEntry for Segment {
                     key,
                     hw_counter,
                 )?;
-                segment.version_tracker.set_payload(Some(op_num));
+                segment
+                    .version_tracker
+                    .borrow_mut()
+                    .set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -1016,7 +1033,10 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .delete_payload(internal_id, key, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+                segment
+                    .version_tracker
+                    .borrow_mut()
+                    .set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -1039,7 +1059,10 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .clear_payload(internal_id, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+                segment
+                    .version_tracker
+                    .borrow_mut()
+                    .set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
