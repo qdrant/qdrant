@@ -186,6 +186,15 @@ impl StableHash for ExtendedPointId {
 }
 
 impl ExtendedPointId {
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn as_u64(&self) -> u64 {
+        match self {
+            ExtendedPointId::NumId(num) => *num,
+            ExtendedPointId::Uuid(_) => panic!("Cannot convert UUID to u64"),
+        }
+    }
+
     pub fn is_num_id(&self) -> bool {
         matches!(self, ExtendedPointId::NumId(..))
     }
