@@ -18,7 +18,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{AccessRequirements, Auth};
+use crate::rbac::{AccessRequirements, Auth, CollectionMultipass};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -101,23 +101,25 @@ pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     auth: Auth,
 ) -> Result<SnapshotDescription, StorageError> {
-    auth.check_global_access(AccessRequirements::new().manage(), "create_full_snapshot")?;
+    let collections_pass =
+        auth.check_global_access(AccessRequirements::new().manage(), "create_full_snapshot")?;
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
     let toc = dispatcher.toc(&auth, &pass).clone();
 
-    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, auth).await }).await??;
+    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, collections_pass).await })
+        .await??;
     Ok(res)
 }
 
 async fn _do_create_full_snapshot(
     toc: &TableOfContent,
-    auth: Auth,
+    multipass: CollectionMultipass,
 ) -> Result<SnapshotDescription, StorageError> {
     let snapshot_dir = toc.snapshots_path();
 
-    let all_collections = toc.all_collections(auth.access()).await;
+    let all_collections = toc.multipass_into_collections(&multipass).await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
     for collection_pass in &all_collections {
         let snapshot_details = toc.create_snapshot(collection_pass).await?;
@@ -137,10 +139,10 @@ async fn _do_create_full_snapshot(
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_pass in &all_collections {
         for alias in toc
-            .collection_aliases(collection_pass, auth.access())
-            .await?
+            .all_collection_aliases(collection_pass.name(), &multipass)
+            .await
         {
-            alias_mapping.insert(alias.clone(), collection_pass.name().to_string());
+            alias_mapping.insert(alias, collection_pass.name().to_string());
         }
     }
 
