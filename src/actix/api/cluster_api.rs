@@ -15,7 +15,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 use validator::Validate;
 
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers;
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
@@ -49,10 +49,10 @@ pub struct ClusterTelemetryParams {
 #[get("/cluster")]
 fn cluster_status(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
+        auth.check_global_access(AccessRequirements::new(), "cluster_status")?;
         Ok(dispatcher.cluster_status())
     })
 }
@@ -60,14 +60,14 @@ fn cluster_status(
 #[post("/cluster/recover")]
 fn recover_current_peer(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
 
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
-        dispatcher.toc(&access, &pass).request_snapshot()?;
+        auth.check_global_access(AccessRequirements::new().manage(), "recover_current_peer")?;
+        dispatcher.toc(auth.access(), &pass).request_snapshot()?;
         Ok(true)
     })
 }
@@ -77,16 +77,16 @@ fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
 
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "remove_peer")?;
 
         let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc(&access, &pass);
+        let toc = dispatcher.toc(auth.access(), &pass);
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;
@@ -115,10 +115,10 @@ fn remove_peer(
 #[get("/cluster/metadata/keys")]
 async fn get_cluster_metadata_keys(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
+        auth.check_global_access(AccessRequirements::new(), "get_cluster_metadata_keys")?;
 
         let keys = dispatcher
             .consensus_state()
@@ -135,11 +135,11 @@ async fn get_cluster_metadata_keys(
 #[get("/cluster/metadata/keys/{key}")]
 async fn get_cluster_metadata_key(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     key: web::Path<String>,
 ) -> HttpResponse {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
+        auth.check_global_access(AccessRequirements::new(), "get_cluster_metadata_key")?;
 
         let value = dispatcher
             .consensus_state()
@@ -156,7 +156,7 @@ async fn get_cluster_metadata_key(
 #[put("/cluster/metadata/keys/{key}")]
 async fn update_cluster_metadata_key(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     key: web::Path<String>,
     params: Query<MetadataParams>,
     value: web::Json<serde_json::Value>,
@@ -164,8 +164,11 @@ async fn update_cluster_metadata_key(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(&access, &pass);
-        access.check_global_access(AccessRequirements::new().write())?;
+        let toc = dispatcher.toc(auth.access(), &pass);
+        auth.check_global_access(
+            AccessRequirements::new().write(),
+            "update_cluster_metadata_key",
+        )?;
 
         toc.update_cluster_metadata(key.into_inner(), value.into_inner(), params.wait)
             .await?;
@@ -177,15 +180,18 @@ async fn update_cluster_metadata_key(
 #[delete("/cluster/metadata/keys/{key}")]
 async fn delete_cluster_metadata_key(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     key: web::Path<String>,
     params: Query<MetadataParams>,
 ) -> HttpResponse {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(&access, &pass);
-        access.check_global_access(AccessRequirements::new().write())?;
+        let toc = dispatcher.toc(auth.access(), &pass);
+        auth.check_global_access(
+            AccessRequirements::new().write(),
+            "delete_cluster_metadata_key",
+        )?;
 
         toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null, params.wait)
             .await?;
@@ -197,13 +203,13 @@ async fn delete_cluster_metadata_key(
 #[get("/cluster/telemetry")]
 async fn get_cluster_telemetry(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     params: Query<ClusterTelemetryParams>,
 ) -> HttpResponse {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(&access, &pass);
+        let toc = dispatcher.toc(auth.access(), &pass);
         let channel_service = toc.get_channel_service();
 
         let details_level = params
@@ -211,7 +217,7 @@ async fn get_cluster_telemetry(
             .unwrap_or_default()
             .max(MIN_CLUSTER_TELEMETRY_DETAILS_LEVEL);
 
-        let collections_selector = match &access {
+        let collections_selector = match auth.access() {
             Access::Global(_) => None,
             Access::Collection(access_list) => {
                 let list = access_list
@@ -273,8 +279,11 @@ async fn get_cluster_telemetry(
             };
         }
 
-        let distributed_telemetry =
-            DistributedTelemetryData::resolve_telemetries(&access, telemetries, missing_peers)?;
+        let distributed_telemetry = DistributedTelemetryData::resolve_telemetries(
+            auth.access(),
+            telemetries,
+            missing_peers,
+        )?;
 
         Ok(distributed_telemetry)
     })

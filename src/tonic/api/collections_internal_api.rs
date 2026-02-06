@@ -12,6 +12,7 @@ use storage::rbac::{Access, AccessRequirements, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
+use crate::common::auth::{Auth, AuthType};
 use crate::tonic::api::collections_common::get;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
@@ -47,10 +48,11 @@ impl CollectionsInternal for CollectionsInternalService {
         let get_collection_info_request = get_collection_info_request
             .ok_or_else(|| Status::invalid_argument("GetCollectionInfoRequest is missing"))?;
 
+        let auth = Auth::new(FULL_ACCESS.clone(), None, None, AuthType::None);
         get(
             self.toc.as_ref(),
             get_collection_info_request,
-            FULL_ACCESS.clone(),
+            &auth,
             Some(shard_id),
         )
         .await

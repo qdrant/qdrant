@@ -14,8 +14,19 @@ use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
 use crate::common::inference::api_keys::InferenceToken;
 use crate::settings::ServiceConfig;
+pub mod auth_context;
 pub mod claims;
 pub mod jwt_parser;
+
+pub use auth_context::Auth;
+
+/// How the request was authenticated.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub enum AuthType {
+    Jwt,
+    ApiKey,
+    None,
+}
 
 pub const HTTP_HEADER_API_KEY: &str = "api-key";
 
@@ -92,10 +103,12 @@ impl AuthKeys {
     }
 
     /// Validate that the specified request is allowed for given keys.
+    ///
+    /// Returns `(Access, InferenceToken, AuthType, Option<subject>)`.
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-    ) -> Result<(Access, InferenceToken), AuthError> {
+    ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -108,6 +121,8 @@ impl AuthKeys {
             return Ok((
                 Access::full("Read-write access by key"),
                 InferenceToken(None),
+                AuthType::ApiKey,
+                None,
             ));
         }
 
@@ -115,6 +130,8 @@ impl AuthKeys {
             return Ok((
                 Access::full_ro("Read-only access by key"),
                 InferenceToken(None),
+                AuthType::ApiKey,
+                None,
             ));
         }
 
@@ -131,13 +148,14 @@ impl AuthKeys {
                 exp: _, // already validated on decoding
                 access,
                 value_exists,
+                subject,
             } = claims;
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, InferenceToken(sub)));
+            return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
         }
 
         // JTW parser exists, but can't decode the token

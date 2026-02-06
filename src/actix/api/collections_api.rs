@@ -17,7 +17,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
@@ -36,37 +36,41 @@ impl WaitTimeout {
 #[get("/collections")]
 async fn get_collections(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_collections(dispatcher.toc(&access, &pass), access)).await
+    helpers::time(do_list_collections(
+        dispatcher.toc(auth.access(), &pass),
+        &auth,
+    ))
+    .await
 }
 
 #[get("/aliases")]
 async fn get_aliases(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_aliases(dispatcher.toc(&access, &pass), access)).await
+    helpers::time(do_list_aliases(dispatcher.toc(auth.access(), &pass), &auth)).await
 }
 
 #[get("/collections/{name}")]
 async fn get_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_get_collection(
-        dispatcher.toc(&access, &pass),
-        access,
+        dispatcher.toc(auth.access(), &pass),
+        &auth,
         &collection.name,
         None,
     ))
@@ -77,14 +81,14 @@ async fn get_collection(
 async fn get_collection_existence(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_collection_exists(
-        dispatcher.toc(&access, &pass),
-        access,
+        dispatcher.toc(auth.access(), &pass),
+        &auth,
         &collection.name,
     ))
     .await
@@ -94,14 +98,14 @@ async fn get_collection_existence(
 async fn get_collection_aliases(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_list_collection_aliases(
-        dispatcher.toc(&access, &pass),
-        access,
+        dispatcher.toc(auth.access(), &pass),
+        &auth,
         &collection.name,
     ))
     .await
@@ -113,7 +117,7 @@ async fn create_collection(
     collection: Path<StrictCollectionPath>,
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
     let timing = Instant::now();
     let create_collection_op =
@@ -126,7 +130,7 @@ async fn create_collection(
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::CreateCollection(create_collection_op),
-            access,
+            auth.access().clone(),
             query.timeout(),
         )
         .await;
@@ -139,7 +143,7 @@ async fn update_collection(
     collection: Path<CollectionPath>,
     operation: Json<UpdateCollection>,
     Query(query): Query<WaitTimeout>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = collection.name.clone();
@@ -149,7 +153,7 @@ async fn update_collection(
                 name,
                 operation.into_inner(),
             )),
-            access,
+            auth.access().clone(),
             query.timeout(),
         )
         .await;
@@ -161,7 +165,7 @@ async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     Query(query): Query<WaitTimeout>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
@@ -169,7 +173,7 @@ async fn delete_collection(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
                 collection.name.clone(),
             )),
-            access,
+            auth.access().clone(),
             query.timeout(),
         )
         .await;
@@ -181,13 +185,13 @@ async fn update_aliases(
     dispatcher: web::Data<Dispatcher>,
     operation: Json<ChangeAliasesOperation>,
     Query(query): Query<WaitTimeout>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
-            access,
+            auth.access().clone(),
             query.timeout(),
         )
         .await;
@@ -198,14 +202,14 @@ async fn update_aliases(
 async fn get_cluster_info(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_get_collection_cluster(
-        dispatcher.toc(&access, &pass),
-        access,
+        dispatcher.toc(auth.access(), &pass),
+        &auth,
         &collection.name,
     ))
     .await
@@ -217,7 +221,7 @@ async fn update_collection_cluster(
     collection: Path<CollectionPath>,
     operation: Json<ClusterOperations>,
     Query(query): Query<WaitTimeout>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
@@ -225,7 +229,7 @@ async fn update_collection_cluster(
         &dispatcher.into_inner(),
         collection.name.clone(),
         operation.0,
-        access,
+        auth,
         wait_timeout,
     )
     .await;
@@ -276,16 +280,19 @@ impl TryFrom<&OptimizationsParam> for OptimizationsRequestOptions {
 fn get_optimizations(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     params: Query<OptimizationsParam>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
         let options = OptimizationsRequestOptions::try_from(&params.into_inner())?;
         let pass = new_unchecked_verification_pass();
-        let collection_pass =
-            access.check_collection_access(&collection.name, AccessRequirements::new())?;
+        let collection_pass = auth.check_collection_access(
+            &collection.name,
+            AccessRequirements::new(),
+            "get_optimizations",
+        )?;
         Ok(dispatcher
-            .toc(&access, &pass)
+            .toc(auth.access(), &pass)
             .get_collection(&collection_pass)
             .await?
             .optimizations(options)

@@ -13,7 +13,7 @@ use tokio::time::Instant;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter};
 use crate::common::inference::api_keys::InferenceApiKeys;
 use crate::common::inference::params::InferenceParams;
@@ -32,7 +32,7 @@ async fn query_points(
     request: Json<QueryRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequest {
@@ -68,17 +68,17 @@ async fn query_points(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            &access,
+            auth.access(),
         )
         .await?;
 
         let points = dispatcher
-            .toc(&access, &pass)
+            .toc(auth.access(), &pass)
             .query_batch(
                 &collection.name,
                 vec![(request, shard_selection)],
                 params.consistency,
-                access,
+                auth.access().clone(),
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -111,7 +111,7 @@ async fn query_points_batch(
     request: Json<QueryRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
@@ -156,17 +156,17 @@ async fn query_points_batch(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            &access,
+            auth.access(),
         )
         .await?;
 
         let res = dispatcher
-            .toc(&access, &pass)
+            .toc(auth.access(), &pass)
             .query_batch(
                 &collection.name,
                 batch,
                 params.consistency,
-                access,
+                auth.access().clone(),
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -199,7 +199,7 @@ async fn query_points_groups(
     request: Json<QueryGroupsRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let QueryGroupsRequest {
@@ -234,17 +234,17 @@ async fn query_points_groups(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            &access,
+            auth.access(),
         )
         .await?;
 
         let query_result = do_query_point_groups(
-            dispatcher.toc(&access, &pass),
+            dispatcher.toc(auth.access(), &pass),
             &collection.name,
             request,
             params.consistency,
             shard_selection,
-            access,
+            auth.access().clone(),
             params.timeout(),
             hw_measurement_acc,
         )

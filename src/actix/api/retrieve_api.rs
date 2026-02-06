@@ -23,7 +23,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
 };
@@ -74,13 +74,13 @@ async fn get_point(
     point: Path<PointPath>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        auth.access(),
     )
     .await
     {
@@ -104,12 +104,12 @@ async fn get_point(
     let timing = Instant::now();
 
     let res = do_get_point(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(auth.access(), &pass),
         &collection.name,
         point_id,
         params.consistency,
         params.timeout(),
-        access,
+        auth.access().clone(),
         request_hw_counter.get_counter(),
     )
     .await
@@ -130,13 +130,13 @@ async fn get_points(
     request: Json<PointRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        auth.access(),
     )
     .await
     {
@@ -163,13 +163,13 @@ async fn get_points(
     let timing = Instant::now();
 
     let res = do_get_points(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(auth.access(), &pass),
         &collection.name,
         point_request,
         params.consistency,
         params.timeout(),
         shard_selection,
-        access,
+        auth.access().clone(),
         request_hw_counter.get_counter(),
     )
     .map_ok(|response| {
@@ -190,7 +190,7 @@ async fn scroll_points(
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let ScrollRequest {
         scroll_request,
@@ -202,7 +202,7 @@ async fn scroll_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        auth.access(),
     )
     .await
     {
@@ -224,14 +224,14 @@ async fn scroll_points(
     let timing = Instant::now();
 
     let res = dispatcher
-        .toc(&access, &pass)
+        .toc(auth.access(), &pass)
         .scroll(
             &collection.name,
             scroll_request,
             params.consistency,
             params.timeout(),
             shard_selection,
-            access,
+            auth.access().clone(),
             request_hw_counter.get_counter(),
         )
         .await;

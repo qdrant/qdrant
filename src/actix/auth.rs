@@ -9,14 +9,19 @@ use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 
 use super::helpers::HttpError;
-use crate::common::auth::{AuthError, AuthKeys};
+use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType};
 
-pub struct Auth {
+/// Actix middleware factory that validates API keys / JWTs and inserts an
+/// [`Auth`] object into request extensions.
+///
+/// Renamed from the previous `Auth` to avoid confusion with the new
+/// per-request [`Auth`] context type.
+pub struct AuthTransform {
     auth_keys: AuthKeys,
     whitelist: Vec<WhitelistItem>,
 }
 
-impl Auth {
+impl AuthTransform {
     pub fn new(auth_keys: AuthKeys, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             auth_keys,
@@ -25,7 +30,7 @@ impl Auth {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for Auth
+impl<S, B> Transform<S, ServiceRequest> for AuthTransform
 where
     S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B>>, Error = Error> + 'static,
     S::Future: 'static,
@@ -118,12 +123,14 @@ where
                 .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
                 .await
             {
-                Ok((access, inference_token)) => {
-                    let previous = req.extensions_mut().insert::<Access>(access);
+                Ok((access, inference_token, auth_type, subject)) => {
+                    let remote = req.peer_addr().map(|a| a.ip().to_string());
+                    let auth = Auth::new(access, subject, remote, auth_type);
+                    let previous = req.extensions_mut().insert(auth);
                     req.extensions_mut().insert(inference_token);
                     debug_assert!(
                         previous.is_none(),
-                        "Previous access object should not exist in the request"
+                        "Previous auth object should not exist in the request"
                     );
                     service.call(req).await
                 }
@@ -140,9 +147,12 @@ where
     }
 }
 
-pub struct ActixAccess(pub Access);
+/// Actix extractor that retrieves the per-request [`Auth`] context from
+/// request extensions.  When no authentication middleware is configured,
+/// a default [`Auth`] with full access is created.
+pub struct ActixAuth(pub Auth);
 
-impl FromRequest for ActixAccess {
+impl FromRequest for ActixAuth {
     type Error = Infallible;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -150,9 +160,17 @@ impl FromRequest for ActixAccess {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let access = req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
-            Access::full("All requests have full by default access when API key is not configured")
+        let auth = req.extensions_mut().remove::<Auth>().unwrap_or_else(|| {
+            let remote = req.peer_addr().map(|a| a.ip().to_string());
+            Auth::new(
+                Access::full(
+                    "All requests have full by default access when API key is not configured",
+                ),
+                None,
+                remote,
+                AuthType::None,
+            )
         });
-        ready(Ok(ActixAccess(access)))
+        ready(Ok(ActixAuth(auth)))
     }
 }

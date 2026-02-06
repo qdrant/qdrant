@@ -1,16 +1,16 @@
 use actix_web::{Responder, get, patch, web};
 use storage::rbac::AccessRequirements;
 
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::common::debugger::{DebugConfigPatch, DebuggerState};
 
 #[get("/debugger")]
 async fn get_debugger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     debugger_state: web::Data<DebuggerState>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "get_debugger_config")?;
         Ok(debugger_state.get_config())
     })
     .await
@@ -18,12 +18,12 @@ async fn get_debugger_config(
 
 #[patch("/debugger")]
 async fn update_debugger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     debugger_state: web::Data<DebuggerState>,
     debug_patch: web::Json<DebugConfigPatch>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "update_debugger_config")?;
         Ok(debugger_state.apply_config_patch(debug_patch.into_inner()))
     })
     .await

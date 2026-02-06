@@ -84,6 +84,7 @@ mod tests {
                 payload: None,
             }])),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 
@@ -114,6 +115,7 @@ mod tests {
                 })),
             }])),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 
@@ -135,6 +137,7 @@ mod tests {
             exp: Some(exp),
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
+            subject: None,
         };
 
         let token = create_token(&claims);
@@ -162,6 +165,7 @@ mod tests {
             exp: None,
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
+            subject: None,
         };
 
         let token = create_token(&claims);
@@ -179,6 +183,7 @@ mod tests {
             exp: None,
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 

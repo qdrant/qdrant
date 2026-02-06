@@ -167,6 +167,11 @@ fn main() -> anyhow::Result<()> {
 
     remove_started_file_indicator();
 
+    // Initialise audit logging (must happen after the logger is ready).
+    if let Err(err) = crate::common::audit::init_audit_logger(settings.audit.as_ref()) {
+        log::error!("Failed to initialise audit logger: {err}");
+    }
+
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     memory::madvise::set_global(settings.storage.mmap_advice);

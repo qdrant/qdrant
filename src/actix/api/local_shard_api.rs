@@ -18,7 +18,7 @@ use storage::rbac::{Access, AccessRequirements};
 use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
     self, get_request_hardware_counter, process_response, process_response_error,
 };
@@ -36,7 +36,7 @@ pub fn config_local_shard_api(cfg: &mut web::ServiceConfig) {
 #[post("/collections/{collection}/shards/{shard}/points")]
 async fn get_points(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     path: web::Path<CollectionShard>,
     request: web::Json<PointRequestInternal>,
     params: web::Query<ReadParams>,
@@ -54,13 +54,13 @@ async fn get_points(
     let timing = Instant::now();
 
     let records = query::do_get_points(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(auth.access(), &pass),
         &path.collection,
         request.into_inner(),
         params.consistency,
         params.timeout(),
         ShardSelectorInternal::ShardId(path.shard),
-        access,
+        auth.access().clone(),
         request_hw_counter.get_counter(),
     )
     .await
@@ -77,7 +77,7 @@ async fn get_points(
 #[post("/collections/{collection}/shards/{shard}/points/scroll")]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<ScrollRequestInternal>>,
     params: web::Query<ReadParams>,
@@ -95,7 +95,7 @@ async fn scroll_points(
         params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
-        &access,
+        auth.access(),
     )
     .await
     {
@@ -115,7 +115,7 @@ async fn scroll_points(
         Some(filter) => {
             get_hash_ring_filter(
                 &dispatcher,
-                &access,
+                auth.access(),
                 &path.collection.clone(),
                 AccessRequirements::new(),
                 filter.expected_shard_id,
@@ -131,13 +131,13 @@ async fn scroll_points(
     let res_future = hash_ring_filter.map(|hash_ring_filter| {
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
-        dispatcher.toc(&access, &pass).scroll(
+        dispatcher.toc(auth.access(), &pass).scroll(
             &path.collection,
             request,
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            access,
+            auth.access().clone(),
             request_hw_counter.get_counter(),
         )
     });
@@ -153,7 +153,7 @@ async fn scroll_points(
 #[post("/collections/{collection}/shards/{shard}/points/count")]
 async fn count_points(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
@@ -169,7 +169,7 @@ async fn count_points(
         params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
-        &access,
+        auth.access(),
     )
     .await
     {
@@ -190,7 +190,7 @@ async fn count_points(
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
-                &access,
+                auth.access(),
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
@@ -205,13 +205,13 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         query::do_count_points(
-            dispatcher.toc(&access, &pass),
+            dispatcher.toc(auth.access(), &pass),
             &path.collection,
             request,
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            access,
+            auth.access().clone(),
             hw_measurement_acc,
         )
         .await
@@ -233,7 +233,7 @@ pub struct CleanParams {
 #[post("/collections/{collection}/shards/{shard}/cleanup")]
 async fn cleanup_shard(
     dispatcher: web::Data<Dispatcher>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     path: web::Path<CollectionShard>,
     params: web::Query<CleanParams>,
 ) -> impl Responder {
@@ -244,8 +244,14 @@ async fn cleanup_shard(
         let path = path.into_inner();
         let timeout = params.timeout.map(|sec| Duration::from_secs(sec.get()));
         dispatcher
-            .toc(&access, &pass)
-            .cleanup_local_shard(&path.collection, path.shard, access, params.wait, timeout)
+            .toc(auth.access(), &pass)
+            .cleanup_local_shard(
+                &path.collection,
+                path.shard,
+                auth.access().clone(),
+                params.wait,
+                timeout,
+            )
             .await
     })
     .await

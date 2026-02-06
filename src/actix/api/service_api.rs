@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use validator::Validate;
 
 use super::CollectionPath;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
 use crate::common::metrics::MetricsData;
@@ -47,7 +47,7 @@ impl TelemetryParam {
 fn telemetry(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
         let anonymize = params.anonymize.unwrap_or(false);
@@ -62,7 +62,7 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .lock()
             .await
-            .prepare_data(&access, detail, None, params.timeout())
+            .prepare_data(auth.access(), detail, None, params.timeout())
             .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
@@ -91,9 +91,9 @@ async fn metrics(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
     config: Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
-    if let Err(err) = access.check_global_access(AccessRequirements::new()) {
+    if let Err(err) = auth.check_global_access(AccessRequirements::new(), "metrics") {
         return process_response_error(err, Instant::now(), None);
     }
 
@@ -102,7 +102,7 @@ async fn metrics(
         .lock()
         .await
         .prepare_data(
-            &access,
+            auth.access(),
             TelemetryDetail {
                 level: DetailsLevel::Level4,
                 histograms: true,
@@ -132,9 +132,9 @@ async fn metrics(
 }
 
 #[get("/stacktrace")]
-fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
+fn get_stacktrace(ActixAuth(auth): ActixAuth) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "get_stacktrace")?;
         Ok(get_stack_trace())
     })
 }
@@ -176,13 +176,13 @@ fn kubernetes_healthz() -> impl Responder {
 
 #[get("/logger")]
 async fn get_logger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     handle: web::Data<tracing::LoggerHandle>,
 ) -> impl Responder {
     let timing = Instant::now();
 
     let future = async {
-        let _ = access.check_global_access(AccessRequirements::new())?;
+        let _ = auth.check_global_access(AccessRequirements::new(), "get_logger_config")?;
         let config = handle.get_config().await;
         Ok(config)
     };
@@ -192,14 +192,15 @@ async fn get_logger_config(
 
 #[post("/logger")]
 async fn update_logger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     handle: web::Data<tracing::LoggerHandle>,
     mut config: web::Json<tracing::LoggerConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
 
     let future = async {
-        let _ = access.check_global_access(AccessRequirements::new().manage())?;
+        let _ =
+            auth.check_global_access(AccessRequirements::new().manage(), "update_logger_config")?;
 
         // Log file can only be set in Qdrant config file
         config.on_disk.log_file = None;
@@ -226,17 +227,17 @@ async fn truncate_unapplied_wal(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     params: Query<TruncateUnappliedWalParams>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let future = async move {
-        let collection_pass = access
-            .check_global_access(AccessRequirements::new().manage())?
+        let collection_pass = auth
+            .check_global_access(AccessRequirements::new().manage(), "truncate_unapplied_wal")?
             .issue_pass(&collection.name)
             .into_static();
 
         let pass = new_unchecked_verification_pass();
         let collection = dispatcher
-            .toc(&access, &pass)
+            .toc(auth.access(), &pass)
             .get_collection(&collection_pass)
             .await?;
 

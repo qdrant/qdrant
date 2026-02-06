@@ -17,9 +17,10 @@ use storage::content_manager::snapshots;
 use storage::content_manager::snapshots::download_result::DownloadResult;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::AccessRequirements;
 use tokio::sync::OwnedRwLockWriteGuard;
 
+use super::auth::Auth;
 use super::http_client::HttpClient;
 
 /// # Cancel safety
@@ -27,12 +28,15 @@ use super::http_client::HttpClient;
 /// This function is cancel safe.
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
-    access: Access,
+    auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
+    let collection_pass = auth.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().extras(),
+        "create_shard_snapshot",
+    )?;
     let collection = toc.get_collection(&collection_pass).await?;
 
     let _telemetry_scope_guard = toc
@@ -52,13 +56,16 @@ pub async fn create_shard_snapshot(
 /// This function is cancel safe.
 pub async fn stream_shard_snapshot(
     toc: Arc<TableOfContent>,
-    access: Access,
+    auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
     manifest: Option<SnapshotManifest>,
 ) -> Result<SnapshotStream, StorageError> {
-    let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
+    let collection_pass = auth.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().extras(),
+        "stream_shard_snapshot",
+    )?;
 
     let collection = toc.get_collection(&collection_pass).await?;
 
@@ -100,12 +107,15 @@ pub async fn stream_shard_snapshot(
 /// This function is cancel safe.
 pub async fn list_shard_snapshots(
     toc: Arc<TableOfContent>,
-    access: Access,
+    auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    let collection_pass =
-        access.check_collection_access(&collection_name, AccessRequirements::new().extras())?;
+    let collection_pass = auth.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().extras(),
+        "list_shard_snapshots",
+    )?;
     let collection = toc.get_collection(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -116,13 +126,16 @@ pub async fn list_shard_snapshots(
 /// This function is cancel safe.
 pub async fn delete_shard_snapshot(
     toc: Arc<TableOfContent>,
-    access: Access,
+    auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequirements::new().write().extras())?;
+    let collection_pass = auth.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().extras(),
+        "delete_shard_snapshot",
+    )?;
     let collection = toc.get_collection(&collection_pass).await?;
     let snapshot_manager = collection.get_snapshots_storage_manager()?;
 
@@ -144,7 +157,7 @@ pub async fn delete_shard_snapshot(
 #[allow(clippy::too_many_arguments)]
 pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
-    access: Access,
+    auth: &Auth,
     collection_name: String,
     shard_id: ShardId,
     snapshot_location: ShardSnapshotLocation,
@@ -153,8 +166,8 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
     api_key: Option<String>,
 ) -> Result<(), StorageError> {
-    let collection_pass = access
-        .check_global_access(AccessRequirements::new().manage())?
+    let collection_pass = auth
+        .check_global_access(AccessRequirements::new().manage(), "recover_shard_snapshot")?
         .issue_pass(&collection_name)
         .into_static();
 
@@ -392,15 +405,18 @@ pub async fn try_take_partial_snapshot_recovery_lock(
     dispatcher: &Dispatcher,
     collection_name: &str,
     shard_id: ShardId,
-    access: &Access,
+    auth: &Auth,
     pass: &VerificationPass,
 ) -> Result<Option<OwnedRwLockWriteGuard<()>>, StorageError> {
-    let collection_pass = access
-        .check_global_access(AccessRequirements::new().manage())?
+    let collection_pass = auth
+        .check_global_access(
+            AccessRequirements::new().manage(),
+            "partial_snapshot_recovery_lock",
+        )?
         .issue_pass(collection_name);
 
     let recovery_lock = dispatcher
-        .toc(access, pass)
+        .toc(auth.access(), pass)
         .get_collection(&collection_pass)
         .await?
         .try_take_partial_snapshot_recovery_lock(shard_id, RecoveryType::Partial)

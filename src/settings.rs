@@ -12,6 +12,7 @@ use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::{Validate, ValidationError};
 
+use crate::common::audit::AuditConfig;
 use crate::common::debugger::DebuggerConfig;
 use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
@@ -247,6 +248,9 @@ pub struct Settings {
     pub gpu: Option<GpuConfig>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    /// Audit logging configuration.
+    #[serde(default)]
+    pub audit: Option<AuditConfig>,
 }
 
 impl Settings {
