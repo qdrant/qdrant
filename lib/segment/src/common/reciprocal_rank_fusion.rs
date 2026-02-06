@@ -15,13 +15,17 @@ pub const DEFAULT_RRF_K: usize = 2;
 
 /// Compute the RRF score for a given position with optional weight.
 ///
-/// The formula is: `1.0 / (position * (1.0 / weight) + k)`
+/// The formula is: `1.0 / ((position + 1) as f32 / weight + k as f32 - 1.0)`
 ///
 /// With weight=1.0 (default), this becomes the standard RRF formula: `1.0 / (position + k)`
 ///
-/// Higher weights give more influence to a source. For example, with weight=3.0:
-/// - Position 0 in source with weight 3 has score: 1.0 / (0 * (1/3) + k) = 1.0 / k
-/// - Position 3 in source with weight 3 has score: 1.0 / (3 * (1/3) + k) = 1.0 / (1 + k)
+/// Higher or lower weight means the positions are "compressed" or "stretched":
+///
+/// weight=3.0 is equivalent to dividing the position by 3,
+///            so element at pos 3 contributes like pos 1 would with weight=1.0.
+///
+/// `(position + 1)` accounts for 0-based indexing,
+///  so weight affects the score of the top-ranked item (pos=0) as well.
 ///
 /// This means a 3:1 weight ratio is equivalent to "for each 3 results of first prefetch,
 /// have one result of second".
@@ -30,7 +34,8 @@ fn position_score(position: usize, k: usize, weight: f32) -> f32 {
     if weight <= 0.0 {
         return 0.0;
     }
-    1.0 / (position as f32 / weight + k as f32)
+
+    1.0 / ((position + 1) as f32 / weight + k as f32 - 1.0)
 }
 
 /// Compute RRF scores for multiple results from different sources.

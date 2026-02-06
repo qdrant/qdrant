@@ -134,7 +134,7 @@ def reciprocal_rank_fusion(
     def compute_score(pos: int, weight: float = 1.0) -> float:
         if weight <= 0:
             return 0.0
-        return 1 / (pos * (1.0 / weight) + ranking_constant)
+        return 1 / ((pos + 1.0) / weight + ranking_constant - 1.0)
 
     scores: Dict[Any, float] = {} # id -> score
     point_pile = {}
