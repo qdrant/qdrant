@@ -7,7 +7,7 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::forward_proxy_shard::ForwardProxyShard;
+use crate::shards::forward_proxy_shard::{ForwardProxyShard, TransferBatchResult};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -355,7 +355,7 @@ impl ShardReplicaSet {
         batch_size: usize,
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
-    ) -> CollectionResult<(Option<PointIdType>, usize)> {
+    ) -> CollectionResult<TransferBatchResult> {
         let local = self.local.read().await;
 
         let Some(Shard::ForwardProxy(proxy)) = local.deref() else {

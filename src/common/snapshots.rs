@@ -9,6 +9,7 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
+use collection::shards::transfer::RecoveryStage;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
@@ -161,13 +162,26 @@ pub async fn recover_shard_snapshot(
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let cancel_safe = async {
+        let pre_recovery_task = async {
             let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
             // Default temporary path to storage dir, to allow faster recovery within the same volume
             let download_dir = toc.optional_temp_or_storage_temp_path()?;
+            Result::<_, StorageError>::Ok((collection, download_dir))
+        };
 
+        let (collection, download_dir) =
+            cancel::future::cancel_on_token(cancel.clone(), pre_recovery_task).await??;
+
+        // Once recovery tracking starts, `finish_shard_recovery` must run on all paths
+        let recovery_progress = collection
+            .shards_holder()
+            .read()
+            .await
+            .start_shard_recovery(shard_id);
+
+        let download_task = async {
             let DownloadResult {
                 snapshot,
                 hash
@@ -182,8 +196,11 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
 
-                    let client = client.client(api_key.as_deref())?;
+                    recovery_progress
+                        .lock()
+                        .set_stage(RecoveryStage::Downloading);
 
+                    let client = client.client(api_key.as_deref())?;
                     snapshots::download::download_snapshot(
                         &client,
                         url,
@@ -237,14 +254,14 @@ pub async fn recover_shard_snapshot(
                 }
             }
 
-            Ok((collection, snapshot))
+            Ok(snapshot)
         };
 
-        let (collection, snapshot_data) =
-            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+        let snapshot_data =
+            cancel::future::cancel_on_token(cancel.clone(), download_task).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
-        recover_shard_snapshot_impl(
+        let result = recover_shard_snapshot_impl(
             &toc,
             &collection,
             shard_id,
@@ -253,7 +270,16 @@ pub async fn recover_shard_snapshot(
             RecoveryType::Full,
             cancel,
         )
-        .await
+        .await;
+
+        // Finish tracking recovery progress
+        collection
+            .shards_holder()
+            .read()
+            .await
+            .finish_shard_recovery(shard_id);
+
+        result
     })
     .await??;
 

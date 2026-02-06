@@ -131,12 +131,12 @@ pub(super) async fn transfer_stream_records(
             )));
         };
 
-        let (new_offset, count) = replica_set
+        let result = replica_set
             .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
             .await?;
 
-        offset = new_offset;
-        progress.lock().add(count);
+        offset = result.next_page_offset;
+        progress.lock().add(result.count);
 
         #[cfg(feature = "staging")]
         if let Some(delay) = staging_delay {

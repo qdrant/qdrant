@@ -250,7 +250,7 @@ fn aggregate_shard_transfers(
             })
     };
 
-    let get_transfer_from_source = |base_transfer: &ShardTransferInfo| {
+    let find_transfer = |peer_id, base_transfer: &ShardTransferInfo| {
         let ShardTransferInfo {
             shard_id,
             to_shard_id,
@@ -261,7 +261,7 @@ fn aggregate_shard_transfers(
             comment: _,
         } = base_transfer;
 
-        get_transfers(*from)?.iter().find(|t| {
+        get_transfers(peer_id)?.iter().find(|t| {
             t.from == *from
                 && t.to == *to
                 && t.shard_id == *shard_id
@@ -273,14 +273,25 @@ fn aggregate_shard_transfers(
         return Vec::new();
     };
 
-    // Try to use the information from the source peer (transfer.from),
-    // otherwise, use the one from the base telemetry
+    // Prefer source peer's transfer info, merge destination's comment if available
     base_transfers
         .iter()
         .map(|base_transfer| {
-            get_transfer_from_source(base_transfer)
+            let mut transfer = find_transfer(base_transfer.from, base_transfer)
                 .cloned()
-                .unwrap_or_else(|| base_transfer.clone())
+                .unwrap_or_else(|| base_transfer.clone());
+
+            // Append destination peer's comment if available
+            if let Some(dst_transfer) = find_transfer(base_transfer.to, base_transfer)
+                && let Some(ref dst_comment) = dst_transfer.comment
+            {
+                transfer.comment = Some(match transfer.comment {
+                    Some(src_comment) => format!("{src_comment} | {dst_comment}"),
+                    None => dst_comment.clone(),
+                });
+            }
+
+            transfer
         })
         .collect()
 }
