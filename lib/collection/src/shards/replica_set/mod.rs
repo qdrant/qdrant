@@ -1317,7 +1317,11 @@ impl ShardReplicaSet {
                     let mut total_payload_size = 0;
                     let mut total_points = 0;
 
-                    for (_, segment) in local.segments.read().iter() {
+                    // Collect the segments first so we don't have the segment holder locked for the entire duration of the loop.
+                    let segments: Vec<_> =
+                        local.segments.read().iter().map(|i| i.1).cloned().collect();
+
+                    for segment in segments {
                         let size_info = segment.get().read().size_info();
                         total_vector_size += size_info.vectors_size_bytes;
                         total_payload_size += size_info.payloads_size_bytes;
