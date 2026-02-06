@@ -9,8 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::disk::dir_disk_size;
 use common::progress_tracker::ProgressTracker;
+use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
@@ -211,7 +214,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let indexing_permit = resource_budget
         .replace_with(permit, desired_cpus, 0, stopped)
         .map_err(|_| {
-            segment::common::operation_error::OperationError::service_error(
+            segment::common::operation_error::OperationError::cancelled(
                 "optimization cancelled while waiting for budget",
             )
         })?;
@@ -351,10 +354,99 @@ fn finish_optimization(
     Ok(point_count)
 }
 
+/// Returns error if segment size is larger than available disk space
+fn check_segments_size(
+    optimizer_name: &str,
+    optimizing_segments: &[LockedSegment],
+    temp_path: &Path,
+) -> OperationResult<()> {
+    let mut space_occupied = Some(0u64);
+
+    for segment in optimizing_segments {
+        match segment {
+            LockedSegment::Original(segment) => {
+                let locked_segment = segment.read();
+                space_occupied =
+                    space_occupied.and_then(|acc| match dir_disk_size(locked_segment.data_path()) {
+                        Ok(size) => Some(size + acc),
+                        Err(err) => {
+                            log::debug!(
+                                "Could not estimate size of segment `{}`: {}",
+                                locked_segment.data_path().display(),
+                                err
+                            );
+                            None
+                        }
+                    });
+            }
+            LockedSegment::Proxy(_) => {
+                return Err(
+                    segment::common::operation_error::OperationError::service_error(
+                        "Proxy segment is not expected here",
+                    ),
+                );
+            }
+        }
+    }
+
+    let space_needed = space_occupied.map(|x| 2 * x);
+
+    if !temp_path.exists() {
+        fs::create_dir_all(temp_path).map_err(|err| {
+            segment::common::operation_error::OperationError::service_error(format!(
+                "Could not create temp directory `{}`: {}",
+                temp_path.display(),
+                err
+            ))
+        })?;
+    }
+
+    let space_available = match fs4::available_space(temp_path) {
+        Ok(available) => Some(available),
+        Err(err) => {
+            log::debug!(
+                "Could not estimate available storage space in `{}`: {}",
+                temp_path.display(),
+                err
+            );
+            None
+        }
+    };
+
+    match (space_available, space_needed) {
+        (Some(space_available), Some(space_needed)) => {
+            if space_needed > 0 {
+                log::debug!(
+                    "Available space: {}, needed for optimization: {}",
+                    bytes_to_human(space_available as usize),
+                    bytes_to_human(space_needed as usize),
+                );
+            }
+            if space_available < space_needed {
+                return Err(
+                    segment::common::operation_error::OperationError::service_error(format!(
+                        "Not enough space available for optimization, needed: {}, available: {}",
+                        bytes_to_human(space_needed as usize),
+                        bytes_to_human(space_available as usize),
+                    )),
+                );
+            }
+        }
+        _ => {
+            log::warn!(
+                "Could not estimate available storage space in `{}`; will try optimizing anyway",
+                optimizer_name,
+            );
+        }
+    }
+
+    Ok(())
+}
+
 /// Performs optimization of segments (merge / reindex / vacuum, etc.)
 #[allow(clippy::too_many_arguments)]
 pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
-    _optimizer_name: &'static str,
+    optimizer_name: &'static str,
     segment_holder: LockedSegmentHolder,
     input_segment_ids: Vec<SegmentId>,
     output_segment_uuid: Uuid,
@@ -396,6 +488,8 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     if !all_segments_ok {
         return Ok(OptimizationResult { points_count: 0 });
     }
+
+    check_segments_size(optimizer_name, &input_segments, &paths.temp_path)?;
 
     check_process_stopped(stopped)?;
 
@@ -490,7 +584,10 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         all_removed_points
     };
 
-    check_process_stopped(stopped)?;
+    if let Err(err) = check_process_stopped(stopped) {
+        unwrap_proxy(&segment_holder, &proxy_ids)?;
+        return Err(err.into());
+    }
 
     // Fast part: propagate remaining changes and swap segments
     let points_count = match finish_optimization(
