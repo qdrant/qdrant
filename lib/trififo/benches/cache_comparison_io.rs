@@ -118,14 +118,24 @@ impl Controller for ControllerDumb {
     }
 }
 
+/// [`trififo::Lifecycle`] impl that pushes evicted offsets back to `unused_offsets`.
+#[derive(Clone)]
+struct ControllerTrififoLifecycle {
+    unused_offsets: Arc<Mutex<VecDeque<u32>>>,
+}
+
+impl trififo::lifecycle::Lifecycle<u32, u32> for ControllerTrififoLifecycle {
+    fn on_evict(&self, _key: u32, val: u32) {
+        self.unused_offsets.lock().unwrap().push_back(val);
+    }
+}
+
 /// [`trififo`] based controller.
 #[derive(Clone)]
 struct ControllerTrififo {
     storages: Arc<Storages>,
-    cache: Arc<trififo::Cache<u32, u32>>,
+    cache: Arc<trififo::Cache<u32, u32, ControllerTrififoLifecycle>>,
     unused_offsets: Arc<Mutex<VecDeque<u32>>>,
-    capacity: usize,
-    counter: Arc<AtomicUsize>,
 }
 
 impl Controller for ControllerTrififo {
@@ -133,12 +143,19 @@ impl Controller for ControllerTrififo {
         // This is a hack to force the cache to evict a bit earlier.
         let safety_margin = 1_000;
 
+        let unused_offsets = Arc::new(Mutex::new((0..item_count as u32).rev().collect()));
+
         Self {
             storages,
-            cache: Arc::new(trififo::Cache::new(item_count - safety_margin)),
-            unused_offsets: Arc::new(Mutex::new((0..item_count as u32).rev().collect())),
-            capacity: item_count,
-            counter: Arc::new(AtomicUsize::new(0)),
+            cache: Arc::new(trififo::Cache::with_config(
+                item_count - safety_margin,
+                0.1,
+                0.9,
+                ControllerTrififoLifecycle {
+                    unused_offsets: Arc::clone(&unused_offsets),
+                },
+            )),
+            unused_offsets,
         }
     }
 
@@ -155,13 +172,12 @@ impl Controller for ControllerTrififo {
                     .read_from_slow_storage(key, &mut uninit_buffer);
                 f(buffer);
 
-                let mut unused_offsets = self.unused_offsets.lock().unwrap();
-                let offset = unused_offsets.pop_front().unwrap_or_else(|| {
-                    // FIXME: we need to somehow re-populate unused_offsets on eviction.
-                    // But for now, just use a counter. (expect errors)
-                    let cnt = self.counter.fetch_add(1, Ordering::Relaxed);
-                    (cnt % self.capacity) as u32
-                });
+                let offset = self
+                    .unused_offsets
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("No unused offsets available");
 
                 self.storages.write_to_local_ssd(offset, buffer);
                 self.cache.insert(key, offset);
