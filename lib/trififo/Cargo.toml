@@ -21,7 +21,12 @@ hashbrown = "0.16.1"
 parking_lot = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+fs-err = { workspace = true }
 itertools = { workspace = true }
+memmap2 = { workspace = true }
+nix = { workspace = true }
 strum = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
@@ -46,4 +51,8 @@ tokio = { workspace = true }
 
 [[bench]]
 name = "cache_comparison"
+harness = false
+
+[[bench]]
+name = "cache_comparison_io"
 harness = false

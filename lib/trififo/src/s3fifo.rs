@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::hash::{BuildHasher, Hash};
 
 use hashbrown::HashTable;
@@ -14,11 +13,6 @@ pub(crate) struct S3Fifo<K, V, L, S = ahash::RandomState> {
 
     /// The actual FIFO structures (small, ghost, main).
     fifos: RawFifos<K, V>,
-
-    /// Insertion guards. These guard a particular key, such that readers wait
-    /// until it gets actually inserted, as to not cause
-    /// double fetching of the resource.
-    guarded_inserts: HashSet<K, S>,
 
     /// Lifecycle impl for hooking up to events
     lifecycle: L,
@@ -77,14 +71,6 @@ where
     pub fn get(&self, key: &K) -> Option<V> {
         let hash = self.hash_key(key);
 
-        loop {
-            if self.guarded_inserts.contains(key) {
-                std::thread::yield_now();
-                continue;
-            }
-            break;
-        }
-
         let global_offset = self
             .hashtable
             .find(hash, |global_offset| self.fifos.key_eq(*global_offset, key))?;
@@ -96,13 +82,6 @@ where
         Some(entry.value.clone())
     }
 
-    pub fn get_or_guard(&self, key: &K) -> Option<V> {
-        self.get(key).or_else(|| {
-            // Insert a guard for this key to prevent other threads from inserting it concurrently.
-            self.guarded_inserts.insert(*key);
-            None
-        })
-    }
 
     /// Entrypoint insert implementation
     pub fn do_insert(&mut self, key: K, value: V) {
@@ -119,9 +98,6 @@ where
         let entry = Entry::new(key, value);
         let local = self.push_to_small_queue(entry);
         self.insert_unique_to_hashtable(&key, local);
-
-        // Remove insertion guard
-        self.guarded_inserts.remove(&key);
     }
 
     /// Promote existing entry or increment recency.
@@ -295,12 +271,6 @@ mod tests {
     /// Note: With capacity 100 and small_ratio 0.1, small queue = 10 slots
     fn create_cache(capacity: usize) -> S3Fifo<u64, String, NoLifecycle> {
         S3Fifo::new(capacity, 0.1, 0.9, NoLifecycle)
-    }
-
-    /// Helper to create a cache where small queue has more slots for basic tests
-    /// With capacity 100 and small_ratio 0.2, small queue = 20 slots
-    fn create_cache_with_larger_small(capacity: usize) -> S3Fifo<u64, String, NoLifecycle> {
-        S3Fifo::new(capacity, 0.2, 0.9, NoLifecycle)
     }
 
     // ==================== Basic Operations ====================

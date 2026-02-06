@@ -11,10 +11,11 @@
 //! - Single-threaded latency (insert/get operations)
 //! - Multi-threaded latency (16 threads)
 
-use std::alloc;
+use std::{alloc, thread};
 use std::hash::{Hash, Hasher};
 use std::hint::black_box;
 use std::sync::Arc;
+use std::time::Duration;
 
 use cap::Cap;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -23,7 +24,7 @@ use foyer::{EvictionConfig, S3FifoConfig};
 use itertools::Itertools;
 #[cfg(feature = "bench_all")]
 use parking_lot::Mutex;
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 use quick_cache::sync::Cache as QuickCache;
 use rand::distr::Distribution;
 use rand::rngs::StdRng;
@@ -159,12 +160,12 @@ trait CacheBench: Send + Sync {
 }
 
 // Quick Cache wrapper
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 struct QuickCacheWrapper {
     cache: QuickCache<Key, u32>,
 }
 
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 impl QuickCacheWrapper {
     fn new(capacity: usize) -> Self {
         let options = quick_cache::OptionsBuilder::new()
@@ -184,7 +185,7 @@ impl QuickCacheWrapper {
     }
 }
 
-#[cfg(feature = "bench_all")]
+// #[cfg(feature = "bench_all")]
 impl CacheBench for QuickCacheWrapper {
     fn insert(&self, key: Key, value: u32) {
         self.cache.insert(key, value);
@@ -196,7 +197,10 @@ impl CacheBench for QuickCacheWrapper {
 
     fn get_or_insert(&self, key: Key, value: u32) -> u32 {
         self.cache
-            .get_or_insert_with(&key, || Ok::<_, ()>(value))
+            .get_or_insert_with(&key, || {
+                thread::sleep(Duration::from_micros(10));
+                Ok::<_, ()>(value)
+            })
             .unwrap()
     }
 }
@@ -298,11 +302,12 @@ impl CacheBench for TrififoWrapper {
     }
 
     fn get_or_insert(&self, key: Key, value: u32) -> u32 {
-        if let Some(value) = self.get(&key) {
-            value
-        } else {
-            self.insert(key, value);
-            value
+        match self.cache.get_or_guard(&key) {
+            trififo::GetOrGuard::Found(value) => value,
+            trififo::GetOrGuard::Guard(cache_guard) => {
+                std::thread::sleep(Duration::from_micros(10));
+                cache_guard.insert(value)
+            },
         }
     }
 }
@@ -575,10 +580,10 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 // =============================================================================
 
 fn bench_all(c: &mut Criterion) {
-    test_memory_usage();
-    test_hit_ratio();
+    // test_memory_usage();
+    // test_hit_ratio();
 
-    bench_single_thread_latency(c);
+    // bench_single_thread_latency(c);
     bench_multi_thread_latency(c);
 }
 

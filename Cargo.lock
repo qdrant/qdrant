@@ -7960,11 +7960,16 @@ name = "trififo"
 version = "0.0.0"
 dependencies = [
  "ahash",
+ "anyhow",
  "cap",
+ "clap",
  "criterion",
  "foyer",
+ "fs-err",
  "hashbrown 0.16.1",
  "itertools 0.14.0",
+ "memmap2",
+ "nix 0.31.1",
  "parking_lot",
  "quick_cache",
  "rand 0.9.2",
