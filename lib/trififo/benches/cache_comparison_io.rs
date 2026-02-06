@@ -320,9 +320,14 @@ fn run_experiment<C: Controller>(args: Args) -> anyhow::Result<()> {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    let flags = nix::libc::O_DIRECT;
+    #[cfg(target_os = "macos")]
+    let flags = nix::libc::F_NOCACHE;
+
     let network_attached_file = File::options()
         .read(true)
-        .custom_flags(nix::libc::O_DIRECT)
+        .custom_flags(flags)
         .open(&args.network_attached_path)
         .expect("Failed to open network-attached file");
 
