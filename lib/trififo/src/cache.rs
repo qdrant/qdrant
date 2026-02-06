@@ -1,4 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
+use std::sync::atomic::AtomicBool;
 
 use parking_lot::Mutex;
 
