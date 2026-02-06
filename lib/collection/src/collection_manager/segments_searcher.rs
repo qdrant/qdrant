@@ -219,12 +219,18 @@ impl SegmentsSearcher {
 
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            // Unfortunately, we have to do `segments.read()` twice, once in blocking task
-            // and once here, due to `Send` bounds :/
-            let Some(segments_lock) = segments.try_read_for(timeout) else {
-                return Err(CollectionError::timeout(timeout, "search"));
+            let segments: Vec<_> = {
+                // Unfortunately, we have to do `segments.read()` twice, once in blocking task
+                // and once here, due to `Send` bounds :/
+                let Some(segments_lock) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(timeout, "search"));
+                };
+
+                // Collect the segments first so we don't lock the segment holder during the operations.
+                segments_lock
+                    .non_appendable_then_appendable_segments()
+                    .collect()
             };
-            let segments = segments_lock.non_appendable_then_appendable_segments();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
@@ -234,10 +240,11 @@ impl SegmentsSearcher {
             // - more than 1 segment
             // - segments are not empty
             let use_sampling = sampling_enabled
-                && segments_lock.len() > 1
+                && segments.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
             segments
+                .into_iter()
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
                     // update timeout
@@ -409,15 +416,22 @@ impl SegmentsSearcher {
         let filter = filter.cloned();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
-            let segments = match timeout {
-                None => Ok(segments.read()),
-                Some(t) => segments
-                    .try_read_for(t)
-                    .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
-            }?;
+
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            let segments: Vec<_> = {
+                match timeout {
+                    None => Ok(segments.read()),
+                    Some(t) => segments
+                        .try_read_for(t)
+                        .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
+                }?
+                .non_appendable_then_appendable_segments()
+                .collect()
+            };
+
             let hw_counter = hw_measurement_acc.get_counter_cell();
             let all_points: BTreeSet<_> = segments
-                .non_appendable_then_appendable_segments()
+                .into_iter()
                 .flat_map(|segment| {
                     segment.get().read().read_filtered(
                         None,
@@ -446,11 +460,18 @@ impl SegmentsSearcher {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let Some(segments_guard) = segments.try_read_for(timeout) else {
-                return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
+            let segments: Vec<_> = {
+                let Some(segments_guard) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
+                };
+                // Collect the segments first so we don't lock the segment holder during the operations.
+                segments_guard
+                    .non_appendable_then_appendable_segments()
+                    .collect()
             };
-            segments_guard
-                .non_appendable_then_appendable_segments()
+
+            segments
+                .into_iter()
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();

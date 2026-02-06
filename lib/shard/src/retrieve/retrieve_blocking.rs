@@ -8,6 +8,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{PointIdType, SeqNumberType, WithPayload, WithVector};
 
 use crate::retrieve::record_internal::RecordInternal;
+use crate::segment_holder::SegmentHolder;
 use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn retrieve_blocking(
@@ -24,11 +25,7 @@ pub fn retrieve_blocking(
 
     let hw_counter = hw_measurement_acc.get_counter_cell();
 
-    let Some(segments_guard) = segments.try_read_for(timeout) else {
-        return Err(OperationError::timeout(timeout, "retrieve points"));
-    };
-
-    segments_guard.read_points(points, is_stopped, |ids, segment| {
+    SegmentHolder::read_points_locked(&segments, points, is_stopped, timeout, |ids, segment| {
         let mut newer_version_points: Vec<_> = Vec::with_capacity(ids.len());
 
         let mut applied = 0;
