@@ -48,6 +48,13 @@ impl Auth {
         &self.access
     }
 
+    pub fn logged_access(&self, method: &str) -> &Access {
+        // Gives direct access to the inner `Access` object,
+        // but also emits an audit log entry with "ok" status.
+        self.emit_audit(method, None, &Ok(()));
+        &self.access
+    }
+
     // ------------------------------------------------------------------
     // Wrapped access-check methods with audit logging
     // ------------------------------------------------------------------

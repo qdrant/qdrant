@@ -210,6 +210,8 @@ async fn get_cluster_telemetry(
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
         let toc = dispatcher.toc(&auth, &pass);
+        let access = auth.logged_access("cluster_telemetry");
+
         let channel_service = toc.get_channel_service();
 
         let details_level = params
@@ -217,7 +219,7 @@ async fn get_cluster_telemetry(
             .unwrap_or_default()
             .max(MIN_CLUSTER_TELEMETRY_DETAILS_LEVEL);
 
-        let collections_selector = match auth.access() {
+        let collections_selector = match access {
             Access::Global(_) => None,
             Access::Collection(access_list) => {
                 let list = access_list
@@ -280,7 +282,7 @@ async fn get_cluster_telemetry(
         }
 
         let distributed_telemetry =
-            DistributedTelemetryData::resolve_telemetries(&auth, telemetries, missing_peers)?;
+            DistributedTelemetryData::resolve_telemetries(access, telemetries, missing_peers)?;
 
         Ok(distributed_telemetry)
     })
