@@ -693,8 +693,24 @@ impl LocalShard {
             .applied_seq_handler
             .op_num_upper_bound()
             .unwrap_or(last_wal_index);
+
+        // Cap the number of WAL entries to move to the update queue size,
+        // since the update queue is limited and must hold all pending operations.
+        let update_queue_size = self.update_sender.load().capacity();
+        let to = std::cmp::max(
+            to,
+            last_wal_index.saturating_sub(update_queue_size as u64 - 1),
+        );
+
         let to = std::cmp::min(to, last_wal_index);
         let wal_entries_to_replay = to - from;
+
+        assert!(
+            last_wal_index - to <= update_queue_size as u64,
+            "Pending WAL entries ({}) exceed the update queue size ({})",
+            last_wal_index - to,
+            update_queue_size
+        );
 
         let bar = ProgressBar::new(wal_entries_to_replay);
 
