@@ -15,7 +15,7 @@ use segment::types::ShardKey;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::{Access, CollectionMultipass};
+use crate::rbac::{Access, Auth, CollectionMultipass};
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -76,10 +76,10 @@ impl Dispatcher {
     pub async fn submit_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        access: Access,
+        auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        access.check_collection_meta_operation(&operation)?;
+        auth.check_collection_meta_operation(&operation, "submit_collection_meta_op")?;
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {

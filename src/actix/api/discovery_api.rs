@@ -35,7 +35,7 @@ async fn discover_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -64,7 +64,7 @@ async fn discover_points(
             discover_request,
             params.consistency,
             shard_selection,
-            auth.access().clone(),
+            auth.clone(),
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -95,7 +95,7 @@ async fn discover_batch_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -116,7 +116,7 @@ async fn discover_batch_points(
         &collection.name,
         request,
         params.consistency,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )

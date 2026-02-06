@@ -43,7 +43,7 @@ async fn search_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -71,7 +71,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -119,7 +119,7 @@ async fn batch_search_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -141,7 +141,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -180,7 +180,7 @@ async fn search_point_groups(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -207,7 +207,7 @@ async fn search_point_groups(
         search_group_request,
         params.consistency,
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -235,7 +235,7 @@ async fn search_points_matrix_pairs(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -262,7 +262,7 @@ async fn search_points_matrix_pairs(
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -291,7 +291,7 @@ async fn search_points_matrix_offsets(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -318,7 +318,7 @@ async fn search_points_matrix_offsets(
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )

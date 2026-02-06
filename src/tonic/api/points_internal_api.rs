@@ -26,7 +26,7 @@ use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth, AuthType};
 use tonic::{Request, Response, Status};
 
 use super::query_common::*;
@@ -38,7 +38,9 @@ use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 
-const FULL_ACCESS: Access = Access::full("Internal API");
+fn full_internal_auth() -> Auth {
+    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+}
 
 /// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {
@@ -72,7 +74,7 @@ impl PointsInternalService {
             self.toc.clone(),
             sync_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params,
         )
         .await?
@@ -102,7 +104,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
         )
@@ -129,7 +131,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -156,7 +158,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
         )
@@ -183,7 +185,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -209,7 +211,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -235,7 +237,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -261,7 +263,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -287,7 +289,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             clear_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -662,7 +664,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             timeout,
             hw_data,
         )
@@ -694,7 +696,7 @@ impl PointsInternal for PointsInternalService {
         let res = recommend(
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await?;
@@ -726,7 +728,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             scroll_points,
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await
@@ -756,7 +758,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             get_points,
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await
@@ -782,7 +784,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
-            &FULL_ACCESS,
+            &full_internal_auth(),
             hw_data,
         )
         .await?;

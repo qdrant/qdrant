@@ -16,7 +16,7 @@ use storage::content_manager::collection_verification::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::Auth;
 use tokio::time::Instant;
 
 use super::CollectionPath;
@@ -44,7 +44,7 @@ async fn recommend_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -73,7 +73,7 @@ async fn recommend_points(
             recommend_request,
             params.consistency,
             shard_selection,
-            auth.access().clone(),
+            auth.clone(),
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -93,7 +93,7 @@ async fn do_recommend_batch_points(
     collection_name: &str,
     request: RecommendRequestBatch,
     read_consistency: Option<ReadConsistency>,
-    access: Access,
+    auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
@@ -114,7 +114,7 @@ async fn do_recommend_batch_points(
         collection_name,
         requests,
         read_consistency,
-        access,
+        auth,
         timeout,
         hw_measurement_acc,
     )
@@ -135,7 +135,7 @@ async fn recommend_batch_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -156,7 +156,7 @@ async fn recommend_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -195,7 +195,7 @@ async fn recommend_point_groups(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -222,7 +222,7 @@ async fn recommend_point_groups(
         recommend_group_request,
         params.consistency,
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         params.timeout(),
         request_hw_counter.get_counter(),
     )

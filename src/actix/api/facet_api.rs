@@ -35,7 +35,7 @@ async fn facet(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -64,7 +64,7 @@ async fn facet(
             facet_params,
             shard_selection,
             params.consistency,
-            auth.access().clone(),
+            auth.clone(),
             params.timeout(),
             request_hw_counter.get_counter(),
         )

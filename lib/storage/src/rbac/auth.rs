@@ -1,9 +1,8 @@
 use chrono::Utc;
-use storage::content_manager::errors::StorageError;
-use storage::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 
-use super::AuthType;
-use crate::common::audit::{AuditEvent, audit_log, is_audit_enabled};
+use super::{Access, AccessRequirements, AuthType, CollectionMultipass, CollectionPass};
+use crate::audit::{AuditEvent, audit_log, is_audit_enabled};
+use crate::content_manager::errors::StorageError;
 
 /// Per-request authentication context.
 ///
@@ -20,7 +19,7 @@ pub struct Auth {
 }
 
 impl Auth {
-    pub fn new(
+    pub const fn new(
         access: Access,
         subject: Option<String>,
         remote: Option<String>,
@@ -73,7 +72,7 @@ impl Auth {
     // Internal helpers
     // ------------------------------------------------------------------
 
-    fn emit_audit<T>(
+    pub(crate) fn emit_audit<T>(
         &self,
         method: &str,
         collection: Option<&str>,

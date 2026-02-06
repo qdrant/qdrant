@@ -8,18 +8,23 @@ use api::grpc::qdrant::{
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, AccessRequirements, CollectionPass};
+use storage::rbac::{Access, AccessRequirements, Auth, AuthType, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
-use crate::common::auth::{Auth, AuthType};
 use crate::tonic::api::collections_common::get;
 
-const FULL_ACCESS: Access = Access::full("Internal API");
+fn full_internal_auth() -> Auth {
+    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+}
 
 fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
-    FULL_ACCESS
-        .check_collection_access(collection_name, AccessRequirements::new())
+    full_internal_auth()
+        .check_collection_access(
+            collection_name,
+            AccessRequirements::new(),
+            "internal_collection_access",
+        )
         .map_err(Status::from)
 }
 
@@ -48,7 +53,7 @@ impl CollectionsInternal for CollectionsInternalService {
         let get_collection_info_request = get_collection_info_request
             .ok_or_else(|| Status::invalid_argument("GetCollectionInfoRequest is missing"))?;
 
-        let auth = Auth::new(FULL_ACCESS.clone(), None, None, AuthType::Internal);
+        let auth = full_internal_auth();
         get(
             self.toc.as_ref(),
             get_collection_info_request,

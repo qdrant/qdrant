@@ -14,23 +14,12 @@ use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
 use crate::common::inference::api_keys::InferenceToken;
 use crate::settings::ServiceConfig;
-pub mod auth_context;
 pub mod claims;
 pub mod jwt_parser;
 
-pub use auth_context::Auth;
-
-/// How the request was authenticated.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
-pub enum AuthType {
-    Jwt,
-    ApiKey,
-    /// No authentication was configured or required.
-    None,
-    /// Request originated from the cluster itself (internal P2P communication).
-    /// These requests are not audit-logged.
-    Internal,
-}
+// Re-export Auth and AuthType from storage crate.
+pub use storage::rbac::AuthType;
+pub use storage::rbac::auth::Auth;
 
 pub const HTTP_HEADER_API_KEY: &str = "api-key";
 
@@ -191,7 +180,12 @@ impl AuthKeys {
                 None,
                 None, // no timeout
                 ShardSelectorInternal::All,
-                Access::full("JWT stateful validation"),
+                Auth::new(
+                    Access::full("JWT stateful validation"),
+                    None,
+                    None,
+                    AuthType::Internal,
+                ),
                 HwMeasurementAcc::disposable(),
             )
             .await

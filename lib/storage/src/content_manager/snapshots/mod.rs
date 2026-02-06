@@ -18,7 +18,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequirements};
+use crate::rbac::{AccessRequirements, Auth};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -32,15 +32,15 @@ pub struct SnapshotConfig {
 
 pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
-    access: Access,
+    auth: Auth,
     snapshot_name: &str,
 ) -> Result<bool, StorageError> {
-    access.check_global_access(AccessRequirements::new().manage())?;
+    auth.check_global_access(AccessRequirements::new().manage(), "delete_full_snapshot")?;
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(&access, &pass);
+    let toc = dispatcher.toc(auth.access(), &pass);
 
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir =
@@ -57,17 +57,20 @@ pub async fn do_delete_full_snapshot(
 
 pub async fn do_delete_collection_snapshot(
     dispatcher: &Dispatcher,
-    access: Access,
+    auth: Auth,
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<bool, StorageError> {
-    let collection_pass = access
-        .check_collection_access(collection_name, AccessRequirements::new().write().extras())?;
+    let collection_pass = auth.check_collection_access(
+        collection_name,
+        AccessRequirements::new().write().extras(),
+        "delete_collection_snapshot",
+    )?;
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(&access, &pass);
+    let toc = dispatcher.toc(auth.access(), &pass);
 
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
@@ -86,9 +89,9 @@ pub async fn do_delete_collection_snapshot(
 
 pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
-    access: Access,
+    auth: Auth,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    access.check_global_access(AccessRequirements::new())?;
+    auth.check_global_access(AccessRequirements::new(), "list_full_snapshots")?;
     let snapshots_manager = toc.get_snapshots_storage_manager()?;
     let snapshots_path = toc.snapshots_path();
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -96,25 +99,25 @@ pub async fn do_list_full_snapshots(
 
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
-    access: Access,
+    auth: Auth,
 ) -> Result<SnapshotDescription, StorageError> {
-    access.check_global_access(AccessRequirements::new().manage())?;
+    auth.check_global_access(AccessRequirements::new().manage(), "create_full_snapshot")?;
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
-    let toc = dispatcher.toc(&access, &pass).clone();
+    let toc = dispatcher.toc(auth.access(), &pass).clone();
 
-    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, access).await }).await??;
+    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, auth).await }).await??;
     Ok(res)
 }
 
 async fn _do_create_full_snapshot(
     toc: &TableOfContent,
-    access: Access,
+    auth: Auth,
 ) -> Result<SnapshotDescription, StorageError> {
     let snapshot_dir = toc.snapshots_path();
 
-    let all_collections = toc.all_collections(&access).await;
+    let all_collections = toc.all_collections(auth.access()).await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
     for collection_pass in &all_collections {
         let snapshot_details = toc.create_snapshot(collection_pass).await?;
@@ -133,7 +136,10 @@ async fn _do_create_full_snapshot(
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_pass in &all_collections {
-        for alias in toc.collection_aliases(collection_pass, &access).await? {
+        for alias in toc
+            .collection_aliases(collection_pass, auth.access())
+            .await?
+        {
             alias_mapping.insert(alias.clone(), collection_pass.name().to_string());
         }
     }

@@ -80,7 +80,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth,
             inference_params,
             hw_metrics,
         )
@@ -103,7 +103,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -122,7 +122,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             inner_request,
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -149,7 +149,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             inference_params,
             hw_metrics,
         )
@@ -174,7 +174,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -197,7 +197,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -220,7 +220,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -243,7 +243,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -266,7 +266,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -292,7 +292,7 @@ impl Points for PointsService {
             &self.dispatcher,
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             inference_params,
             hw_metrics,
         )
@@ -314,7 +314,7 @@ impl Points for PointsService {
             self.dispatcher.clone(),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -333,7 +333,7 @@ impl Points for PointsService {
             self.dispatcher.clone(),
             request.into_inner(),
             InternalUpdateParams::default(),
-            auth.access().clone(),
+            auth.clone(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -353,7 +353,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await?;
@@ -397,7 +397,7 @@ impl Points for PointsService {
             &collection_name,
             requests,
             read_consistency,
-            auth.access().clone(),
+            auth.clone(),
             timeout,
             hw_metrics,
         )
@@ -418,7 +418,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await?;
@@ -443,7 +443,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             inner_request,
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -460,7 +460,7 @@ impl Points for PointsService {
         let res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await?;
@@ -489,7 +489,7 @@ impl Points for PointsService {
             &collection_name,
             recommend_points,
             read_consistency,
-            auth.access().clone(),
+            auth.clone(),
             timeout.map(Duration::from_secs),
             hw_metrics,
         )
@@ -510,7 +510,7 @@ impl Points for PointsService {
         let res = recommend_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await?;
@@ -530,7 +530,7 @@ impl Points for PointsService {
         let res = discover(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await?;
@@ -558,7 +558,7 @@ impl Points for PointsService {
             &collection_name,
             discover_points,
             read_consistency,
-            auth.access().clone(),
+            auth.clone(),
             timeout.map(Duration::from_secs),
             hw_metrics,
         )
@@ -580,7 +580,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            auth.access(),
+            &auth,
             hw_metrics,
         )
         .await?;
@@ -604,7 +604,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
             inference_params,
         )
@@ -638,7 +638,7 @@ impl Points for PointsService {
             &collection_name,
             query_points,
             read_consistency,
-            auth.access().clone(),
+            auth.clone(),
             timeout,
             hw_metrics,
             inference_params,
@@ -664,7 +664,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
             inference_params,
         )
@@ -685,7 +685,7 @@ impl Points for PointsService {
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics,
         )
         .await
@@ -703,7 +703,7 @@ impl Points for PointsService {
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics.get_counter(),
         )
         .await?;
@@ -729,7 +729,7 @@ impl Points for PointsService {
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            auth.access().clone(),
+            auth.clone(),
             hw_metrics.get_counter(),
         )
         .await?;

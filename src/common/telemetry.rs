@@ -14,7 +14,7 @@ use serde::Serialize;
 use shard::common::stopping_guard::StoppingGuard;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::Auth;
 use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::Status;
@@ -84,7 +84,7 @@ impl TelemetryCollector {
 
     pub async fn prepare_data(
         &self,
-        access: &Access,
+        auth: &Auth,
         detail: TelemetryDetail,
         only_collections: Option<HashSet<String>>,
         timeout: Option<Duration>,
@@ -96,10 +96,10 @@ impl TelemetryCollector {
         let collections_telemetry_handle = {
             let toc = self
                 .dispatcher
-                .toc(access, &new_unchecked_verification_pass())
+                .toc(auth.access(), &new_unchecked_verification_pass())
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
-            let access_collection = access.clone();
+            let access_collection = auth.access().clone();
 
             let handle = runtime_handle.spawn_blocking(move || {
                 // Re-enter the async runtime in this blocking thread
@@ -130,18 +130,18 @@ impl TelemetryCollector {
                 &self.app_telemetry_collector,
                 &self.settings,
             )),
-            cluster: ClusterTelemetry::collect(access, detail, &self.dispatcher, &self.settings),
+            cluster: ClusterTelemetry::collect(auth, detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
-                access,
+                auth,
                 &self.actix_telemetry_collector.lock(),
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
             memory: (detail.level > DetailsLevel::Level0)
-                .then(|| MemoryTelemetry::collect(access))
+                .then(|| MemoryTelemetry::collect(auth))
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
-                .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
+                .then(|| HardwareTelemetry::new(&self.dispatcher, auth)),
         })
     }
 }

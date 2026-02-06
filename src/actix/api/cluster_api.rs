@@ -279,11 +279,8 @@ async fn get_cluster_telemetry(
             };
         }
 
-        let distributed_telemetry = DistributedTelemetryData::resolve_telemetries(
-            auth.access(),
-            telemetries,
-            missing_peers,
-        )?;
+        let distributed_telemetry =
+            DistributedTelemetryData::resolve_telemetries(&auth, telemetries, missing_peers)?;
 
         Ok(distributed_telemetry)
     })

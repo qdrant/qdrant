@@ -62,7 +62,7 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .lock()
             .await
-            .prepare_data(auth.access(), detail, None, params.timeout())
+            .prepare_data(&auth, detail, None, params.timeout())
             .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
@@ -102,7 +102,7 @@ async fn metrics(
         .lock()
         .await
         .prepare_data(
-            auth.access(),
+            &auth,
             TelemetryDetail {
                 level: DetailsLevel::Level4,
                 histograms: true,

@@ -11,7 +11,7 @@ use segment::types::ShardKey;
 use serde::Serialize;
 use shard::PeerId;
 use storage::content_manager::errors::{StorageError, StorageResult};
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth};
 use storage::types::{ConsensusThreadStatus, StateRole};
 
 use crate::common::telemetry::TelemetryData;
@@ -149,7 +149,7 @@ pub struct DistributedPeerDetails {
 
 impl DistributedTelemetryData {
     pub fn resolve_telemetries(
-        access: &Access,
+        auth: &Auth,
         telemetries: Vec<TelemetryData>,
         missing_peers: Vec<PeerId>,
     ) -> StorageResult<Self> {
@@ -170,7 +170,7 @@ impl DistributedTelemetryData {
             })
             .collect::<HashMap<_, _>>();
 
-        let cluster = match access {
+        let cluster = match auth.access() {
             Access::Global(_) => {
                 aggregate_cluster_telemetry(base_telemetry, telemetry_by_peer, missing_peers)
             }

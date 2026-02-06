@@ -9,7 +9,7 @@ use api::grpc::{
 };
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth, AuthType};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
@@ -97,11 +97,16 @@ impl QdrantInternal for QdrantInternalService {
         let timing = Instant::now();
         let timeout = Duration::from_secs(timeout);
 
-        let access = Access::full("internal service");
+        let auth = Auth::new(
+            Access::full("internal service"),
+            None,
+            None,
+            AuthType::Internal,
+        );
 
         let telemetry_collector = self.telemetry_collector.lock().await;
         let telemetry_data = telemetry_collector
-            .prepare_data(&access, detail, only_collections, Some(timeout))
+            .prepare_data(&auth, detail, only_collections, Some(timeout))
             .await?;
 
         let response = GetTelemetryResponse {

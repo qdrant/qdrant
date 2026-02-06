@@ -233,7 +233,7 @@ async fn upload_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            auth.access().clone(),
+            auth.clone(),
             http_client,
         )
         .await
@@ -259,7 +259,7 @@ async fn recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            auth.access().clone(),
+            auth.clone(),
             http_client,
         )
         .await
@@ -297,7 +297,7 @@ async fn list_full_snapshots(
 
     helpers::time(do_list_full_snapshots(
         dispatcher.toc(auth.access(), &pass),
-        auth.access().clone(),
+        auth.clone(),
     ))
     .await
 }
@@ -308,8 +308,7 @@ async fn create_full_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
-    let future =
-        async move { do_create_full_snapshot(dispatcher.get_ref(), auth.access().clone()).await };
+    let future = async move { do_create_full_snapshot(dispatcher.get_ref(), auth.clone()).await };
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
@@ -335,7 +334,7 @@ async fn delete_full_snapshot(
 ) -> impl Responder {
     let future = async move {
         let snapshot_name = path.into_inner();
-        do_delete_full_snapshot(dispatcher.get_ref(), auth.access().clone(), &snapshot_name).await
+        do_delete_full_snapshot(dispatcher.get_ref(), auth.clone(), &snapshot_name).await
     };
 
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
@@ -353,7 +352,7 @@ async fn delete_collection_snapshot(
 
         do_delete_collection_snapshot(
             dispatcher.get_ref(),
-            auth.access().clone(),
+            auth.clone(),
             &collection_name,
             &snapshot_name,
         )

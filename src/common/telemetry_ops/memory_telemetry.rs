@@ -1,12 +1,12 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
-use storage::rbac::Access;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 use storage::rbac::AccessRequirements;
+use storage::rbac::Auth;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -33,9 +33,13 @@ impl MemoryTelemetry {
         not(target_env = "msvc"),
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
-    pub fn collect(access: &Access) -> Option<MemoryTelemetry> {
+    pub fn collect(auth: &Auth) -> Option<MemoryTelemetry> {
         let required_access = AccessRequirements::new();
-        if epoch::advance().is_ok() && access.check_global_access(required_access).is_ok() {
+        if epoch::advance().is_ok()
+            && auth
+                .check_global_access(required_access, "telemetry_memory")
+                .is_ok()
+        {
             Some(MemoryTelemetry {
                 active_bytes: stats::active::read().unwrap_or_default(),
                 allocated_bytes: stats::allocated::read().unwrap_or_default(),
@@ -50,7 +54,7 @@ impl MemoryTelemetry {
     }
 
     #[cfg(target_env = "msvc")]
-    pub fn collect(_access: &Access) -> Option<MemoryTelemetry> {
+    pub fn collect(_auth: &Auth) -> Option<MemoryTelemetry> {
         None
     }
 }

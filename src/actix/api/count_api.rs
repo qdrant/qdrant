@@ -32,7 +32,7 @@ async fn count_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -61,7 +61,7 @@ async fn count_points(
         params.consistency,
         params.timeout(),
         shard_selector,
-        auth.access().clone(),
+        auth.clone(),
         request_hw_counter.get_counter(),
     )
     .await;

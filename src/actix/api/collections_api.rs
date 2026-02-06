@@ -130,7 +130,7 @@ async fn create_collection(
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::CreateCollection(create_collection_op),
-            auth.access().clone(),
+            auth,
             query.timeout(),
         )
         .await;
@@ -153,7 +153,7 @@ async fn update_collection(
                 name,
                 operation.into_inner(),
             )),
-            auth.access().clone(),
+            auth,
             query.timeout(),
         )
         .await;
@@ -173,7 +173,7 @@ async fn delete_collection(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
                 collection.name.clone(),
             )),
-            auth.access().clone(),
+            auth,
             query.timeout(),
         )
         .await;
@@ -191,7 +191,7 @@ async fn update_aliases(
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
-            auth.access().clone(),
+            auth,
             query.timeout(),
         )
         .await;

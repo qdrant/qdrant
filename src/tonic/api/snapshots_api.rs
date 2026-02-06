@@ -104,7 +104,7 @@ impl Snapshots for SnapshotsService {
 
         let _response = do_delete_collection_snapshot(
             &self.dispatcher,
-            auth.access().clone(),
+            auth.clone(),
             &collection_name,
             &snapshot_name,
         )
@@ -124,7 +124,7 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
         let auth = extract_auth(&mut request);
 
-        let response = do_create_full_snapshot(&self.dispatcher, auth.access().clone()).await?;
+        let response = do_create_full_snapshot(&self.dispatcher, auth.clone()).await?;
 
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
@@ -143,11 +143,8 @@ impl Snapshots for SnapshotsService {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
-        let snapshots = do_list_full_snapshots(
-            self.dispatcher.toc(auth.access(), &pass),
-            auth.access().clone(),
-        )
-        .await?;
+        let snapshots =
+            do_list_full_snapshots(self.dispatcher.toc(auth.access(), &pass), auth.clone()).await?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -165,8 +162,7 @@ impl Snapshots for SnapshotsService {
         let snapshot_name = request.into_inner().snapshot_name;
 
         let _response =
-            do_delete_full_snapshot(&self.dispatcher, auth.access().clone(), &snapshot_name)
-                .await?;
+            do_delete_full_snapshot(&self.dispatcher, auth.clone(), &snapshot_name).await?;
 
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),

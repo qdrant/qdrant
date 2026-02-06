@@ -313,6 +313,39 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Auth wrappers – placed here so they can reference the private
+// `CheckableCollectionOperation` trait.
+// ---------------------------------------------------------------------------
+
+use super::auth::Auth;
+
+impl Auth {
+    /// Check point-level access and emit an audit log entry.
+    #[allow(private_bounds)]
+    pub(crate) fn check_point_op<'a>(
+        &self,
+        collection_name: &'a str,
+        op: &impl CheckableCollectionOperation,
+        method: &str,
+    ) -> Result<CollectionPass<'a>, StorageError> {
+        let result = self.access().check_point_op(collection_name, op);
+        self.emit_audit(method, Some(collection_name), &result);
+        result
+    }
+
+    /// Check collection meta-operation access and emit an audit log entry.
+    pub(crate) fn check_collection_meta_operation(
+        &self,
+        operation: &CollectionMetaOperations,
+        method: &str,
+    ) -> Result<(), StorageError> {
+        let result = self.access().check_collection_meta_operation(operation);
+        self.emit_audit(method, None, &result);
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests_ops {
     use std::fmt::Debug;

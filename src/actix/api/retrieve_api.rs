@@ -17,7 +17,7 @@ use storage::content_manager::collection_verification::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::Auth;
 use tokio::time::Instant;
 use validator::Validate;
 
@@ -43,7 +43,7 @@ async fn do_get_point(
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    access: Access,
+    auth: Auth,
     hw_counter: HwMeasurementAcc,
 ) -> Result<Option<RecordInternal>, StorageError> {
     let request = PointRequestInternal {
@@ -60,7 +60,7 @@ async fn do_get_point(
         read_consistency,
         timeout,
         shard_selection,
-        access,
+        auth,
         hw_counter,
     )
     .await
@@ -80,7 +80,7 @@ async fn get_point(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -109,7 +109,7 @@ async fn get_point(
         point_id,
         params.consistency,
         params.timeout(),
-        auth.access().clone(),
+        auth.clone(),
         request_hw_counter.get_counter(),
     )
     .await
@@ -136,7 +136,7 @@ async fn get_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -169,7 +169,7 @@ async fn get_points(
         params.consistency,
         params.timeout(),
         shard_selection,
-        auth.access().clone(),
+        auth.clone(),
         request_hw_counter.get_counter(),
     )
     .map_ok(|response| {
@@ -202,7 +202,7 @@ async fn scroll_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -231,7 +231,7 @@ async fn scroll_points(
             params.consistency,
             params.timeout(),
             shard_selection,
-            auth.access().clone(),
+            auth.clone(),
             request_hw_counter.get_counter(),
         )
         .await;

@@ -51,7 +51,7 @@ impl CollectionsService {
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, auth.access().clone(), wait_timeout)
+            .submit_collection_meta_op(operation.try_into()?, auth, wait_timeout)
             .await?;
 
         let response = CollectionOperationResponse::from((timing, result));

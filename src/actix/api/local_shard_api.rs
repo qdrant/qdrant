@@ -14,7 +14,7 @@ use shard::scroll::ScrollRequestInternal;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::{AccessRequirements, Auth};
 use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
@@ -60,7 +60,7 @@ async fn get_points(
         params.consistency,
         params.timeout(),
         ShardSelectorInternal::ShardId(path.shard),
-        auth.access().clone(),
+        auth.clone(),
         request_hw_counter.get_counter(),
     )
     .await
@@ -95,7 +95,7 @@ async fn scroll_points(
         params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -115,7 +115,7 @@ async fn scroll_points(
         Some(filter) => {
             get_hash_ring_filter(
                 &dispatcher,
-                auth.access(),
+                &auth,
                 &path.collection.clone(),
                 AccessRequirements::new(),
                 filter.expected_shard_id,
@@ -137,7 +137,7 @@ async fn scroll_points(
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            auth.access().clone(),
+            auth.clone(),
             request_hw_counter.get_counter(),
         )
     });
@@ -169,7 +169,7 @@ async fn count_points(
         params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
-        auth.access(),
+        &auth,
     )
     .await
     {
@@ -190,7 +190,7 @@ async fn count_points(
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
-                auth.access(),
+                &auth,
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
@@ -211,7 +211,7 @@ async fn count_points(
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            auth.access().clone(),
+            auth.clone(),
             hw_measurement_acc,
         )
         .await
@@ -248,7 +248,7 @@ async fn cleanup_shard(
             .cleanup_local_shard(
                 &path.collection,
                 path.shard,
-                auth.access().clone(),
+                auth.clone(),
                 params.wait,
                 timeout,
             )
@@ -279,16 +279,16 @@ struct SerdeHelper {
 
 async fn get_hash_ring_filter(
     dispatcher: &Dispatcher,
-    access: &Access,
+    auth: &Auth,
     collection: &str,
     reqs: AccessRequirements,
     expected_shard_id: ShardId,
     verification_pass: &VerificationPass,
 ) -> StorageResult<Filter> {
-    let pass = access.check_collection_access(collection, reqs)?;
+    let pass = auth.check_collection_access(collection, reqs, "get_hash_ring_filter")?;
 
     let shard_holder = dispatcher
-        .toc(access, verification_pass)
+        .toc(auth.access(), verification_pass)
         .get_collection(&pass)
         .await?
         .shards_holder();

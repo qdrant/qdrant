@@ -24,7 +24,7 @@ use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth, AuthType};
 use validator::Validate;
 
 use crate::common::inference::params::InferenceParams;
@@ -291,7 +291,7 @@ pub async fn do_upsert_points(
     operation: PointInsertOperations,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
@@ -303,7 +303,7 @@ pub async fn do_upsert_points(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -368,7 +368,7 @@ pub async fn do_upsert_points(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await?;
@@ -391,11 +391,11 @@ pub async fn do_delete_points(
     points: PointsSelector,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &access)
+        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
         .await?;
 
     let (operation, shard_key) = match points {
@@ -416,7 +416,7 @@ pub async fn do_delete_points(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await
@@ -429,7 +429,7 @@ pub async fn do_update_vectors(
     operation: UpdateVectors,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
@@ -438,7 +438,7 @@ pub async fn do_update_vectors(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -465,7 +465,7 @@ pub async fn do_update_vectors(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await?;
@@ -479,7 +479,7 @@ pub async fn do_delete_vectors(
     operation: DeleteVectors,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -489,7 +489,7 @@ pub async fn do_delete_vectors(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -518,7 +518,7 @@ pub async fn do_delete_vectors(
                 internal_params,
                 params,
                 shard_key.clone(),
-                access.clone(),
+                auth.clone(),
                 hw_measurement_acc.clone(),
             )
             .await?,
@@ -537,7 +537,7 @@ pub async fn do_delete_vectors(
                 internal_params,
                 params,
                 shard_key,
-                access,
+                auth,
                 hw_measurement_acc,
             )
             .await?,
@@ -553,7 +553,7 @@ pub async fn do_set_payload(
     operation: SetPayload,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
@@ -561,7 +561,7 @@ pub async fn do_set_payload(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -588,7 +588,7 @@ pub async fn do_set_payload(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await
@@ -600,7 +600,7 @@ pub async fn do_overwrite_payload(
     operation: SetPayload,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
@@ -608,7 +608,7 @@ pub async fn do_overwrite_payload(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -636,7 +636,7 @@ pub async fn do_overwrite_payload(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await
@@ -648,7 +648,7 @@ pub async fn do_delete_payload(
     operation: DeletePayload,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
@@ -656,7 +656,7 @@ pub async fn do_delete_payload(
             &operation,
             &collection_name,
             params.timeout_as_secs(),
-            &access,
+            &auth,
         )
         .await?;
 
@@ -681,7 +681,7 @@ pub async fn do_delete_payload(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await
@@ -693,11 +693,11 @@ pub async fn do_clear_payload(
     points: PointsSelector,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
-        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &access)
+        .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
         .await?;
 
     let (point_operation, shard_key) = match points {
@@ -718,7 +718,7 @@ pub async fn do_clear_payload(
         internal_params,
         params,
         shard_key,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await
@@ -731,7 +731,7 @@ pub async fn do_batch_update_points(
     operations: Vec<UpdateOperation>,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
@@ -740,12 +740,7 @@ pub async fn do_batch_update_points(
 
     for operation in &operations {
         toc = toc_provider
-            .check_strict_mode(
-                operation,
-                &collection_name,
-                params.timeout_as_secs(),
-                &access,
-            )
+            .check_strict_mode(operation, &collection_name, params.timeout_as_secs(), &auth)
             .await?
             .into();
     }
@@ -770,7 +765,7 @@ pub async fn do_batch_update_points(
                     operation.upsert,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     inference_params.clone(),
                     hw_measurement_acc.clone(),
                 )
@@ -786,7 +781,7 @@ pub async fn do_batch_update_points(
                     operation.delete,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -798,7 +793,7 @@ pub async fn do_batch_update_points(
                     operation.set_payload,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -810,7 +805,7 @@ pub async fn do_batch_update_points(
                     operation.overwrite_payload,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -822,7 +817,7 @@ pub async fn do_batch_update_points(
                     operation.delete_payload,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -834,7 +829,7 @@ pub async fn do_batch_update_points(
                     operation.clear_payload,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -846,7 +841,7 @@ pub async fn do_batch_update_points(
                     operation.update_vectors,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     inference_params.clone(),
                     hw_measurement_acc.clone(),
                 )
@@ -862,7 +857,7 @@ pub async fn do_batch_update_points(
                     operation.delete_vectors,
                     internal_params,
                     params,
-                    access.clone(),
+                    auth.clone(),
                     hw_measurement_acc.clone(),
                 )
                 .await?
@@ -881,7 +876,7 @@ pub async fn do_create_index(
     operation: CreateFieldIndex,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -893,7 +888,7 @@ pub async fn do_create_index(
         params.timeout_as_secs(),
         &collection_name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await?;
 
@@ -909,11 +904,11 @@ pub async fn do_create_index(
         field_schema: field_schema.clone(),
     });
 
-    let toc = dispatcher.toc(&access, &pass).clone();
+    let toc = dispatcher.toc(auth.access(), &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, params.timeout)
+        .submit_collection_meta_op(consensus_op, auth, params.timeout)
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -955,7 +950,7 @@ pub async fn do_create_index_internal(
         internal_params,
         params,
         None,
-        Access::full("Internal API"),
+        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal),
         hw_measurement_acc,
     )
     .await
@@ -967,7 +962,7 @@ pub async fn do_delete_index(
     index_name: JsonPath,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -980,13 +975,13 @@ pub async fn do_delete_index(
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(&access, &pass).clone();
+    let toc = dispatcher.toc(auth.access(), &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
         .submit_collection_meta_op(
             consensus_op,
-            access,
+            auth,
             // Use per-request timeout from params if provided
             params.timeout,
         )
@@ -1022,7 +1017,7 @@ pub async fn do_delete_index_internal(
         internal_params,
         params,
         None,
-        Access::full("Internal API"),
+        Auth::new(Access::full("Internal API"), None, None, AuthType::Internal),
         hw_measurement_acc,
     )
     .await
@@ -1036,7 +1031,7 @@ pub async fn update(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     shard_key: Option<ShardKeySelector>,
-    access: Access,
+    auth: Auth,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let InternalUpdateParams {
@@ -1088,7 +1083,7 @@ pub async fn update(
         params.timeout,
         ordering,
         shard_selector,
-        access,
+        auth,
         hw_measurement_acc,
     )
     .await

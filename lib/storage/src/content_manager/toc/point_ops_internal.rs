@@ -11,7 +11,7 @@ use segment::data_types::facets::{FacetParams, FacetResponse};
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageResult;
-use crate::rbac::{Access, AccessRequirements};
+use crate::rbac::{AccessRequirements, Auth};
 
 impl TableOfContent {
     pub async fn query_batch_internal(
@@ -52,12 +52,15 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         shard_id: ShardId,
-        access: Access,
+        auth: Auth,
         wait: bool,
         timeout: Option<Duration>,
     ) -> StorageResult<UpdateResult> {
-        let collection_pass =
-            access.check_collection_access(collection_name, AccessRequirements::new().write())?;
+        let collection_pass = auth.check_collection_access(
+            collection_name,
+            AccessRequirements::new().write(),
+            "cleanup_local_shard",
+        )?;
 
         self.get_collection(&collection_pass)
             .await?

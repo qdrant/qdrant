@@ -68,7 +68,7 @@ async fn query_points(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            auth.access(),
+            &auth,
         )
         .await?;
 
@@ -78,7 +78,7 @@ async fn query_points(
                 &collection.name,
                 vec![(request, shard_selection)],
                 params.consistency,
-                auth.access().clone(),
+                auth.clone(),
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -156,7 +156,7 @@ async fn query_points_batch(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            auth.access(),
+            &auth,
         )
         .await?;
 
@@ -166,7 +166,7 @@ async fn query_points_batch(
                 &collection.name,
                 batch,
                 params.consistency,
-                auth.access().clone(),
+                auth.clone(),
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -234,7 +234,7 @@ async fn query_points_groups(
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
-            auth.access(),
+            &auth,
         )
         .await?;
 
@@ -244,7 +244,7 @@ async fn query_points_groups(
             request,
             params.consistency,
             shard_selection,
-            auth.access().clone(),
+            auth.clone(),
             params.timeout(),
             hw_measurement_acc,
         )
