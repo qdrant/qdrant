@@ -76,12 +76,8 @@ impl Snapshots for SnapshotsService {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
-        let snapshots = do_list_snapshots(
-            self.dispatcher.toc(&auth, &pass),
-            &auth,
-            &collection_name,
-        )
-        .await?;
+        let snapshots =
+            do_list_snapshots(self.dispatcher.toc(&auth, &pass), &auth, &collection_name).await?;
 
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),

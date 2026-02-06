@@ -141,12 +141,9 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
-        let CollectionsAliasesResponse { aliases } = do_list_collection_aliases(
-            self.dispatcher.toc(&auth, &pass),
-            &auth,
-            &collection_name,
-        )
-        .await?;
+        let CollectionsAliasesResponse { aliases } =
+            do_list_collection_aliases(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -186,12 +183,9 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result = do_collection_exists(
-            self.dispatcher.toc(&auth, &pass),
-            &auth,
-            &collection_name,
-        )
-        .await?;
+        let result =
+            do_collection_exists(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
         let response = CollectionExistsResponse {
             result: Some(result),
             time: timing.elapsed().as_secs_f64(),

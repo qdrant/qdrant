@@ -48,11 +48,7 @@ impl Dispatcher {
     /// Get the table of content.
     /// The `_auth` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
     /// of both objects.
-    pub fn toc(
-        &self,
-        _auth: &Auth,
-        _verification_pass: &VerificationPass,
-    ) -> &Arc<TableOfContent> {
+    pub fn toc(&self, _auth: &Auth, _verification_pass: &VerificationPass) -> &Arc<TableOfContent> {
         &self.toc
     }
 

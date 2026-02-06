@@ -212,12 +212,9 @@ async fn upload_snapshot(
             }
         }
 
-        let snapshot_location = do_save_uploaded_snapshot(
-            dispatcher.toc(&auth, &pass),
-            &collection.name,
-            snapshot,
-        )
-        .await?;
+        let snapshot_location =
+            do_save_uploaded_snapshot(dispatcher.toc(&auth, &pass), &collection.name, snapshot)
+                .await?;
 
         // Snapshot is a local file, we do not need an API key for that
         let http_client = http_client.client(None)?;

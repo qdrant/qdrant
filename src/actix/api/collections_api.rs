@@ -41,11 +41,7 @@ async fn get_collections(
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_collections(
-        dispatcher.toc(&auth, &pass),
-        &auth,
-    ))
-    .await
+    helpers::time(do_list_collections(dispatcher.toc(&auth, &pass), &auth)).await
 }
 
 #[get("/aliases")]
