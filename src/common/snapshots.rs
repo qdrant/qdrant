@@ -162,7 +162,7 @@ pub async fn recover_shard_snapshot(
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let pre_recovery = async {
+        let pre_recovery_task = async {
             let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
@@ -172,7 +172,7 @@ pub async fn recover_shard_snapshot(
         };
 
         let (collection, download_dir) =
-            cancel::future::cancel_on_token(cancel.clone(), pre_recovery).await??;
+            cancel::future::cancel_on_token(cancel.clone(), pre_recovery_task).await??;
 
         // Once recovery tracking starts, `finish_shard_recovery` must run on all paths
         let recovery_progress = collection
@@ -181,98 +181,95 @@ pub async fn recover_shard_snapshot(
             .await
             .start_shard_recovery(shard_id);
 
-        let result = async {
-            let cancel_safe = async {
-                let DownloadResult {
-                    snapshot,
-                    hash
-                } = match snapshot_location {
-                    ShardSnapshotLocation::Url(url) => {
-                        if !matches!(url.scheme(), "http" | "https") {
-                            let description = format!(
-                                "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                                url.scheme(),
-                            );
+        let download_task = async {
+            let DownloadResult {
+                snapshot,
+                hash
+            } = match snapshot_location {
+                ShardSnapshotLocation::Url(url) => {
+                    if !matches!(url.scheme(), "http" | "https") {
+                        let description = format!(
+                            "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
+                            url.scheme(),
+                        );
 
-                            return Err(StorageError::bad_input(description));
-                        }
-
-                        recovery_progress
-                            .lock()
-                            .set_stage(RecoveryStage::Downloading);
-
-                        let client = client.client(api_key.as_deref())?;
-                        snapshots::download::download_snapshot(
-                            &client,
-                            url,
-                            &download_dir,
-                            checksum.is_some(),
-                        )
-                        .await?
+                        return Err(StorageError::bad_input(description));
                     }
 
-                    ShardSnapshotLocation::Path(snapshot_file_name) => {
-                        let snapshot_path = collection
-                            .shards_holder()
-                            .read()
-                            .await
-                            .get_shard_snapshot_path(
-                                collection.snapshots_path(),
-                                shard_id,
-                                &snapshot_file_name,
-                            )
-                            .await?;
+                    recovery_progress
+                        .lock()
+                        .set_stage(RecoveryStage::Downloading);
 
-                        let snapshot_file = collection
-                            .get_snapshots_storage_manager()?
-                            .get_snapshot_file(&snapshot_path, &download_dir)
-                            .await?;
-
-                        let hash = if checksum.is_some() {
-                            Some(sha_256::hash_file(&snapshot_path).await?)
-                        } else {
-                            None
-                        };
-
-                        DownloadResult {
-                            snapshot: SnapshotData::Packed(snapshot_file),
-                            hash,
-                        }
-                    }
-                };
-
-                if let Some(checksum) = checksum {
-                    if let Some(snapshot_checksum) = hash {
-                        if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
-                            return Err(StorageError::bad_input(format!(
-                                "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
-                            )));
-                        }
-                    } else {
-                        return Err(StorageError::service_error(
-                            "Snapshot checksum could not be verified".to_string(),
-                        ));
-                    }
+                    let client = client.client(api_key.as_deref())?;
+                    snapshots::download::download_snapshot(
+                        &client,
+                        url,
+                        &download_dir,
+                        checksum.is_some(),
+                    )
+                    .await?
                 }
 
-                Ok(snapshot)
+                ShardSnapshotLocation::Path(snapshot_file_name) => {
+                    let snapshot_path = collection
+                        .shards_holder()
+                        .read()
+                        .await
+                        .get_shard_snapshot_path(
+                            collection.snapshots_path(),
+                            shard_id,
+                            &snapshot_file_name,
+                        )
+                        .await?;
+
+                    let snapshot_file = collection
+                        .get_snapshots_storage_manager()?
+                        .get_snapshot_file(&snapshot_path, &download_dir)
+                        .await?;
+
+                    let hash = if checksum.is_some() {
+                        Some(sha_256::hash_file(&snapshot_path).await?)
+                    } else {
+                        None
+                    };
+
+                    DownloadResult {
+                        snapshot: SnapshotData::Packed(snapshot_file),
+                        hash,
+                    }
+                }
             };
 
-            let snapshot_data =
-                cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+            if let Some(checksum) = checksum {
+                if let Some(snapshot_checksum) = hash {
+                    if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+                        return Err(StorageError::bad_input(format!(
+                            "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
+                        )));
+                    }
+                } else {
+                    return Err(StorageError::service_error(
+                        "Snapshot checksum could not be verified".to_string(),
+                    ));
+                }
+            }
 
-            // `recover_shard_snapshot_impl` is *not* cancel safe
-            recover_shard_snapshot_impl(
-                &toc,
-                &collection,
-                shard_id,
-                snapshot_data,
-                snapshot_priority,
-                RecoveryType::Full,
-                cancel,
-            )
-            .await
-        }
+            Ok(snapshot)
+        };
+
+        let snapshot_data =
+            cancel::future::cancel_on_token(cancel.clone(), download_task).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
+        let result = recover_shard_snapshot_impl(
+            &toc,
+            &collection,
+            shard_id,
+            snapshot_data,
+            snapshot_priority,
+            RecoveryType::Full,
+            cancel,
+        )
         .await;
 
         // Finish tracking recovery progress
