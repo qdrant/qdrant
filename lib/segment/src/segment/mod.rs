@@ -77,7 +77,7 @@ pub struct Segment {
     pub is_alive_flush_lock: IsAliveLock,
     /// Path to the segment directory
     pub segment_path: PathBuf,
-    pub version_tracker: VersionTracker,
+    pub version_tracker: Arc<AtomicRefCell<VersionTracker>>,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,

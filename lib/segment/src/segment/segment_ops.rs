@@ -52,7 +52,9 @@ impl Segment {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, vector, hw_counter)?;
-            self.version_tracker.set_vector(vector_name, Some(op_num));
+            self.version_tracker
+                .borrow_mut()
+                .set_vector(vector_name, Some(op_num));
         }
         Ok(())
     }
@@ -84,7 +86,9 @@ impl Segment {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
-            self.version_tracker.set_vector(&vector_name, Some(op_num));
+            self.version_tracker
+                .borrow_mut()
+                .set_vector(&vector_name, Some(op_num));
         }
         Ok(())
     }
@@ -108,7 +112,9 @@ impl Segment {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(new_index, vector_opt, hw_counter)?;
-            self.version_tracker.set_vector(vector_name, Some(op_num));
+            self.version_tracker
+                .borrow_mut()
+                .set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)

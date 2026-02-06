@@ -131,6 +131,7 @@ impl Segment {
                 .flat_map(|(vector_name, vector_data)| {
                     let version = self
                         .version_tracker
+                        .borrow()
                         .get_vector(vector_name)
                         .or(*self.version.lock());
 
@@ -143,7 +144,11 @@ impl Segment {
                 });
 
         let payload_storage_files = {
-            let version = self.version_tracker.get_payload().or(*self.version.lock());
+            let version = self
+                .version_tracker
+                .borrow()
+                .get_payload()
+                .or(*self.version.lock());
 
             self.payload_storage
                 .borrow()
@@ -165,6 +170,7 @@ impl Segment {
             .map(|(field, file)| {
                 let version = self
                     .version_tracker
+                    .borrow()
                     .get_payload_index_schema(&field)
                     .or(self.initial_version)
                     .unwrap_or(0);
