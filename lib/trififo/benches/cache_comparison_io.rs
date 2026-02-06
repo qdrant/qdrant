@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Seek, Write};
 use std::mem::MaybeUninit;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -320,16 +321,21 @@ fn run_experiment<C: Controller>(args: Args) -> anyhow::Result<()> {
         }
     }
 
+    let flags = 0;
+
     #[cfg(target_os = "linux")]
     let flags = nix::libc::O_DIRECT;
-    #[cfg(target_os = "macos")]
-    let flags = nix::libc::F_NOCACHE;
 
     let network_attached_file = File::options()
         .read(true)
         .custom_flags(flags)
         .open(&args.network_attached_path)
         .expect("Failed to open network-attached file");
+
+    #[cfg(target_os = "macos")]
+    unsafe {
+        nix::libc::fcntl(network_attached_file.as_raw_fd(), nix::libc::F_NOCACHE, 1)
+    };
 
     let storages = Arc::new(Storages {
         local_ssd_file,
