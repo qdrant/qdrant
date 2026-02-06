@@ -15,9 +15,7 @@ use io::safe_delete::{safe_delete_with_suffix, sync_parent_dir};
 use io::storage_version::StorageVersion;
 use log::info;
 use memory::madvise::{Advice, AdviceSetting};
-use parking_lot::Mutex;
-#[cfg(feature = "rocksdb")]
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rand::Rng;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
@@ -48,7 +46,9 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
+use crate::segment::{
+    PayloadIndexInfo, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData, VersionTracker,
+};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
@@ -629,19 +629,28 @@ fn create_segment(
         SegmentType::Plain
     };
 
+    let version_holder = Arc::new(Mutex::new(version));
+    let version_tracker = Arc::new(AtomicRefCell::new(VersionTracker::default()));
+
+    let payload_index_info = RwLock::new(PayloadIndexInfo {
+        version: version_holder.clone(),
+        version_tracker: version_tracker.clone(),
+        payload_index,
+    });
+
     Ok(Segment {
         uuid,
         initial_version,
-        version: Arc::new(Mutex::new(version)),
+        version: version_holder,
         persisted_version: Arc::new(Mutex::new(version)),
         is_alive_flush_lock: IsAliveLock::new(),
         segment_path: segment_path.to_owned(),
-        version_tracker: Default::default(),
+        version_tracker,
         id_tracker,
         vector_data,
         segment_type,
         appendable_flag,
-        payload_index,
+        payload_index_info,
         payload_storage,
         segment_config: config.clone(),
         error_status: None,

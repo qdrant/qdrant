@@ -22,12 +22,12 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
 use io::storage_version::StorageVersion;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 use uuid::Uuid;
 
-use self::version_tracker::VersionTracker;
+pub use self::version_tracker::VersionTracker;
 use crate::common::operation_error::SegmentFailedState;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::VectorIndexEnum;
@@ -56,6 +56,16 @@ impl StorageVersion for SegmentVersion {
     }
 }
 
+// Values that can be modified at non-appendable segment: chaning payload index changes versions. This structure is
+// intended to be kept under read-write lock (without Arc) for segment's interior mutability.
+#[derive(Debug)]
+pub struct PayloadIndexInfo {
+    #[allow(unused)] // TODO
+    pub version: Arc<Mutex<Option<SeqNumberType>>>,
+    pub version_tracker: Arc<AtomicRefCell<VersionTracker>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+}
+
 /// Segment - an object which manages an independent group of points.
 ///
 /// - Provides storage, indexing and managing operations for points (vectors + payload)
@@ -81,7 +91,7 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub payload_index_info: RwLock<PayloadIndexInfo>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
@@ -117,7 +127,13 @@ impl Drop for Segment {
             log::error!("Failed to clear cache of payload_storage: {e}");
         }
 
-        if let Err(e) = self.payload_index.borrow().clear_cache() {
+        if let Err(e) = self
+            .payload_index_info
+            .get_mut()
+            .payload_index
+            .borrow()
+            .clear_cache()
+        {
             log::error!("Failed to clear cache of payload_index: {e}");
         }
 

@@ -380,7 +380,9 @@ impl NonAppendableSegmentEntry for Segment {
                 }
             }
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
+                let payload_index_info = self.payload_index_info.read();
+                let payload_index = payload_index_info.payload_index.borrow();
+
                 payload_index.estimate_cardinality(filter, hw_counter)
             }
         }
@@ -488,7 +490,9 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let payload_index = self.payload_index.borrow();
+        let payload_index_info = self.payload_index_info.read();
+        let payload_index = payload_index_info.payload_index.borrow();
+
         let schema = payload_index
             .indexed_fields()
             .into_iter()
@@ -545,7 +549,13 @@ impl NonAppendableSegmentEntry for Segment {
         let state = self.get_state();
         let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
-        let payload_index_flusher = self.payload_index.borrow().flusher();
+
+        let payload_index_flusher = {
+            let payload_index_info = self.payload_index_info.read();
+            let payload_index = payload_index_info.payload_index.borrow();
+
+            payload_index.flusher()
+        };
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
@@ -708,8 +718,12 @@ impl NonAppendableSegmentEntry for Segment {
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment.payload_index.borrow_mut().drop_index(key)?;
-            segment
+            let payload_index_info = segment.payload_index_info.get_mut();
+            payload_index_info
+                .payload_index
+                .borrow_mut()
+                .drop_index(key)?;
+            payload_index_info
                 .version_tracker
                 .borrow_mut()
                 .set_payload_index_schema(key, None);
@@ -724,13 +738,14 @@ impl NonAppendableSegmentEntry for Segment {
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            let is_incompatible = segment
+            let payload_index_info = segment.payload_index_info.get_mut();
+            let is_incompatible = payload_index_info
                 .payload_index
                 .borrow_mut()
                 .drop_index_if_incompatible(key, field_schema)?;
 
             if is_incompatible {
-                segment
+                payload_index_info
                     .version_tracker
                     .borrow_mut()
                     .set_payload_index_schema(key, None);
@@ -753,6 +768,8 @@ impl NonAppendableSegmentEntry for Segment {
         }
 
         let field_index = match self
+            .payload_index_info
+            .read()
             .payload_index
             .borrow()
             .build_index(key, field_type, hw_counter)?
@@ -781,12 +798,15 @@ impl NonAppendableSegmentEntry for Segment {
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .apply_index(key.clone(), schema, field_index)?;
+            let payload_index_info = segment.payload_index_info.get_mut();
+            payload_index_info.payload_index.borrow_mut().apply_index(
+                key.clone(),
+                schema,
+                field_index,
+            )?;
 
-            segment
+            // TODO do the same with other occurrences.
+            payload_index_info
                 .version_tracker
                 .borrow_mut()
                 .set_payload_index_schema(&key, Some(op_num));
@@ -821,7 +841,11 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.payload_index.borrow().indexed_fields()
+        self.payload_index_info
+            .read()
+            .payload_index
+            .borrow()
+            .indexed_fields()
     }
 
     fn check_error(&self) -> Option<SegmentFailedState> {
@@ -847,7 +871,12 @@ impl NonAppendableSegmentEntry for Segment {
             info: self.info(),
             config: self.config().clone(),
             vector_index_searches,
-            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+            payload_field_indices: self
+                .payload_index_info
+                .read()
+                .payload_index
+                .borrow()
+                .get_telemetry_data(),
         }
     }
 
@@ -970,12 +999,12 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment.payload_index.borrow_mut().overwrite_payload(
-                    internal_id,
-                    full_payload,
-                    hw_counter,
-                )?;
-                segment
+                let payload_index_info = segment.payload_index_info.get_mut();
+                payload_index_info
+                    .payload_index
+                    .borrow_mut()
+                    .overwrite_payload(internal_id, full_payload, hw_counter)?;
+                payload_index_info
                     .version_tracker
                     .borrow_mut()
                     .set_payload(Some(op_num));
@@ -999,13 +1028,14 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment.payload_index.borrow_mut().set_payload(
+                let payload_index_info = segment.payload_index_info.get_mut();
+                payload_index_info.payload_index.borrow_mut().set_payload(
                     internal_id,
                     payload,
                     key,
                     hw_counter,
                 )?;
-                segment
+                payload_index_info
                     .version_tracker
                     .borrow_mut()
                     .set_payload(Some(op_num));
@@ -1028,11 +1058,12 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment
+                let payload_index_info = segment.payload_index_info.get_mut();
+                payload_index_info
                     .payload_index
                     .borrow_mut()
                     .delete_payload(internal_id, key, hw_counter)?;
-                segment
+                payload_index_info
                     .version_tracker
                     .borrow_mut()
                     .set_payload(Some(op_num));
@@ -1054,11 +1085,12 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment
+                let payload_index_info = segment.payload_index_info.get_mut();
+                payload_index_info
                     .payload_index
                     .borrow_mut()
                     .clear_payload(internal_id, hw_counter)?;
-                segment
+                payload_index_info
                     .version_tracker
                     .borrow_mut()
                     .set_payload(Some(op_num));

@@ -22,7 +22,8 @@ impl Segment {
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         let query_cardinality = {
-            let payload_index = self.payload_index.borrow();
+            let payload_index_info = self.payload_index_info.read();
+            let payload_index = payload_index_info.payload_index.borrow();
             payload_index.estimate_cardinality(filter, hw_counter)
         };
 
@@ -66,7 +67,9 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        let payload_index = self.payload_index.borrow();
+        let payload_index_info = self.payload_index_info.read();
+        let payload_index = payload_index_info.payload_index.borrow();
+
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
@@ -99,7 +102,9 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        let payload_index = self.payload_index.borrow();
+        let payload_index_info = self.payload_index_info.read();
+        let payload_index = payload_index_info.payload_index.borrow();
+
         let id_tracker = self.id_tracker.borrow();
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
 

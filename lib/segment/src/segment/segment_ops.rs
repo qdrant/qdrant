@@ -310,7 +310,9 @@ impl Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Mark point as deleted, drop mapping
-        self.payload_index
+        self.payload_index_info
+            .get_mut()
+            .payload_index
             .borrow_mut()
             .clear_payload(internal_id, hw_counter)?;
 
@@ -331,6 +333,8 @@ impl Segment {
         Ok(())
     }
 
+    // TODO are the callers use &mut self?  Are they under lock?
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
         let mut version_guard = self.version.lock();
         let new_version = max(op_num, version_guard.unwrap_or(0));
@@ -455,7 +459,9 @@ impl Segment {
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload_index
+        self.payload_index_info
+            .read()
+            .payload_index
             .borrow()
             .get_payload(point_offset, hw_counter)
     }
@@ -525,7 +531,12 @@ impl Segment {
         &mut self,
         desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> OperationResult<()> {
-        let schema_applied = self.payload_index.borrow().indexed_fields();
+        let schema_applied = self
+            .payload_index_info
+            .get_mut()
+            .payload_index
+            .borrow()
+            .indexed_fields();
         let schema_config = desired_schemas;
 
         // Create or update payload indices if they don't match configuration

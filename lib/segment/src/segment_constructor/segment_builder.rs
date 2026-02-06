@@ -306,14 +306,17 @@ impl SegmentBuilder {
         });
         drop(locked_id_trackers);
 
-        let payloads: Vec<_> = segments.iter().map(|i| i.payload_index.borrow()).collect();
+        let payload_infos: Vec<_> = segments
+            .iter()
+            .map(|i| i.payload_index_info.read())
+            .collect();
 
         for defragment_key in &self.defragment_keys {
             for point_data in &mut points_to_insert {
-                let Some(payload_indices) = payloads[point_data.segment_index.get() as usize]
-                    .field_indexes
-                    .get(defragment_key)
-                else {
+                let borrow = payload_infos[point_data.segment_index.get() as usize]
+                    .payload_index
+                    .borrow();
+                let Some(payload_indices) = borrow.field_indexes.get(defragment_key) else {
                     continue;
                 };
 
@@ -388,7 +391,9 @@ impl SegmentBuilder {
 
             let old_internal_id = point_data.internal_id;
 
-            let other_payload = payloads[point_data.segment_index.get() as usize]
+            let other_payload = payload_infos[point_data.segment_index.get() as usize]
+                .payload_index
+                .borrow()
                 .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
 
             match self
@@ -449,8 +454,8 @@ impl SegmentBuilder {
             }
         }
 
-        for payload in payloads {
-            for (field, payload_schema) in payload.indexed_fields() {
+        for payload in payload_infos {
+            for (field, payload_schema) in payload.payload_index.borrow().indexed_fields() {
                 self.indexed_fields.insert(field, payload_schema);
             }
         }

@@ -22,7 +22,8 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
-        let payload_index = self.payload_index.borrow();
+        let payload_index_info = self.payload_index_info.read();
+        let payload_index = payload_index_info.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
         let numeric_index = payload_index
@@ -92,7 +93,8 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
-        let payload_index = self.payload_index.borrow();
+        let payload_index_info = self.payload_index_info.read();
+        let payload_index = payload_index_info.payload_index.borrow();
 
         let numeric_index = payload_index
             .field_indexes
