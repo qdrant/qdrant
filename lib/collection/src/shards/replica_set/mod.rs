@@ -25,6 +25,7 @@ use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle;
 
 use self::partial_snapshot_meta::PartialSnapshotMeta;
@@ -1306,40 +1307,42 @@ impl ShardReplicaSet {
 
     /// Returns the estimated size of all local segments.
     /// Since this locks all segments you should cache this value in performance critical scenarios!
-    pub(crate) async fn calculate_local_shard_stats(&self) -> Option<CollectionSizeStats> {
-        self.local
-            .read()
-            .await
-            .as_ref()
-            .map(|i| match i {
-                Shard::Local(local) => {
-                    let mut total_vector_size = 0;
-                    let mut total_payload_size = 0;
-                    let mut total_points = 0;
+    pub(crate) async fn calculate_local_shard_stats(
+        &self,
+    ) -> CollectionResult<Option<CollectionSizeStats>> {
+        let Some(segments) = self.local.read().await.as_ref().and_then(|i| match i {
+            Shard::Local(local) => Some(
+                // Collect the segments first so we don't have the segment holder locked for the entire duration of the loop.
+                local
+                    .segments
+                    .read()
+                    .iter()
+                    .map(|i| i.1.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+                None
+            }
+        }) else {
+            return Ok(None);
+        };
 
-                    // Collect the segments first so we don't have the segment holder locked for the entire duration of the loop.
-                    let segments: Vec<_> =
-                        local.segments.read().iter().map(|i| i.1).cloned().collect();
+        let mut total_vector_size = 0;
+        let mut total_payload_size = 0;
+        let mut total_points = 0;
 
-                    for segment in segments {
-                        let size_info = segment.get().read().size_info();
-                        total_vector_size += size_info.vectors_size_bytes;
-                        total_payload_size += size_info.payloads_size_bytes;
-                        total_points += size_info.num_points;
-                    }
+        for segment in segments {
+            let size_info = spawn_blocking(move || segment.get().read().size_info()).await?;
+            total_vector_size += size_info.vectors_size_bytes;
+            total_payload_size += size_info.payloads_size_bytes;
+            total_points += size_info.num_points;
+        }
 
-                    Some(CollectionSizeStats {
-                        vector_storage_size: total_vector_size,
-                        payload_storage_size: total_payload_size,
-                        points_count: total_points,
-                    })
-                }
-                Shard::Proxy(_)
-                | Shard::ForwardProxy(_)
-                | Shard::QueueProxy(_)
-                | Shard::Dummy(_) => None,
-            })
-            .unwrap_or_default()
+        Ok(Some(CollectionSizeStats {
+            vector_storage_size: total_vector_size,
+            payload_storage_size: total_payload_size,
+            points_count: total_points,
+        }))
     }
 
     pub(crate) fn payload_index_schema(&self) -> Arc<SaveOnDisk<PayloadIndexSchema>> {
