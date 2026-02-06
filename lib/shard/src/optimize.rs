@@ -366,8 +366,8 @@ fn check_segments_size(
         match segment {
             LockedSegment::Original(segment) => {
                 let locked_segment = segment.read();
-                space_occupied =
-                    space_occupied.and_then(|acc| match dir_disk_size(locked_segment.data_path()) {
+                space_occupied = space_occupied.and_then(|acc| {
+                    match dir_disk_size(locked_segment.data_path()) {
                         Ok(size) => Some(size + acc),
                         Err(err) => {
                             log::debug!(
@@ -377,7 +377,8 @@ fn check_segments_size(
                             );
                             None
                         }
-                    });
+                    }
+                });
             }
             LockedSegment::Proxy(_) => {
                 return Err(
