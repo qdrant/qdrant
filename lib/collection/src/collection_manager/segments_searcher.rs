@@ -219,7 +219,7 @@ impl SegmentsSearcher {
 
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            let (segments, segment_count) = {
+            let segments: Vec<_> = {
                 // Unfortunately, we have to do `segments.read()` twice, once in blocking task
                 // and once here, due to `Send` bounds :/
                 let Some(segments_lock) = segments.try_read_for(timeout) else {
@@ -227,10 +227,9 @@ impl SegmentsSearcher {
                 };
 
                 // Collect the segments first so we don't lock the segment holder during the operations.
-                let segments: Vec<_> = segments_lock
+                segments_lock
                     .non_appendable_then_appendable_segments()
-                    .collect();
-                (segments, segments_lock.len())
+                    .collect()
             };
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
@@ -241,7 +240,7 @@ impl SegmentsSearcher {
             // - more than 1 segment
             // - segments are not empty
             let use_sampling = sampling_enabled
-                && segment_count > 1
+                && segments.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
             segments
@@ -419,7 +418,7 @@ impl SegmentsSearcher {
             let is_stopped = stopping_guard.get_is_stopped();
 
             // Collect the segments first so we don't lock the segment holder during the operations.
-            let segments = {
+            let segments: Vec<_> = {
                 match timeout {
                     None => Ok(segments.read()),
                     Some(t) => segments
@@ -427,7 +426,7 @@ impl SegmentsSearcher {
                         .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
                 }?
                 .non_appendable_then_appendable_segments()
-                .collect::<Vec<_>>()
+                .collect()
             };
 
             let hw_counter = hw_measurement_acc.get_counter_cell();
@@ -461,14 +460,14 @@ impl SegmentsSearcher {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments = {
+            let segments: Vec<_> = {
                 let Some(segments_guard) = segments.try_read_for(timeout) else {
                     return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
                 };
                 // Collect the segments first so we don't lock the segment holder during the operations.
                 segments_guard
                     .non_appendable_then_appendable_segments()
-                    .collect::<Vec<_>>()
+                    .collect()
             };
 
             segments
