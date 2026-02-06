@@ -22,7 +22,7 @@ pub const DEFAULT_RRF_K: usize = 2;
 /// Higher or lower weight means the positions are "compressed" or "stretched":
 ///
 /// weight=3.0 is equivalent to dividing the position by 3,
-///            so element at pos 3 contributes like pos 1 would with weight=1.0.
+///            so element at pos 2 contributes like pos 0 would with weight=1.0.
 ///
 /// `(position + 1)` accounts for 0-based indexing,
 ///  so weight affects the score of the top-ranked item (pos=0) as well.
