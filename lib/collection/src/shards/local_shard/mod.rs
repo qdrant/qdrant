@@ -892,10 +892,16 @@ impl LocalShard {
         // clone filter for spawning task
         let filter = filter.cloned();
         let cardinality = tokio::task::spawn_blocking(move || {
-            let segments = segments.read(); // blocking sync lock
-            segments
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            let segments = segments
+                .read()
                 .iter()
-                .map(|(_id, segment)| {
+                .map(|i| i.1.clone())
+                .collect::<Vec<_>>();
+
+            segments
+                .into_iter()
+                .map(|segment| {
                     segment
                         .get()
                         .read() // blocking sync lock
@@ -989,14 +995,19 @@ impl LocalShard {
 
         let segments = self.segments.clone();
         let segment_info = tokio::task::spawn_blocking(move || {
-            let segments = segments.read(); // blocking sync lock
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            let segments = segments
+                .read()
+                .iter()
+                .map(|i| i.1.clone())
+                .collect::<Vec<_>>();
 
             let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
             let mut indexed_vectors_count = 0;
             let mut points_count = 0;
             let mut segments_count = 0;
 
-            for (_idx, segment) in segments.iter() {
+            for segment in segments {
                 segments_count += 1;
 
                 let segment_info = segment.get().read().info();

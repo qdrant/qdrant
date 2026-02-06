@@ -312,11 +312,14 @@ impl EdgeShard {
 
         let mut rescored_results = Vec::new();
 
-        for segment in self
+        // Collect the segments first so we don't lock the segment holder during the operations.
+        let segments = self
             .segments
             .read()
             .non_appendable_then_appendable_segments()
-        {
+            .collect::<Vec<_>>();
+
+        for segment in segments {
             let rescored_result = segment
                 .get()
                 .read()

@@ -245,7 +245,7 @@ impl NonAppendableSegmentEntry for Segment {
         Ok(records.into_values().collect())
     }
 
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType>> {
         // Sorry for that, but I didn't find any way easier.
         // If you try simply return iterator - it won't work because AtomicRef should exist
         // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>

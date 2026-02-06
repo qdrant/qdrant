@@ -131,7 +131,7 @@ impl LocalShard {
 
         let search_request = SegmentsSearcher::search(
             self.segments.clone(),
-            Arc::clone(&core_request),
+            core_request.clone(),
             search_runtime_handle,
             true,
             query_context,
