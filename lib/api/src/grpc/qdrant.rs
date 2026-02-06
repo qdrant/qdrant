@@ -6310,6 +6310,12 @@ pub struct Rrf {
     #[prost(uint32, optional, tag = "1")]
     #[validate(range(min = 1))]
     pub k: ::core::option::Option<u32>,
+    /// Weights for each prefetch source.
+    /// Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[prost(float, repeated, tag = "2")]
+    pub weights: ::prost::alloc::vec::Vec<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -953,6 +953,12 @@ message Mmr {
 message Rrf {
   // K parameter for reciprocal rank fusion
   optional uint32 k = 1;
+
+  // Weights for each prefetch source.
+  // Higher weight gives more influence on the final ranking.
+  // If not specified, all prefetches are weighted equally.
+  // The number of weights should match the number of prefetches.
+  repeated float weights = 2;
 }
 
 message Query {

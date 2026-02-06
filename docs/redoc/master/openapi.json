@@ -15723,6 +15723,15 @@
             "format": "uint",
             "minimum": 1,
             "nullable": true
+          },
+          "weights": {
+            "description": "Weights for each prefetch source. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches.",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "nullable": true
           }
         }
       },

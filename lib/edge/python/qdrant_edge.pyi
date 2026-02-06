@@ -1418,18 +1418,37 @@ class Query(Enum):
         ...
 
 
-class Fusion(Enum):
+class Fusion:
     """Fusion methods for combining multiple prefetch results."""
 
-    @staticmethod
-    def Rrfk(rrfk: int) -> "Fusion":
-        """Create RRF fusion with given k parameter."""
-        ...
+    class Rrf:
+        """
+        RRF (Reciprocal Rank Fusion) with given parameters.
+        
+        Args:
+            k: The RRF k parameter.
+            weights: Optional weights for each prefetch source.
+                     Higher weight gives more influence on the final ranking.
+                     If not specified, all prefetches are weighted equally.
+        
+        Examples:
+            # Basic RRF with k=2
+            Fusion.Rrf(k=2)
+            
+            # Weighted RRF - first prefetch has 3x weight
+            Fusion.Rrf(k=2, weights=[3.0, 1.0])
+        """
+        def __init__(self, k: int, weights: Optional[List[float]] = None) -> None: ...
+        
+        @property
+        def k(self) -> int: ...
+        
+        @property
+        def weights(self) -> Optional[List[float]]: ...
 
-    @staticmethod
-    def Dbsf() -> "Fusion":
-        """Create DBSF fusion."""
-        ...
+    class Dbsf:
+        """DBSF (Distribution-Based Score Fusion)."""
+        def __init__(self) -> None: ...
 
 
 class OrderBy:
