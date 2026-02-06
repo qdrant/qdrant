@@ -31,6 +31,20 @@ where
     S: BuildHasher + Default,
 {
     pub fn new(capacity: usize, small_ratio: f32, ghost_ratio: f32, lifecycle: L) -> Self {
+        Self::new_with_hasher(capacity, small_ratio, ghost_ratio, lifecycle, S::default())
+    }
+
+    /// Create a new S3Fifo cache with a specific hasher instance.
+    ///
+    /// This is useful when you need multiple caches to share the same hasher
+    /// (e.g., in a sharded cache where shard selection uses the same hash).
+    pub fn new_with_hasher(
+        capacity: usize,
+        small_ratio: f32,
+        ghost_ratio: f32,
+        lifecycle: L,
+        hasher: S,
+    ) -> Self {
         assert!(capacity > 0);
 
         // Create FIFOs (reader + writer halves are managed by S3Fifo)
@@ -53,7 +67,7 @@ where
         Self {
             hashtable,
             fifos,
-            hasher: S::default(),
+            hasher,
             lifecycle,
         }
     }
@@ -70,7 +84,15 @@ where
 
     pub fn get(&self, key: &K) -> Option<V> {
         let hash = self.hash_key(key);
+        self.get_with_hash(key, hash)
+    }
 
+    /// Get a value from the cache using a pre-computed hash.
+    ///
+    /// This is useful when the hash has already been computed (e.g., for shard selection)
+    /// to avoid computing it twice.
+    #[inline]
+    pub fn get_with_hash(&self, key: &K, hash: u64) -> Option<V> {
         let global_offset = self
             .hashtable
             .find(hash, |global_offset| self.fifos.key_eq(*global_offset, key))?;
@@ -86,6 +108,15 @@ where
     pub fn do_insert(&mut self, key: K, value: V) {
         // Check existing entry
         let hash = self.hash_key(&key);
+        self.do_insert_with_hash(key, value, hash);
+    }
+
+    /// Insert a key-value pair using a pre-computed hash.
+    ///
+    /// This is useful when the hash has already been computed (e.g., for shard selection)
+    /// to avoid computing it twice.
+    #[inline]
+    pub fn do_insert_with_hash(&mut self, key: K, value: V, hash: u64) {
         if let Some(global_offset) = self.hashtable.find(hash, |global_offset| {
             self.fifos.key_eq(*global_offset, &key)
         }) {
@@ -96,7 +127,7 @@ where
         // New entry -> insert into small queue
         let entry = Entry::new(key, value);
         let local = self.push_to_small_queue(entry);
-        self.insert_unique_to_hashtable(&key, local);
+        self.insert_unique_to_hashtable_with_hash(&key, local, hash);
     }
 
     /// Promote existing entry or increment recency.
@@ -251,7 +282,17 @@ where
     /// removed the old entry and need to insert at a new location.
     fn insert_unique_to_hashtable(&mut self, key: &K, global_offset: GlobalOffset) {
         let hash = self.hash_key(key);
+        self.insert_unique_to_hashtable_with_hash(key, global_offset, hash);
+    }
 
+    /// Insert a fresh entry into the hashtable using a pre-computed hash.
+    #[inline]
+    fn insert_unique_to_hashtable_with_hash(
+        &mut self,
+        _key: &K,
+        global_offset: GlobalOffset,
+        hash: u64,
+    ) {
         // Insert directly without searching for existing entry.
         // Caller must ensure the old entry was already removed.
         self.hashtable

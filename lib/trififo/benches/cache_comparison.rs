@@ -277,13 +277,19 @@ impl CacheBench for FoyerWrapper {
 }
 
 struct TrififoWrapper {
-    cache: trififo::Cache<Key, u32>,
+    cache: trififo::ShardedCache<Key, u32>,
 }
 
 impl TrififoWrapper {
     fn new(capacity: usize) -> Self {
         Self {
-            cache: trififo::Cache::with_config(capacity, 0.1, 0.5, NoLifecycle),
+            cache: trififo::ShardedCache::with_config(
+                capacity,
+                8.try_into().unwrap(),
+                0.1,
+                0.5,
+                NoLifecycle,
+            ),
         }
     }
 }
@@ -527,7 +533,7 @@ fn bench_single_thread_latency(c: &mut Criterion) {
 // Multi-threaded Latency Benchmarks
 // =============================================================================
 
-const NUM_THREADS: usize = 16;
+const NUM_THREADS: usize = 10;
 const OPS_PER_THREAD: usize = 100_000;
 
 fn bench_multi_thread_latency(c: &mut Criterion) {
@@ -575,6 +581,11 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 // =============================================================================
 
 fn bench_all(c: &mut Criterion) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(NUM_THREADS)
+        .build_global()
+        .unwrap();
+
     test_memory_usage();
     test_hit_ratio();
 

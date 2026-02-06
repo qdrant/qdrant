@@ -42,9 +42,23 @@ where
 {
     /// Create with custom disruptor ring size.
     pub fn with_config(capacity: usize, small_ratio: f32, ghost_ratio: f32, lifecycle: L) -> Self {
+        Self::with_config_and_hasher(capacity, small_ratio, ghost_ratio, lifecycle, S::default())
+    }
+
+    /// Create with custom configuration and a specific hasher instance.
+    ///
+    /// This is useful when you need multiple caches to share the same hasher
+    /// (e.g., in a sharded cache where shard selection uses the same hash).
+    pub fn with_config_and_hasher(
+        capacity: usize,
+        small_ratio: f32,
+        ghost_ratio: f32,
+        lifecycle: L,
+        hasher: S,
+    ) -> Self {
         assert!(capacity > 0);
 
-        let s3fifo = S3Fifo::new(capacity, small_ratio, ghost_ratio, lifecycle);
+        let s3fifo = S3Fifo::new_with_hasher(capacity, small_ratio, ghost_ratio, lifecycle, hasher);
 
         // Create seqlock reader/writer pair
         let (reader, cache_writer) = SeqLock::new_reader_writer(s3fifo);
@@ -63,11 +77,30 @@ where
         self.reader.read(|s3fifo| s3fifo.get(key))
     }
 
+    /// Read a value from the cache using a pre-computed hash.
+    ///
+    /// This is useful when the hash has already been computed (e.g., for shard selection)
+    /// to avoid computing it twice.
+    #[inline]
+    pub fn get_with_hash(&self, key: &K, hash: u64) -> Option<V> {
+        self.reader.read(|s3fifo| s3fifo.get_with_hash(key, hash))
+    }
+
     /// Publish an insert for processing by the writer thread.
     #[inline]
     pub fn insert(&self, key: K, value: V) {
         let mut writer_guard = self.writer.lock();
         writer_guard.write(|cache| cache.do_insert(key, value));
+    }
+
+    /// Insert a key-value pair using a pre-computed hash.
+    ///
+    /// This is useful when the hash has already been computed (e.g., for shard selection)
+    /// to avoid computing it twice.
+    #[inline]
+    pub fn insert_with_hash(&self, key: K, value: V, hash: u64) {
+        let mut writer_guard = self.writer.lock();
+        writer_guard.write(|cache| cache.do_insert_with_hash(key, value, hash));
     }
 
     pub fn len(&self) -> usize {

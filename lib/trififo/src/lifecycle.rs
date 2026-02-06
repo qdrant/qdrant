@@ -2,7 +2,7 @@ pub trait Lifecycle<K, V> {
     fn on_evict(&self, key: K, value: V);
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct NoLifecycle;
 
 impl<K, V> Lifecycle<K, V> for NoLifecycle {
