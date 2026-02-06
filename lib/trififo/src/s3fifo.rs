@@ -3,29 +3,34 @@ use std::hash::{BuildHasher, Hash};
 use hashbrown::HashTable;
 
 use crate::entry::Entry;
+use crate::lifecycle::Lifecycle;
 use crate::raw_fifos::{GlobalOffset, LocalOffset, RawFifos};
 use crate::seqlock::SeqLockSafe;
 
-pub(crate) struct S3Fifo<K, V, S = ahash::RandomState> {
+pub(crate) struct S3Fifo<K, V, L, S = ahash::RandomState> {
     /// Non-concurrent hashtable mapping key -> global offset in the FIFOs.
     hashtable: HashTable<GlobalOffset>,
 
     /// The actual FIFO structures (small, ghost, main).
     fifos: RawFifos<K, V>,
 
+    /// Lifecycle impl for hooking up to events
+    lifecycle: L,
+
     /// Hasher state used to compute the hash for lookups.
     hasher: S,
 }
 
-unsafe impl<K, V, S> SeqLockSafe for S3Fifo<K, V, S> {}
+unsafe impl<K, V, L, S> SeqLockSafe for S3Fifo<K, V, L, S> {}
 
-impl<K, V, S> S3Fifo<K, V, S>
+impl<K, V, L, S> S3Fifo<K, V, L, S>
 where
     K: Copy + Hash + Eq,
     V: Clone,
+    L: Lifecycle<K, V>,
     S: BuildHasher + Default,
 {
-    pub fn new(capacity: usize, small_ratio: f32, ghost_ratio: f32) -> Self {
+    pub fn new(capacity: usize, small_ratio: f32, ghost_ratio: f32, lifecycle: L) -> Self {
         assert!(capacity > 0);
 
         // Create FIFOs (reader + writer halves are managed by S3Fifo)
@@ -49,6 +54,7 @@ where
             hashtable,
             fifos,
             hasher: S::default(),
+            lifecycle,
         }
     }
 
@@ -146,6 +152,8 @@ where
             .main_eviction_candidate()
             .expect("We are the only writer, no torn read");
         let eviction_candidate_key = eviction_candidate.key;
+        self.lifecycle
+            .on_evict(eviction_candidate_key, eviction_candidate.value.clone());
         self.remove_from_hashtable(&eviction_candidate_key, &eviction_global_offset);
 
         // Now safe to overwrite the slot
@@ -175,6 +183,8 @@ where
             // Promote to main queue
             self.push_to_main_queue(oldest_entry.clone())
         } else {
+            self.lifecycle
+                .on_evict(oldest_key, oldest_entry.value.clone());
             // Demote key to ghost queue
             self.push_to_ghost_queue(oldest_key)
         };
@@ -254,17 +264,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lifecycle::NoLifecycle;
 
     /// Helper to create a default S3Fifo cache with standard ratios
     /// Note: With capacity 100 and small_ratio 0.1, small queue = 10 slots
-    fn create_cache(capacity: usize) -> S3Fifo<u64, String> {
-        S3Fifo::new(capacity, 0.1, 0.9)
+    fn create_cache(capacity: usize) -> S3Fifo<u64, String, NoLifecycle> {
+        S3Fifo::new(capacity, 0.1, 0.9, NoLifecycle)
     }
 
     /// Helper to create a cache where small queue has more slots for basic tests
     /// With capacity 100 and small_ratio 0.2, small queue = 20 slots
-    fn create_cache_with_larger_small(capacity: usize) -> S3Fifo<u64, String> {
-        S3Fifo::new(capacity, 0.2, 0.9)
+    fn create_cache_with_larger_small(capacity: usize) -> S3Fifo<u64, String, NoLifecycle> {
+        S3Fifo::new(capacity, 0.2, 0.9, NoLifecycle)
     }
 
     // ==================== Basic Operations ====================
@@ -500,7 +511,7 @@ mod tests {
     #[test]
     fn test_single_capacity() {
         // Minimum capacity edge case
-        let mut cache: S3Fifo<u64, String> = S3Fifo::new(2, 0.5, 0.5);
+        let mut cache: S3Fifo<u64, String, NoLifecycle> = S3Fifo::new(2, 0.5, 0.5, NoLifecycle);
 
         cache.do_insert(1, "one".to_string());
         assert_eq!(cache.get(&1), Some("one".to_string()));
@@ -544,7 +555,7 @@ mod tests {
     fn test_working_set_pattern() {
         // Simulate a working set pattern where some keys are accessed frequently
         // Use larger cache with bigger small queue for this pattern
-        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.2, 0.9);
+        let mut cache: S3Fifo<u64, String, NoLifecycle> = S3Fifo::new(100, 0.2, 0.9, NoLifecycle);
 
         // Insert a working set and immediately access to promote to main
         for i in 0..20u64 {
@@ -710,7 +721,7 @@ mod tests {
     #[test]
     fn test_custom_ratios() {
         // Test with different small/ghost ratios
-        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.2, 0.5);
+        let mut cache: S3Fifo<u64, String, NoLifecycle> = S3Fifo::new(100, 0.2, 0.5, NoLifecycle);
 
         for i in 0..50u64 {
             cache.do_insert(i, format!("value_{}", i));
@@ -722,7 +733,7 @@ mod tests {
     #[test]
     fn test_small_ratio_larger() {
         // Test with larger small queue ratio
-        let mut cache: S3Fifo<u64, String> = S3Fifo::new(100, 0.3, 0.9);
+        let mut cache: S3Fifo<u64, String, NoLifecycle> = S3Fifo::new(100, 0.3, 0.9, NoLifecycle);
 
         for i in 0..200u64 {
             cache.do_insert(i, format!("value_{}", i));
@@ -817,7 +828,7 @@ mod tests {
     #[test]
     fn test_alternating_access_pattern() {
         // Use larger cache with bigger small queue
-        let mut cache: S3Fifo<u64, String> = S3Fifo::new(50, 0.3, 0.9);
+        let mut cache: S3Fifo<u64, String, NoLifecycle> = S3Fifo::new(50, 0.3, 0.9, NoLifecycle);
 
         // Insert items and access them to promote to main
         for i in 0..30u64 {

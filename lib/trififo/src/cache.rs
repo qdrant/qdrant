@@ -2,6 +2,7 @@ use std::hash::{BuildHasher, Hash};
 
 use parking_lot::Mutex;
 
+use crate::lifecycle::{Lifecycle, NoLifecycle};
 use crate::s3fifo::S3Fifo;
 use crate::seqlock::{SeqLock, SeqLockReader, SeqLockWriter};
 
@@ -12,29 +13,38 @@ use crate::seqlock::{SeqLock, SeqLockReader, SeqLockWriter};
 /// - Reads are lock-free (only atomic seqlock checks) and can happen concurrently.
 /// - Writers share the same writer behind a mutex, so they will contend if another
 ///   write is taking place.
-pub struct Cache<K, V, S = ahash::RandomState> {
+pub struct Cache<K, V, L = NoLifecycle, S = ahash::RandomState> {
     /// Shared state for lock-free readers.
-    reader: SeqLockReader<S3Fifo<K, V, S>>,
+    reader: SeqLockReader<S3Fifo<K, V, L, S>>,
 
-    writer: Mutex<SeqLockWriter<S3Fifo<K, V, S>>>,
+    writer: Mutex<SeqLockWriter<S3Fifo<K, V, L, S>>>,
 }
 
-impl<K, V, S> Cache<K, V, S>
+impl<K, V, L, S> Cache<K, V, L, S>
 where
     K: Copy + Hash + Eq,
     V: Clone,
+    L: Lifecycle<K, V> + Default,
     S: BuildHasher + Default,
 {
     /// Create a new concurrent cache with default disruptor size and producer pool.
     pub fn new(capacity: usize) -> Self {
-        Self::with_config(capacity, 0.1, 0.9)
+        Self::with_config(capacity, 0.1, 0.9, L::default())
     }
+}
 
+impl<K, V, L, S> Cache<K, V, L, S>
+where
+    K: Copy + Hash + Eq,
+    V: Clone,
+    L: Lifecycle<K, V>,
+    S: BuildHasher + Default,
+{
     /// Create with custom disruptor ring size.
-    pub fn with_config(capacity: usize, small_ratio: f32, ghost_ratio: f32) -> Self {
+    pub fn with_config(capacity: usize, small_ratio: f32, ghost_ratio: f32, lifecycle: L) -> Self {
         assert!(capacity > 0);
 
-        let s3fifo = S3Fifo::new(capacity, small_ratio, ghost_ratio);
+        let s3fifo = S3Fifo::new(capacity, small_ratio, ghost_ratio, lifecycle);
 
         // Create seqlock reader/writer pair
         let (reader, cache_writer) = SeqLock::new_reader_writer(s3fifo);

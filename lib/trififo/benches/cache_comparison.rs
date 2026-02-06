@@ -33,6 +33,7 @@ use rayon::prelude::*;
 #[cfg(feature = "bench_all")]
 use schnellru::{ByLength, LruMap};
 use strum::{EnumIter, IntoEnumIterator};
+use trififo::lifecycle::NoLifecycle;
 
 /// Cache key representing a file descriptor and page offset.
 ///
@@ -282,7 +283,7 @@ struct TrififoWrapper {
 impl TrififoWrapper {
     fn new(capacity: usize) -> Self {
         Self {
-            cache: trififo::Cache::with_config(capacity, 0.1, 0.5),
+            cache: trififo::Cache::with_config(capacity, 0.1, 0.5, NoLifecycle),
         }
     }
 }

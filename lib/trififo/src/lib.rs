@@ -1,5 +1,6 @@
 mod cache;
 mod entry;
+pub mod lifecycle;
 mod raw_fifos;
 mod ringbuffer;
 mod s3fifo;
