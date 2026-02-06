@@ -421,6 +421,10 @@ pub struct ShardTransferInfo {
     #[anonymize(false)]
     pub method: Option<ShardTransferMethod>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub filter: Option<Filter>,
+
     /// A human-readable report of the transfer progress. Available only on the source peer.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]

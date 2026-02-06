@@ -215,6 +215,7 @@ mod internal_conversions {
                         Status::invalid_argument(format!("cannot decode ShardTransferMethod {err}"))
                     })?
                     .map(ShardTransferMethod::from),
+                filter: None, // todo: add filter
                 comment: (!value.comment.is_empty()).then_some(value.comment),
             })
         }

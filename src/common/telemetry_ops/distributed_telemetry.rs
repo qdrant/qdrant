@@ -259,6 +259,7 @@ fn aggregate_shard_transfers(
             sync: _,
             method: _,
             comment: _,
+            filter: _, // todo: use filter
         } = base_transfer;
 
         get_transfers(*from)?.iter().find(|t| {
