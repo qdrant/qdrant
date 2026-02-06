@@ -66,7 +66,7 @@ async fn search_points(
     let timing = Instant::now();
 
     let result = do_core_search_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         search_request.into(),
         params.consistency,
@@ -137,7 +137,7 @@ async fn batch_search_points(
     let timing = Instant::now();
 
     let result = do_search_batch_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         requests,
         params.consistency,
@@ -202,7 +202,7 @@ async fn search_point_groups(
     let timing = Instant::now();
 
     let result = do_search_point_groups(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         search_group_request,
         params.consistency,
@@ -257,7 +257,7 @@ async fn search_points_matrix_pairs(
     let timing = Instant::now();
 
     let response = do_search_points_matrix(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
@@ -313,7 +313,7 @@ async fn search_points_matrix_offsets(
     let timing = Instant::now();
 
     let response = do_search_points_matrix(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,

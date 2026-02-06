@@ -73,7 +73,7 @@ async fn query_points(
         .await?;
 
         let points = dispatcher
-            .toc(auth.access(), &pass)
+            .toc(&auth, &pass)
             .query_batch(
                 &collection.name,
                 vec![(request, shard_selection)],
@@ -161,7 +161,7 @@ async fn query_points_batch(
         .await?;
 
         let res = dispatcher
-            .toc(auth.access(), &pass)
+            .toc(&auth, &pass)
             .query_batch(
                 &collection.name,
                 batch,
@@ -239,7 +239,7 @@ async fn query_points_groups(
         .await?;
 
         let query_result = do_query_point_groups(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &collection.name,
             request,
             params.consistency,

@@ -40,7 +40,7 @@ pub async fn do_delete_full_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(auth.access(), &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir =
@@ -70,7 +70,7 @@ pub async fn do_delete_collection_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(auth.access(), &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
@@ -105,7 +105,7 @@ pub async fn do_create_full_snapshot(
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
-    let toc = dispatcher.toc(auth.access(), &pass).clone();
+    let toc = dispatcher.toc(&auth, &pass).clone();
 
     let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, auth).await }).await??;
     Ok(res)

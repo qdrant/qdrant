@@ -416,7 +416,7 @@ pub async fn try_take_partial_snapshot_recovery_lock(
         .issue_pass(collection_name);
 
     let recovery_lock = dispatcher
-        .toc(auth.access(), pass)
+        .toc(auth, pass)
         .get_collection(&collection_pass)
         .await?
         .try_take_partial_snapshot_recovery_lock(shard_id, RecoveryType::Partial)

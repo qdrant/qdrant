@@ -33,6 +33,15 @@ impl Auth {
         }
     }
 
+    pub const fn new_internal(access: Access) -> Self {
+        Self {
+            access,
+            subject: None,
+            remote: None,
+            auth_type: AuthType::Internal,
+        }
+    }
+
     /// Borrow the inner [`Access`] object (e.g. to pass into library code that
     /// still expects `&Access`).
     pub fn access(&self) -> &Access {

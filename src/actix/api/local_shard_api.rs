@@ -54,7 +54,7 @@ async fn get_points(
     let timing = Instant::now();
 
     let records = query::do_get_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &path.collection,
         request.into_inner(),
         params.consistency,
@@ -131,7 +131,7 @@ async fn scroll_points(
     let res_future = hash_ring_filter.map(|hash_ring_filter| {
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
-        dispatcher.toc(auth.access(), &pass).scroll(
+        dispatcher.toc(&auth, &pass).scroll(
             &path.collection,
             request,
             params.consistency,
@@ -205,7 +205,7 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         query::do_count_points(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &path.collection,
             request,
             params.consistency,
@@ -244,7 +244,7 @@ async fn cleanup_shard(
         let path = path.into_inner();
         let timeout = params.timeout.map(|sec| Duration::from_secs(sec.get()));
         dispatcher
-            .toc(auth.access(), &pass)
+            .toc(&auth, &pass)
             .cleanup_local_shard(
                 &path.collection,
                 path.shard,
@@ -288,7 +288,7 @@ async fn get_hash_ring_filter(
     let pass = auth.check_collection_access(collection, reqs, "get_hash_ring_filter")?;
 
     let shard_holder = dispatcher
-        .toc(auth.access(), verification_pass)
+        .toc(auth, verification_pass)
         .get_collection(&pass)
         .await?
         .shards_holder();

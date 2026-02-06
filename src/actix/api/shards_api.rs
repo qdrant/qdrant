@@ -24,7 +24,7 @@ async fn list_shard_keys(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_get_collection_shard_keys(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &auth,
         &collection.name,
     ))

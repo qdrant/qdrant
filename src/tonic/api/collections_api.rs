@@ -72,7 +72,7 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         get(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             request.into_inner(),
             &auth,
             None,
@@ -91,7 +91,7 @@ impl Collections for CollectionsService {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
-        let result = do_list_collections(self.dispatcher.toc(auth.access(), &pass), &auth).await?;
+        let result = do_list_collections(self.dispatcher.toc(&auth, &pass), &auth).await?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -142,7 +142,7 @@ impl Collections for CollectionsService {
 
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
         let CollectionsAliasesResponse { aliases } = do_list_collection_aliases(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             &auth,
             &collection_name,
         )
@@ -166,7 +166,7 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         let CollectionsAliasesResponse { aliases } =
-            do_list_aliases(self.dispatcher.toc(auth.access(), &pass), &auth).await?;
+            do_list_aliases(self.dispatcher.toc(&auth, &pass), &auth).await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -187,7 +187,7 @@ impl Collections for CollectionsService {
 
         let CollectionExistsRequest { collection_name } = request.into_inner();
         let result = do_collection_exists(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             &auth,
             &collection_name,
         )
@@ -211,7 +211,7 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         let response = do_get_collection_cluster(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             &auth,
             request.into_inner().collection_name.as_str(),
         )
@@ -260,7 +260,7 @@ impl Collections for CollectionsService {
         let pass = new_unchecked_verification_pass();
 
         let result = do_get_collection_shard_keys(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             &auth,
             request.into_inner().collection_name.as_str(),
         )

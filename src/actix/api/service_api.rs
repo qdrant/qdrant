@@ -237,7 +237,7 @@ async fn truncate_unapplied_wal(
 
         let pass = new_unchecked_verification_pass();
         let collection = dispatcher
-            .toc(auth.access(), &pass)
+            .toc(&auth, &pass)
             .get_collection(&collection_pass)
             .await?;
 

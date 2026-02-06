@@ -20,7 +20,7 @@ use api::facet_api::config_facet_api;
 use collection::operations::validation;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth};
 
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
@@ -63,16 +63,10 @@ pub fn init(
     actix_web::rt::System::new().block_on(async {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
-        let auth_keys = AuthKeys::try_create(
-            &settings.service,
-            dispatcher
-                .toc(&Access::full("For JWT validation"), &pass)
-                .clone(),
-        );
-        let upload_dir = dispatcher
-            .toc(&Access::full("For upload dir"), &pass)
-            .upload_dir()
-            .unwrap();
+        let auth = Auth::new_internal(Access::full("Service initialization"));
+        let auth_keys =
+            AuthKeys::try_create(&settings.service, dispatcher.toc(&auth, &pass).clone());
+        let upload_dir = dispatcher.toc(&auth, &pass).upload_dir().unwrap();
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
             .lock()

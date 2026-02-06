@@ -55,7 +55,7 @@ async fn count_points(
     let timing = Instant::now();
 
     let result = do_count_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         count_request,
         params.consistency,

@@ -904,7 +904,7 @@ pub async fn do_create_index(
         field_schema: field_schema.clone(),
     });
 
-    let toc = dispatcher.toc(auth.access(), &pass).clone();
+    let toc = dispatcher.toc(&auth, &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
@@ -975,7 +975,7 @@ pub async fn do_delete_index(
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(auth.access(), &pass).clone();
+    let toc = dispatcher.toc(&auth, &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher

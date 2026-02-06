@@ -67,7 +67,7 @@ fn recover_current_peer(
 
     helpers::time(async move {
         auth.check_global_access(AccessRequirements::new().manage(), "recover_current_peer")?;
-        dispatcher.toc(auth.access(), &pass).request_snapshot()?;
+        dispatcher.toc(&auth, &pass).request_snapshot()?;
         Ok(true)
     })
 }
@@ -86,7 +86,7 @@ fn remove_peer(
         auth.check_global_access(AccessRequirements::new().manage(), "remove_peer")?;
 
         let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc(auth.access(), &pass);
+        let toc = dispatcher.toc(&auth, &pass);
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;
@@ -164,7 +164,7 @@ async fn update_cluster_metadata_key(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(auth.access(), &pass);
+        let toc = dispatcher.toc(&auth, &pass);
         auth.check_global_access(
             AccessRequirements::new().write(),
             "update_cluster_metadata_key",
@@ -187,7 +187,7 @@ async fn delete_cluster_metadata_key(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(auth.access(), &pass);
+        let toc = dispatcher.toc(&auth, &pass);
         auth.check_global_access(
             AccessRequirements::new().write(),
             "delete_cluster_metadata_key",
@@ -209,7 +209,7 @@ async fn get_cluster_telemetry(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(auth.access(), &pass);
+        let toc = dispatcher.toc(&auth, &pass);
         let channel_service = toc.get_channel_service();
 
         let details_level = params

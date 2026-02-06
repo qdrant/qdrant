@@ -15,7 +15,7 @@ use segment::types::ShardKey;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::{Access, Auth, CollectionMultipass};
+use crate::rbac::{Auth, CollectionMultipass};
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -46,11 +46,11 @@ impl Dispatcher {
     }
 
     /// Get the table of content.
-    /// The `_access` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
+    /// The `_auth` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
     /// of both objects.
     pub fn toc(
         &self,
-        _access: &Access,
+        _auth: &Auth,
         _verification_pass: &VerificationPass,
     ) -> &Arc<TableOfContent> {
         &self.toc

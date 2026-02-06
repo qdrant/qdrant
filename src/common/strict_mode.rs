@@ -93,7 +93,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
     ) -> Result<&Arc<TableOfContent>, StorageError> {
         let pass =
             check_strict_mode(request, timeout, collection_name, self.dispatcher, auth).await?;
-        Ok(self.dispatcher.toc(auth.access(), &pass))
+        Ok(self.dispatcher.toc(auth, &pass))
     }
 
     async fn check_strict_mode_batch<I, R>(
@@ -115,7 +115,7 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
             auth,
         )
         .await?;
-        Ok(self.dispatcher.toc(auth.access(), &pass))
+        Ok(self.dispatcher.toc(auth, &pass))
     }
 }
 

@@ -96,7 +96,7 @@ impl TelemetryCollector {
         let collections_telemetry_handle = {
             let toc = self
                 .dispatcher
-                .toc(auth.access(), &new_unchecked_verification_pass())
+                .toc(auth, &new_unchecked_verification_pass())
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
             let access_collection = auth.access().clone();

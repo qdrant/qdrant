@@ -71,7 +71,7 @@ pub async fn do_recover_from_snapshot(
     let collection_pass = multipass.issue_pass(collection_name).into_static();
 
     let toc = dispatcher
-        .toc(auth.access(), &new_unchecked_verification_pass())
+        .toc(&auth, &new_unchecked_verification_pass())
         .clone();
 
     let res = toc
@@ -104,7 +104,7 @@ async fn _do_recover_from_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(auth.access(), &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)

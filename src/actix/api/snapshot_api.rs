@@ -155,7 +155,7 @@ async fn list_snapshots(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_list_snapshots(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &auth,
         &path,
     ))
@@ -176,7 +176,7 @@ async fn create_snapshot(
 
     let future = async move {
         do_create_snapshot(
-            dispatcher.toc(auth.access(), &pass).clone(),
+            dispatcher.toc(&auth, &pass).clone(),
             &auth,
             &collection_name,
         )
@@ -213,7 +213,7 @@ async fn upload_snapshot(
         }
 
         let snapshot_location = do_save_uploaded_snapshot(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &collection.name,
             snapshot,
         )
@@ -279,7 +279,7 @@ async fn get_snapshot(
 
     let (collection_name, snapshot_name) = path.into_inner();
     do_get_snapshot(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &auth,
         &collection_name,
         &snapshot_name,
@@ -296,7 +296,7 @@ async fn list_full_snapshots(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_list_full_snapshots(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         auth.clone(),
     ))
     .await
@@ -322,7 +322,7 @@ async fn get_full_snapshot(
     let pass = new_unchecked_verification_pass();
 
     let snapshot_name = path.into_inner();
-    do_get_full_snapshot(dispatcher.toc(auth.access(), &pass), &auth, &snapshot_name).await
+    do_get_full_snapshot(dispatcher.toc(&auth, &pass), &auth, &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -374,7 +374,7 @@ async fn list_shard_snapshots(
     let (collection, shard) = path.into_inner();
 
     let future = common::snapshots::list_shard_snapshots(
-        dispatcher.toc(auth.access(), &pass).clone(),
+        dispatcher.toc(&auth, &pass).clone(),
         &auth,
         collection,
         shard,
@@ -397,7 +397,7 @@ async fn create_shard_snapshot(
     let (collection, shard) = path.into_inner();
     let future = async move {
         common::snapshots::create_shard_snapshot(
-            dispatcher.toc(auth.access(), &pass).clone(),
+            dispatcher.toc(&auth, &pass).clone(),
             &auth,
             collection,
             shard,
@@ -419,7 +419,7 @@ async fn stream_shard_snapshot(
 
     let (collection, shard) = path.into_inner();
     Ok(common::snapshots::stream_shard_snapshot(
-        dispatcher.toc(auth.access(), &pass).clone(),
+        dispatcher.toc(&auth, &pass).clone(),
         &auth,
         collection,
         shard,
@@ -445,7 +445,7 @@ async fn recover_shard_snapshot(
         let (collection, shard) = path.into_inner();
 
         common::snapshots::recover_shard_snapshot(
-            dispatcher.toc(auth.access(), &pass).clone(),
+            dispatcher.toc(&auth, &pass).clone(),
             &auth,
             collection,
             shard,
@@ -500,7 +500,7 @@ async fn upload_shard_snapshot(
             }
 
             let collection = dispatcher
-                .toc(auth.access(), &pass)
+                .toc(&auth, &pass)
                 .get_collection(&collection_pass)
                 .await?;
             collection.assert_shard_exists(shard).await?;
@@ -515,7 +515,7 @@ async fn upload_shard_snapshot(
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &collection,
             shard,
             snapshot_data,
@@ -548,7 +548,7 @@ async fn download_shard_snapshot(
         "download_shard_snapshot",
     )?;
     let collection = dispatcher
-        .toc(auth.access(), &pass)
+        .toc(&auth, &pass)
         .get_collection(&collection_pass)
         .await?;
     let snapshots_storage_manager = collection.get_snapshots_storage_manager()?;
@@ -577,7 +577,7 @@ async fn delete_shard_snapshot(
     let (collection, shard, snapshot) = path.into_inner();
     let future = async move {
         common::snapshots::delete_shard_snapshot(
-            dispatcher.toc(auth.access(), &pass).clone(),
+            dispatcher.toc(&auth, &pass).clone(),
             &auth,
             collection,
             shard,
@@ -604,7 +604,7 @@ async fn create_partial_snapshot(
     let pass = new_unchecked_verification_pass();
 
     let snapshot_stream = common::snapshots::stream_shard_snapshot(
-        dispatcher.toc(auth.access(), &pass).clone(),
+        dispatcher.toc(&auth, &pass).clone(),
         &auth,
         collection,
         shard,
@@ -669,7 +669,7 @@ async fn recover_partial_snapshot(
             }
 
             let collection = dispatcher
-                .toc(auth.access(), &pass)
+                .toc(&auth, &pass)
                 .get_collection(&collection_pass)
                 .await?;
             collection.assert_shard_exists(shard).await?;
@@ -684,7 +684,7 @@ async fn recover_partial_snapshot(
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &collection,
             shard,
             snapshot_data,
@@ -748,7 +748,7 @@ async fn recover_partial_snapshot_from(
         let download_start_time = tokio::time::Instant::now();
 
         let cancel_safe = async {
-            let toc = dispatcher.toc(auth.access(), &pass);
+            let toc = dispatcher.toc(&auth, &pass);
 
             let collection_pass = auth
                 .check_global_access(AccessRequirements::new().manage(), "recover_partial_snapshot_from")?
@@ -847,7 +847,7 @@ async fn recover_partial_snapshot_from(
             SnapshotData::Packed(MaybeTempPath::from(partial_snapshot_temp_path));
 
         common::snapshots::recover_shard_snapshot_impl(
-            dispatcher.toc(auth.access(), &pass),
+            dispatcher.toc(&auth, &pass),
             &collection,
             shard_id,
             snapshot_data,
@@ -882,7 +882,7 @@ async fn get_partial_snapshot_manifest(
             .issue_pass(&collection);
 
         dispatcher
-            .toc(auth.access(), &pass)
+            .toc(&auth, &pass)
             .get_collection(&collection_pass)
             .await?
             .get_partial_snapshot_manifest(shard)

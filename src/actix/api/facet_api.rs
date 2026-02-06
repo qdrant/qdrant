@@ -58,7 +58,7 @@ async fn facet(
     );
 
     let response = dispatcher
-        .toc(auth.access(), &pass)
+        .toc(&auth, &pass)
         .facet(
             &collection.name,
             facet_params,

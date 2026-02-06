@@ -172,7 +172,7 @@ fn test_alias_operation() {
 
     let _ = handle
         .block_on(
-            dispatcher.toc(FULL_ACCESS.access(), &pass).get_collection(
+            dispatcher.toc(&FULL_ACCESS, &pass).get_collection(
                 &FULL_ACCESS
                     .check_collection_access("test_alias3", AccessRequirements::new(), "test")
                     .unwrap(),

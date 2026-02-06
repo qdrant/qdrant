@@ -51,7 +51,7 @@ impl Snapshots for SnapshotsService {
         let pass = new_unchecked_verification_pass();
 
         let response = do_create_snapshot(
-            Arc::clone(dispatcher.toc(auth.access(), &pass)),
+            Arc::clone(dispatcher.toc(&auth, &pass)),
             &auth,
             &collection_name,
         )
@@ -77,7 +77,7 @@ impl Snapshots for SnapshotsService {
         let pass = new_unchecked_verification_pass();
 
         let snapshots = do_list_snapshots(
-            self.dispatcher.toc(auth.access(), &pass),
+            self.dispatcher.toc(&auth, &pass),
             &auth,
             &collection_name,
         )
@@ -144,7 +144,7 @@ impl Snapshots for SnapshotsService {
         let pass = new_unchecked_verification_pass();
 
         let snapshots =
-            do_list_full_snapshots(self.dispatcher.toc(auth.access(), &pass), auth.clone()).await?;
+            do_list_full_snapshots(self.dispatcher.toc(&auth, &pass), auth.clone()).await?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),

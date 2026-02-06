@@ -453,7 +453,7 @@ async fn staging_operation(
 
     // Get TOC with unchecked verification pass (staging operations don't need strict mode)
     let pass = new_unchecked_verification_pass();
-    let toc = dispatcher.toc(auth.access(), &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     let result = crate::common::update::update(
         toc,

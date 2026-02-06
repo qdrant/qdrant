@@ -67,7 +67,7 @@ async fn recommend_points(
     let timing = Instant::now();
 
     let result = dispatcher
-        .toc(auth.access(), &pass)
+        .toc(&auth, &pass)
         .recommend(
             &collection.name,
             recommend_request,
@@ -152,7 +152,7 @@ async fn recommend_batch_points(
     let timing = Instant::now();
 
     let result = do_recommend_batch_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         request.into_inner(),
         params.consistency,
@@ -217,7 +217,7 @@ async fn recommend_point_groups(
     let timing = Instant::now();
 
     let result = crate::common::query::do_recommend_point_groups(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         recommend_group_request,
         params.consistency,

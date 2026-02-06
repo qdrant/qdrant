@@ -104,7 +104,7 @@ async fn get_point(
     let timing = Instant::now();
 
     let res = do_get_point(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         point_id,
         params.consistency,
@@ -163,7 +163,7 @@ async fn get_points(
     let timing = Instant::now();
 
     let res = do_get_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         point_request,
         params.consistency,
@@ -224,7 +224,7 @@ async fn scroll_points(
     let timing = Instant::now();
 
     let res = dispatcher
-        .toc(auth.access(), &pass)
+        .toc(&auth, &pass)
         .scroll(
             &collection.name,
             scroll_request,

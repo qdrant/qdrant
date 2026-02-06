@@ -290,10 +290,9 @@ pub async fn do_update_collection_cluster(
 
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
-    let access = auth.access();
 
     let collection = dispatcher
-        .toc(access, &pass)
+        .toc(&auth, &pass)
         .get_collection(&collection_pass)
         .await?;
 

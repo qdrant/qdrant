@@ -28,7 +28,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth};
 use tokio::runtime::Handle;
 use tokio::signal;
 use tonic::codec::CompressionEncoding;
@@ -141,6 +141,8 @@ pub fn init(
             log::info!("TLS disabled for gRPC API");
         }
 
+        let auth = Auth::new_internal(Access::full("For tonic auth middleware"));
+
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
             .layer(logging::LoggingMiddlewareLayer::new(
@@ -153,10 +155,7 @@ pub fn init(
                 AuthKeys::try_create(
                     &settings.service,
                     dispatcher
-                        .toc(
-                            &Access::full("For tonic auth middleware"),
-                            &new_unchecked_verification_pass(),
-                        )
+                        .toc(&auth, &new_unchecked_verification_pass())
                         .clone(),
                 )
                 .map(auth::AuthLayer::new)

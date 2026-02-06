@@ -136,5 +136,5 @@ fn get_toc_without_verification_pass<'a>(
     auth: &Auth,
 ) -> &'a Arc<TableOfContent> {
     let pass = new_unchecked_verification_pass();
-    dispatcher.toc(auth.access(), &pass)
+    dispatcher.toc(auth, &pass)
 }

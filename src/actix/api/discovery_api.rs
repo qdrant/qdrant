@@ -58,7 +58,7 @@ async fn discover_points(
     let timing = Instant::now();
 
     let result = dispatcher
-        .toc(auth.access(), &pass)
+        .toc(&auth, &pass)
         .discover(
             &collection.name,
             discover_request,
@@ -112,7 +112,7 @@ async fn discover_batch_points(
     let timing = Instant::now();
 
     let result = do_discover_batch_points(
-        dispatcher.toc(auth.access(), &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         request,
         params.consistency,
