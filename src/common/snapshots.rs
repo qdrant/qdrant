@@ -162,109 +162,117 @@ pub async fn recover_shard_snapshot(
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     cancel::future::spawn_cancel_on_drop(async move |cancel| {
-        let cancel_safe = async {
+        let pre_recovery = async {
             let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
-            // Start tracking recovery progress
-            let recovery_progress = collection
-                .shards_holder()
-                .read()
-                .await
-                .start_shard_recovery(shard_id);
-
             // Default temporary path to storage dir, to allow faster recovery within the same volume
             let download_dir = toc.optional_temp_or_storage_temp_path()?;
-
-            let DownloadResult {
-                snapshot,
-                hash
-            } = match snapshot_location {
-                ShardSnapshotLocation::Url(url) => {
-                    if !matches!(url.scheme(), "http" | "https") {
-                        let description = format!(
-                            "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
-                            url.scheme(),
-                        );
-
-                        return Err(StorageError::bad_input(description));
-                    }
-
-                    // Set downloading stage
-                    recovery_progress
-                        .lock()
-                        .set_stage(RecoveryStage::Downloading);
-
-                    let client = client.client(api_key.as_deref())?;
-                    snapshots::download::download_snapshot(
-                        &client,
-                        url,
-                        &download_dir,
-                        checksum.is_some(),
-                    )
-                    .await?
-                }
-
-                ShardSnapshotLocation::Path(snapshot_file_name) => {
-                    let snapshot_path = collection
-                        .shards_holder()
-                        .read()
-                        .await
-                        .get_shard_snapshot_path(
-                            collection.snapshots_path(),
-                            shard_id,
-                            &snapshot_file_name,
-                        )
-                        .await?;
-
-                    let snapshot_file = collection
-                        .get_snapshots_storage_manager()?
-                        .get_snapshot_file(&snapshot_path, &download_dir)
-                        .await?;
-
-                    let hash = if checksum.is_some() {
-                        Some(sha_256::hash_file(&snapshot_path).await?)
-                    } else {
-                        None
-                    };
-
-                    DownloadResult {
-                        snapshot: SnapshotData::Packed(snapshot_file),
-                        hash,
-                    }
-                }
-            };
-
-            if let Some(checksum) = checksum {
-                if let Some(snapshot_checksum) = hash {
-                    if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
-                        return Err(StorageError::bad_input(format!(
-                            "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
-                        )));
-                    }
-                } else {
-                    return Err(StorageError::service_error(
-                        "Snapshot checksum could not be verified".to_string(),
-                    ));
-                }
-            }
-
-            Ok((collection, snapshot, recovery_progress))
+            Result::<_, StorageError>::Ok((collection, download_dir))
         };
 
-        let (collection, snapshot_data, _recovery_progress) =
-            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+        let (collection, download_dir) =
+            cancel::future::cancel_on_token(cancel.clone(), pre_recovery).await??;
 
-        // `recover_shard_snapshot_impl` is *not* cancel safe
-        let result = recover_shard_snapshot_impl(
-            &toc,
-            &collection,
-            shard_id,
-            snapshot_data,
-            snapshot_priority,
-            RecoveryType::Full,
-            cancel,
-        )
+        // Once recovery tracking starts, `finish_shard_recovery` must run on all paths
+        let recovery_progress = collection
+            .shards_holder()
+            .read()
+            .await
+            .start_shard_recovery(shard_id);
+
+        let result = async {
+            let cancel_safe = async {
+                let DownloadResult {
+                    snapshot,
+                    hash
+                } = match snapshot_location {
+                    ShardSnapshotLocation::Url(url) => {
+                        if !matches!(url.scheme(), "http" | "https") {
+                            let description = format!(
+                                "Invalid snapshot URL {url}: URLs with {} scheme are not supported",
+                                url.scheme(),
+                            );
+
+                            return Err(StorageError::bad_input(description));
+                        }
+
+                        recovery_progress
+                            .lock()
+                            .set_stage(RecoveryStage::Downloading);
+
+                        let client = client.client(api_key.as_deref())?;
+                        snapshots::download::download_snapshot(
+                            &client,
+                            url,
+                            &download_dir,
+                            checksum.is_some(),
+                        )
+                        .await?
+                    }
+
+                    ShardSnapshotLocation::Path(snapshot_file_name) => {
+                        let snapshot_path = collection
+                            .shards_holder()
+                            .read()
+                            .await
+                            .get_shard_snapshot_path(
+                                collection.snapshots_path(),
+                                shard_id,
+                                &snapshot_file_name,
+                            )
+                            .await?;
+
+                        let snapshot_file = collection
+                            .get_snapshots_storage_manager()?
+                            .get_snapshot_file(&snapshot_path, &download_dir)
+                            .await?;
+
+                        let hash = if checksum.is_some() {
+                            Some(sha_256::hash_file(&snapshot_path).await?)
+                        } else {
+                            None
+                        };
+
+                        DownloadResult {
+                            snapshot: SnapshotData::Packed(snapshot_file),
+                            hash,
+                        }
+                    }
+                };
+
+                if let Some(checksum) = checksum {
+                    if let Some(snapshot_checksum) = hash {
+                        if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+                            return Err(StorageError::bad_input(format!(
+                                "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
+                            )));
+                        }
+                    } else {
+                        return Err(StorageError::service_error(
+                            "Snapshot checksum could not be verified".to_string(),
+                        ));
+                    }
+                }
+
+                Ok(snapshot)
+            };
+
+            let snapshot_data =
+                cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+
+            // `recover_shard_snapshot_impl` is *not* cancel safe
+            recover_shard_snapshot_impl(
+                &toc,
+                &collection,
+                shard_id,
+                snapshot_data,
+                snapshot_priority,
+                RecoveryType::Full,
+                cancel,
+            )
+            .await
+        }
         .await;
 
         // Finish tracking recovery progress
