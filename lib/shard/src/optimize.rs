@@ -183,7 +183,8 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
 
     let mut defragmentation_keys = HashSet::new();
     for segment in &segments {
-        let payload_index = &segment.read().payload_index;
+        let segment = segment.read();
+        let payload_index = &segment.payload_index_info.read().payload_index;
         let payload_index = payload_index.borrow();
         let keys = payload_index
             .config()
