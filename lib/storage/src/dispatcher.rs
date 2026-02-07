@@ -75,7 +75,7 @@ impl Dispatcher {
         auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        auth.check_collection_meta_operation(&operation, "submit_collection_meta_op")?;
+        auth.check_collection_meta_operation(&operation)?;
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {

@@ -26,6 +26,7 @@ use shard::search::CoreSearchRequestBatch;
 use super::TableOfContent;
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::rbac::Auth;
+use crate::rbac::auditable_operation::AuditableOperation;
 
 impl TableOfContent {
     /// Recommend points using positive and negative example from the request
@@ -496,8 +497,11 @@ impl TableOfContent {
         auth: Auth,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
-        let collection_pass =
-            auth.check_point_op(collection_name, &operation.operation, "update")?;
+        let collection_pass = auth.check_point_op(
+            collection_name,
+            &operation.operation,
+            operation.operation.operation_name(),
+        )?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.

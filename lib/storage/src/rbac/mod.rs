@@ -7,6 +7,7 @@ use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
 
+pub mod auditable_operation;
 pub mod auth;
 mod ops_checks;
 

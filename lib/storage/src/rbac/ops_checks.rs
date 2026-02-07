@@ -18,6 +18,7 @@ use shard::scroll::ScrollRequestInternal;
 use super::{Access, AccessRequirements, CollectionAccessList, CollectionPass};
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::errors::{StorageError, StorageResult};
+use crate::rbac::auditable_operation::AuditableOperation;
 
 impl Access {
     #[allow(private_bounds)]
@@ -338,12 +339,11 @@ impl Auth {
     pub(crate) fn check_collection_meta_operation(
         &self,
         operation: &CollectionMetaOperations,
-        method: &str,
     ) -> Result<(), StorageError> {
         let result = self
             .unlogged_access()
             .check_collection_meta_operation(operation);
-        self.emit_audit(method, None, &result);
+        self.emit_audit(operation.operation_name(), None, &result);
         result
     }
 }
