@@ -233,7 +233,7 @@ impl Collections for CollectionsService {
             operation
                 .ok_or_else(|| Status::new(tonic::Code::InvalidArgument, "empty operation"))?
                 .try_into()?,
-            auth.clone(),
+            auth,
             timeout.map(std::time::Duration::from_secs),
         )
         .await?;
@@ -290,7 +290,7 @@ impl Collections for CollectionsService {
             self.dispatcher.as_ref(),
             collection_name,
             operation,
-            auth.clone(),
+            auth,
             timeout,
         )
         .await?;
@@ -324,7 +324,7 @@ impl Collections for CollectionsService {
             self.dispatcher.as_ref(),
             collection_name,
             operation,
-            auth.clone(),
+            auth,
             timeout,
         )
         .await?;

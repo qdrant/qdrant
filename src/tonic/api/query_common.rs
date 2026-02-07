@@ -654,7 +654,7 @@ pub async fn count(
     toc_provider: impl CheckedTocProvider,
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
-    auth: &Auth,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
@@ -676,7 +676,7 @@ pub async fn count(
             &count_request,
             &collection_name,
             timeout.map(|i| i as usize),
-            auth,
+            &auth,
         )
         .await?;
 
@@ -694,7 +694,7 @@ pub async fn count(
         read_consistency,
         timeout,
         shard_selector,
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;

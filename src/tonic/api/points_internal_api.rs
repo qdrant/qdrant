@@ -784,7 +784,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
-            &full_internal_auth(),
+            full_internal_auth(),
             hw_data,
         )
         .await?;

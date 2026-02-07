@@ -64,7 +64,7 @@ async fn facet(
             facet_params,
             shard_selection,
             params.consistency,
-            auth.clone(),
+            auth,
             params.timeout(),
             request_hw_counter.get_counter(),
         )

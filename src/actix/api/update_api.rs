@@ -58,7 +58,7 @@ async fn upsert_points(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -102,7 +102,7 @@ async fn delete_points(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -139,7 +139,7 @@ async fn update_vectors(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -183,7 +183,7 @@ async fn delete_vectors(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -216,7 +216,7 @@ async fn set_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -249,7 +249,7 @@ async fn overwrite_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -282,7 +282,7 @@ async fn delete_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -315,7 +315,7 @@ async fn clear_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -352,7 +352,7 @@ async fn update_batch(
         operations.operations,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -396,7 +396,7 @@ async fn create_field_index(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -423,7 +423,7 @@ async fn delete_field_index(
         field.name.clone(),
         InternalUpdateParams::default(),
         params.into_inner(),
-        auth.clone(),
+        auth,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
@@ -462,7 +462,7 @@ async fn staging_operation(
         InternalUpdateParams::default(),
         params.into_inner(),
         None, // shard_key
-        auth.clone(),
+        auth,
         HwMeasurementAcc::disposable(),
     )
     .await;

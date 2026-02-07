@@ -64,7 +64,7 @@ async fn discover_points(
             discover_request,
             params.consistency,
             shard_selection,
-            auth.clone(),
+            auth,
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -116,7 +116,7 @@ async fn discover_batch_points(
         &collection.name,
         request,
         params.consistency,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )

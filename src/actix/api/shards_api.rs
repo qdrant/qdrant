@@ -53,7 +53,7 @@ async fn create_shard_key(
         &dispatcher,
         collection.name.clone(),
         operation,
-        auth.clone(),
+        auth,
         wait_timeout,
     )
     .await;
@@ -83,7 +83,7 @@ async fn delete_shard_key(
         &dispatcher,
         collection.name.clone(),
         operation,
-        auth.clone(),
+        auth,
         wait_timeout,
     )
     .await;

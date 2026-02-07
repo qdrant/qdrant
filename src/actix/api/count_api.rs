@@ -61,7 +61,7 @@ async fn count_points(
         params.consistency,
         params.timeout(),
         shard_selector,
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;

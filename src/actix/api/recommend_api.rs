@@ -73,7 +73,7 @@ async fn recommend_points(
             recommend_request,
             params.consistency,
             shard_selection,
-            auth.clone(),
+            auth,
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -156,7 +156,7 @@ async fn recommend_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -222,7 +222,7 @@ async fn recommend_point_groups(
         recommend_group_request,
         params.consistency,
         shard_selection,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )

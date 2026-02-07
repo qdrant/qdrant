@@ -71,7 +71,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -141,7 +141,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -207,7 +207,7 @@ async fn search_point_groups(
         search_group_request,
         params.consistency,
         shard_selection,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -262,7 +262,7 @@ async fn search_points_matrix_pairs(
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
         shard_selection,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -318,7 +318,7 @@ async fn search_points_matrix_offsets(
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
         shard_selection,
-        auth.clone(),
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )

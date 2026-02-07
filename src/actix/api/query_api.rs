@@ -78,7 +78,7 @@ async fn query_points(
                 &collection.name,
                 vec![(request, shard_selection)],
                 params.consistency,
-                auth.clone(),
+                auth,
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -166,7 +166,7 @@ async fn query_points_batch(
                 &collection.name,
                 batch,
                 params.consistency,
-                auth.clone(),
+                auth,
                 params.timeout(),
                 hw_measurement_acc,
             )
@@ -244,7 +244,7 @@ async fn query_points_groups(
             request,
             params.consistency,
             shard_selection,
-            auth.clone(),
+            auth,
             params.timeout(),
             hw_measurement_acc,
         )

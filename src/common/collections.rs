@@ -328,7 +328,7 @@ pub async fn do_update_collection_cluster(
                             filter: None,
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -365,7 +365,7 @@ pub async fn do_update_collection_cluster(
                             filter: None,
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -426,7 +426,7 @@ pub async fn do_update_collection_cluster(
                             filter,
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -457,7 +457,7 @@ pub async fn do_update_collection_cluster(
                             reason: "user request".to_string(),
                         },
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -484,7 +484,7 @@ pub async fn do_update_collection_cluster(
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::UpdateCollection(update_operation),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -570,7 +570,7 @@ pub async fn do_update_collection_cluster(
                         placement: exact_placement,
                         initial_state: create_sharding_key.initial_state,
                     }),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -608,7 +608,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: drop_sharding_key.shard_key,
                     }),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -652,7 +652,7 @@ pub async fn do_update_collection_cluster(
                             method,
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -773,7 +773,7 @@ pub async fn do_update_collection_cluster(
                             shard_key,
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -799,7 +799,7 @@ pub async fn do_update_collection_cluster(
                             shard_key: state.shard_key.clone(),
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -819,7 +819,7 @@ pub async fn do_update_collection_cluster(
                         collection_name.clone(),
                         ReshardingOperation::Finish(state.key()),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -870,7 +870,7 @@ pub async fn do_update_collection_cluster(
                         state: replica_set_state::ReplicaState::Active,
                         from_state: Some(from_state),
                     }),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -899,7 +899,7 @@ pub async fn do_update_collection_cluster(
                             shard_key: state.shard_key.clone(),
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -928,7 +928,7 @@ pub async fn do_update_collection_cluster(
                             shard_key: state.shard_key.clone(),
                         }),
                     ),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await
@@ -949,7 +949,7 @@ pub async fn do_update_collection_cluster(
                         peer_id: test_slow_down.peer_id,
                         duration_ms,
                     }),
-                    auth.clone(),
+                    auth,
                     wait_timeout,
                 )
                 .await

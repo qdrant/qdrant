@@ -109,7 +109,7 @@ async fn get_point(
         point_id,
         params.consistency,
         params.timeout(),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await
@@ -169,7 +169,7 @@ async fn get_points(
         params.consistency,
         params.timeout(),
         shard_selection,
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .map_ok(|response| {
@@ -231,7 +231,7 @@ async fn scroll_points(
             params.consistency,
             params.timeout(),
             shard_selection,
-            auth.clone(),
+            auth,
             request_hw_counter.get_counter(),
         )
         .await;

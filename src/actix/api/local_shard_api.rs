@@ -60,7 +60,7 @@ async fn get_points(
         params.consistency,
         params.timeout(),
         ShardSelectorInternal::ShardId(path.shard),
-        auth.clone(),
+        auth,
         request_hw_counter.get_counter(),
     )
     .await
@@ -137,7 +137,7 @@ async fn scroll_points(
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            auth.clone(),
+            auth,
             request_hw_counter.get_counter(),
         )
     });
@@ -211,7 +211,7 @@ async fn count_points(
             params.consistency,
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
-            auth.clone(),
+            auth,
             hw_measurement_acc,
         )
         .await
@@ -248,7 +248,7 @@ async fn cleanup_shard(
             .cleanup_local_shard(
                 &path.collection,
                 path.shard,
-                auth.clone(),
+                auth,
                 params.wait,
                 timeout,
             )
