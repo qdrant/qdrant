@@ -93,7 +93,10 @@ async fn metrics(
     config: Data<ServiceConfig>,
     ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
-    if let Err(err) = auth.check_global_access(AccessRequirements::new(), "metrics") {
+    if let Err(err) = auth
+        .unlogged_access() // Do not log access to metrics, as it is too noizy
+        .check_global_access(AccessRequirements::new())
+    {
         return process_response_error(err, Instant::now(), None);
     }
 
