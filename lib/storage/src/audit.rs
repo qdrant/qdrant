@@ -31,18 +31,18 @@ pub struct AuditConfig {
     #[serde(default)]
     pub rotation: AuditRotation,
 
-    /// Maximum age of audit log files in seconds.  Files older than this are
-    /// deleted when a new log file is created.  Default: 604800 (7 days).
-    #[serde(default = "default_max_retention_sec")]
-    pub max_retention_sec: u64,
+    /// Maximum number of rotated audit log files to keep.  Older files are
+    /// deleted when a new log file is created.  Default: 7.
+    #[serde(default = "default_max_log_files")]
+    pub max_log_files: usize,
 }
 
 fn default_audit_dir() -> PathBuf {
     PathBuf::from("./storage/audit")
 }
 
-const fn default_max_retention_sec() -> u64 {
-    604_800 // 7 days
+const fn default_max_log_files() -> usize {
+    7
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -99,18 +99,11 @@ impl AuditLogger {
             AuditRotation::Hourly => Rotation::HOURLY,
         };
 
-        // Convert time-based retention to file count.
-        let seconds_per_file = match config.rotation {
-            AuditRotation::Daily => 86_400u64,
-            AuditRotation::Hourly => 3_600u64,
-        };
-        let max_files = (config.max_retention_sec / seconds_per_file).max(1) as usize;
-
         let appender = RollingFileAppender::builder()
             .rotation(rotation)
             .filename_prefix("audit")
             .filename_suffix("log")
-            .max_log_files(max_files)
+            .max_log_files(config.max_log_files.max(1))
             .build(&config.dir)
             .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
 
