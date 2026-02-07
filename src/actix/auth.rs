@@ -6,8 +6,10 @@ use actix_web::body::EitherBody;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
+use storage::audit::audit_trust_forwarded_headers;
 use storage::rbac::Access;
 
+use super::forwarded;
 use super::helpers::HttpError;
 use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType};
 
@@ -124,7 +126,12 @@ where
                 .await
             {
                 Ok((access, inference_token, auth_type, subject)) => {
-                    let remote = req.peer_addr().map(|a| a.ip().to_string());
+                    let remote = if audit_trust_forwarded_headers() {
+                        forwarded::forwarded_for(&req)
+                    } else {
+                        None
+                    }
+                    .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
                     let auth = Auth::new(access, subject, remote, auth_type);
                     let previous = req.extensions_mut().insert(auth);
                     req.extensions_mut().insert(inference_token);
@@ -161,7 +168,12 @@ impl FromRequest for ActixAuth {
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
         let auth = req.extensions_mut().remove::<Auth>().unwrap_or_else(|| {
-            let remote = req.peer_addr().map(|a| a.ip().to_string());
+            let remote = if audit_trust_forwarded_headers() {
+                forwarded::forwarded_for_http(req)
+            } else {
+                None
+            }
+            .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
             Auth::new(
                 Access::full(
                     "All requests have full by default access when API key is not configured",

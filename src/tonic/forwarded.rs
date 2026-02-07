@@ -1,0 +1,15 @@
+/// Extract the raw `X-Forwarded-For` header value from a tonic/http request.
+///
+/// The value is returned **as-is** – it may contain a comma-separated list of
+/// addresses (e.g. `"client, proxy1, proxy2"`).  No parsing or validation is
+/// performed; downstream log analysis tools are expected to handle the format.
+///
+/// Returns `None` when the header is absent or not valid UTF-8.
+pub fn forwarded_for(
+    req: &tonic::codegen::http::Request<tonic::transport::Body>,
+) -> Option<String> {
+    req.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}

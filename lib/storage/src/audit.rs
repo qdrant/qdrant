@@ -13,6 +13,10 @@ use crate::rbac::AuthType;
 /// Global audit logger singleton.
 static AUDIT_LOGGER: OnceLock<AuditLogger> = OnceLock::new();
 
+/// Whether the audit logger trusts forwarded headers (`X-Forwarded-For`).
+/// Stored separately so it can be queried before/without an active logger.
+static TRUST_FORWARDED_HEADERS: OnceLock<bool> = OnceLock::new();
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -35,6 +39,13 @@ pub struct AuditConfig {
     /// deleted when a new log file is created.  Default: 7.
     #[serde(default = "default_max_log_files")]
     pub max_log_files: usize,
+
+    /// If true, use `X-Forwarded-For` header to determine the client address
+    /// recorded in audit log entries.  Only enable this when running behind a
+    /// trusted reverse proxy or load balancer.
+    /// Default: false
+    #[serde(default)]
+    pub trust_forwarded_headers: bool,
 }
 
 fn default_audit_dir() -> PathBuf {
@@ -161,6 +172,10 @@ pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<
         return Ok(None);
     }
 
+    // Persist the forwarded-headers flag so it is available globally even
+    // outside the audit logger itself (e.g. in auth middleware).
+    let _ = TRUST_FORWARDED_HEADERS.set(config.trust_forwarded_headers);
+
     let (logger, guard) = AuditLogger::new(config)?;
     AUDIT_LOGGER
         .set(logger)
@@ -182,4 +197,10 @@ pub fn audit_log(event: AuditEvent) {
 /// Returns `true` if the audit logger is active.
 pub fn is_audit_enabled() -> bool {
     AUDIT_LOGGER.get().is_some()
+}
+
+/// Returns `true` if the audit logger is configured to trust forwarded
+/// headers (`X-Forwarded-For`) for determining the client address.
+pub fn audit_trust_forwarded_headers() -> bool {
+    TRUST_FORWARDED_HEADERS.get().copied().unwrap_or(false)
 }

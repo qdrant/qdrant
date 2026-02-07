@@ -2,11 +2,13 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
+use storage::audit::audit_trust_forwarded_headers;
 use storage::rbac::Access;
 use tonic::Status;
 use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
+use super::forwarded;
 use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType};
 use crate::common::inference::api_keys::InferenceToken;
 
@@ -20,12 +22,20 @@ pub struct AuthMiddleware<S> {
 }
 
 async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
-    // Retrieve the remote address from extensions (inserted by tonic for TCP).
-    let remote = req
-        .extensions()
-        .get::<tonic::transport::server::TcpConnectInfo>()
-        .and_then(|info| info.remote_addr())
-        .map(|addr| addr.ip().to_string());
+    // When the audit logger trusts forwarded headers, prefer the raw
+    // `X-Forwarded-For` value so audit entries record the real client address
+    // rather than the proxy address.  Fall back to the TCP peer address.
+    let remote = if audit_trust_forwarded_headers() {
+        forwarded::forwarded_for(&req)
+    } else {
+        None
+    }
+    .or_else(|| {
+        req.extensions()
+            .get::<tonic::transport::server::TcpConnectInfo>()
+            .and_then(|info| info.remote_addr())
+            .map(|addr| addr.ip().to_string())
+    });
 
     // Allow health check endpoints to bypass authentication
     let path = req.uri().path();

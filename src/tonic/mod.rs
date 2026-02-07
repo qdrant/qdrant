@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod forwarded;
 mod logging;
 mod tonic_telemetry;
 
@@ -145,9 +146,7 @@ pub fn init(
 
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()
-            .layer(logging::LoggingMiddlewareLayer::new(
-                settings.service.trust_forwarded_headers,
-            ))
+            .layer(logging::LoggingMiddlewareLayer::new())
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
@@ -228,8 +227,6 @@ pub fn init_internal(
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
-            let trust_forwarded_headers = settings.service.trust_forwarded_headers;
-
             let qdrant_service = QdrantService::default();
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
@@ -262,9 +259,7 @@ pub fn init_internal(
 
             // The stack of middleware that our service will be wrapped in
             let middleware_layer = tower::ServiceBuilder::new()
-                .layer(logging::LoggingMiddlewareLayer::new(
-                    trust_forwarded_headers,
-                ))
+                .layer(logging::LoggingMiddlewareLayer::new())
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     tonic_telemetry_collector,
                 ))
