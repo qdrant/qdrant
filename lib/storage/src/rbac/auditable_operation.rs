@@ -35,6 +35,8 @@ impl AuditableOperation for CollectionUpdateOperations {
                 FieldIndexOperations::CreateIndex(_) => "create_field_index",
                 FieldIndexOperations::DeleteIndex(_) => "delete_field_index",
             },
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(_) => "debug",
         }
     }
 }
@@ -54,6 +56,8 @@ impl AuditableOperation for CollectionMetaOperations {
             CollectionMetaOperations::CreatePayloadIndex(_) => "create_payload_index",
             CollectionMetaOperations::DropPayloadIndex(_) => "drop_payload_index",
             CollectionMetaOperations::Nop { .. } => "nop",
+            #[cfg(feature = "staging")]
+            CollectionMetaOperations::TestSlowDown(_) => "debug",
         }
     }
 }
