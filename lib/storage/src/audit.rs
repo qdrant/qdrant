@@ -152,9 +152,7 @@ impl AuditLogger {
 /// Returns a [`WorkerGuard`] that **must** be held alive (typically in
 /// `main`) until the program exits.  Dropping the guard flushes any
 /// remaining buffered audit events to disk.
-pub fn init_audit_logger(
-    config: Option<&AuditConfig>,
-) -> anyhow::Result<Option<WorkerGuard>> {
+pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<Option<WorkerGuard>> {
     let Some(config) = config else {
         return Ok(None);
     };
