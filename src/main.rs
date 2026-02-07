@@ -167,10 +167,10 @@ fn main() -> anyhow::Result<()> {
 
     remove_started_file_indicator();
 
-    // Initialise audit logging (must happen after the logger is ready).
-    if let Err(err) = crate::common::audit::init_audit_logger(settings.audit.as_ref()) {
-        log::error!("Failed to initialise audit logger: {err}");
-    }
+    // If audit logging is enabled, but failed to initialize,
+    // we should stop the service, as it may cause unlogged access to the data
+    common::audit::init_audit_logger(settings.audit.as_ref())
+        .expect("Audit logger must be initialized if audit logging is enabled");
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
