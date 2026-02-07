@@ -98,13 +98,9 @@ impl Snapshots for SnapshotsService {
             snapshot_name,
         } = request.into_inner();
 
-        let _response = do_delete_collection_snapshot(
-            &self.dispatcher,
-            auth,
-            &collection_name,
-            &snapshot_name,
-        )
-        .await?;
+        let _response =
+            do_delete_collection_snapshot(&self.dispatcher, auth, &collection_name, &snapshot_name)
+                .await?;
 
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
@@ -156,8 +152,7 @@ impl Snapshots for SnapshotsService {
         let auth = extract_auth(&mut request);
         let snapshot_name = request.into_inner().snapshot_name;
 
-        let _response =
-            do_delete_full_snapshot(&self.dispatcher, auth, &snapshot_name).await?;
+        let _response = do_delete_full_snapshot(&self.dispatcher, auth, &snapshot_name).await?;
 
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),

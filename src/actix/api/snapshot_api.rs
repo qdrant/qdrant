@@ -292,11 +292,7 @@ async fn list_full_snapshots(
     // nothing to verify.
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_full_snapshots(
-        dispatcher.toc(&auth, &pass),
-        auth,
-    ))
-    .await
+    helpers::time(do_list_full_snapshots(dispatcher.toc(&auth, &pass), auth)).await
 }
 
 #[post("/snapshots")]
@@ -347,13 +343,8 @@ async fn delete_collection_snapshot(
     let future = async move {
         let (collection_name, snapshot_name) = path.into_inner();
 
-        do_delete_collection_snapshot(
-            dispatcher.get_ref(),
-            auth,
-            &collection_name,
-            &snapshot_name,
-        )
-        .await
+        do_delete_collection_snapshot(dispatcher.get_ref(), auth, &collection_name, &snapshot_name)
+            .await
     };
 
     helpers::time_or_accept(future, params.wait.unwrap_or(true)).await

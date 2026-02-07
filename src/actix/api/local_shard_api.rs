@@ -245,13 +245,7 @@ async fn cleanup_shard(
         let timeout = params.timeout.map(|sec| Duration::from_secs(sec.get()));
         dispatcher
             .toc(&auth, &pass)
-            .cleanup_local_shard(
-                &path.collection,
-                path.shard,
-                auth,
-                params.wait,
-                timeout,
-            )
+            .cleanup_local_shard(&path.collection, path.shard, auth, params.wait, timeout)
             .await
     })
     .await
