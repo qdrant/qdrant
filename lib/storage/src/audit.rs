@@ -1,9 +1,12 @@
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 use crate::rbac::AuthType;
 
@@ -29,7 +32,7 @@ pub struct AuditConfig {
     pub rotation: AuditRotation,
 
     /// Maximum age of audit log files in seconds.  Files older than this are
-    /// deleted on startup.  Default: 604800 (7 days).
+    /// deleted when a new log file is created.  Default: 604800 (7 days).
     #[serde(default = "default_max_retention_sec")]
     pub max_retention_sec: u64,
 }
@@ -84,121 +87,63 @@ pub struct AuditEvent {
 // ---------------------------------------------------------------------------
 
 struct AuditLogger {
-    dir: PathBuf,
-    rotation: AuditRotation,
-    state: Mutex<LoggerState>,
-}
-
-struct LoggerState {
-    writer: std::io::BufWriter<fs_err::File>,
-    current_tag: String,
+    writer: Mutex<NonBlocking>,
 }
 
 impl AuditLogger {
-    fn new(config: &AuditConfig) -> anyhow::Result<Self> {
+    fn new(config: &AuditConfig) -> anyhow::Result<(Self, WorkerGuard)> {
         fs_err::create_dir_all(&config.dir)?;
 
-        let tag = Self::current_tag(&config.rotation);
-        let path = Self::file_path(&config.dir, &tag);
-        let file = fs_err::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let rotation = match config.rotation {
+            AuditRotation::Daily => Rotation::DAILY,
+            AuditRotation::Hourly => Rotation::HOURLY,
+        };
 
-        Ok(Self {
-            dir: config.dir.clone(),
-            rotation: config.rotation.clone(),
-            state: Mutex::new(LoggerState {
-                writer: std::io::BufWriter::new(file),
-                current_tag: tag,
-            }),
-        })
-    }
+        // Convert time-based retention to file count.
+        let seconds_per_file = match config.rotation {
+            AuditRotation::Daily => 86_400u64,
+            AuditRotation::Hourly => 3_600u64,
+        };
+        let max_files = (config.max_retention_sec / seconds_per_file).max(1) as usize;
 
-    fn current_tag(rotation: &AuditRotation) -> String {
-        let now = Utc::now();
-        match rotation {
-            AuditRotation::Daily => now.format("%Y-%m-%d").to_string(),
-            AuditRotation::Hourly => now.format("%Y-%m-%d-%H").to_string(),
-        }
-    }
+        let appender = RollingFileAppender::builder()
+            .rotation(rotation)
+            .filename_prefix("audit")
+            .filename_suffix("log")
+            .max_log_files(max_files)
+            .build(&config.dir)
+            .map_err(|err| anyhow::anyhow!("Failed to create audit log appender: {err}"))?;
 
-    fn file_path(dir: &Path, tag: &str) -> PathBuf {
-        dir.join(format!("audit-{tag}.log"))
+        // Wrap the appender in a non-blocking writer.  The actual file I/O is
+        // performed by a dedicated worker thread.  The returned `WorkerGuard`
+        // **must** be kept alive for the lifetime of the program – dropping it
+        // flushes remaining buffered events and shuts down the worker thread.
+        let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+
+        Ok((
+            Self {
+                writer: Mutex::new(non_blocking),
+            },
+            guard,
+        ))
     }
 
     fn write(&self, event: &AuditEvent) {
-        let Ok(mut state) = self.state.lock() else {
-            // Mutex poisoned – silently drop the event.
-            return;
+        // Serialize to a buffer first so the entire event is sent as one
+        // atomic message to the non-blocking writer (avoids interleaved
+        // partial writes from concurrent callers).
+        let mut buf = match serde_json::to_vec(event) {
+            Ok(buf) => buf,
+            Err(err) => {
+                log::error!("Failed to serialize audit log entry: {err}");
+                return;
+            }
         };
+        buf.push(b'\n');
 
-        // Rotate if needed.
-        let tag = Self::current_tag(&self.rotation);
-        if tag != state.current_tag {
-            let path = Self::file_path(&self.dir, &tag);
-            match fs_err::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-            {
-                Ok(file) => {
-                    state.writer = std::io::BufWriter::new(file);
-                    state.current_tag = tag;
-                }
-                Err(err) => {
-                    log::error!("Audit log rotation failed: {err}");
-                    return;
-                }
-            }
-        }
-
-        // Serialize and write.
-        if let Err(err) = serde_json::to_writer(&mut state.writer, event)
-            .and_then(|_| {
-                // newline delimited JSON
-                state.writer.write_all(b"\n").map_err(serde_json::Error::io)
-            })
-            .and_then(|_| state.writer.flush().map_err(serde_json::Error::io))
-        {
+        let mut writer = self.writer.lock();
+        if let Err(err) = writer.write_all(&buf) {
             log::error!("Failed to write audit log entry: {err}");
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Retention cleanup
-// ---------------------------------------------------------------------------
-
-fn cleanup_old_files(dir: &Path, max_retention_sec: u64) {
-    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(max_retention_sec);
-
-    let entries = match fs_err::read_dir(dir) {
-        Ok(e) => e,
-        Err(err) => {
-            log::warn!("Failed to read audit log dir for cleanup: {err}");
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default();
-        if !name.starts_with("audit-") || !name.ends_with(".log") {
-            continue;
-        }
-        if let Ok(meta) = entry.metadata() {
-            let modified = meta.modified().unwrap_or(std::time::SystemTime::now());
-            if modified < cutoff {
-                if let Err(err) = fs_err::remove_file(&path) {
-                    log::warn!("Failed to remove old audit log {}: {err}", path.display());
-                } else {
-                    log::info!("Removed old audit log file: {}", path.display());
-                }
-            }
         }
     }
 }
@@ -210,26 +155,29 @@ fn cleanup_old_files(dir: &Path, max_retention_sec: u64) {
 /// Initialise the global audit logger from configuration.  Must be called at
 /// most once (from `main`).  If the config is `None` or `enabled` is `false`,
 /// no logger is created and all `audit_log` calls are no‑ops.
-pub fn init_audit_logger(config: Option<&AuditConfig>) -> anyhow::Result<()> {
+///
+/// Returns a [`WorkerGuard`] that **must** be held alive (typically in
+/// `main`) until the program exits.  Dropping the guard flushes any
+/// remaining buffered audit events to disk.
+pub fn init_audit_logger(
+    config: Option<&AuditConfig>,
+) -> anyhow::Result<Option<WorkerGuard>> {
     let Some(config) = config else {
-        return Ok(());
+        return Ok(None);
     };
 
     if !config.enabled {
-        return Ok(());
+        return Ok(None);
     }
 
-    // Clean up old files before creating the logger.
-    cleanup_old_files(&config.dir, config.max_retention_sec);
-
-    let logger = AuditLogger::new(config)?;
+    let (logger, guard) = AuditLogger::new(config)?;
     AUDIT_LOGGER
         .set(logger)
         .map_err(|_| anyhow::anyhow!("Audit logger already initialised"))?;
 
     log::info!("Audit logging enabled, writing to {}", config.dir.display());
 
-    Ok(())
+    Ok(Some(guard))
 }
 
 /// Write an audit event.  If the audit logger was not initialised this is a

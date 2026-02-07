@@ -168,8 +168,9 @@ fn main() -> anyhow::Result<()> {
     remove_started_file_indicator();
 
     // If audit logging is enabled, but failed to initialize,
-    // we should stop the service, as it may cause unlogged access to the data
-    common::audit::init_audit_logger(settings.audit.as_ref())
+    // we should stop the service, as it may cause unlogged access to the data.
+    // The guard must be held alive until shutdown to flush remaining audit events.
+    let _audit_guard = common::audit::init_audit_logger(settings.audit.as_ref())
         .expect("Audit logger must be initialized if audit logging is enabled");
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());

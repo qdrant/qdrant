@@ -33,3 +33,8 @@ storage:
     default_segment_number: 2
 
   handle_collection_load_errors: true
+
+audit:
+  enabled: true
+  rotation: hourly
+  max_retention_sec: 100
