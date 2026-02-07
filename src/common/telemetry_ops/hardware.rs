@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements, Auth};
+use storage::rbac::{Access, AccessRequirements};
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct HardwareTelemetry {
@@ -13,10 +13,10 @@ pub struct HardwareTelemetry {
 }
 
 impl HardwareTelemetry {
-    pub(crate) fn new(dispatcher: &Dispatcher, auth: &Auth) -> Self {
+    pub(crate) fn new(dispatcher: &Dispatcher, access: &Access) -> Self {
         let mut all_hw_metrics = dispatcher.all_hw_metrics();
 
-        let collection_data = match auth.access() {
+        let collection_data = match access {
             Access::Global(_) => all_hw_metrics,
             Access::Collection(collection_access_list) => {
                 let required_access = AccessRequirements::new();

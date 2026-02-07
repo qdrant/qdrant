@@ -88,7 +88,7 @@ pub async fn do_list_collections(
     auth: &Auth,
 ) -> Result<CollectionsResponse, StorageError> {
     let collections = toc
-        .all_collections(auth.access())
+        .all_collections(auth.access("list_collections"))
         .await
         .into_iter()
         .map(|pass| CollectionDescription {
@@ -173,8 +173,9 @@ pub async fn do_list_collection_aliases(
         AccessRequirements::new(),
         "list_collection_aliases",
     )?;
+    let access = auth.unlogged_access(); // Do not log as it is just logger above
     let aliases: Vec<AliasDescription> = toc
-        .collection_aliases(&collection_pass, auth.access())
+        .collection_aliases(&collection_pass, access)
         .await?
         .into_iter()
         .map(|alias| AliasDescription {
@@ -189,7 +190,7 @@ pub async fn do_list_aliases(
     toc: &TableOfContent,
     auth: &Auth,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let aliases = toc.list_aliases(auth.access()).await?;
+    let aliases = toc.list_aliases(auth.access("list_aliases")).await?;
     Ok(CollectionsAliasesResponse { aliases })
 }
 

@@ -7,7 +7,7 @@ use crate::actix::auth::ActixAuth;
 #[get("/issues")]
 async fn get_issues(ActixAuth(auth): ActixAuth) -> impl Responder {
     crate::actix::helpers::time(async move {
-        match auth.access() {
+        match auth.access("issues") {
             Access::Global(_) => Ok(IssuesReport {
                 issues: issues::all_issues(),
             }),

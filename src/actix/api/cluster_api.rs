@@ -210,7 +210,7 @@ async fn get_cluster_telemetry(
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
         let toc = dispatcher.toc(&auth, &pass);
-        let access = auth.logged_access("cluster_telemetry");
+        let access = auth.access("cluster_telemetry");
 
         let channel_service = toc.get_channel_service();
 

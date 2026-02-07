@@ -89,6 +89,9 @@ impl TelemetryCollector {
         only_collections: Option<HashSet<String>>,
         timeout: Option<Duration>,
     ) -> StorageResult<TelemetryData> {
+        // Do not log access to telemetry
+        let access = auth.unlogged_access();
+
         let timeout = timeout.unwrap_or(DEFAULT_TELEMETRY_TIMEOUT);
         // Use blocking pool because the collection telemetry acquires several sync. locks.
         let is_stopped_guard = StoppingGuard::new();
@@ -99,7 +102,7 @@ impl TelemetryCollector {
                 .toc(auth, &new_unchecked_verification_pass())
                 .clone();
             let runtime_handle = toc.general_runtime_handle().clone();
-            let access_collection = auth.access().clone();
+            let access_collection = access.clone();
 
             let handle = runtime_handle.spawn_blocking(move || {
                 // Re-enter the async runtime in this blocking thread
@@ -141,7 +144,7 @@ impl TelemetryCollector {
                 .then(|| MemoryTelemetry::collect(auth))
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
-                .then(|| HardwareTelemetry::new(&self.dispatcher, auth)),
+                .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
         })
     }
 }

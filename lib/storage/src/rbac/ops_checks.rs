@@ -329,7 +329,7 @@ impl Auth {
         op: &impl CheckableCollectionOperation,
         method: &str,
     ) -> Result<CollectionPass<'a>, StorageError> {
-        let result = self.access().check_point_op(collection_name, op);
+        let result = self.unlogged_access().check_point_op(collection_name, op);
         self.emit_audit(method, Some(collection_name), &result);
         result
     }
@@ -340,7 +340,9 @@ impl Auth {
         operation: &CollectionMetaOperations,
         method: &str,
     ) -> Result<(), StorageError> {
-        let result = self.access().check_collection_meta_operation(operation);
+        let result = self
+            .unlogged_access()
+            .check_collection_meta_operation(operation);
         self.emit_audit(method, None, &result);
         result
     }

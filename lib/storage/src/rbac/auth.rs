@@ -44,11 +44,16 @@ impl Auth {
 
     /// Borrow the inner [`Access`] object (e.g. to pass into library code that
     /// still expects `&Access`).
-    pub fn access(&self) -> &Access {
+    ///
+    /// Warn: this method is not recommended for general use, as it does not emit audit log entries.
+    /// Consider using the `access()` method instead, which wraps access checks with audit logging.
+    pub fn unlogged_access(&self) -> &Access {
         &self.access
     }
 
-    pub fn logged_access(&self, method: &str) -> &Access {
+    /// Borrow the inner [`Access`] object (e.g. to pass into library code that
+    /// still expects `&Access`).
+    pub fn access(&self, method: &str) -> &Access {
         // Gives direct access to the inner `Access` object,
         // but also emits an audit log entry with "ok" status.
         self.emit_audit(method, None, &Ok(()));
