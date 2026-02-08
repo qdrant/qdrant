@@ -142,7 +142,7 @@ impl QueueProxyShard {
         self.inner.as_mut().expect("Queue proxy has been finalized")
     }
 
-    pub async fn create_snapshot(
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
@@ -152,7 +152,7 @@ impl QueueProxyShard {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.inner_unchecked()
             .wrapped_shard
-            .create_snapshot(temp_path, tar, format, manifest, save_wal)
+            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
             .await
     }
 

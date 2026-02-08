@@ -127,7 +127,7 @@ impl Shard {
         }
     }
 
-    pub async fn create_snapshot(
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
@@ -138,22 +138,22 @@ impl Shard {
         let future = match self {
             Shard::Local(local_shard) => Either::Left(Either::Left(
                 local_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
                     .await?,
             )),
             Shard::Proxy(proxy_shard) => Either::Left(Either::Right(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
                     .await?,
             )),
             Shard::ForwardProxy(proxy_shard) => Either::Right(Either::Left(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
                     .await?,
             )),
             Shard::QueueProxy(proxy_shard) => Either::Right(Either::Right(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
                     .await?,
             )),
             Shard::Dummy(dummy_shard) => {

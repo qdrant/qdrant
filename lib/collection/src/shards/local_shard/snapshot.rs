@@ -46,7 +46,7 @@ impl LocalShard {
     }
 
     /// Create snapshot for local shard into `target_path`
-    pub async fn create_snapshot(
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,

@@ -42,7 +42,7 @@ impl ShardReplicaSet {
         let maybe_local_snapshot_future = if let Some(local) = &*local_read {
             Some(
                 local
-                    .create_snapshot(&temp_path, &tar, format, manifest, save_wal)
+                    .get_snapshot_creator(&temp_path, &tar, format, manifest, save_wal)
                     .await?,
             )
         } else {
