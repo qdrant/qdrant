@@ -287,11 +287,16 @@ impl Collection {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        self.shards_holder
+        let snapshot_creator = self
+            .shards_holder
             .read()
             .await
             .create_shard_snapshot(&self.snapshots_path, self.name(), shard_id, temp_dir)
-            .await
+            .await?;
+        // We don't hold shards_holder lock here on purpose,
+        // because snapshot creation may take a long time,
+        // and we don't want to block other operations on the collection.
+        snapshot_creator.await
     }
 
     pub async fn stream_shard_snapshot(
