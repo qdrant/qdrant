@@ -1161,7 +1161,7 @@ impl ShardHolder {
         shard
             .create_snapshot(
                 snapshot_temp_dir.path(),
-                &tar,
+                tar.clone(),
                 SnapshotFormat::Regular,
                 None,
                 false,
@@ -1227,7 +1227,7 @@ impl ShardHolder {
             shard
                 .create_snapshot(
                     snapshot_temp_dir.path(),
-                    &tar,
+                    tar.clone(),
                     SnapshotFormat::Streamable,
                     manifest,
                     false,

@@ -103,7 +103,7 @@ impl Collection {
                 replica_set
                     .create_snapshot(
                         snapshot_temp_temp_dir.path(),
-                        &tar.descend(&shard_snapshot_path)?,
+                        tar.descend(&shard_snapshot_path)?,
                         SnapshotFormat::Regular,
                         None,
                         save_wal,

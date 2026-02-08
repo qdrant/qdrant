@@ -92,7 +92,7 @@ use crate::shards::shard_config::ShardConfig;
 /// Perform updates on all replicas and report error if there is at least one failure.
 ///
 pub struct ShardReplicaSet {
-    local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
+    local: Arc<RwLock<Option<Shard>>>, // Abstract Shard to be able to use a Proxy during replication
     remotes: RwLock<Vec<RemoteShard>>,
     replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
@@ -210,7 +210,7 @@ impl ShardReplicaSet {
         Ok(Self {
             shard_id,
             shard_key,
-            local: RwLock::new(local),
+            local: Arc::new(RwLock::new(local)),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
@@ -351,7 +351,7 @@ impl ShardReplicaSet {
         let replica_set = Self {
             shard_id,
             shard_key,
-            local: RwLock::new(local),
+            local: Arc::new(RwLock::new(local)),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
             // TODO: move to collection config

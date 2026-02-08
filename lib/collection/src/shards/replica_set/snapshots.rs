@@ -19,36 +19,41 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
 
 impl ShardReplicaSet {
-    pub async fn create_snapshot(
+    pub fn create_snapshot(
         &self,
         temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
+        tar: tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
-        let local_read = self.local.read().await;
-
+    ) -> impl Future<Output = CollectionResult<()>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
-        let _partial_snapshot_create_request_guard = if manifest.is_some() {
+        let partial_snapshot_create_request_guard = if manifest.is_some() {
             Some(self.partial_snapshot_meta.track_create_snapshot_request())
         } else {
             None
         };
 
-        if let Some(local) = &*local_read {
-            local
-                .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                .await?
+        let local = self.local.clone();
+        let replica_state = self.replica_state.clone();
+
+        async move {
+            let _partial_snapshot_create_request_guard = partial_snapshot_create_request_guard;
+
+            let local_read = local.read().await;
+
+            if let Some(local) = &*local_read {
+                local
+                    .create_snapshot(temp_path, &tar, format, manifest, save_wal)
+                    .await?
+            }
+
+            replica_state.save_to_tar(&tar, REPLICA_STATE_FILE).await?;
+
+            let shard_config = ShardConfig::new_replica_set();
+            shard_config.save_to_tar(&tar).await?;
+            Ok(())
         }
-
-        self.replica_state
-            .save_to_tar(tar, REPLICA_STATE_FILE)
-            .await?;
-
-        let shard_config = ShardConfig::new_replica_set();
-        shard_config.save_to_tar(tar).await?;
-        Ok(())
     }
 
     pub fn try_take_partial_snapshot_recovery_lock(
