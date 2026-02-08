@@ -26,7 +26,7 @@ impl ShardReplicaSet {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> impl Future<Output = CollectionResult<()>> {
+    ) -> impl Future<Output = CollectionResult<()>> + use<> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
             Some(self.partial_snapshot_meta.track_create_snapshot_request())
@@ -36,6 +36,7 @@ impl ShardReplicaSet {
 
         let local = self.local.clone();
         let replica_state = self.replica_state.clone();
+        let temp_path = temp_path.to_path_buf();
 
         async move {
             let _partial_snapshot_create_request_guard = partial_snapshot_create_request_guard;
@@ -44,7 +45,7 @@ impl ShardReplicaSet {
 
             if let Some(local) = &*local_read {
                 local
-                    .create_snapshot(temp_path, &tar, format, manifest, save_wal)
+                    .create_snapshot(&temp_path, &tar, format, manifest, save_wal)
                     .await?
             }
 
