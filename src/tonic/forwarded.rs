@@ -3,13 +3,13 @@ use tonic::codegen::http::header::FORWARDED;
 
 static X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
-/// Extract the raw `X-Forwarded-For` header value from a tonic/http request.
+/// Extract the raw forwarded-for header value from a tonic/http request.
 ///
-/// The value is returned **as-is** – it may contain a comma-separated list of
-/// addresses (e.g. `"client, proxy1, proxy2"`).  No parsing or validation is
-/// performed; downstream log analysis tools are expected to handle the format.
+/// Checks the standard RFC 7239 `Forwarded` header first, then falls back to
+/// the legacy `X-Forwarded-For` header.  The value is returned **as-is** – no
+/// parsing or validation is performed.
 ///
-/// Returns `None` when the header is absent or not valid UTF-8.
+/// Returns `None` when neither header is present or the value is not valid UTF-8.
 pub fn forwarded_for(
     req: &tonic::codegen::http::Request<tonic::transport::Body>,
 ) -> Option<String> {
