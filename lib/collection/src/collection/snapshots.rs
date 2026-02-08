@@ -102,13 +102,15 @@ impl Collection {
 
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
-                let future = replica_set.create_snapshot(
-                    snapshot_temp_temp_dir.path(),
-                    tar.descend(&shard_snapshot_path)?,
-                    SnapshotFormat::Regular,
-                    None,
-                    save_wal,
-                );
+                let future = replica_set
+                    .create_snapshot(
+                        snapshot_temp_temp_dir.path(),
+                        tar.descend(&shard_snapshot_path)?,
+                        SnapshotFormat::Regular,
+                        None,
+                        save_wal,
+                    )
+                    .await?;
                 futures.push(future);
             }
 

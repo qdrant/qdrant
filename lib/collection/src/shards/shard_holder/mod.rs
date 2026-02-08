@@ -1161,13 +1161,15 @@ impl ShardHolder {
 
         let tar = BuilderExt::new_seekable_owned(File::create(temp_file.path())?);
 
-        let snapshot_creator = shard.create_snapshot(
-            snapshot_temp_dir.path(),
-            tar.clone(),
-            SnapshotFormat::Regular,
-            None,
-            false,
-        );
+        let snapshot_creator = shard
+            .create_snapshot(
+                snapshot_temp_dir.path(),
+                tar.clone(),
+                SnapshotFormat::Regular,
+                None,
+                false,
+            )
+            .await?;
 
         let future = async move {
             snapshot_creator.await?;
@@ -1229,13 +1231,15 @@ impl ShardHolder {
 
         let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
-        let snapshot_creator = shard.create_snapshot(
-            snapshot_temp_dir.path(),
-            tar.clone(),
-            SnapshotFormat::Streamable,
-            manifest,
-            false,
-        );
+        let snapshot_creator = shard
+            .create_snapshot(
+                snapshot_temp_dir.path(),
+                tar.clone(),
+                SnapshotFormat::Streamable,
+                manifest,
+                false,
+            )
+            .await?;
 
         drop(shard);
 

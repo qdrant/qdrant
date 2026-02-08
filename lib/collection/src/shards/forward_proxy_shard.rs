@@ -361,7 +361,7 @@ impl ForwardProxyShard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.wrapped_shard
             .create_snapshot(temp_path, tar, format, manifest, save_wal)
             .await

@@ -19,14 +19,14 @@ use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
 
 impl ShardReplicaSet {
-    pub fn create_snapshot(
+    pub async fn create_snapshot(
         &self,
         temp_path: &Path,
         tar: tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> impl Future<Output = CollectionResult<()>> + use<> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
             Some(self.partial_snapshot_meta.track_create_snapshot_request())
@@ -34,19 +34,28 @@ impl ShardReplicaSet {
             None
         };
 
-        let local = self.local.clone();
         let replica_state = self.replica_state.clone();
         let temp_path = temp_path.to_path_buf();
 
-        async move {
-            let _partial_snapshot_create_request_guard = partial_snapshot_create_request_guard;
+        let local_read = self.local.read().await;
 
-            let local_read = local.read().await;
-
-            if let Some(local) = &*local_read {
+        let maybe_local_snapshot_future = if let Some(local) = &*local_read {
+            Some(
                 local
                     .create_snapshot(&temp_path, &tar, format, manifest, save_wal)
-                    .await?
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        drop(local_read);
+
+        let future = async move {
+            let _partial_snapshot_create_request_guard = partial_snapshot_create_request_guard;
+
+            if let Some(local_snapshot_future) = maybe_local_snapshot_future {
+                local_snapshot_future.await?;
             }
 
             replica_state.save_to_tar(&tar, REPLICA_STATE_FILE).await?;
@@ -54,7 +63,9 @@ impl ShardReplicaSet {
             let shard_config = ShardConfig::new_replica_set();
             shard_config.save_to_tar(&tar).await?;
             Ok(())
-        }
+        };
+
+        Ok(future)
     }
 
     pub fn try_take_partial_snapshot_recovery_lock(

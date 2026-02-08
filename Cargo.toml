@@ -377,8 +377,8 @@ lto = false
 opt-level = 3
 codegen-units = 256  # restore default value for faster compilation
 
-[profile.dev]
-debug = "line-tables-only"
+#[profile.dev]
+#debug = "line-tables-only"
 
 # Override for fast sha256 hashing in dev builds
 [profile.dev.package.sha2]

@@ -149,7 +149,7 @@ impl QueueProxyShard {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.inner_unchecked()
             .wrapped_shard
             .create_snapshot(temp_path, tar, format, manifest, save_wal)
