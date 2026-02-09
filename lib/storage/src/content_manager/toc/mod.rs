@@ -49,7 +49,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
 pub const ALIASES_PATH: &str = "aliases";
@@ -265,6 +265,18 @@ impl TableOfContent {
             .await
     }
 
+    pub async fn multipass_into_collections(
+        &self,
+        multipass: &CollectionMultipass,
+    ) -> Vec<CollectionPass<'static>> {
+        self.collections
+            .read()
+            .await
+            .keys()
+            .map(|name| multipass.issue_pass(name).into_static())
+            .collect()
+    }
+
     async fn all_collections_with_access_requirements(
         &self,
         access: &Access,
@@ -347,6 +359,17 @@ impl TableOfContent {
         };
         collections.validate_collection_exists(&resolved_name)?;
         Ok(resolved_name)
+    }
+
+    pub async fn all_collection_aliases(
+        &self,
+        collection_name: &str,
+        _multipass: &CollectionMultipass,
+    ) -> Vec<String> {
+        self.alias_persistence
+            .read()
+            .await
+            .collection_aliases(collection_name)
     }
 
     /// List of all aliases for a given collection

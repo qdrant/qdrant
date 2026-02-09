@@ -23,7 +23,7 @@ use tonic::{Request, Response, Status};
 use super::validate;
 use crate::common::collections::*;
 use crate::tonic::api::collections_common::get;
-use crate::tonic::auth::extract_access;
+use crate::tonic::auth::extract_auth;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
@@ -46,12 +46,12 @@ impl CollectionsService {
             >,
     {
         let timing = Instant::now();
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, access, wait_timeout)
+            .submit_collection_meta_op(operation.try_into()?, auth, wait_timeout)
             .await?;
 
         let response = CollectionOperationResponse::from((timing, result));
@@ -66,15 +66,15 @@ impl Collections for CollectionsService {
         mut request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate(request.get_ref())?;
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         get(
-            self.dispatcher.toc(&access, &pass),
+            self.dispatcher.toc(&auth, &pass),
             request.into_inner(),
-            access,
+            &auth,
             None,
         )
         .await
@@ -86,12 +86,12 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListCollectionsResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
-        let result = do_list_collections(self.dispatcher.toc(&access, &pass), access).await?;
+        let result = do_list_collections(self.dispatcher.toc(&auth, &pass), &auth).await?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -135,18 +135,15 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListAliasesResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
-        let CollectionsAliasesResponse { aliases } = do_list_collection_aliases(
-            self.dispatcher.toc(&access, &pass),
-            access,
-            &collection_name,
-        )
-        .await?;
+        let CollectionsAliasesResponse { aliases } =
+            do_list_collection_aliases(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -160,13 +157,13 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListAliasesResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         let CollectionsAliasesResponse { aliases } =
-            do_list_aliases(self.dispatcher.toc(&access, &pass), access).await?;
+            do_list_aliases(self.dispatcher.toc(&auth, &pass), &auth).await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -180,18 +177,15 @@ impl Collections for CollectionsService {
     ) -> Result<Response<CollectionExistsResponse>, Status> {
         let timing = Instant::now();
         validate(request.get_ref())?;
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result = do_collection_exists(
-            self.dispatcher.toc(&access, &pass),
-            access,
-            &collection_name,
-        )
-        .await?;
+        let result =
+            do_collection_exists(self.dispatcher.toc(&auth, &pass), &auth, &collection_name)
+                .await?;
         let response = CollectionExistsResponse {
             result: Some(result),
             time: timing.elapsed().as_secs_f64(),
@@ -205,14 +199,14 @@ impl Collections for CollectionsService {
         mut request: Request<CollectionClusterInfoRequest>,
     ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
         validate(request.get_ref())?;
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         let response = do_get_collection_cluster(
-            self.dispatcher.toc(&access, &pass),
-            access,
+            self.dispatcher.toc(&auth, &pass),
+            &auth,
             request.into_inner().collection_name.as_str(),
         )
         .await?
@@ -226,7 +220,7 @@ impl Collections for CollectionsService {
         mut request: Request<UpdateCollectionClusterSetupRequest>,
     ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
         validate(request.get_ref())?;
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
         let UpdateCollectionClusterSetupRequest {
             collection_name,
             operation,
@@ -239,7 +233,7 @@ impl Collections for CollectionsService {
             operation
                 .ok_or_else(|| Status::new(tonic::Code::InvalidArgument, "empty operation"))?
                 .try_into()?,
-            access,
+            auth,
             timeout.map(std::time::Duration::from_secs),
         )
         .await?;
@@ -254,14 +248,14 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListShardKeysResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
 
         let result = do_get_collection_shard_keys(
-            self.dispatcher.toc(&access, &pass),
-            access,
+            self.dispatcher.toc(&auth, &pass),
+            &auth,
             request.into_inner().collection_name.as_str(),
         )
         .await?;
@@ -274,7 +268,7 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CreateShardKeyRequest>,
     ) -> Result<Response<CreateShardKeyResponse>, Status> {
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         let CreateShardKeyRequest {
             collection_name,
@@ -296,7 +290,7 @@ impl Collections for CollectionsService {
             self.dispatcher.as_ref(),
             collection_name,
             operation,
-            access,
+            auth,
             timeout,
         )
         .await?;
@@ -308,7 +302,7 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<DeleteShardKeyRequest>,
     ) -> Result<Response<DeleteShardKeyResponse>, Status> {
-        let access = extract_access(&mut request);
+        let auth = extract_auth(&mut request);
 
         let DeleteShardKeyRequest {
             collection_name,
@@ -330,7 +324,7 @@ impl Collections for CollectionsService {
             self.dispatcher.as_ref(),
             collection_name,
             operation,
-            access,
+            auth,
             timeout,
         )
         .await?;
