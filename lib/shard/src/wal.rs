@@ -31,6 +31,54 @@ const FIRST_INDEX_FILE: &str = "first-index";
 /// (this is used to extend recoverable history and allow WAL shard transfers)
 const INCREASED_RETENTION_FACTOR: usize = 10;
 
+pub struct WalSerializedRecord<R> {
+    record: Vec<u8>,
+    _phantom: PhantomData<R>,
+}
+
+impl<R: DeserializeOwned + Serialize> WalSerializedRecord<R> {
+    pub fn new(record: &R) -> Result<Self> {
+        // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
+        let record = serde_cbor::to_vec(record).map_err(|err| {
+            WalError::WriteWalError(format!(
+                "Can't serialize entry, probably corrupted WAL or version mismatch: {err:?}"
+            ))
+        })?;
+        Ok(Self {
+            record,
+            _phantom: PhantomData,
+        })
+    }
+
+    pub fn deserialize(&self) -> Result<R>
+    where
+        R: DeserializeOwned,
+    {
+        let record: R = serde_cbor::from_slice(&self.record)
+            .or_else(|_err| rmp_serde::from_slice(&self.record))
+            .map_err(|err| {
+                WalError::WriteWalError(format!(
+                    "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+                ))
+            })?;
+        Ok(record)
+    }
+
+    pub fn deserialize_from(record: &[u8]) -> Result<R>
+    where
+        R: DeserializeOwned,
+    {
+        let record: R = serde_cbor::from_slice(record)
+            .or_else(|_err| rmp_serde::from_slice(record))
+            .map_err(|err| {
+                WalError::WriteWalError(format!(
+                    "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+                ))
+            })?;
+        Ok(record)
+    }
+}
+
 impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn new(dir: &Path, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
@@ -61,11 +109,9 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 
     /// Write a record to the WAL but does guarantee durability.
-    pub fn write(&mut self, entity: &R) -> Result<u64> {
-        // ToDo: Replace back to faster rmp, once this https://github.com/serde-rs/serde/issues/2055 solved
-        let binary_entity = serde_cbor::to_vec(&entity).unwrap();
+    pub fn write(&mut self, record: &WalSerializedRecord<R>) -> Result<u64> {
         self.wal
-            .append(&binary_entity)
+            .append(&record.record)
             .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
     }
 
@@ -80,18 +126,14 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
-    pub fn read_single_record(&self, idx: u64) -> Result<Option<R>> {
+    pub fn read_single_record(&self, idx: u64) -> Option<WalSerializedRecord<R>> {
         if let Some(entry) = self.wal.entry(idx) {
-            let record: R = serde_cbor::from_slice(&entry)
-                .or_else(|_err| rmp_serde::from_slice(&entry))
-                .map_err(|err| {
-                    WalError::WriteWalError(format!(
-                        "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
-                    ))
-                })?;
-            Ok(Some(record))
+            Some(WalSerializedRecord::<R> {
+                record: entry.to_vec(),
+                _phantom: PhantomData,
+            })
         } else {
-            Ok(None)
+            None
         }
     }
 
@@ -111,8 +153,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
                 .entry(idx)
                 .unwrap_or_else(|| panic!("Can't read entry {idx} from WAL"));
 
-            let record: R = serde_cbor::from_slice(&record_bin)
-                .or_else(|_err| rmp_serde::from_slice(&record_bin))
+            let record: R = WalSerializedRecord::deserialize_from(&record_bin)
                 .expect("Can't deserialize entry, probably corrupted WAL or version mismatch");
 
             (idx, record)
@@ -329,7 +370,9 @@ mod tests {
 
         let record = TestRecord::Struct1(TestInternalStruct1 { data: 10 });
 
-        serde_wal.write(&record).expect("Can't write");
+        serde_wal
+            .write(&WalSerializedRecord::new(&record).unwrap())
+            .expect("Can't write");
 
         #[cfg(not(target_os = "windows"))]
         {
@@ -344,7 +387,9 @@ mod tests {
 
         let record = TestRecord::Struct2(TestInternalStruct2 { a: 12, b: 13 });
 
-        serde_wal.write(&record).expect("Can't write");
+        serde_wal
+            .write(&WalSerializedRecord::new(&record).unwrap())
+            .expect("Can't write");
 
         let mut read_iterator = serde_wal.read(0);
 
@@ -355,14 +400,22 @@ mod tests {
         assert_eq!(idx2, 1);
 
         assert_eq!(
-            serde_wal.read_single_record(idx1).unwrap().unwrap(),
+            serde_wal
+                .read_single_record(idx1)
+                .unwrap()
+                .deserialize()
+                .unwrap(),
             record1
         );
         assert_eq!(
-            serde_wal.read_single_record(idx2).unwrap().unwrap(),
+            serde_wal
+                .read_single_record(idx2)
+                .unwrap()
+                .deserialize()
+                .unwrap(),
             record2
         );
-        assert_eq!(serde_wal.read_single_record(100).unwrap(), None);
+        assert!(serde_wal.read_single_record(100).is_none());
 
         match record1 {
             TestRecord::Struct1(x) => assert_eq!(x.data, 10),
@@ -392,7 +445,9 @@ mod tests {
 
         for i in 0..10 {
             let record = TestRecord::Struct1(TestInternalStruct1 { data: i });
-            serde_wal.write(&record).expect("Can't write");
+            serde_wal
+                .write(&WalSerializedRecord::new(&record).unwrap())
+                .expect("Can't write");
         }
         assert_eq!(serde_wal.len(false), 10);
 
