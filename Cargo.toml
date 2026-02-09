@@ -82,9 +82,9 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 
 actix-cors = "0.7.1"
-actix-files = "0.6.6"
-actix-web = { version = "4.11.0", features = ["rustls-0_23", "actix-tls"] }
-actix-web-validator = "7.0.0"
+actix-web-validator = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { version = "0.5.2", features = ["util"] }
@@ -200,6 +200,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 private_intra_doc_links = "allow"
 
 [workspace.dependencies]
+actix-web-validator = "7.0.0"
+actix-web = { version = "4.12.1", features = ["rustls-0_23", "actix-tls"] }
+actix-files = "0.6.9"
 ahash = { version = "0.8.11", features = ["serde"] }
 anyhow = "1.0.100"
 async-trait = "0.1.89"
