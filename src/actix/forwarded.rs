@@ -1,6 +1,6 @@
 use actix_web::HttpRequest;
 use actix_web::dev::ServiceRequest;
-use actix_web::http::header::X_FORWARDED_FOR;
+use actix_web::http::header::{FORWARDED, X_FORWARDED_FOR};
 
 /// Extract the raw `X-Forwarded-For` header value from an actix
 /// [`ServiceRequest`].
@@ -21,6 +21,13 @@ pub fn forwarded_for_http(req: &HttpRequest) -> Option<String> {
 }
 
 fn forwarded_for_headers(headers: &actix_web::http::header::HeaderMap) -> Option<String> {
+    if let Some(forwarded) = headers
+        .get(FORWARDED)
+        .and_then(|header| header.to_str().ok())
+    {
+        return Some(forwarded.to_string());
+    }
+
     headers
         .get(X_FORWARDED_FOR)
         .and_then(|v| v.to_str().ok())
