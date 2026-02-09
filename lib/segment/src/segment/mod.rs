@@ -59,9 +59,7 @@ impl StorageVersion for SegmentVersion {
 // Values that can be modified at non-appendable segment: chaning payload index changes versions. This structure is
 // intended to be kept under read-write lock (without Arc) for segment's interior mutability.
 #[derive(Debug)]
-pub struct PayloadIndexInfo {
-    #[allow(unused)] // TODO
-    pub version: Arc<Mutex<Option<SeqNumberType>>>,
+pub struct UpdatablePayloadData {
     pub version_tracker: Arc<AtomicRefCell<VersionTracker>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
 }
@@ -91,7 +89,7 @@ pub struct Segment {
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
-    pub payload_index_info: RwLock<PayloadIndexInfo>,
+    pub payload_index_info: RwLock<UpdatablePayloadData>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,

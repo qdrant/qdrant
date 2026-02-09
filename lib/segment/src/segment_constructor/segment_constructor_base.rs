@@ -47,7 +47,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{
-    PayloadIndexInfo, SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData, VersionTracker,
+    SEGMENT_STATE_FILE, Segment, SegmentVersion, UpdatablePayloadData, VectorData, VersionTracker,
 };
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
@@ -629,11 +629,9 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let version_holder = Arc::new(Mutex::new(version));
     let version_tracker = Arc::new(AtomicRefCell::new(VersionTracker::default()));
 
-    let payload_index_info = RwLock::new(PayloadIndexInfo {
-        version: version_holder.clone(),
+    let payload_index_info = RwLock::new(UpdatablePayloadData {
         version_tracker: version_tracker.clone(),
         payload_index,
     });
@@ -641,7 +639,7 @@ fn create_segment(
     Ok(Segment {
         uuid,
         initial_version,
-        version: version_holder,
+        version: Arc::new(Mutex::new(version)),
         persisted_version: Arc::new(Mutex::new(version)),
         is_alive_flush_lock: IsAliveLock::new(),
         segment_path: segment_path.to_owned(),
