@@ -134,7 +134,7 @@ impl trififo::lifecycle::Lifecycle<u32, u32> for ControllerTrififoLifecycle {
 #[derive(Clone)]
 struct ControllerTrififo {
     storages: Arc<Storages>,
-    cache: Arc<trififo::Cache<u32, u32, ControllerTrififoLifecycle>>,
+    cache: Arc<trififo::ShardedCache<u32, u32, ControllerTrififoLifecycle>>,
     unused_offsets: Arc<Mutex<VecDeque<u32>>>,
 }
 
@@ -147,8 +147,9 @@ impl Controller for ControllerTrififo {
 
         Self {
             storages,
-            cache: Arc::new(trififo::Cache::with_config(
+            cache: Arc::new(trififo::ShardedCache::with_config(
                 item_count - safety_margin,
+                16.try_into().unwrap(),
                 0.1,
                 0.9,
                 ControllerTrififoLifecycle {
