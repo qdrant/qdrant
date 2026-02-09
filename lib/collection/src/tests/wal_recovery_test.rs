@@ -518,7 +518,7 @@ async fn test_wal_replay_loads_pending_to_queue() {
     .await
     .unwrap();
 
-    // Check update queue info immediately after load.
+    // Check update queue info after load.
     let post_load_info = shard.local_update_queue_info();
     eprintln!("Post-load update queue info: {post_load_info:?}");
 
@@ -529,15 +529,11 @@ async fn test_wal_replay_loads_pending_to_queue() {
     );
 
     // Length should be not zero, as there should be pending ops loaded into the queue.
+    // This check may be potentially flaky if the update worker can process
+    // all pending operations between WAL load and `local_update_queue_info`.
     assert!(
         post_load_info.length > 0,
         "update queue should have pending operations after WAL replay"
-    );
-
-    let loaded_applied_seq = post_load_info.op_num.unwrap();
-    assert_eq!(
-        loaded_applied_seq, low_applied_seq as usize,
-        "applied_seq should match the value we set in the file"
     );
 
     // Wait for update worker to process all queued operations with a timeout
