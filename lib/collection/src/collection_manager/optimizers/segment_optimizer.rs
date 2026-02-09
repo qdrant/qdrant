@@ -9,7 +9,7 @@ use common::progress_tracker::ProgressTracker;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
