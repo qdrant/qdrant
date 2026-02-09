@@ -11,11 +11,11 @@
 //! - Single-threaded latency (insert/get operations)
 //! - Multi-threaded latency (16 threads)
 
-use std::{alloc, thread};
 use std::hash::{Hash, Hasher};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{alloc, thread};
 
 use cap::Cap;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -35,6 +35,16 @@ use rayon::prelude::*;
 use schnellru::{ByLength, LruMap};
 use strum::{EnumIter, IntoEnumIterator};
 use trififo::lifecycle::NoLifecycle;
+
+const FETCH_DURATION: Duration = Duration::from_nanos(1000);
+
+fn busy_loop(duration: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < duration {
+        // Busy loop to simulate work without sleeping
+        // std::hint::spin_loop();
+    }
+}
 
 /// Cache key representing a file descriptor and page offset.
 ///
@@ -198,7 +208,7 @@ impl CacheBench for QuickCacheWrapper {
     fn get_or_insert(&self, key: Key, value: u32) -> u32 {
         self.cache
             .get_or_insert_with(&key, || {
-                thread::sleep(Duration::from_micros(10));
+                busy_loop(FETCH_DURATION);
                 Ok::<_, ()>(value)
             })
             .unwrap()
@@ -234,7 +244,12 @@ impl CacheBench for SchnellruWrapper {
         let mut cache = self.cache.lock();
         // get_or_insert returns Option because the limiter might reject the insert
         // In our case with ByLength limiter, it should always succeed if capacity > 0
-        *cache.get_or_insert(key, || value).expect("capacity is > 0")
+        *cache
+            .get_or_insert(key, || {
+                thread::sleep(FETCH_DURATION);
+                value
+            })
+            .expect("capacity is > 0")
     }
 }
 
@@ -289,9 +304,9 @@ impl TrififoWrapper {
         Self {
             cache: trififo::ShardedCache::with_config(
                 capacity,
-                8.try_into().unwrap(),
+                16.try_into().unwrap(),
                 0.1,
-                0.5,
+                0.9,
                 NoLifecycle,
             ),
         }
@@ -311,9 +326,9 @@ impl CacheBench for TrififoWrapper {
         match self.cache.get_or_guard(&key) {
             trififo::GetOrGuard::Found(value) => value,
             trififo::GetOrGuard::Guard(cache_guard) => {
-                std::thread::sleep(Duration::from_micros(10));
+                busy_loop(FETCH_DURATION);
                 cache_guard.insert(value)
-            },
+            }
         }
     }
 }
@@ -324,10 +339,10 @@ enum CacheName {
     Trififo,
     #[cfg(feature = "bench_all")]
     QuickCache,
-    #[cfg(feature = "bench_all")]
-    Schnellru,
-    #[cfg(feature = "bench_all")]
-    Foyer,
+    // #[cfg(feature = "bench_all")]
+    // Schnellru,
+    // #[cfg(feature = "bench_all")]
+    // Foyer,
 }
 
 impl std::fmt::Display for CacheName {
@@ -336,10 +351,10 @@ impl std::fmt::Display for CacheName {
             CacheName::Trififo => write!(f, "trififo"),
             #[cfg(feature = "bench_all")]
             CacheName::QuickCache => write!(f, "quick_cache"),
-            #[cfg(feature = "bench_all")]
-            CacheName::Schnellru => write!(f, "schnellru"),
-            #[cfg(feature = "bench_all")]
-            CacheName::Foyer => write!(f, "foyer"),
+            // #[cfg(feature = "bench_all")]
+            // CacheName::Schnellru => write!(f, "schnellru"),
+            // #[cfg(feature = "bench_all")]
+            // CacheName::Foyer => write!(f, "foyer"),
         }
     }
 }
@@ -349,10 +364,10 @@ fn create_cache(name: CacheName, capacity: usize) -> Arc<dyn CacheBench> {
         CacheName::Trififo => Arc::new(TrififoWrapper::new(capacity)),
         #[cfg(feature = "bench_all")]
         CacheName::QuickCache => Arc::new(QuickCacheWrapper::new(capacity)),
-        #[cfg(feature = "bench_all")]
-        CacheName::Schnellru => Arc::new(SchnellruWrapper::new(capacity as u32)),
-        #[cfg(feature = "bench_all")]
-        CacheName::Foyer => Arc::new(FoyerWrapper::new(capacity)),
+        // #[cfg(feature = "bench_all")]
+        // CacheName::Schnellru => Arc::new(SchnellruWrapper::new(capacity as u32)),
+        // #[cfg(feature = "bench_all")]
+        // CacheName::Foyer => Arc::new(FoyerWrapper::new(capacity)),
     }
 }
 
@@ -538,7 +553,7 @@ fn bench_single_thread_latency(c: &mut Criterion) {
 // Multi-threaded Latency Benchmarks
 // =============================================================================
 
-const NUM_THREADS: usize = 16;
+const NUM_THREADS: usize = 10;
 const OPS_PER_THREAD: usize = 100_000;
 
 fn bench_multi_thread_latency(c: &mut Criterion) {
@@ -587,7 +602,7 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 
 fn bench_all(c: &mut Criterion) {
     // test_memory_usage();
-    // test_hit_ratio();
+    test_hit_ratio();
 
     // bench_single_thread_latency(c);
     bench_multi_thread_latency(c);
