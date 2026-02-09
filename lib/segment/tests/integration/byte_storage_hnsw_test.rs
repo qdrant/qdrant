@@ -149,6 +149,8 @@ fn test_byte_storage_hnsw(
     let hw_counter = HardwareCounterCell::new();
 
     segment_float
+        .payload_index_info
+        .get_mut()
         .payload_index
         .borrow_mut()
         .set_indexed(
@@ -158,6 +160,8 @@ fn test_byte_storage_hnsw(
         )
         .unwrap();
     segment_byte
+        .payload_index_info
+        .get_mut()
         .payload_index
         .borrow_mut()
         .set_indexed(
@@ -179,6 +183,7 @@ fn test_byte_storage_hnsw(
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let payload_index_info = segment_byte.payload_index_info.read();
     let hnsw_index_byte = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir_byte.path(),
@@ -189,7 +194,7 @@ fn test_byte_storage_hnsw(
             quantized_vectors: segment_byte.vector_data[DEFAULT_VECTOR_NAME]
                 .quantized_vectors
                 .clone(),
-            payload_index: segment_byte.payload_index.clone(),
+            payload_index: payload_index_info.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {

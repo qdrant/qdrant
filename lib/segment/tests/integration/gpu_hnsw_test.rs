@@ -99,7 +99,8 @@ fn test_gpu_filterable_hnsw() {
             .unwrap();
     }
 
-    let payload_index_ptr = segment.payload_index.clone();
+    let payload_index_info = segment.payload_index_info.get_mut();
+    let payload_index_ptr = payload_index_info.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,

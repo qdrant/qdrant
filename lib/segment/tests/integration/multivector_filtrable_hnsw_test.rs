@@ -109,7 +109,8 @@ fn test_multi_filterable_hnsw(
         num_points as usize
     );
 
-    let payload_index_ptr = segment.payload_index.clone();
+    let payload_index_info = segment.payload_index_info.get_mut();
+    let payload_index_ptr = payload_index_info.payload_index.clone();
     payload_index_ptr
         .borrow_mut()
         .set_indexed(
