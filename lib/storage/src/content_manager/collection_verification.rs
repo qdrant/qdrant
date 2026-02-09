@@ -27,11 +27,12 @@ where
     // Check access here first since strict-mode gets checked before `access`.
     // If we simply bypassed here, requests to a collection a user doesn't has access to could leak
     // information, like existence, strict mode config, payload indices, ...
-    let collection_pass = auth.check_collection_access(
-        collection_name,
-        AccessRequirements::new(),
-        "strict_mode_check",
-    )?;
+    //
+    // Strict mode have an unlogged access, as actual
+    // logging happens in the operations after strict mode check
+    let collection_pass = auth
+        .unlogged_access() // expected for strict mode check
+        .check_collection_access(collection_name, AccessRequirements::new())?;
     let collection = toc.get_collection(&collection_pass).await?;
     if let Some(strict_mode_config) = &collection.strict_mode_config().await
         && strict_mode_config.enabled.unwrap_or_default()
