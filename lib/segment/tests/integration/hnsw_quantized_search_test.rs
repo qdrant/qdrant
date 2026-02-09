@@ -122,31 +122,35 @@ fn hnsw_quantized_search_test(
     let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
-    let hnsw_index = HNSWIndex::build(
-        HnswIndexOpenArgs {
-            path: hnsw_dir.path(),
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
-                .vector_storage
-                .clone(),
-            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
-                .quantized_vectors
-                .clone(),
-            payload_index: segment.payload_index.clone(),
-            hnsw_config,
-        },
-        VectorIndexBuildArgs {
-            permit,
-            old_indices: &[],
-            gpu_device: None,
-            rng: &mut rng,
-            stopped: &stopped,
-            hnsw_global_config: &HnswGlobalConfig::default(),
-            feature_flags: FeatureFlags::default(),
-            progress: ProgressTracker::new_for_test(),
-        },
-    )
-    .unwrap();
+    let hnsw_index = {
+        let payload_index_info = segment.payload_index_info.read();
+
+        HNSWIndex::build(
+            HnswIndexOpenArgs {
+                path: hnsw_dir.path(),
+                id_tracker: segment.id_tracker.clone(),
+                vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
+                    .vector_storage
+                    .clone(),
+                quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
+                    .quantized_vectors
+                    .clone(),
+                payload_index: payload_index_info.payload_index.clone(),
+                hnsw_config,
+            },
+            VectorIndexBuildArgs {
+                permit,
+                old_indices: &[],
+                gpu_device: None,
+                rng: &mut rng,
+                stopped: &stopped,
+                hnsw_global_config: &HnswGlobalConfig::default(),
+                feature_flags: FeatureFlags::default(),
+                progress: ProgressTracker::new_for_test(),
+            },
+        )
+        .unwrap()
+    };
 
     let query_vectors = (0..attempts)
         .map(|_| random_vector(&mut rng, dim).into())

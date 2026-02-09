@@ -115,13 +115,15 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
+    let payload_index_info = segment.payload_index_info.get_mut();
+
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
             id_tracker: segment.id_tracker.clone(),
             vector_storage: vector_storage.clone(),
             quantized_vectors: quantized_vectors.clone(),
-            payload_index: segment.payload_index.clone(),
+            payload_index: payload_index_info.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {

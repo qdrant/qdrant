@@ -92,7 +92,8 @@ fn _test_filterable_hnsw(
             .unwrap();
     }
 
-    let payload_index_ptr = segment.payload_index.clone();
+    let payload_index_info = segment.payload_index_info.read();
+    let payload_index_ptr = payload_index_info.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -276,7 +277,8 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             .unwrap();
     }
 
-    let payload_index_ptr = segment.payload_index.clone();
+    let payload_index_info = segment.payload_index_info.read();
+    let payload_index_ptr = payload_index_info.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,

@@ -72,7 +72,8 @@ fn exact_search_test() {
     }
     // let opnum = num_vectors + 1;
 
-    let payload_index_ptr = segment.payload_index.clone();
+    let payload_index_info = segment.payload_index_info.get_mut();
+    let payload_index_ptr = payload_index_info.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,

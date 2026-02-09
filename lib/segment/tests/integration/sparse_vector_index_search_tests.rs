@@ -673,6 +673,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
         .unwrap();
 
     let open_index = || -> SparseVectorIndex<TInvertedIndex> {
+        let payload_index_info = segment.payload_index_info.read();
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: SparseIndexConfig {
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
@@ -683,7 +684,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
                 .vector_storage
                 .clone(),
-            payload_index: segment.payload_index.clone(),
+            payload_index: payload_index_info.payload_index.clone(),
             path: inverted_index_dir.path(),
             stopped: &stopped,
             tick_progress: || (),
