@@ -255,6 +255,8 @@ fn test_multivector_quantization_hnsw(
     }
 
     segment
+        .payload_index_info
+        .get_mut()
         .payload_index
         .borrow_mut()
         .set_indexed(
@@ -321,6 +323,7 @@ fn test_multivector_quantization_hnsw(
 
     let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
+    let payload_index_info = segment.payload_index_info.read();
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
@@ -331,7 +334,7 @@ fn test_multivector_quantization_hnsw(
             quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
                 .quantized_vectors
                 .clone(),
-            payload_index: segment.payload_index.clone(),
+            payload_index: payload_index_info.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {

@@ -375,6 +375,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         inline_storage: None,
     };
 
+    let payload_index_info = segment.payload_index_info.read();
     let open_args = HnswIndexOpenArgs {
         path,
         id_tracker: segment.id_tracker.clone(),
@@ -384,7 +385,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
             .quantized_vectors
             .clone(),
-        payload_index: Arc::clone(&segment.payload_index),
+        payload_index: payload_index_info.payload_index.clone(),
         hnsw_config,
     };
 
