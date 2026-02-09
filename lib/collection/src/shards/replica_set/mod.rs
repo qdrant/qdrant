@@ -1327,18 +1327,22 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
-        let mut total_vector_size = 0;
-        let mut total_payload_size = 0;
-        let mut total_points = 0;
+        let handle = spawn_blocking(move || {
+            let mut total_vector_size = 0;
+            let mut total_payload_size = 0;
+            let mut total_points = 0;
 
-        for segment in segments {
-            let size_info =
-                AbortOnDropHandle::new(spawn_blocking(move || segment.get().read().size_info()))
-                    .await?;
-            total_vector_size += size_info.vectors_size_bytes;
-            total_payload_size += size_info.payloads_size_bytes;
-            total_points += size_info.num_points;
-        }
+            for segment in segments {
+                let size_info = segment.get().read().size_info();
+                total_vector_size += size_info.vectors_size_bytes;
+                total_payload_size += size_info.payloads_size_bytes;
+                total_points += size_info.num_points;
+            }
+
+            (total_vector_size, total_payload_size, total_points)
+        });
+        let (total_vector_size, total_payload_size, total_points) =
+            AbortOnDropHandle::new(handle).await?;
 
         Ok(Some(CollectionSizeStats {
             vector_storage_size: total_vector_size,
