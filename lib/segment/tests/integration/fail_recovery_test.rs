@@ -24,7 +24,7 @@ fn test_insert_fail_recovery() {
         .upsert_point(1, 2.into(), only_default_vector(&vec1), &hw_counter)
         .unwrap();
 
-    segment.error_status = Some(SegmentFailedState {
+    *segment.error_status.write() = Some(SegmentFailedState {
         version: 2,
         point_id: Some(1.into()),
         error: OperationError::service_error("test error"),
@@ -59,7 +59,7 @@ fn test_insert_fail_recovery() {
         &hw_counter,
     );
     assert!(ok_res.is_ok());
-    assert!(segment.error_status.is_some());
+    assert!(segment.error_status.read().is_some());
 
     // Perform operation and recover the error - operation is fixed now
     let recover_res = segment.set_payload(
@@ -71,5 +71,5 @@ fn test_insert_fail_recovery() {
     );
 
     assert!(recover_res.is_ok());
-    assert!(segment.error_status.is_none());
+    assert!(segment.error_status.read().is_none());
 }
