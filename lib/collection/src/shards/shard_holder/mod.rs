@@ -1520,30 +1520,32 @@ impl ShardHolder {
     }
 
     /// Estimates the collections size based on local shard data. Returns `None` if no shard for the collection was found locally.
-    pub async fn estimate_collection_size_stats(&self) -> Option<CollectionSizeStats> {
+    pub async fn estimate_collection_size_stats(
+        &self,
+    ) -> CollectionResult<Option<CollectionSizeStats>> {
         if self.is_distributed().await {
             // In distributed, we estimate the whole collection size by using a single local shard and multiply by amount of shards in the collection.
             for shard in self.shards.iter() {
-                if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await {
+                if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await? {
                     // TODO(resharding) take into account the ongoing resharding and exclude shards that are being filled from multiplication.
                     // Project the single shards size to the full collection.
                     let collection_estimate = shard_stats.multiplied_with(self.shards.len());
-                    return Some(collection_estimate);
+                    return Ok(Some(collection_estimate));
                 }
             }
 
-            return None;
+            return Ok(None);
         }
 
         // Local mode: return collection size estimations using all shards.
         let mut stats = CollectionSizeStats::default();
         for shard in self.shards.iter() {
-            if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await {
+            if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await? {
                 stats.accumulate_metrics_from(&shard_stats);
             }
         }
 
-        Some(stats)
+        Ok(Some(stats))
     }
 
     /// Returns `true` if the collection is distributed across multiple nodes.
