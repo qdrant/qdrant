@@ -1332,7 +1332,9 @@ impl ShardReplicaSet {
         let mut total_points = 0;
 
         for segment in segments {
-            let size_info = spawn_blocking(move || segment.get().read().size_info()).await?;
+            let size_info =
+                AbortOnDropHandle::new(spawn_blocking(move || segment.get().read().size_info()))
+                    .await?;
             total_vector_size += size_info.vectors_size_bytes;
             total_payload_size += size_info.payloads_size_bytes;
             total_points += size_info.num_points;
