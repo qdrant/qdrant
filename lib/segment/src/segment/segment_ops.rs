@@ -145,7 +145,7 @@ impl Segment {
             version: failed_version,
             point_id: _failed_point_id,
             error,
-        }) = &self.error_status
+        }) = self.error_status.get_mut()
         {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
@@ -164,7 +164,7 @@ impl Segment {
                 "Segment {:?} operation error: {error}",
                 self.segment_path.as_path(),
             );
-            self.error_status = Some(SegmentFailedState {
+            *self.error_status.get_mut() = Some(SegmentFailedState {
                 version: op_num,
                 point_id: None,
                 error,
@@ -199,7 +199,7 @@ impl Segment {
             version: failed_version,
             point_id: _failed_point_id,
             error,
-        }) = &self.error_status
+        }) = self.error_status.get_mut()
         {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
@@ -215,7 +215,7 @@ impl Segment {
         match get_service_error(&res) {
             None => {
                 // Recover error state
-                match &self.error_status {
+                match self.error_status.get_mut() {
                     None => {} // all good
                     Some(error) => {
                         let point_id = op_point_offset.and_then(|point_offset| {
@@ -224,7 +224,7 @@ impl Segment {
                         if error.point_id == point_id {
                             // Fixed
                             log::info!("Recovered from error: {}", error.error);
-                            self.error_status = None;
+                            *self.error_status.get_mut() = None;
                         }
                     }
                 }
@@ -237,7 +237,7 @@ impl Segment {
                 );
                 let point_id = op_point_offset
                     .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
-                self.error_status = Some(SegmentFailedState {
+                *self.error_status.get_mut() = Some(SegmentFailedState {
                     version: op_num,
                     point_id,
                     error,

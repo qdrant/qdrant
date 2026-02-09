@@ -98,7 +98,7 @@ pub struct Segment {
     pub segment_config: SegmentConfig,
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
-    pub error_status: Option<SegmentFailedState>,
+    pub error_status: RwLock<Option<SegmentFailedState>>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
 }
