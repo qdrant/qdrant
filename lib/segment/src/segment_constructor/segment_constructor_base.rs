@@ -651,7 +651,7 @@ fn create_segment(
         payload_index_info,
         payload_storage,
         segment_config: config.clone(),
-        error_status: None,
+        error_status: RwLock::new(None),
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
     })

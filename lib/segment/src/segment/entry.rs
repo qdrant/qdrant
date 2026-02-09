@@ -849,7 +849,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn check_error(&self) -> Option<SegmentFailedState> {
-        self.error_status.clone()
+        self.error_status.read().clone()
     }
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
