@@ -210,7 +210,8 @@ where
             .expect("We are the only writer");
         let oldest_key = oldest_entry.key;
 
-        let new_offset = if oldest_entry.recency() > 0 {
+        // promote to main if recency is high, or if we haven't fully populated main.
+        let new_offset = if oldest_entry.recency() > 0 || !self.fifos.main_is_full() {
             // Promote to main queue
             self.push_to_main_queue(oldest_entry.clone())
         } else {

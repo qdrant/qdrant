@@ -209,6 +209,10 @@ impl<K, V> RawFifos<K, V> {
 
         Some((global_offset, entry))
     }
+
+    pub fn main_is_full(&self) -> bool {
+        self.main.is_full()
+    }
 }
 
 #[cfg(test)]
