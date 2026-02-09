@@ -28,7 +28,7 @@ use segment::types::{
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::Auth;
 use tonic::{Response, Status};
 
 use crate::common::inference::params::InferenceParams;
@@ -41,7 +41,7 @@ pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -76,7 +76,7 @@ pub async fn upsert(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -104,7 +104,7 @@ pub async fn delete(
     toc_provider: impl CheckedTocProvider,
     delete_points: DeletePoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
@@ -128,7 +128,7 @@ pub async fn delete(
         points_selector,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -142,7 +142,7 @@ pub async fn update_vectors(
     toc_provider: impl CheckedTocProvider,
     update_point_vectors: UpdatePointVectors,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -187,7 +187,7 @@ pub async fn update_vectors(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -206,7 +206,7 @@ pub async fn delete_vectors(
     toc_provider: impl CheckedTocProvider,
     delete_point_vectors: DeletePointVectors,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
@@ -241,7 +241,7 @@ pub async fn delete_vectors(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -255,7 +255,7 @@ pub async fn set_payload(
     toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
@@ -288,7 +288,7 @@ pub async fn set_payload(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -302,7 +302,7 @@ pub async fn overwrite_payload(
     toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
@@ -335,7 +335,7 @@ pub async fn overwrite_payload(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -349,7 +349,7 @@ pub async fn delete_payload(
     toc_provider: impl CheckedTocProvider,
     delete_payload_points: DeletePayloadPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
@@ -380,7 +380,7 @@ pub async fn delete_payload(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -394,7 +394,7 @@ pub async fn clear_payload(
     toc_provider: impl CheckedTocProvider,
     clear_payload_points: ClearPayloadPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
@@ -418,7 +418,7 @@ pub async fn clear_payload(
         points_selector,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -432,7 +432,7 @@ pub async fn update_batch(
     dispatcher: &Dispatcher,
     update_batch_points: UpdateBatchPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
@@ -474,7 +474,7 @@ pub async fn update_batch(
                         update_mode,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     inference_params.clone(),
                     request_hw_counter.clone(),
                 )
@@ -492,7 +492,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -518,7 +518,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -545,7 +545,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -569,7 +569,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -589,7 +589,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -613,7 +613,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     inference_params.clone(),
                     request_hw_counter.clone(),
                 )
@@ -638,7 +638,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -655,7 +655,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -675,7 +675,7 @@ pub async fn update_batch(
                         timeout,
                     },
                     internal_params,
-                    access.clone(),
+                    auth.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -703,7 +703,7 @@ pub async fn create_field_index(
     dispatcher: Arc<Dispatcher>,
     create_field_index_collection: CreateFieldIndexCollection,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
@@ -731,7 +731,7 @@ pub async fn create_field_index(
         operation,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -781,7 +781,7 @@ pub async fn delete_field_index(
     dispatcher: Arc<Dispatcher>,
     delete_field_index_collection: DeleteFieldIndexCollection,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
@@ -800,7 +800,7 @@ pub async fn delete_field_index(
         field_name,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        access,
+        auth,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
@@ -843,7 +843,7 @@ pub async fn sync(
     toc: Arc<TableOfContent>,
     sync_points: SyncPoints,
     internal_params: InternalUpdateParams,
-    access: Access,
+    auth: Auth,
     inference_params: InferenceParams,
 ) -> Result<Response<(PointsOperationResponseInternal, InferenceUsage)>, Status> {
     let SyncPoints {
@@ -881,7 +881,7 @@ pub async fn sync(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
-        access,
+        auth,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;

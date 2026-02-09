@@ -16,12 +16,12 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::{Access, AccessRequirements, Auth, AuthType};
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
 
-const FULL_ACCESS: Access = Access::full("For test");
+const FULL_ACCESS: Auth = Auth::new(Access::full("For test"), None, None, AuthType::Internal);
 
 #[test]
 fn test_alias_operation() {
@@ -174,7 +174,7 @@ fn test_alias_operation() {
         .block_on(
             dispatcher.toc(&FULL_ACCESS, &pass).get_collection(
                 &FULL_ACCESS
-                    .check_collection_access("test_alias3", AccessRequirements::new())
+                    .check_collection_access("test_alias3", AccessRequirements::new(), "test")
                     .unwrap(),
             ),
         )

@@ -309,12 +309,6 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
-  # If true, use X-Forwarded-For header to determine client IP in access logs.
-  # Only enable this when running behind a trusted reverse proxy or load balancer.
-  # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
-  # Default: false
-  # trust_forwarded_headers: false
-
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false
@@ -369,3 +363,18 @@ tls:
   # Only works for HTTPS endpoints. Does not support gRPC (and intra-cluster communication).
   # If `null` - TTL is disabled.
   cert_ttl: 3600
+
+# Audit logging configuration.
+# When enabled, Qdrant writes structured JSON audit log entries for every
+# access-checked API request.
+#
+# audit:
+#   enabled: false
+#   dir: ./storage/audit
+#   rotation: daily
+#   max_log_files: 7
+#   # If true, use X-Forwarded-For header to determine client IP in audit logs.
+#   # Only enable this when running behind a trusted reverse proxy or load balancer.
+#   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
+#   # Default: false
+#   trust_forwarded_headers: false

@@ -9,7 +9,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use serde::Serialize;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::{AccessRequirements, Auth};
 
 pub type HttpStatusCode = u16;
 
@@ -152,13 +152,16 @@ pub struct RequestsTelemetry {
 
 impl RequestsTelemetry {
     pub fn collect(
-        access: &Access,
+        auth: &Auth,
         actix_collector: &ActixTelemetryCollector,
         tonic_collector: &TonicTelemetryCollector,
         detail: TelemetryDetail,
     ) -> Option<Self> {
         let global_access = AccessRequirements::new();
-        if access.check_global_access(global_access).is_ok() {
+        if auth
+            .check_global_access(global_access, "telemetry_requests")
+            .is_ok()
+        {
             let rest = actix_collector.get_telemetry_data(detail);
             let grpc = tonic_collector.get_telemetry_data(detail);
             Some(Self { rest, grpc })

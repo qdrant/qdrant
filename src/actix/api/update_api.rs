@@ -13,7 +13,7 @@ use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_with_inference_usage,
 };
@@ -37,7 +37,7 @@ async fn upsert_points(
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -58,7 +58,7 @@ async fn upsert_points(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -84,7 +84,7 @@ async fn delete_points(
     operation: Json<PointsSelector>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -102,7 +102,7 @@ async fn delete_points(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -118,7 +118,7 @@ async fn update_vectors(
     operation: Json<UpdateVectors>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -139,7 +139,7 @@ async fn update_vectors(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -165,7 +165,7 @@ async fn delete_vectors(
     operation: Json<DeleteVectors>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -183,7 +183,7 @@ async fn delete_vectors(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -198,7 +198,7 @@ async fn set_payload(
     operation: Json<SetPayload>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -216,7 +216,7 @@ async fn set_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -231,7 +231,7 @@ async fn overwrite_payload(
     operation: Json<SetPayload>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -249,7 +249,7 @@ async fn overwrite_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -264,7 +264,7 @@ async fn delete_payload(
     operation: Json<DeletePayload>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -282,7 +282,7 @@ async fn delete_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -297,7 +297,7 @@ async fn clear_payload(
     operation: Json<PointsSelector>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let operation = operation.into_inner();
 
@@ -315,7 +315,7 @@ async fn clear_payload(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -331,7 +331,7 @@ async fn update_batch(
     operations: Json<UpdateOperations>,
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operations = operations.into_inner();
@@ -352,7 +352,7 @@ async fn update_batch(
         operations.operations,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         inference_params,
         request_hw_counter.get_counter(),
     )
@@ -377,7 +377,7 @@ async fn create_field_index(
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
     params: Query<UpdateParams>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -396,7 +396,7 @@ async fn create_field_index(
         operation,
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;
@@ -413,7 +413,7 @@ async fn delete_field_index(
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
     params: Query<UpdateParams>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -423,7 +423,7 @@ async fn delete_field_index(
         field.name.clone(),
         InternalUpdateParams::default(),
         params.into_inner(),
-        access,
+        auth,
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
@@ -440,7 +440,7 @@ async fn staging_operation(
     collection: Path<CollectionPath>,
     operation: Json<shard::operations::staging::StagingOperations>,
     params: Query<UpdateParams>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     use collection::operations::verification::new_unchecked_verification_pass;
     use shard::operations::CollectionUpdateOperations;
@@ -453,7 +453,7 @@ async fn staging_operation(
 
     // Get TOC with unchecked verification pass (staging operations don't need strict mode)
     let pass = new_unchecked_verification_pass();
-    let toc = dispatcher.toc(&access, &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     let result = crate::common::update::update(
         toc,
@@ -462,7 +462,7 @@ async fn staging_operation(
         InternalUpdateParams::default(),
         params.into_inner(),
         None, // shard_key
-        access,
+        auth,
         HwMeasurementAcc::disposable(),
     )
     .await;

@@ -19,7 +19,7 @@ use crate::content_manager::collection_meta_ops::{
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::content_manager::snapshots::download_result::DownloadResult;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::rbac::{AccessRequirements, Auth, CollectionPass};
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -61,22 +61,23 @@ pub async fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    access: Access,
+    auth: Auth,
     client: reqwest::Client,
 ) -> Result<bool, StorageError> {
-    let multipass = access.check_global_access(AccessRequirements::new().manage())?;
+    let multipass =
+        auth.check_global_access(AccessRequirements::new().manage(), "recover_from_snapshot")?;
 
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
 
     let toc = dispatcher
-        .toc(&access, &new_unchecked_verification_pass())
+        .toc(&auth, &new_unchecked_verification_pass())
         .clone();
 
     let res = toc
         .general_runtime_handle()
         .spawn(async move {
-            _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
+            _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client).await
         })
         .await??;
 
@@ -88,7 +89,7 @@ pub async fn do_recover_from_snapshot(
 /// This method is *not* cancel safe.
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
-    access: Access,
+    auth: Auth,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
@@ -103,7 +104,7 @@ async fn _do_recover_from_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(&access, &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -185,7 +186,7 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 )?);
             dispatcher
-                .submit_collection_meta_op(operation, access.clone(), None)
+                .submit_collection_meta_op(operation, auth.clone(), None)
                 .await?;
 
             // Since we not just copy files into a collection dir,
@@ -200,7 +201,7 @@ async fn _do_recover_from_snapshot(
                     });
 
                 dispatcher
-                    .submit_collection_meta_op(consensus_op, access.clone(), None)
+                    .submit_collection_meta_op(consensus_op, auth.clone(), None)
                     .await?;
             }
 

@@ -12,6 +12,7 @@ use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::{Validate, ValidationError};
 
+use crate::common::audit::AuditConfig;
 use crate::common::debugger::DebuggerConfig;
 use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
@@ -74,12 +75,6 @@ pub struct ServiceConfig {
     #[serde(default)]
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
-
-    /// If true, use X-Forwarded-For header to determine client IP in access logs.
-    /// Only enable this when running behind a trusted reverse proxy or load balancer.
-    /// Default: false
-    #[serde(default)]
-    pub trust_forwarded_headers: bool,
 }
 
 impl ServiceConfig {
@@ -247,6 +242,9 @@ pub struct Settings {
     pub gpu: Option<GpuConfig>,
     #[serde(default)]
     pub feature_flags: FeatureFlags,
+    /// Audit logging configuration.
+    #[serde(default)]
+    pub audit: Option<AuditConfig>,
 }
 
 impl Settings {
