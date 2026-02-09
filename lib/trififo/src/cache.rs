@@ -2,147 +2,21 @@ use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash};
 use std::sync::Arc;
 
-use parking_lot::{Condvar, Mutex};
+use parking_lot::Mutex;
 
+use crate::guard::{CacheGuard, GetOrGuard, Waiter};
 use crate::lifecycle::{Lifecycle, NoLifecycle};
 use crate::s3fifo::S3Fifo;
 use crate::seqlock::{SeqLock, SeqLockReader, SeqLockWriter};
 
 // ---------------------------------------------------------------------------
-// Waiter: shared state that lets threads waiting for the same key coalesce.
-// ---------------------------------------------------------------------------
-
-enum WaiterState<V> {
-    /// The holder of the guard is still loading the value.
-    Pending,
-    /// The value was successfully loaded and inserted into the cache.
-    Completed(V),
-    /// The guard was dropped without inserting a value.
-    Abandoned,
-}
-
-struct Waiter<V> {
-    state: Mutex<WaiterState<V>>,
-    condvar: Condvar,
-}
-
-impl<V> Waiter<V> {
-    fn new() -> Self {
-        Self {
-            state: Mutex::new(WaiterState::Pending),
-            condvar: Condvar::new(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// GetOrGuard – the return type of `get_or_guard`.
-// ---------------------------------------------------------------------------
-
-/// Result of [`Cache::get_or_guard`].
-///
-/// Either the value was already present in the cache ([`GetOrGuard::Found`]),
-/// or the caller is responsible for loading it and must complete the returned
-/// [`CacheGuard`] ([`GetOrGuard::Guard`]).
-pub enum GetOrGuard<'a, K: Copy + Hash + Eq, V, L, S> {
-    /// The value was found in the cache (or was completed by another thread's
-    /// guard while we were waiting).
-    Found(V),
-    /// No value is cached and no other thread is currently loading it.
-    /// The caller **must** either call [`CacheGuard::insert`] to provide the
-    /// value, or drop the guard to let other waiters retry.
-    Guard(CacheGuard<'a, K, V, L, S>),
-}
-
-// ---------------------------------------------------------------------------
-// CacheGuard – exclusive "loading" ticket for a single key.
-// ---------------------------------------------------------------------------
-
-/// A guard that indicates the current thread is responsible for loading the
-/// value for a given key.
-///
-/// Dropping the guard **without** calling [`insert`](CacheGuard::insert) will
-/// mark the load as abandoned and wake any waiting threads so they can retry.
-pub struct CacheGuard<'a, K: Copy + Hash + Eq, V, L, S> {
-    cache: &'a Cache<K, V, L, S>,
-    key: K,
-    waiter: Arc<Waiter<V>>,
-    completed: bool,
-}
-
-impl<'a, K, V, L, S> CacheGuard<'a, K, V, L, S>
-where
-    K: Copy + Hash + Eq,
-    V: Clone,
-    L: Lifecycle<K, V>,
-    S: BuildHasher + Default,
-{
-    /// Insert the loaded value into the cache and wake all waiting threads.
-    ///
-    /// Returns a clone of the value for convenience.
-    pub fn insert(mut self, value: V) -> V {
-        // 1. Lock the single writer mutex, insert into the cache AND remove
-        //    from pending atomically.
-        {
-            let mut writer = self.cache.writer.lock();
-            writer
-                .s3fifo
-                .write(|cache| cache.do_insert(self.key, value.clone()));
-            writer.pending.remove(&self.key);
-        }
-
-        // 2. Publish the value to any threads that are waiting on this key
-        //    (outside the writer lock so we don't hold it while waiters wake).
-        {
-            let mut state = self.waiter.state.lock();
-            *state = WaiterState::Completed(value.clone());
-            self.waiter.condvar.notify_all();
-        }
-
-        self.completed = true;
-        value
-    }
-
-    /// Returns the key this guard is responsible for loading.
-    pub fn key(&self) -> &K {
-        &self.key
-    }
-}
-
-impl<K, V, L, S> Drop for CacheGuard<'_, K, V, L, S>
-where
-    K: Copy + Hash + Eq,
-{
-    fn drop(&mut self) {
-        if self.completed {
-            return;
-        }
-
-        // Guard was dropped without inserting → abandon.
-        // Remove from pending under the writer lock so new arrivals create a
-        // fresh waiter.
-        {
-            let mut writer = self.cache.writer.lock();
-            writer.pending.remove(&self.key);
-        }
-
-        // Then wake everyone so they can retry (outside the writer lock).
-        {
-            let mut state = self.waiter.state.lock();
-            *state = WaiterState::Abandoned;
-            self.waiter.condvar.notify_all();
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // CacheWriter – bundles the SeqLockWriter and pending map behind one Mutex.
 // ---------------------------------------------------------------------------
 
-struct CacheWriter<K, V, L, S> {
-    s3fifo: SeqLockWriter<S3Fifo<K, V, L, S>>,
-    /// Tracks keys that are currently being loaded by a [`CacheGuard`].
-    pending: HashMap<K, Arc<Waiter<V>>>,
+pub(crate) struct CacheWriter<K, V, L, S> {
+    pub(crate) s3fifo: SeqLockWriter<S3Fifo<K, V, L, S>>,
+    /// Tracks keys that will soon be inserted by a [`CacheGuard`].
+    pub(crate) pending: HashMap<K, Arc<Waiter<V>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +37,7 @@ pub struct Cache<K, V, L = NoLifecycle, S = ahash::RandomState> {
     /// Single mutex protecting both the S3-FIFO writer **and** the pending-
     /// loads map.  This avoids lock-ordering issues and reduces the number of
     /// mutex acquisitions on the insert path.
-    writer: Mutex<CacheWriter<K, V, L, S>>,
+    pub(crate) writer: Mutex<CacheWriter<K, V, L, S>>,
 }
 
 impl<K, V, L, S> Cache<K, V, L, S>
@@ -269,25 +143,12 @@ where
                 let waiter = Arc::clone(waiter);
                 drop(writer); // Release the writer lock before blocking.
 
-                let mut state = waiter.state.lock();
-                loop {
-                    match &*state {
-                        WaiterState::Pending => {
-                            waiter.condvar.wait(&mut state);
-                        }
-                        WaiterState::Completed(v) => {
-                            return GetOrGuard::Found(v.clone());
-                        }
-                        WaiterState::Abandoned => {
-                            // The loading thread gave up – break out of the
-                            // inner loop and retry the outer loop so we either
-                            // find a value, wait on a new loader, or become
-                            // the loader ourselves.
-                            break;
-                        }
-                    }
+                if let Some(v) = waiter.wait_for_result() {
+                    return GetOrGuard::Found(v);
                 }
-                // Retry from the top.
+                // The loading thread abandoned – retry from the top so we
+                // either find a value, wait on a new loader, or become the
+                // loader ourselves.
                 continue;
             }
 
@@ -309,9 +170,7 @@ where
     #[inline]
     pub fn insert(&self, key: K, value: V) {
         let mut writer = self.writer.lock();
-        writer
-            .s3fifo
-            .write(|cache| cache.do_insert(key, value));
+        writer.s3fifo.write(|cache| cache.do_insert(key, value));
     }
 
     /// Insert a key-value pair using a pre-computed hash.

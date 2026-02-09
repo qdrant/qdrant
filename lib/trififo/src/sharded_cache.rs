@@ -1,7 +1,8 @@
 use std::hash::{BuildHasher, Hash};
 use std::num::NonZeroUsize;
 
-use crate::cache::{Cache, GetOrGuard};
+use crate::cache::Cache;
+use crate::guard::GetOrGuard;
 use crate::lifecycle::{Lifecycle, NoLifecycle};
 
 /// A sharded cache that distributes keys across multiple [`Cache`] instances
