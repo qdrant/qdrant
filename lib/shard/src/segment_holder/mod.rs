@@ -809,13 +809,14 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment = build_segment(segments_path, &config, save_version)?;
+        let segment = build_segment(segments_path, &config, save_version)?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();
 
         let payload_schema_lock = payload_index_schema.read();
         for (key, schema) in payload_schema_lock.schema.iter() {
+            // TODO add create_field_index_mut
             segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
 

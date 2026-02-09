@@ -385,7 +385,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
 
-        let mut segment = random_multi_vec_segment(
+        let segment = random_multi_vec_segment(
             dir.path(),
             100,
             point_count,

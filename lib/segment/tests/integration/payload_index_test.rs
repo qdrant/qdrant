@@ -299,7 +299,7 @@ impl TestSegments {
         builder.update(&[plain_segment], &stopped).unwrap();
         let hw_counter = HardwareCounterCell::new();
 
-        let mut segment = builder.build_for_test(path);
+        let segment = builder.build_for_test(path);
         let opnum = segment.version() + 1;
 
         segment

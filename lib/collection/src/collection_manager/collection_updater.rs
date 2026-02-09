@@ -400,7 +400,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mut segment1 = build_segment_1(path);
+        let segment1 = build_segment_1(path);
         segment1
             .create_field_index(
                 100,
@@ -410,7 +410,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut segment2 = build_segment_2(path);
+        let segment2 = build_segment_2(path);
         segment2
             .create_field_index(
                 101,

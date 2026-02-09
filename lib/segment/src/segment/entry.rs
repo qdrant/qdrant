@@ -716,9 +716,9 @@ impl NonAppendableSegmentEntry for Segment {
         self.segment_path.clone()
     }
 
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    fn delete_field_index(&self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            let payload_index_info = segment.payload_index_info.get_mut();
+            let payload_index_info = segment.payload_index_info.write();
             payload_index_info
                 .payload_index
                 .borrow_mut()
@@ -732,13 +732,13 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn delete_field_index_if_incompatible(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            let payload_index_info = segment.payload_index_info.get_mut();
+            let payload_index_info = segment.payload_index_info.write();
             let is_incompatible = payload_index_info
                 .payload_index
                 .borrow_mut()
@@ -791,14 +791,14 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn apply_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
         schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            let payload_index_info = segment.payload_index_info.get_mut();
+            let payload_index_info = segment.payload_index_info.write();
             payload_index_info.payload_index.borrow_mut().apply_index(
                 key.clone(),
                 schema,

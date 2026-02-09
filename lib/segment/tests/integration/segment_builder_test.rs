@@ -112,7 +112,7 @@ fn test_building_new_defragmented_segment() {
 
     let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
-    let mut segment1 = build_segment_1(dir.path());
+    let segment1 = build_segment_1(dir.path());
     segment1
         .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter)
         .unwrap();

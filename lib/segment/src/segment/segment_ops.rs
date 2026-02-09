@@ -133,18 +133,21 @@ impl Segment {
     ///
     /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
     pub(super) fn handle_segment_version_and_failure<F>(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&Segment) -> OperationResult<bool>,
     {
+        // Having a lock on the error_status linearize updates.
+        // TODO we have a "error_status()" method, make sure it doesn't deadlock.
+        let mut error_status_guard = self.error_status.write();
         if let Some(SegmentFailedState {
             version: failed_version,
             point_id: _failed_point_id,
             error,
-        }) = self.error_status.get_mut()
+        }) = &*error_status_guard
         {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
@@ -163,7 +166,7 @@ impl Segment {
                 "Segment {:?} operation error: {error}",
                 self.segment_path.as_path(),
             );
-            *self.error_status.get_mut() = Some(SegmentFailedState {
+            *error_status_guard = Some(SegmentFailedState {
                 version: op_num,
                 point_id: None,
                 error,
@@ -251,12 +254,12 @@ impl Segment {
     /// If current version is higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     fn handle_segment_version<F>(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&Segment) -> OperationResult<bool>,
     {
         // Global version to check if operation has already been applied, then skip without execution
         if self.version.lock().unwrap_or(0) > op_num {
@@ -334,8 +337,7 @@ impl Segment {
     }
 
     // TODO are the callers use &mut self?  Are they under lock?
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
+    fn bump_segment_version(&self, op_num: SeqNumberType) {
         let mut version_guard = self.version.lock();
         let new_version = max(op_num, version_guard.unwrap_or(0));
         version_guard.replace(new_version);

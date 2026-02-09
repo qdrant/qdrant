@@ -530,7 +530,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().data_path()
     }
 
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    fn delete_field_index(&self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
@@ -545,7 +545,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn delete_field_index_if_incompatible(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: &PayloadFieldSchema,
@@ -582,7 +582,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn apply_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
         field_schema: PayloadFieldSchema,
