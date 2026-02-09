@@ -65,9 +65,9 @@ uuid = { workspace = true }
 url = { workspace = true }
 validator = { workspace = true }
 http = { workspace = true }
-actix-web-validator = "7.0.0"
-actix-web = { version = "4.12.1" }
-actix-files = "0.6.9"
+actix-web-validator = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
