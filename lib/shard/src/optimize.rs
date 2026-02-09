@@ -21,7 +21,7 @@ use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use uuid::Uuid;
@@ -435,8 +435,7 @@ fn check_segments_size(
         }
         _ => {
             log::warn!(
-                "Could not estimate available storage space in `{}`; will try optimizing anyway",
-                optimizer_name,
+                "Could not estimate available storage space in `{optimizer_name}`; will try optimizing anyway",
             );
         }
     }
