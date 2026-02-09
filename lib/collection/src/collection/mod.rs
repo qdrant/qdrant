@@ -165,7 +165,7 @@ impl Collection {
         let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&shared_shard_holder).await,
+            Self::estimate_collection_size_stats(&shared_shard_holder).await?,
         );
 
         // Once the config is persisted - the collection is considered to be successfully created.
@@ -284,7 +284,9 @@ impl Collection {
         let shared_shard_holder = SharedShardHolder::new(shard_holder);
 
         let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
-            Self::estimate_collection_size_stats(&shared_shard_holder).await,
+            Self::estimate_collection_size_stats(&shared_shard_holder)
+                .await
+                .expect("Failed to load collection size stats"),
         );
 
         Self {
@@ -867,14 +869,16 @@ impl Collection {
 
     async fn estimate_collection_size_stats(
         shards_holder: &SharedShardHolder,
-    ) -> Option<CollectionSizeStats> {
+    ) -> CollectionResult<Option<CollectionSizeStats>> {
         let shard_lock = shards_holder.read().await;
         shard_lock.estimate_collection_size_stats().await
     }
 
     /// Returns estimations of collection sizes. This values are cached and might be not 100% up to date.
     /// The cache gets updated every 32 calls.
-    pub(crate) async fn estimated_collection_stats(&self) -> Option<&CollectionSizeAtomicStats> {
+    pub(crate) async fn estimated_collection_stats(
+        &self,
+    ) -> CollectionResult<Option<&CollectionSizeAtomicStats>> {
         self.collection_stats_cache
             .get_or_update_cache(|| Self::estimate_collection_size_stats(&self.shards_holder))
             .await

@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::operations::types::CollectionResult;
+
 /// Amount of requests that have to be done until the cached data gets updated.
 const UPDATE_INTERVAL: usize = 32;
 
@@ -33,18 +35,20 @@ impl CollectionSizeStatsCache {
     pub async fn get_or_update_cache<U>(
         &self,
         update_fn: impl FnOnce() -> U,
-    ) -> Option<&CollectionSizeAtomicStats>
+    ) -> CollectionResult<Option<&CollectionSizeAtomicStats>>
     where
-        U: Future<Output = Option<CollectionSizeStats>>,
+        U: Future<Output = CollectionResult<Option<CollectionSizeStats>>>,
     {
         // Update if necessary
         if self.check_need_update_and_increment() {
-            let updated = update_fn().await?;
+            let Some(updated) = update_fn().await? else {
+                return Ok(None);
+            };
             self.update(updated);
         }
 
         // Give caller access to cached (inner) values which are always updated if required
-        self.stats.as_ref()
+        Ok(self.stats.as_ref())
     }
 
     /// Sets all cache values to `new_stats`.
