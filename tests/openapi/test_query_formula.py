@@ -139,10 +139,12 @@ def test_formula_with_score_threshold(collection_name):
     )
     assert response.ok, response.json()
     
-    points_no_threshold = response.json()["result"]["points"]
+    result = response.json()["result"]
+    points_no_threshold = result["points"]
     assert len(points_no_threshold) > 2, "Should have multiple results without threshold"
     
     # Get the second highest score to use as threshold
+    # Scores are returned in descending order by default
     scores_no_threshold = [point.get("score") for point in points_no_threshold]
     second_score = scores_no_threshold[1]
     
