@@ -367,8 +367,15 @@ impl LocalShard {
                 })
             }
             ScoringQuery::Formula(formula) => {
-                self.rescore_with_formula(formula, sources, limit, timeout, hw_counter_acc)
-                    .await
+                self.rescore_with_formula(
+                    formula,
+                    sources,
+                    limit,
+                    score_threshold.map(OrderedFloat::into_inner),
+                    timeout,
+                    hw_counter_acc,
+                )
+                .await
             }
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {

@@ -6,6 +6,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::SimpleCow;
+use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
@@ -260,5 +261,6 @@ pub struct FormulaContext {
     pub formula: ParsedFormula,
     pub prefetches_results: Vec<Vec<ScoredPoint>>,
     pub limit: usize,
+    pub score_threshold: Option<ScoreType>,
     pub is_stopped: Arc<AtomicBool>,
 }

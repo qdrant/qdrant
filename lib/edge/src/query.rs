@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::ScoreType;
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
@@ -243,9 +244,13 @@ impl EdgeShard {
                 self.search(search_request)
             }
 
-            ScoringQuery::Formula(formula) => {
-                self.rescore_with_formula(formula, sources, limit, hw_counter_acc)
-            }
+            ScoringQuery::Formula(formula) => self.rescore_with_formula(
+                formula,
+                sources,
+                limit,
+                score_threshold.map(OrderedFloat::into_inner),
+                hw_counter_acc,
+            ),
 
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
@@ -303,12 +308,14 @@ impl EdgeShard {
         formula: ParsedFormula,
         prefetches_results: Vec<Vec<ScoredPoint>>,
         limit: usize,
+        score_threshold: Option<ScoreType>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let ctx = FormulaContext {
             formula,
             prefetches_results,
             limit,
+            score_threshold,
             is_stopped: Arc::new(AtomicBool::new(false)),
         };
 
