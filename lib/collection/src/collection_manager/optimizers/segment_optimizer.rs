@@ -850,7 +850,7 @@ pub trait SegmentOptimizer {
                 }
                 LockedSegment::Proxy(proxy) => {
                     let proxy_read = proxy.read();
-                    index_changes.merge(proxy_read.get_index_changes())
+                    index_changes.merge(&proxy_read.get_index_changes())
                 }
             }
         }
