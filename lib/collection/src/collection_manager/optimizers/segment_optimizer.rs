@@ -345,8 +345,6 @@ pub trait SegmentOptimizer: OptimizationStrategy + Sync {
     }
 }
 
-// Blanket impl not needed due to supertrait; coercion is handled via generic fn
-
 pub struct OptimizationPlanner<'a> {
     /// Segments that could be scheduled for optimization.
     remaining: BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>>,
