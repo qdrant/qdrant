@@ -1,87 +1,72 @@
 use std::borrow::Cow;
-use std::ops::{Index, Range};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::marker::PhantomData;
+use std::mem::{self, ManuallyDrop};
+use std::ops::Range;
 
-use crate::ssd_cacher::Cacher;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
-pub const CHUNK_SIZE: usize = 4 * 1024; // 4KB
+use crate::cached_data::CachedData;
 
-#[derive(Hash, PartialEq, Eq, Clone)]
-struct BlockId {
-    file_id: u32,
-    chunk_offset: u32,
+pub struct CachedSlice<T> {
+    data: CachedData,
+    r#type: PhantomData<T>,
 }
 
-struct BlockDescriptor {
-    key: BlockId,
-    range: Range<usize>,
-}
+impl<T> CachedSlice<T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+    T: FromBytes + Immutable + KnownLayout,
+{
+    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [T]>
+    where
+        <[T] as ToOwned>::Owned: From<Vec<T>>,
+    {
+        let t_size = mem::size_of::<T>();
+        assert!(t_size != 0, "cannot transmute zero-sized type");
 
-pub struct CachedData {
-    original_path: PathBuf,
-    file_id: u32,
-    len: usize,
-    cacher: Arc<Cacher>,
-}
+        let byte_range = range.start * t_size..range.end * t_size;
+        let data = self.data.get_range(byte_range);
 
-impl CachedData {
-    /// Returns the block descriptor for the provided bytes range
-    fn blocks_for(
-        &self,
-        bytes_range: Range<usize>,
-    ) -> impl ExactSizeIterator<Item = BlockDescriptor> {
-        let first_block = bytes_range.start / CHUNK_SIZE;
-        let leading_offset = bytes_range.start % CHUNK_SIZE;
-
-        let last_block = bytes_range.end / CHUNK_SIZE;
-        let trailing_offset = bytes_range.end.next_multiple_of(CHUNK_SIZE) - bytes_range.end;
-
-        (first_block..last_block + 1).map(move |block_offset| {
-            let block_id = BlockId {
-                file_id: self.file_id,
-                chunk_offset: block_offset as u32,
-            };
-
-            let range_start = if block_offset == first_block {
-                leading_offset
-            } else {
-                0
-            };
-
-            let range_end = if block_offset == last_block {
-                CHUNK_SIZE - trailing_offset
-            } else {
-                CHUNK_SIZE
-            };
-
-            BlockDescriptor {
-                key: block_id,
-                range: range_start..range_end,
+        match data {
+            Cow::Borrowed(bytes) => {
+                let slice = <[T]>::ref_from_bytes(bytes)
+                    .expect("byte slice is not a valid &[T] (alignment or size mismatch)");
+                Cow::Borrowed(slice)
             }
-        })
-    }
+            Cow::Owned(mut vec_u8) => {
+                // Make sure `capacity` is alsoan exact multiple of `size_of::<T>()`
+                vec_u8.shrink_to_fit();
 
-    fn get_from_cache(&self, key: &BlockId) -> &[u8] {
-        todo!()
-    }
+                debug_assert_eq!(
+                    vec_u8.len() % t_size,
+                    0,
+                    "byte length {} is not a multiple of element size {}",
+                    vec_u8.len(),
+                    t_size,
+                );
+                debug_assert_eq!(
+                    vec_u8.capacity() % t_size,
+                    0,
+                    "byte capacity {} is not a multiple of element size {}",
+                    vec_u8.capacity(),
+                    t_size,
+                );
 
-    fn get_range(&self, range: Range<usize>) -> Cow<[u8]> {
-        let total_len = range.end - range.start;
-        let mut blocks_iter = self.blocks_for(range);
-        if blocks_iter.len() == 1 {
-            // single value case, just return the reference
-            let bd = blocks_iter.next().unwrap();
-            let block = self.get_from_cache(&bd.key);
-            return Cow::Borrowed(&block[bd.range]);
+                let len = vec_u8.len() / t_size;
+                let cap = vec_u8.capacity() / t_size;
+                let mut vec_u8 = ManuallyDrop::new(vec_u8);
+                let ptr = vec_u8.as_mut_ptr().cast::<T>();
+
+                // SAFETY:
+                // - `T: FromBytes` (zerocopy) guarantees that any initialized
+                //   byte pattern constitutes a valid `T` value.
+                // - `shrink_to_fit()` brings capacity down to len,
+                //   so `cap * size_of::<T>()` matches the allocation size.
+                // - The buffer originates from a `ManuallyDrop<Vec<u8>>`;
+                //   `ManuallyDrop` prevents double-free.
+                let vec_t = unsafe { Vec::from_raw_parts(ptr, len, cap) };
+                Cow::Owned(vec_t)
+            }
         }
-        // multi-block case: allocate a Vec and copy the needed parts
-        let mut result = Vec::with_capacity(total_len);
-        for bd in blocks_iter {
-            let block = self.get_from_cache(&bd.key);
-            let slice = &block[bd.range];
-            result.extend_from_slice(slice);
-        }
-        return Cow::Owned(result);
     }
 }

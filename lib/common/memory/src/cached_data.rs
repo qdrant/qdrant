@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::ops::{Index, Range};
+use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
+// use std::sync::Arc;
 
-use crate::ssd_cacher::Cacher;
+// use crate::ssd_cacher::Cacher;
 
 pub const BLOCK_SIZE: usize = 4 * 1024; // 4KB
 
@@ -23,10 +23,10 @@ struct BlockDescriptor {
 /// Internally, it maps these ranges into fixed size blocks, and requests them to the cache.
 /// If not in cache, it will fetch them from the original path, and insert it.
 pub struct CachedData {
-    original_path: PathBuf,
+    _original_path: PathBuf,
     file_id: u32,
-    len: usize,
-    cacher: Arc<Cacher>,
+    _len: usize,
+    // cacher: Arc<Cacher>,
 }
 
 impl CachedData {
@@ -66,11 +66,15 @@ impl CachedData {
         })
     }
 
-    fn get_from_cache(&self, key: &BlockId) -> &[u8] {
+    fn get_from_cache(&self, _key: &BlockId) -> &[u8] {
         todo!()
     }
 
-    pub fn get_range(&self, range: Range<usize>) -> Cow<[u8]> {
+    /// Get a Cow reference to the range of bytes within the file.
+    ///
+    /// If the range is contained in a single block, it will return a borrowed reference to the block.
+    /// Otherwise, it will allocate a Vec with `capacity == len`.
+    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [u8]> {
         let total_len = range.end - range.start;
         let mut blocks_iter = self.blocks_for(range);
         if blocks_iter.len() == 1 {
@@ -86,6 +90,7 @@ impl CachedData {
             let slice = &block[bd.range];
             result.extend_from_slice(slice);
         }
-        return Cow::Owned(result);
+        result.shrink_to_fit();
+        Cow::Owned(result)
     }
 }

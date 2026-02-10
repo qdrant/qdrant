@@ -1,3 +1,4 @@
+pub mod cached_data;
 pub mod cached_slice;
 pub mod checkfs;
 pub mod chunked_utils;
