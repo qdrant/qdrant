@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::ScoredPointOffset;
-use itertools::Itertools;
+use common::types::{ScoreType, ScoredPointOffset};
+use itertools::{Either, Itertools};
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
@@ -18,6 +18,7 @@ impl Segment {
         formula: &ParsedFormula,
         prefetches_scores: &[Vec<ScoredPoint>],
         limit: usize,
+        score_threshold: Option<ScoreType>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -49,7 +50,7 @@ impl Segment {
 
         // Perform rescoring
         let mut error = None;
-        let rescored = points_to_rescore
+        let rescored_iter = points_to_rescore
             .into_iter()
             .stop_if(is_stopped)
             .filter_map(|internal_id| {
@@ -65,10 +66,17 @@ impl Segment {
                         None
                     }
                 }
-            })
-            // Keep only the top k results
-            .k_largest(limit)
-            .collect();
+            });
+
+        // Handle score threshold
+        let rescored = match score_threshold {
+            Some(threshold) => {
+                Either::Left(rescored_iter.filter(move |point| point.score >= threshold))
+            }
+            None => Either::Right(rescored_iter),
+        }
+        .k_largest(limit) // Keep only the top k results
+        .collect();
 
         if let Some(err) = error {
             return Err(err);

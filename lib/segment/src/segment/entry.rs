@@ -110,6 +110,7 @@ impl NonAppendableSegmentEntry for Segment {
             formula,
             prefetches_results,
             limit,
+            score_threshold,
             is_stopped,
         } = &*ctx;
 
@@ -117,6 +118,7 @@ impl NonAppendableSegmentEntry for Segment {
             formula,
             prefetches_results,
             *limit,
+            *score_threshold,
             is_stopped,
             hw_counter,
         )?;
