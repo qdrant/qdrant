@@ -7,6 +7,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use futures::future::Either;
 use parking_lot::Mutex as ParkingMutex;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
@@ -126,41 +127,43 @@ impl Shard {
         }
     }
 
-    pub async fn create_snapshot(
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
-        match self {
-            Shard::Local(local_shard) => {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
+        let future = match self {
+            Shard::Local(local_shard) => Either::Left(Either::Left(
                 local_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await
-            }
-            Shard::Proxy(proxy_shard) => {
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .await?,
+            )),
+            Shard::Proxy(proxy_shard) => Either::Left(Either::Right(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await
-            }
-            Shard::ForwardProxy(proxy_shard) => {
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .await?,
+            )),
+            Shard::ForwardProxy(proxy_shard) => Either::Right(Either::Left(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await
-            }
-            Shard::QueueProxy(proxy_shard) => {
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .await?,
+            )),
+            Shard::QueueProxy(proxy_shard) => Either::Right(Either::Right(
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await
-            }
+                    .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
+                    .await?,
+            )),
             Shard::Dummy(dummy_shard) => {
-                dummy_shard
+                return Err(dummy_shard
                     .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await
+                    .await);
             }
-        }
+        };
+
+        Ok(future)
     }
 
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {

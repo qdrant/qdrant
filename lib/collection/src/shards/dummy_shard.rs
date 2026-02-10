@@ -47,8 +47,8 @@ impl DummyShard {
         _format: SnapshotFormat,
         _manifest: Option<SnapshotManifest>,
         _save_wal: bool,
-    ) -> CollectionResult<()> {
-        self.dummy()
+    ) -> CollectionError {
+        self.dummy_error()
     }
 
     pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -94,8 +94,12 @@ impl DummyShard {
         self.dummy()
     }
 
+    fn dummy_error(&self) -> CollectionError {
+        CollectionError::service_error(self.message.clone())
+    }
+
     fn dummy<T>(&self) -> CollectionResult<T> {
-        Err(CollectionError::service_error(self.message.clone()))
+        Err(self.dummy_error())
     }
 }
 

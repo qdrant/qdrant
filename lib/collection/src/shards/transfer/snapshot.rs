@@ -212,6 +212,7 @@ pub(super) async fn transfer_snapshot(
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
         let snapshot_description = shard_holder_read
             .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
+            .await?
             .await?;
 
         // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
