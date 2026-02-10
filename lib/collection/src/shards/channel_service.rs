@@ -222,19 +222,16 @@ impl ChannelService {
                     "Cannot determine REST address, cannot specify port on address {url} for peer ID {this_peer_id}",
                 ))
             })?;
-        if self.rest_tls_enabled {
-            url.set_scheme("https").map_err(|()| {
-                CollectionError::service_error(format!(
-                    "Cannot determine REST address, cannot set HTTPS scheme on address {url} for peer ID {this_peer_id}",
-                ))
-            })?;
+        let scheme = if self.rest_tls_enabled {
+            "https"
         } else {
-            url.set_scheme("http").map_err(|()| {
-                CollectionError::service_error(format!(
-                    "Cannot determine REST address, cannot set HTTP scheme on address {url} for peer ID {this_peer_id}",
-                ))
-            })?;
-        }
+            "http"
+        };
+        url.set_scheme(scheme).map_err(|()| {
+            CollectionError::service_error(format!(
+                "Cannot determine REST address, cannot set {scheme} scheme on address {url} for peer ID {this_peer_id}",
+            ))
+        })?;
 
         Ok(url)
     }
