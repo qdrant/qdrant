@@ -80,7 +80,7 @@ async fn test_continuous_snapshot() {
         Arc::new(storage_config),
         shard_distribution,
         None,
-        ChannelService::new(REST_PORT, None, None),
+        ChannelService::new(REST_PORT, false, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),

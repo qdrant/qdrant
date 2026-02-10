@@ -354,6 +354,7 @@ fn main() -> anyhow::Result<()> {
     // It allocates required number of channels and manages proper reconnection handling
     let mut channel_service = ChannelService::new(
         settings.service.http_port,
+        settings.service.enable_tls,
         settings.service.api_key.clone(),
         settings.service.alt_api_key.clone(),
     );
