@@ -83,12 +83,11 @@ impl LocalShard {
         };
 
         let future = async move {
-            let tar_internal = tar_c.clone();
-
             if let Some(plunger_notify) = plunger_notify {
                 plunger_notify.await?;
             }
 
+            let tar_internal = tar_c.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 // Do not change segments while snapshotting
                 snapshot_all_segments(
