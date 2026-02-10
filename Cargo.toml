@@ -255,7 +255,7 @@ ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.10.0", default-features = false, features = ["std"] }
 prost = "0.12.6"
-prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
+prost-build = { version = "0.14.3", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
