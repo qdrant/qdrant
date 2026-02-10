@@ -331,6 +331,66 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     Ok(optimized_segment)
 }
 
+/// Create a single optimized segment from the given segments.
+///
+/// All point deletes or payload index changes made during optimization are propagated to the
+/// optimized segment at the very end.
+///
+/// This internally takes a write lock on the segments holder to block new updates when
+/// finalizing optimization. It is returned so that the optimized segment can be inserted and
+/// proxy segments can be dissolved before releasing the lock.
+///
+/// # Warning
+///
+/// This function is slow and must only be used on an optimization worker.
+#[allow(clippy::too_many_arguments)]
+fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
+    factory: &F,
+    optimizing_segments: Vec<LockedSegment>,
+    output_segment_uuid: Uuid,
+    proxies: &[LockedSegment],
+    permit: ResourcePermit, // IO resources for copying data
+    resource_budget: ResourceBudget,
+    stopped: &AtomicBool,
+    hw_counter: &HardwareCounterCell,
+    progress: ProgressTracker,
+    segments_path: &Path,
+) -> OperationResult<(Segment, DeletedPoints)> {
+    check_process_stopped(stopped)?;
+
+    // ---- SLOW PART -----
+
+    let optimized_segment = build_new_segment(
+        factory,
+        &optimizing_segments,
+        output_segment_uuid,
+        proxies,
+        permit,
+        resource_budget,
+        stopped,
+        hw_counter,
+        progress,
+        segments_path,
+    )?;
+
+    // Avoid unnecessary point removing in the critical section:
+    // - save already removed points while avoiding long read locks
+    // - exclude already removed points from post-optimization removing
+    let already_remove_points = {
+        let mut all_removed_points = proxy_deleted_points(proxies);
+        for existing_point in optimized_segment.iter_points() {
+            all_removed_points.remove(&existing_point);
+        }
+        all_removed_points
+    };
+
+    // ---- SLOW PART ENDS HERE -----
+
+    check_process_stopped(stopped)?;
+
+    Ok((optimized_segment, already_remove_points))
+}
+
 /// Finish optimization: propagate remaining changes and swap segments
 #[allow(clippy::too_many_arguments)]
 fn finish_optimization(
@@ -648,9 +708,9 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     };
 
     // SLOW PART: create single optimized segment and propagate all new changes to it
-    let build_result = build_new_segment(
+    let build_result = optimize_segment_propagate_changes(
         factory,
-        &input_segments,
+        input_segments,
         output_segment_uuid,
         &locked_proxies,
         permit,
@@ -661,8 +721,8 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         &paths.segments_path,
     );
 
-    let optimized_segment = match build_result {
-        Ok(segment) => segment,
+    let (optimized_segment, already_remove_points) = match build_result {
+        Ok(result) => result,
         Err(err) => {
             // Properly cancel optimization on all error kinds
             // Unwrap proxies and add temp segment to holder
@@ -670,23 +730,6 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
             return Err(err);
         }
     };
-
-    // Release references to original segments before deleting proxy data later
-    drop(input_segments);
-
-    // Compute already removed points to avoid duplicate work
-    let already_remove_points = {
-        let mut all_removed_points = proxy_deleted_points(&locked_proxies);
-        for existing_point in optimized_segment.iter_points() {
-            all_removed_points.remove(&existing_point);
-        }
-        all_removed_points
-    };
-
-    if let Err(err) = check_process_stopped(stopped) {
-        unwrap_proxy(&segment_holder, &proxy_ids)?;
-        return Err(err.into());
-    }
 
     // Fast part: blocks updates, propagates rest of the changes, swaps optimized segment
     let points_count = match finish_optimization(
