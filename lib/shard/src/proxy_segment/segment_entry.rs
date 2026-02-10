@@ -28,7 +28,10 @@ use crate::locked_segment::LockedSegment;
 
 impl NonAppendableSegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
-        cmp::max(self.wrapped_segment.get().read().version(), self.version)
+        cmp::max(
+            self.wrapped_segment.get().read().version(),
+            *self.version.lock(),
+        )
     }
 
     fn persistent_version(&self) -> SeqNumberType {
@@ -536,10 +539,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
             return Ok(false);
         }
 
-        self.version = cmp::max(self.version, op_num);
+        {
+            let mut version_guard = self.version.lock();
+            *version_guard = cmp::max(*version_guard, op_num);
+        }
 
         // Store index change to later propagate to optimized/wrapped segment
         self.changed_indexes
+            .write()
             .insert(key.clone(), ProxyIndexChange::Delete(op_num));
 
         Ok(true)
@@ -555,9 +562,12 @@ impl NonAppendableSegmentEntry for ProxySegment {
             return Ok(false);
         }
 
-        self.version = cmp::max(self.version, op_num);
+        {
+            let mut version_guard = self.version.lock();
+            *version_guard = cmp::max(*version_guard, op_num);
+        }
 
-        self.changed_indexes.insert(
+        self.changed_indexes.write().insert(
             key.clone(),
             ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
         );
@@ -593,10 +603,14 @@ impl NonAppendableSegmentEntry for ProxySegment {
             return Ok(false);
         }
 
-        self.version = cmp::max(self.version, op_num);
+        {
+            let mut version_guard = self.version.lock();
+            *version_guard = cmp::max(*version_guard, op_num);
+        }
 
         // Store index change to later propagate to optimized/wrapped segment
         self.changed_indexes
+            .write()
             .insert(key, ProxyIndexChange::Create(field_schema, op_num));
 
         Ok(true)
@@ -610,7 +624,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
 
-        self.version = cmp::max(self.version, op_num);
+        *self.version.get_mut() = cmp::max(*self.version.get_mut(), op_num);
 
         let point_offset = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
@@ -662,7 +676,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
 
-        for (field_name, change) in self.changed_indexes.iter_unordered() {
+        for (field_name, change) in self.changed_indexes.read().iter_unordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     indexed_fields.insert(field_name.to_owned(), schema.to_owned());

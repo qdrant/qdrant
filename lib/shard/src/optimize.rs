@@ -136,7 +136,7 @@ pub fn proxy_index_changes(proxies: &[LockedSegment]) -> ProxyIndexChanges {
             }
             LockedSegment::Proxy(proxy) => {
                 let proxy_read = proxy.read();
-                index_changes.merge(proxy_read.get_index_changes())
+                index_changes.merge(&proxy_read.get_index_changes())
             }
         }
     }
