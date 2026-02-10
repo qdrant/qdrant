@@ -24,8 +24,10 @@ where
 pub fn value_to_integer(value: &Value) -> Option<i64> {
     value.as_i64().or_else(|| {
         value.as_f64().and_then(|v| {
-            if v.fract() == 0.0 {
-                Some(v as i64)
+            let int = v as i64;
+            // This covers fractions, ranges, infinity and NaN cases
+            if int as f64 == v {
+                Some(int)
             } else {
                 None
             }
