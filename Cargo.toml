@@ -219,7 +219,7 @@ bytes = "1.11.1"
 cc = "1.2"
 chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.57", features = ["derive", "env"] }
-criterion = "0.8.1"
+criterion = "0.8.2"
 data-encoding = "2.10.0"
 delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
