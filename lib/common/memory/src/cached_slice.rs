@@ -7,6 +7,7 @@ use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use crate::cached_data::CachedData;
 
+/// Abstraction to simulate a [T], but it is backed by cache.
 pub struct CachedSlice<T> {
     data: CachedData,
     r#type: PhantomData<T>,
@@ -15,12 +16,17 @@ pub struct CachedSlice<T> {
 impl<T> CachedSlice<T>
 where
     [T]: ToOwned<Owned = Vec<T>>,
-    T: FromBytes + Immutable + KnownLayout,
+    T: Clone + FromBytes + Immutable + KnownLayout,
 {
-    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [T]>
-    where
-        <[T] as ToOwned>::Owned: From<Vec<T>>,
-    {
+    pub fn get(&self, idx: usize) -> Cow<'_, T> {
+        let slice = self.get_range(idx..idx + 1);
+        match slice {
+            Cow::Borrowed(slice) => Cow::Borrowed(&slice[0]),
+            Cow::Owned(mut vec) => Cow::Owned(vec.pop().unwrap()),
+        }
+    }
+
+    pub fn get_range(&self, range: Range<usize>) -> Cow<'_, [T]> {
         let t_size = mem::size_of::<T>();
         assert!(t_size != 0, "cannot transmute zero-sized type");
 
@@ -68,5 +74,14 @@ where
                 Cow::Owned(vec_t)
             }
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Cow<'_, T>> + '_ {
+        let total_len = self.len();
+        (0..total_len).map(move |idx| self.get(idx))
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len() / mem::size_of::<T>()
     }
 }

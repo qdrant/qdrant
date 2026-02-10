@@ -22,10 +22,10 @@ struct BlockDescriptor {
 ///
 /// Internally, it maps these ranges into fixed size blocks, and requests them to the cache.
 /// If not in cache, it will fetch them from the original path, and insert it.
-pub struct CachedData {
+pub(crate) struct CachedData {
     _original_path: PathBuf,
     file_id: u32,
-    _len: usize,
+    len: usize,
     // cacher: Arc<Cacher>,
 }
 
@@ -92,5 +92,9 @@ impl CachedData {
         }
         result.shrink_to_fit();
         Cow::Owned(result)
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
     }
 }
