@@ -46,26 +46,16 @@ impl LocalShard {
     }
 
     /// Create snapshot for local shard into `target_path`
-    pub async fn create_snapshot(
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let segments = self.segments.clone();
         let wal = self.wal.wal.clone();
-
-        if !save_wal {
-            // If we are not saving WAL, we still need to make sure that all submitted by this point
-            // updates have made it to the segments. So we use the Plunger to achieve that.
-            // It will notify us when all submitted updates so far have been processed.
-            let (tx, rx) = oneshot::channel();
-            let plunger = UpdateSignal::Plunger(tx);
-            self.update_sender.load().send(plunger).await?;
-            rx.await?;
-        }
 
         let segments_path = Self::segments_path(&self.path);
         let segment_config = self
@@ -73,39 +63,63 @@ impl LocalShard {
             .read()
             .await
             .to_base_segment_config()?;
+
         let payload_index_schema = self.payload_index_schema.clone();
         let temp_path = temp_path.to_owned();
-
-        let tar_c = tar.clone();
         let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
+        let tar_c = tar.clone();
+        let shard_path = self.path.clone();
 
-        let handle = tokio::task::spawn_blocking(move || {
-            // Do not change segments while snapshotting
-            snapshot_all_segments(
-                segments.clone(),
-                &segments_path,
-                Some(segment_config),
-                payload_index_schema.clone(),
-                &temp_path,
-                &tar_c.descend(Path::new(SEGMENTS_PATH))?,
-                format,
-                manifest.as_ref(),
-            )?;
+        let plunger_notify = if !save_wal {
+            // If we are not saving WAL, we still need to make sure that all submitted by this point
+            // updates have made it to the segments. So we use the Plunger to achieve that.
+            // It will notify us when all submitted updates so far have been processed.
+            let (tx, rx) = oneshot::channel();
+            let plunger = UpdateSignal::Plunger(tx);
+            self.update_sender.load().send(plunger).await?;
+            Some(rx)
+        } else {
+            None
+        };
 
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)?;
-                // snapshot applied_seq
-                Self::snapshot_applied_seq(applied_seq_path, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+        let future = async move {
+            if let Some(plunger_notify) = plunger_notify {
+                plunger_notify.await?;
             }
-        });
-        AbortOnDropHandle::new(handle).await??;
 
-        LocalShardClocks::archive_data(&self.path, tar).await?;
+            let tar_internal = tar_c.clone();
+            let handle = tokio::task::spawn_blocking(move || {
+                // Do not change segments while snapshotting
+                snapshot_all_segments(
+                    segments.clone(),
+                    &segments_path,
+                    Some(segment_config),
+                    payload_index_schema.clone(),
+                    &temp_path,
+                    &tar_internal.descend(Path::new(SEGMENTS_PATH))?,
+                    format,
+                    manifest.as_ref(),
+                )?;
 
-        Ok(())
+                if save_wal {
+                    // snapshot all shard's WAL
+                    Self::snapshot_wal(wal, &tar_internal)?;
+                    // snapshot applied_seq, it is preferred to save applied_seq later,
+                    // as higher applied_seq means more updates will be processed on restore,
+                    // which is more safe than having applied_seq too old.
+                    Self::snapshot_applied_seq(applied_seq_path, &tar_internal)
+                } else {
+                    Self::snapshot_empty_wal(wal, &temp_path, &tar_internal)
+                }
+            });
+            AbortOnDropHandle::new(handle).await??;
+
+            LocalShardClocks::archive_data(&shard_path, &tar_c).await?;
+
+            Ok(())
+        };
+
+        Ok(future)
     }
 
     /// Create empty WAL which is compatible with currently stored data

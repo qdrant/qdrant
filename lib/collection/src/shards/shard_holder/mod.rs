@@ -1128,9 +1128,9 @@ impl ShardHolder {
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<SnapshotDescription>> + use<>> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
-        //   and would be deleted, if future is cancelled
+        //   and would be deleted, if future is canceled
 
         let shard = self
             .get_shard(shard_id)
@@ -1156,39 +1156,47 @@ impl ShardHolder {
             .suffix(".tar")
             .tempfile_in(temp_dir)?;
 
+        let snapshots_path = snapshots_path.to_path_buf();
+        let snapshot_manager = shard.get_snapshots_storage_manager()?;
+
         let tar = BuilderExt::new_seekable_owned(File::create(temp_file.path())?);
 
-        shard
+        let snapshot_creator = shard
             .create_snapshot(
                 snapshot_temp_dir.path(),
-                &tar,
+                tar.clone(),
                 SnapshotFormat::Regular,
                 None,
                 false,
             )
             .await?;
 
-        let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
-        if let Err(err) = snapshot_temp_dir.close() {
-            log::error!(
-                "Failed to remove temporary directory {}: {err}",
-                snapshot_temp_dir_path.display(),
-            );
-        }
+        let future = async move {
+            snapshot_creator.await?;
 
-        tar.finish().await?;
+            let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
+            if let Err(err) = snapshot_temp_dir.close() {
+                log::error!(
+                    "Failed to remove temporary directory {}: {err}",
+                    snapshot_temp_dir_path.display(),
+                );
+            }
 
-        let snapshot_path =
-            Self::shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
+            tar.finish().await?;
 
-        let snapshot_manager = shard.get_snapshots_storage_manager()?;
-        let snapshot_description = snapshot_manager
-            .store_file(temp_file.path(), &snapshot_path)
-            .await;
-        if snapshot_description.is_ok() {
-            let _ = temp_file.keep();
-        }
-        snapshot_description
+            let snapshot_path =
+                Self::shard_snapshot_path_unchecked(&snapshots_path, shard_id, snapshot_file_name)?;
+
+            let snapshot_description = snapshot_manager
+                .store_file(temp_file.path(), &snapshot_path)
+                .await;
+            if snapshot_description.is_ok() {
+                let _ = temp_file.keep();
+            }
+            snapshot_description
+        };
+
+        Ok(future)
     }
 
     /// # Cancel safety
@@ -1221,18 +1229,22 @@ impl ShardHolder {
 
         let (read_half, write_half) = tokio::io::duplex(4096);
 
-        let future = async move {
-            let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
+        let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
-            shard
-                .create_snapshot(
-                    snapshot_temp_dir.path(),
-                    &tar,
-                    SnapshotFormat::Streamable,
-                    manifest,
-                    false,
-                )
-                .await?;
+        let snapshot_creator = shard
+            .create_snapshot(
+                snapshot_temp_dir.path(),
+                tar.clone(),
+                SnapshotFormat::Streamable,
+                manifest,
+                false,
+            )
+            .await?;
+
+        drop(shard);
+
+        let future = async move {
+            snapshot_creator.await?;
 
             let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
             if let Err(err) = snapshot_temp_dir.close() {

@@ -353,17 +353,17 @@ impl ForwardProxyShard {
         (self.wrapped_shard, self.remote_shard)
     }
 
-    /// Forward `create_snapshot` to `wrapped_shard`
-    pub async fn create_snapshot(
+    /// Forward `get_snapshot_creator` to `wrapped_shard`
+    pub async fn get_snapshot_creator(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         self.wrapped_shard
-            .create_snapshot(temp_path, tar, format, manifest, save_wal)
+            .get_snapshot_creator(temp_path, tar, format, manifest, save_wal)
             .await
     }
 
