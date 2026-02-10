@@ -107,3 +107,98 @@ def test_formula(collection_name, formula, expecting):
 
     # Assert that the response contains all points
     assert len(points) == len(orig_scores), "Response should contain all points"
+
+
+def test_formula_with_score_threshold(collection_name):
+    """Test that score_threshold works correctly with formula queries"""
+    point_id = 8
+    formula = {"sum": [{"mult": ["$score", 0.4]}, {"mult": ["price", 0.6]}]}
+
+    # Get original scores
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={"query": point_id},
+    )
+    points = response.json()["result"]["points"]
+    orig_scores = {point.get("id"): point.get("score") for point in points}
+
+    # Query with formula but without score_threshold
+    query_no_threshold = {
+        "prefetch": {"query": point_id},
+        "query": {"formula": formula, "defaults": {"price": 0.0}},
+        "with_payload": True,
+    }
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body=query_no_threshold,
+    )
+    assert response.ok, response.json()
+    
+    points_no_threshold = response.json()["result"]["points"]
+    assert len(points_no_threshold) > 2, "Should have multiple results without threshold"
+    
+    # Get the second highest score to use as threshold
+    scores_no_threshold = [point.get("score") for point in points_no_threshold]
+    second_score = scores_no_threshold[1]
+    
+    # Set threshold slightly above second score - should return only 1 result
+    threshold_above_second = second_score + 0.0001
+    
+    query_with_threshold = {
+        "prefetch": {"query": point_id},
+        "query": {"formula": formula, "defaults": {"price": 0.0}},
+        "with_payload": True,
+        "score_threshold": threshold_above_second,
+    }
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body=query_with_threshold,
+    )
+    assert response.ok, response.json()
+    
+    points_with_threshold = response.json()["result"]["points"]
+    
+    # Should only return the top result
+    assert len(points_with_threshold) == 1, (
+        f"Expected 1 result with threshold {threshold_above_second}, got {len(points_with_threshold)}"
+    )
+    
+    # Verify all returned scores are above threshold
+    for point in points_with_threshold:
+        assert point.get("score") >= threshold_above_second, (
+            f"Score {point.get('score')} should be >= threshold {threshold_above_second}"
+        )
+    
+    # Set threshold slightly below second score - should return 2 results
+    threshold_below_second = second_score - 0.0001
+    
+    query_with_threshold["score_threshold"] = threshold_below_second
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body=query_with_threshold,
+    )
+    assert response.ok, response.json()
+    
+    points_with_threshold = response.json()["result"]["points"]
+    
+    # Should return top 2 results
+    assert len(points_with_threshold) == 2, (
+        f"Expected 2 results with threshold {threshold_below_second}, got {len(points_with_threshold)}"
+    )
+    
+    # Verify all returned scores are above threshold
+    for point in points_with_threshold:
+        assert point.get("score") >= threshold_below_second, (
+            f"Score {point.get('score')} should be >= threshold {threshold_below_second}"
+        )
