@@ -828,9 +828,7 @@ pub fn create_field_index(
     };
 
     segments.apply_segments(|write_segment| {
-        write_segment.with_upgraded(|segment| {
-            segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
-        })?;
+        write_segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)?;
 
         let (schema, indexes) =
             match write_segment.build_field_index(op_num, field_name, field_schema, hw_counter)? {
@@ -861,9 +859,7 @@ pub fn delete_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
 ) -> OperationResult<usize> {
-    segments.apply_segments(|write_segment| {
-        write_segment.with_upgraded(|segment| segment.delete_field_index(op_num, field_name))
-    })
+    segments.apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))
 }
 
 fn select_excluded_by_filter_ids(
