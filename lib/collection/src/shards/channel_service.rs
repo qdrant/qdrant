@@ -25,6 +25,9 @@ pub struct ChannelService {
     pub channel_pool: Arc<TransportChannelPool>,
     /// Port at which the public REST API is exposed for the current peer.
     pub current_rest_port: u16,
+    /// Indicates whether the TLS is enabled for the public REST API.
+    pub rest_tls_enabled: bool,
+
     /// Instance wide API key if configured, must be used with care.
     pub api_key: Option<String>,
 
@@ -36,6 +39,7 @@ impl ChannelService {
     /// Construct a new channel service with the given REST port.
     pub fn new(
         current_rest_port: u16,
+        rest_tls_enabled: bool,
         api_key: Option<String>,
         alt_api_key: Option<String>,
     ) -> Self {
@@ -44,6 +48,7 @@ impl ChannelService {
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
+            rest_tls_enabled,
             api_key,
             alt_api_key,
         }
@@ -217,6 +222,17 @@ impl ChannelService {
                     "Cannot determine REST address, cannot specify port on address {url} for peer ID {this_peer_id}",
                 ))
             })?;
+        let scheme = if self.rest_tls_enabled {
+            "https"
+        } else {
+            "http"
+        };
+        url.set_scheme(scheme).map_err(|()| {
+            CollectionError::service_error(format!(
+                "Cannot determine REST address, cannot set {scheme} scheme on address {url} for peer ID {this_peer_id}",
+            ))
+        })?;
+
         Ok(url)
     }
 
@@ -233,6 +249,7 @@ impl Default for ChannelService {
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
+            rest_tls_enabled: false,
             api_key: None,
             alt_api_key: None,
         }
