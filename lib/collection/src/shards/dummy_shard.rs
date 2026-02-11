@@ -40,17 +40,6 @@ impl DummyShard {
         }
     }
 
-    pub fn create_snapshot(
-        &self,
-        _temp_path: &Path,
-        _tar: &tar_ext::BuilderExt,
-        _format: SnapshotFormat,
-        _manifest: Option<SnapshotManifest>,
-        _save_wal: bool,
-    ) -> CollectionError {
-        self.dummy_error()
-    }
-
     pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
         Ok(SnapshotManifest::default())
     }

@@ -159,7 +159,7 @@ impl Shard {
                     .await?,
             )),
             Shard::Dummy(dummy_shard) => {
-                return Err(dummy_shard.create_snapshot(temp_path, tar, format, manifest, save_wal));
+                return Err(dummy_shard.dummy_error());
             }
         };
 
