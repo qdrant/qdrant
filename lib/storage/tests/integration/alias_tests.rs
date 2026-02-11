@@ -58,6 +58,7 @@ fn test_alias_operation() {
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
             load_concurrency: LoadConcurrencyConfig::default(),
+            disk_cache: None,
         },
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),
