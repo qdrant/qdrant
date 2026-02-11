@@ -12,6 +12,7 @@ use super::{ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_trait::ShardOperation as _;
@@ -220,6 +221,26 @@ impl ShardReplicaSet {
         self.replica_state.read().peers().keys().max().cloned()
     }
 
+    pub async fn get_clock_with_timeout(
+        &self,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<ClockGuard> {
+        let start_time = std::time::Instant::now();
+        loop {
+            if let Some(clock) = self.clock_set.lock().await.get_clock() {
+                break Ok(clock);
+            }
+            if let Some(timeout) = timeout
+                && start_time.elapsed() >= timeout
+            {
+                break Err(CollectionError::timeout(
+                    timeout,
+                    format!("Failed to acquire clock for update operation within {timeout:?}"),
+                ));
+            }
+        }
+    }
+
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
@@ -239,7 +260,7 @@ impl ShardReplicaSet {
         // - lock `remotes`, `local`, `clock` (in specified order!) on the *first* iteration of the loop
         // - then release and lock `remotes` and `local` *only* for all next iterations
         // - but keep initial `clock` for the whole duration of `update`
-        let mut clock = self.clock_set.lock().await.get_clock();
+        let mut clock = self.get_clock_with_timeout(timeout).await?;
 
         for attempt in 1..=UPDATE_MAX_CLOCK_REJECTED_RETRIES {
             let is_non_zero_tick = clock.current_tick().is_some();

@@ -36,7 +36,7 @@ fn clock_set_clock_map_workflow() {
 
     // `ClockMap` rejects older (or current) ticks...
     helper.clock_set = Default::default();
-    helper.clock_set.get_clock().advance_to(0);
+    helper.clock_set.get_clock().unwrap().advance_to(0);
 
     for tick in 1..=50 {
         helper.advance_clock_map(false).assert(tick, 50, false);
@@ -44,7 +44,7 @@ fn clock_set_clock_map_workflow() {
 
     // ...and advances `ClockSet`
     helper.clock_set = Default::default();
-    helper.clock_set.get_clock().advance_to(42);
+    helper.clock_set.get_clock().unwrap().advance_to(42);
 
     helper.advance_clock(false).assert(43, 50, false);
     helper.tick_clock().assert(51);
@@ -66,7 +66,7 @@ fn clock_set_clock_map_workflow() {
 
     // ...but it does not affect current tick of `ClockMap` in any way
     helper.clock_set = Default::default();
-    helper.clock_set.get_clock().advance_to(42);
+    helper.clock_set.get_clock().unwrap().advance_to(42);
 
     helper.advance_clock(false).assert(43, 100, false);
     helper.tick_clock().assert(101);
@@ -89,7 +89,7 @@ impl Helper {
     }
 
     pub fn tick_clock(&mut self) -> TickClockStatus {
-        let mut clock = self.clock_set.get_clock();
+        let mut clock = self.clock_set.get_clock().unwrap(); // unwrap in test is fine
         let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once());
         TickClockStatus { clock_tag }
     }
@@ -103,7 +103,7 @@ impl Helper {
     }
 
     fn advance(&mut self, force: bool, advance_clock: bool) -> AdvanceStatus {
-        let mut clock = self.clock_set.get_clock();
+        let mut clock = self.clock_set.get_clock().unwrap(); // unwrap in test is fine
 
         let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once()).force(force);
 
