@@ -222,6 +222,17 @@ class ClientUtils:
             print(f"Collection patching failed with error: {e}")
             raise RuntimeError(f"Collection patching failed: {e}") from e
 
+    def delete_collection(self, collection_name: str, timeout: Optional[int] = None) -> None:
+        """Delete collection."""
+        try:
+            self.client.delete_collection(
+                collection_name=collection_name,
+                timeout=timeout if timeout else self.timeout
+            )
+        except Exception as e:
+            print(f"Collection removal failed with error: {e}")
+            raise RuntimeError(f"Collection removal failed: {e}") from e
+
     def wait_for_status(self, collection_name: str, status: str) -> str:
         """Wait for collection to reach the specified status."""
         for _ in range(30):
@@ -304,9 +315,9 @@ class ClientUtils:
         except Exception as e:
             raise RuntimeError("Search failed") from e
 
-    def create_snapshot(self, collection_name: str = "test_collection") -> Optional[str]:
+    def create_snapshot(self, collection_name: str = "test_collection", do_wait: Optional[bool] = True) -> Optional[str]:
         """Create a snapshot of the collection."""
-        snapshot_info = self.client.create_snapshot(collection_name=collection_name)
+        snapshot_info = self.client.create_snapshot(collection_name=collection_name, wait=do_wait)
         return snapshot_info.name if snapshot_info else None
 
     def download_snapshot(self, collection_name: str, snapshot_name: str) -> Tuple[bytes, str]:
