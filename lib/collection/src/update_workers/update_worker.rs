@@ -71,7 +71,26 @@ impl UpdateWorkers {
                     let operation = if let Some(operation) = operation {
                         *operation
                     } else {
-                        let record = wal.lock().await.read_single_record(op_num);
+                        let wal_clone = wal.clone();
+                        let record = match tokio::task::spawn_blocking(move || {
+                            wal_clone.blocking_lock().read_single_record(op_num)
+                        })
+                        .await
+                        {
+                            Ok(record) => record,
+                            Err(tokio_error) => {
+                                log::error!(
+                                    "Can't read operation {op_num} from WAL - {tokio_error}"
+                                );
+                                if let Some(feedback) = sender {
+                                    feedback.send(Err(CollectionError::from(tokio_error))).unwrap_or_else(|_| {
+                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
+                                    });
+                                }
+                                continue;
+                            }
+                        };
+
                         match record {
                             Ok(Some(op)) => op.operation,
                             Ok(None) => {
@@ -85,6 +104,7 @@ impl UpdateWorkers {
                                 continue;
                             }
                             Err(err) => {
+                                log::error!("Can't read operation {op_num} from WAL - {err}");
                                 if let Some(feedback) = sender {
                                     feedback.send(Err(CollectionError::from(err))).unwrap_or_else(|_| {
                                         log::debug!("Can't report operation {op_num} result. Assume already not required");
