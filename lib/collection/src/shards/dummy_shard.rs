@@ -94,7 +94,7 @@ impl DummyShard {
         self.dummy()
     }
 
-    fn dummy_error(&self) -> CollectionError {
+    pub fn dummy_error(&self) -> CollectionError {
         CollectionError::service_error(self.message.clone())
     }
 

@@ -41,7 +41,7 @@ use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
-use crate::operations::{CollectionUpdateOperations, point_ops};
+use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
@@ -1290,6 +1290,22 @@ impl ShardReplicaSet {
         };
 
         local_shard.update_cutoff(cutoff).await
+    }
+
+    /// Get the last N entries from the WAL.
+    pub(crate) async fn get_wal_entries(
+        &self,
+        count: u64,
+    ) -> CollectionResult<Vec<(u64, OperationWithClockTag)>> {
+        let local = self.local.read().await;
+
+        let Some(local) = local.as_ref() else {
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
+        };
+
+        local.get_wal_entries(count).await
     }
 
     pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {

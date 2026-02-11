@@ -17,6 +17,7 @@ use tokio::sync::oneshot;
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
 use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
@@ -396,6 +397,26 @@ impl Shard {
                 )))
             }
         }
+    }
+
+    pub async fn get_wal_entries(
+        &self,
+        count: u64,
+    ) -> CollectionResult<Vec<(u64, OperationWithClockTag)>> {
+        let local = match self {
+            Shard::Local(local) => local,
+            Shard::Proxy(proxy) => &proxy.wrapped_shard,
+            Shard::ForwardProxy(proxy) => &proxy.wrapped_shard,
+
+            Shard::QueueProxy(proxy) => match proxy.wrapped_shard() {
+                Some(wrapped) => wrapped,
+                None => return Ok(Vec::new()),
+            },
+
+            Shard::Dummy(dummy) => return Err(dummy.dummy_error()),
+        };
+
+        Ok(local.get_wal_entries(count).await)
     }
 
     pub async fn set_extended_wal_retention(&self) {

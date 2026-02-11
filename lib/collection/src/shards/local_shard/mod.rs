@@ -24,8 +24,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
@@ -1157,6 +1157,24 @@ impl LocalShard {
     /// This also updates the highest seen clocks.
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
         self.wal.update_cutoff(cutoff).await
+    }
+
+    /// Get the last N entries from the WAL
+    ///
+    /// Returns a vector of (sequence_number, operation) tuples, newest first.
+    pub async fn get_wal_entries(&self, count: u64) -> Vec<(u64, OperationWithClockTag)> {
+        let wal = self.wal.wal.lock().await;
+
+        if wal.len(true) == 0 {
+            return Vec::new();
+        }
+
+        let count = cmp::min(count, wal.len(true));
+
+        let end = wal.last_index();
+        let start = end.saturating_sub(count);
+
+        wal.read_range(start..end + 1).rev().collect()
     }
 
     /// Check if the read rate limiter allows the operation to proceed

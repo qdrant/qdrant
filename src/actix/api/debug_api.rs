@@ -1,7 +1,8 @@
 use actix_web::{Responder, get, patch, web};
 use collection::operations::verification;
 use collection::shards::shard::ShardId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use shard::operations::OperationWithClockTag;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 
@@ -37,7 +38,7 @@ async fn update_debugger_config(
 #[derive(Deserialize)]
 struct GetShardWalQuery {
     #[serde(default)]
-    entries: usize,
+    entries: u64,
 }
 
 impl Default for GetShardWalQuery {
@@ -61,16 +62,29 @@ async fn get_shard_wal(
         let collection_pass = auth.check_collection_access(
             &collection,
             AccessRequirements::new().extras(),
-            "get_shard_recovery_point",
+            "get_shard_wal",
         )?;
 
-        let collection = dispatcher
+        let entries = dispatcher
             .toc(&auth, &pass)
             .get_collection(&collection_pass)
+            .await?
+            .get_shard_wal_entries(shard, entries)
             .await?;
 
-        unimplemented!();
-        Ok(())
+        #[derive(Serialize)]
+        struct Entry {
+            id: u64,
+            #[serde(flatten)]
+            operation: OperationWithClockTag,
+        }
+
+        let entries: Vec<_> = entries
+            .into_iter()
+            .map(|(id, operation)| Entry { id, operation })
+            .collect();
+
+        Ok(entries)
     })
     .await
 }
