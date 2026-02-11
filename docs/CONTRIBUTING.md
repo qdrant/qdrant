@@ -44,6 +44,55 @@ The project uses [rustfmt](https://github.com/rust-lang/rustfmt) formatter. Plea
 ```cargo +nightly fmt --all``` command. The project also use [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
 so please ensure running ``cargo clippy --workspace --all-features`` before submitting the PR.
 
+## Contributing with AI
+
+At Qdrant, we recognize the usefulness of AI tools in software development.
+At the same time, we also observe the growing problem of a high volume of contributions, which require careful reviews.
+
+To compensate for the lack of human attention budget, while keeping the quality and efficiency of contributions,
+we introduce the following principles for contributions with AI:
+
+#### Do not communicate with real people through AI
+
+When preparing a PR description or answering to comments, please avoid using AI tools to generate the content.
+We want to see PR documentation as a source of truth, so we can validate if the changes are actually following the intent.
+Avoid including AI-generated diagrams or walkthroughs of the code; if somebody would like to read them, they can always generate them themselves.
+
+#### If you are using AI tools to generate PR, you are still responsible for the results
+
+We expect you to understand the changes you propose and be able to answer questions about it.
+"I asked claude, and it generated this" is not an acceptable answer, and we might discard the PR if we find it hard to understand the changes.
+
+#### Disclose if some parts of the PR are generated with AI tools
+
+A good practice is to explicitly specify which commits are made using AI tools, and which commits are manual changes.
+
+For example, a good PR description with AI-generated commits:
+
+```
+- [AI] feat: create a new fusion method for hybrid search
+- [manual] fix: improve mutex handling in the new fusion method
+```
+
+#### Disclose initial prompt you used to generate the contribution
+
+Code generation tools have the ability to perform modifications across the whole Qdrant codebase, so
+it becomes increasingly important to know what was the original intent communicated to the AI tool.
+
+Sometimes, the problem may exist in the prompt itself, and even if the generated code is flawless, 
+it may cause issues which are hard to spot in a review.
+
+Example of a bad prompt:
+
+```
+Find bugs in the module and fix them
+```
+
+Try to keep your prompt as specific as possible, leaving no room for misinterpretation.
+If you are making incremental changes, please try to submit them as separate commits,
+so we can easily understand the intent of each change.
+
+
 ## License
 By contributing, you agree that your contributions will be licensed under its Apache License 2.0.
 
