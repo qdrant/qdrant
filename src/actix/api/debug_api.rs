@@ -1,6 +1,7 @@
 use actix_web::{Responder, get, patch, web};
 use collection::operations::verification;
 use collection::shards::shard::ShardId;
+use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 
@@ -29,6 +30,47 @@ async fn update_debugger_config(
     crate::actix::helpers::time(async move {
         auth.check_global_access(AccessRequirements::new().manage(), "update_debugger_config")?;
         Ok(debugger_state.apply_config_patch(debug_patch.into_inner()))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct GetShardWalQuery {
+    #[serde(default)]
+    entries: usize,
+}
+
+impl Default for GetShardWalQuery {
+    fn default() -> Self {
+        Self { entries: 10 }
+    }
+}
+
+#[get("/collections/{collection}/shards/{shard}/wal")]
+async fn get_shard_wal(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<GetShardWalQuery>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Responder {
+    helpers::time(async move {
+        let (collection, shard) = path.into_inner();
+        let GetShardWalQuery { entries } = query.into_inner();
+
+        let pass = verification::new_unchecked_verification_pass();
+        let collection_pass = auth.check_collection_access(
+            &collection,
+            AccessRequirements::new().extras(),
+            "get_shard_recovery_point",
+        )?;
+
+        let collection = dispatcher
+            .toc(&auth, &pass)
+            .get_collection(&collection_pass)
+            .await?;
+
+        unimplemented!();
+        Ok(())
     })
     .await
 }
@@ -67,5 +109,6 @@ async fn get_shard_recovery_point(
 pub fn config_debugger_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_debugger_config)
         .service(update_debugger_config)
+        .service(get_shard_wal)
         .service(get_shard_recovery_point);
 }
