@@ -7,7 +7,7 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex as TokioMutex, watch};
+use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::common::stoppable_task::StoppableTaskHandle;
@@ -23,6 +23,20 @@ use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
 
 const BYTES_IN_KB: usize = 1024;
+
+/// Sends the operation result through the feedback channel if present.
+/// Logs a debug message if the receiver is no longer waiting.
+fn send_feedback(
+    sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    result: CollectionResult<usize>,
+    op_num: SeqNumberType,
+) {
+    if let Some(feedback) = sender {
+        feedback.send(result).unwrap_or_else(|_| {
+            log::debug!("Can't report operation {op_num} result. Assume already not required");
+        });
+    }
+}
 
 impl UpdateWorkers {
     /// Main loop of the update worker.
@@ -78,15 +92,9 @@ impl UpdateWorkers {
                         .await
                         {
                             Ok(record) => record,
-                            Err(tokio_error) => {
-                                log::error!(
-                                    "Can't read operation {op_num} from WAL - {tokio_error}"
-                                );
-                                if let Some(feedback) = sender {
-                                    feedback.send(Err(CollectionError::from(tokio_error))).unwrap_or_else(|_| {
-                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
-                                    });
-                                }
+                            Err(err) => {
+                                log::error!("Can't read operation {op_num} from WAL - {err}");
+                                send_feedback(sender, Err(CollectionError::from(err)), op_num);
                                 continue;
                             }
                         };
@@ -94,22 +102,18 @@ impl UpdateWorkers {
                         match record {
                             Ok(Some(op)) => op.operation,
                             Ok(None) => {
-                                if let Some(feedback) = sender {
-                                    feedback.send(Err(CollectionError::service_error(
-                                        format!("Operation {op_num} not found in WAL"),
-                                    ))).unwrap_or_else(|_| {
-                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
-                                    });
-                                }
+                                send_feedback(
+                                    sender,
+                                    Err(CollectionError::service_error(format!(
+                                        "Operation {op_num} not found in WAL"
+                                    ))),
+                                    op_num,
+                                );
                                 continue;
                             }
                             Err(err) => {
                                 log::error!("Can't read operation {op_num} from WAL - {err}");
-                                if let Some(feedback) = sender {
-                                    feedback.send(Err(CollectionError::from(err))).unwrap_or_else(|_| {
-                                        log::debug!("Can't report operation {op_num} result. Assume already not required");
-                                    });
-                                }
+                                send_feedback(sender, Err(CollectionError::from(err)), op_num);
                                 continue;
                             }
                         }
@@ -123,14 +127,10 @@ impl UpdateWorkers {
                     )
                     .await;
 
-                    if let Err(err) = operation_result
-                        && let Some(feedback) = sender
-                    {
-                        feedback.send(Err(err)).unwrap_or_else(|_| {
-                            log::debug!("Can't report operation {op_num} result. Assume already not required");
-                        });
+                    if let Err(err) = operation_result {
+                        send_feedback(sender, Err(err), op_num);
                         continue;
-                    };
+                    }
 
                     let wait = sender.is_some();
                     let operation_result = tokio::task::spawn_blocking(move || {
@@ -162,11 +162,7 @@ impl UpdateWorkers {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
-                    if let Some(feedback) = sender {
-                        feedback.send(res).unwrap_or_else(|_| {
-                            log::debug!("Can't report operation {op_num} result. Assume already not required");
-                        });
-                    };
+                    send_feedback(sender, res, op_num);
                 }
                 UpdateSignal::Nop => optimize_sender
                     .send(OptimizerSignal::Nop)
