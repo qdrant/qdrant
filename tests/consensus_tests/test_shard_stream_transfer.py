@@ -392,9 +392,11 @@ def test_transfer_change_pending_point(tmp_path: pathlib.Path):
 #
 # When we start the transfer, there may still be a (large) number of operations
 # pending. Such pending operations may be in the update queue (channel) until
-# the update worker applies them. In Qdrant <1.17.0 these opeartions were
+# the update worker applies them. In Qdrant <1.17.0 these operations were
 # missed. This test proves all operations in the update queue are properly
 # transferred to the target node, and applied there.
+#
+# See: <https://github.com/qdrant/qdrant/pull/8103>
 def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -408,7 +410,7 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     )
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], 100, offset=100)
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -427,9 +429,10 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Insert points with wait=false, these updates will be pending for some time
-    # as they hang in the queue
-    upsert_random_points(peer_api_uris[0], 100, offset=100, wait="false")
+    # Insert points with wait=false
+    # These updates will be pending for some time as they hang in the queue
+    # Insert with low point IDs here to make it more likely to conflict with the transfer
+    upsert_random_points(peer_api_uris[0], 100, offset=0, wait="false")
 
     # NOTE: the core issue happened here!
     # We now have pending updates in the queue which are not applied yet. Below

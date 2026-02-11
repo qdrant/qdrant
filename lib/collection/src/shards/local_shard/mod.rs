@@ -54,7 +54,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc};
+use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
 use tokio_util::task::AbortOnDropHandle;
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -1206,6 +1206,19 @@ impl LocalShard {
         update_sender
             .max_capacity()
             .saturating_sub(update_sender.capacity())
+    }
+
+    /// Send plunger operation
+    ///
+    /// Returns oneshot channel receiver that will be notified once the plunger operation is
+    /// processed.
+    pub async fn plunge_async(&self) -> CollectionResult<oneshot::Receiver<()>> {
+        let (tx, rx) = oneshot::channel();
+
+        let plunger = UpdateSignal::Plunger(tx);
+        self.update_sender.load().send(plunger).await?;
+
+        Ok(rx)
     }
 }
 
