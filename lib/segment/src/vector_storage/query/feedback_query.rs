@@ -8,8 +8,6 @@ use serde::Serialize;
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 
-const DEFAULT_MAX_PAIRS: usize = 3;
-
 #[derive(Clone, Debug, Serialize, Hash, PartialEq)]
 pub struct FeedbackItem<T> {
     pub vector: T,
@@ -36,7 +34,7 @@ pub struct NaiveFeedbackQuery<T> {
     /// The original query vector.
     pub target: T,
 
-    /// Pairs of results with higher difference in their feedback score.
+    /// Vectors scored by the feedback model.
     pub feedback: Vec<FeedbackItem<T>>,
 
     /// How to handle the feedback
@@ -80,7 +78,7 @@ impl<T, U> TransformInto<NaiveFeedbackQuery<U>, T, U> for NaiveFeedbackQuery<T> 
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct PrecomputedFeedbackPair<T> {
+pub struct ContextPair<T> {
     /// A vector with higher feedback score.
     pub positive: T,
     /// A vector with lower feedback score.
@@ -89,12 +87,12 @@ pub struct PrecomputedFeedbackPair<T> {
     pub partial_computation: OrderedFloat<f32>,
 }
 
-impl<T> PrecomputedFeedbackPair<T> {
-    pub fn transform<F, U>(self, mut f: F) -> OperationResult<PrecomputedFeedbackPair<U>>
+impl<T> ContextPair<T> {
+    pub fn transform<F, U>(self, mut f: F) -> OperationResult<ContextPair<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
-        Ok(PrecomputedFeedbackPair {
+        Ok(ContextPair {
             positive: f(self.positive)?,
             negative: f(self.negative)?,
             partial_computation: self.partial_computation,
@@ -114,44 +112,35 @@ pub struct NaiveFeedbackCoefficients {
 }
 
 impl NaiveFeedbackCoefficients {
-    /// Extracts pairs of points, ranked by score difference in descending order.
+    /// Extracts pairs of points which have more than `margin` in their difference of scores
     ///
     /// Assumes scoring order is BiggerIsBetter
-    fn extract_feedback_pairs<TVector: Clone>(
+    fn extract_context_pairs<TVector: Clone>(
         &self,
-        mut feedback: Vec<FeedbackItem<TVector>>,
-        num_pairs: usize,
-    ) -> Vec<PrecomputedFeedbackPair<TVector>> {
-        feedback.sort_by_key(|item| OrderedFloat(-item.score));
-
+        feedback: Vec<FeedbackItem<TVector>>,
+        margin: f32,
+    ) -> Vec<ContextPair<TVector>> {
         if feedback.len() < 2 {
+            // return early as pairs cannot be formed
             return Vec::new();
         }
 
-        // Pair front and back items until we run out of them
-        let mut front_idx = 0;
-        let mut back_idx = feedback.len() - 1;
+        let mut feedback_pairs = Vec::new();
+        for permutation in feedback.iter().permutations(2) {
+            let (positive, negative) = (permutation[0], permutation[1]);
+            let confidence = positive.score - negative.score;
 
-        let max_num_pairs = num_pairs.min(feedback.len() / 2);
-        let mut feedback_pairs = Vec::with_capacity(max_num_pairs);
-
-        while front_idx < back_idx && feedback_pairs.len() < max_num_pairs {
-            let front = &feedback[front_idx];
-            let back = &feedback[back_idx];
-
-            let confidence = front.score - back.score;
+            if confidence.0 <= margin {
+                continue;
+            }
 
             let partial_computation = confidence.powf(self.b.0) * self.c.0;
-            feedback_pairs.push(PrecomputedFeedbackPair {
-                positive: front.vector.clone(),
-                negative: back.vector.clone(),
+            feedback_pairs.push(ContextPair {
+                positive: positive.vector.clone(),
+                negative: negative.vector.clone(),
                 partial_computation: partial_computation.into(),
             });
-
-            front_idx += 1;
-            back_idx -= 1;
         }
-
         feedback_pairs
     }
 }
@@ -163,7 +152,7 @@ pub struct FeedbackQuery<TVector> {
     target: TVector,
 
     /// Pairs of results with higher difference in their feedback score.
-    feedback_pairs: Vec<PrecomputedFeedbackPair<TVector>>,
+    context_pairs: Vec<ContextPair<TVector>>,
 
     /// How to handle the feedback
     coefficients: NaiveFeedbackCoefficients,
@@ -175,11 +164,11 @@ impl<TVector: Clone> FeedbackQuery<TVector> {
         feedback: Vec<FeedbackItem<TVector>>,
         coefficients: NaiveFeedbackCoefficients,
     ) -> Self {
-        let feedback_pairs = coefficients.extract_feedback_pairs(feedback, DEFAULT_MAX_PAIRS);
+        let context_pairs = coefficients.extract_context_pairs(feedback, 0.0);
 
         Self {
             target,
-            feedback_pairs,
+            context_pairs,
             coefficients,
         }
     }
@@ -192,12 +181,12 @@ impl<T, U> TransformInto<FeedbackQuery<U>, T, U> for FeedbackQuery<T> {
     {
         let Self {
             target,
-            feedback_pairs,
+            context_pairs,
             coefficients,
         } = self;
         Ok(FeedbackQuery {
             target: f(target)?,
-            feedback_pairs: feedback_pairs
+            context_pairs: context_pairs
                 .into_iter()
                 .map(|pair| pair.transform(&mut f))
                 .try_collect()?,
@@ -218,14 +207,14 @@ impl<T> Query<T> for FeedbackQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let Self {
             target,
-            feedback_pairs,
+            context_pairs,
             coefficients,
         } = self;
 
         let mut score = coefficients.a.0 * similarity(target);
 
-        for pair in feedback_pairs {
-            let PrecomputedFeedbackPair {
+        for pair in context_pairs {
+            let ContextPair {
                 positive,
                 negative,
                 partial_computation,

@@ -6102,6 +6102,70 @@ pub struct ContextInput {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RelevanceFeedbackInput {
+    /// The original query vector
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub target: ::core::option::Option<VectorInput>,
+    /// Previous results scored by the feedback provider.
+    #[prost(message, repeated, tag = "2")]
+    #[validate(nested)]
+    pub feedback: ::prost::alloc::vec::Vec<FeedbackItem>,
+    /// Formula and trained coefficients to use.
+    #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
+    pub strategy: ::core::option::Option<FeedbackStrategy>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FeedbackItem {
+    /// The id or vector from the original model
+    #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
+    pub example: ::core::option::Option<VectorInput>,
+    /// Score for this vector as determined by the feedback provider
+    #[prost(float, tag = "2")]
+    pub score: f32,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FeedbackStrategy {
+    #[prost(oneof = "feedback_strategy::Variant", tags = "1")]
+    #[validate(nested)]
+    pub variant: ::core::option::Option<feedback_strategy::Variant>,
+}
+/// Nested message and enum types in `FeedbackStrategy`.
+pub mod feedback_strategy {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// a * score + sim(confidence^b * c * delta)
+        #[prost(message, tag = "1")]
+        Naive(super::NaiveFeedbackStrategy),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NaiveFeedbackStrategy {
+    #[prost(float, tag = "1")]
+    pub a: f32,
+    #[prost(float, tag = "2")]
+    #[validate(range(min = 0.0))]
+    pub b: f32,
+    #[prost(float, tag = "3")]
+    pub c: f32,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Formula {
     #[prost(message, optional, tag = "1")]
     #[validate(nested)]
@@ -6322,7 +6386,7 @@ pub struct Rrf {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -6362,6 +6426,9 @@ pub mod query {
         /// Parameterized reciprocal rank fusion
         #[prost(message, tag = "10")]
         Rrf(super::Rrf),
+        /// Search with feedback from some oracle.
+        #[prost(message, tag = "11")]
+        RelevanceFeedback(super::RelevanceFeedbackInput),
     }
 }
 #[derive(validator::Validate)]
@@ -10405,34 +10472,6 @@ pub struct ContextQuery {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FeedbackStrategy {
-    #[prost(oneof = "feedback_strategy::Variant", tags = "1")]
-    pub variant: ::core::option::Option<feedback_strategy::Variant>,
-}
-/// Nested message and enum types in `FeedbackStrategy`.
-pub mod feedback_strategy {
-    #[derive(serde::Serialize)]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Variant {
-        #[prost(message, tag = "1")]
-        Naive(super::NaiveFeedbackStrategy),
-    }
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NaiveFeedbackStrategy {
-    #[prost(float, tag = "1")]
-    pub a: f32,
-    #[prost(float, tag = "2")]
-    pub b: f32,
-    #[prost(float, tag = "3")]
-    pub c: f32,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
     #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4, 5")]
     pub query: ::core::option::Option<query_enum::Query>,
@@ -10634,14 +10673,14 @@ pub mod raw_query {
         #[prost(message, optional, tag = "1")]
         pub target: ::core::option::Option<super::RawVector>,
         #[prost(message, repeated, tag = "2")]
-        pub feedback: ::prost::alloc::vec::Vec<FeedbackItem>,
+        pub feedback: ::prost::alloc::vec::Vec<RawFeedbackItem>,
         #[prost(message, optional, tag = "3")]
         pub strategy: ::core::option::Option<super::FeedbackStrategy>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct FeedbackItem {
+    pub struct RawFeedbackItem {
         #[prost(message, optional, tag = "1")]
         pub vector: ::core::option::Option<super::RawVector>,
         #[prost(float, tag = "2")]
