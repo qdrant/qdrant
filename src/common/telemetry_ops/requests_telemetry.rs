@@ -13,15 +13,16 @@ use storage::rbac::{AccessRequirements, Auth};
 
 pub type HttpStatusCode = u16;
 
+pub type GrpcStatusCode = i32;
+
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
-#[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
-    #[anonymize(with = anonymize_collection_values)]
-    pub responses: HashMap<String, OperationDurationStatistics>,
+    pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -39,7 +40,7 @@ pub struct TonicTelemetryCollector {
 
 #[derive(Default)]
 pub struct TonicWorkerTelemetryCollector {
-    methods: HashMap<String, Arc<Mutex<OperationDurationsAggregator>>>,
+    methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
 }
 
 impl ActixTelemetryCollector {
@@ -77,18 +78,29 @@ impl TonicTelemetryCollector {
 }
 
 impl TonicWorkerTelemetryCollector {
-    pub fn add_response(&mut self, method: String, instant: std::time::Instant) {
+    pub fn add_response(
+        &mut self,
+        method: String,
+        instant: std::time::Instant,
+        status_code: GrpcStatusCode,
+    ) {
         let aggregator = self
             .methods
             .entry(method)
+            .or_default()
+            .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
         let mut responses = HashMap::new();
-        for (method, aggregator) in self.methods.iter() {
-            responses.insert(method.clone(), aggregator.lock().get_statistics(detail));
+        for (method, status_codes) in &self.methods {
+            let mut status_codes_map = HashMap::new();
+            for (status_code, aggregator) in status_codes {
+                status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+            }
+            responses.insert(method.clone(), status_codes_map);
         }
         GrpcTelemetry { responses }
     }
@@ -125,9 +137,12 @@ impl ActixWorkerTelemetryCollector {
 
 impl GrpcTelemetry {
     pub fn merge(&mut self, other: &GrpcTelemetry) {
-        for (method, other_statistics) in &other.responses {
+        for (method, success_map) in &other.responses {
             let entry = self.responses.entry(method.clone()).or_default();
-            *entry = entry.clone() + other_statistics.clone();
+            for (is_success, statistics) in success_map {
+                let status_entry = entry.entry(*is_success).or_default();
+                *status_entry = status_entry.clone() + statistics.clone();
+            }
         }
     }
 }
@@ -180,5 +195,17 @@ impl Anonymize for WebApiTelemetry {
             .collect();
 
         WebApiTelemetry { responses }
+    }
+}
+
+impl Anonymize for GrpcTelemetry {
+    fn anonymize(&self) -> Self {
+        let responses = self
+            .responses
+            .iter()
+            .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
+            .collect();
+
+        GrpcTelemetry { responses }
     }
 }
