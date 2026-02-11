@@ -877,3 +877,17 @@ def check_data_consistency(data):
                 print(f"Diff len between {i} and {j}: {len(diff)}, sample: {sample}")
 
             assert False, "Data on all nodes should be consistent"
+
+
+def check_feature_enabled(peer_api_uri, feature) -> bool:
+    r = requests.get(f"{peer_api_uri}/telemetry", params={"details_level": 10})
+    assert_http_ok(r)
+    features = r.json()['result']['app']['features']
+    result = features[feature]
+    return result
+
+
+def skip_if_no_feature(peer_api_uri, feature):
+    feature_is_enabled = check_feature_enabled(peer_api_uri, feature)
+    if not feature_is_enabled:
+        pytest.skip(f"Skipping because the feature {feature} is disabled at runtime.")

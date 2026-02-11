@@ -403,6 +403,8 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
 
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
