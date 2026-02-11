@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(feature = "testing")]
 use common::fs::OneshotFile;
-use common::mmap::MmapFlusher;
+use common::mmap::{MmapChunkView, MmapFlusher};
 use common::types::PointOffsetType;
 #[cfg(feature = "testing")]
 use fs_err as fs;
@@ -17,7 +17,7 @@ use fs_err as fs;
 use fs_err::File;
 
 pub trait EncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8];
+    fn get_vector_data(&self, index: PointOffsetType) -> MmapChunkView<'_, u8>;
 
     fn is_on_disk(&self) -> bool;
 
@@ -85,7 +85,7 @@ impl TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> MmapChunkView<'_, u8> {
         let start = self
             .quantized_vector_size
             .get()
@@ -94,7 +94,7 @@ impl EncodedStorage for TestEncodedStorage {
             .quantized_vector_size
             .get()
             .saturating_mul(index as usize + 1);
-        self.data.get(start..end).unwrap_or(&[])
+        MmapChunkView::Slice(self.data.get(start..end).unwrap_or(&[]))
     }
 
     fn upsert_vector(

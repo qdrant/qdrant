@@ -635,7 +635,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                 .get_vector_opt::<Random>(id)
                 .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
-                vector_storage.insert_vector(id, vector, hw_counter)?;
+                vector_storage.insert_vector(id, vector.clone(), hw_counter)?;
                 vector.to_owned()
             } else {
                 let default_vector = vector_storage.default_vector();

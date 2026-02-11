@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::borrow::Cow;
 use std::fmt;
 use std::mem::MaybeUninit;
 use std::ops::Range;
@@ -8,6 +9,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
+use common::mmap::MmapChunkView;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 use zerocopy::IntoBytes;
@@ -182,11 +184,19 @@ pub trait VectorStorage {
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T];
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> MmapChunkView<'_, T>;
 
     /// Get the raw bytes of the vector by the given key if it exists
-    fn get_dense_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[u8]> {
-        ((key as usize) < self.total_vector_count()).then(|| self.get_dense::<P>(key).as_bytes())
+    fn get_dense_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<MmapChunkView<'_, u8>> {
+        ((key as usize) < self.total_vector_count()).then(|| match self.get_dense::<P>(key) {
+            MmapChunkView::Slice(slice) => MmapChunkView::Slice(slice.as_bytes()),
+            MmapChunkView::Box(boxed) => {
+                MmapChunkView::Box(boxed.as_bytes().to_vec().into_boxed_slice())
+            }
+        })
     }
 
     /// Get layout for a single vector
@@ -200,7 +210,8 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     /// Implementation can assume that the keys are consecutive
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
         for (idx, &key) in keys.iter().enumerate() {
-            f(idx, self.get_dense::<Random>(key));
+            let vector = self.get_dense::<Random>(key);
+            f(idx, &vector);
         }
     }
 
@@ -234,7 +245,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
         let iter = keys.iter().map(|key| self.get_multi::<Random>(*key));
         maybe_uninit_fill_from(vectors, iter).0
     }
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;
@@ -537,7 +548,10 @@ impl VectorStorageEnum {
     }
 
     /// Get the raw bytes of the vector by the given key if it exists
-    pub fn get_vector_bytes_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[u8]> {
+    pub fn get_vector_bytes_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<MmapChunkView<'_, u8>> {
         match self {
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::DenseSimple(v) => v.get_dense_bytes_opt::<P>(key),

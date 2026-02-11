@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
@@ -352,16 +353,17 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
                 .get_many(metadata.start, metadata.inner_vectors_count)
                 .unwrap_or_else(|| panic!("Vectors does not contain data for {metadata:?}"));
             TypedMultiDenseVectorRef {
-                flattened_vectors,
+                flattened_vectors: Cow::Borrowed(flattened_vectors),
                 dim: self.dim,
             }
         })
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
-            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start + i))
+            (0..metadata.inner_vectors_count)
+                .map(|i| Cow::Borrowed(self.vectors.get(metadata.start + i)))
         })
     }
 

@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::AdviceSetting;
+use common::mmap::{AdviceSetting, MmapChunkView};
 use common::types::PointOffsetType;
 use fs_err as fs;
 
@@ -115,24 +116,36 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
                     mmap_offset.count as usize,
                 )
             })
-            .map(|flattened_vectors| TypedMultiDenseVectorRef {
-                flattened_vectors,
-                dim: self.vectors.dim(),
+            .map(|flattened_vectors| match flattened_vectors {
+                MmapChunkView::Slice(flattened_vectors) => TypedMultiDenseVectorRef {
+                    flattened_vectors: Cow::Borrowed(flattened_vectors),
+                    dim: self.vectors.dim(),
+                },
+                MmapChunkView::Box(boxed) => TypedMultiDenseVectorRef {
+                    flattened_vectors: Cow::Owned(boxed.into_vec()),
+                    dim: self.vectors.dim(),
+                },
             })
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
-        (0..self.total_vector_count()).flat_map(|key| {
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
+        (0..self.total_vector_count()).flat_map(move |key| {
             let mmap_offset = self
                 .offsets
                 .get::<Sequential>(key as VectorOffsetType)
                 .unwrap()
                 .first()
+                .copied()
                 .unwrap();
-            (0..mmap_offset.count).map(|i| {
-                self.vectors
+            (0..mmap_offset.count).map(move |i| {
+                match self
+                    .vectors
                     .get::<Sequential>((mmap_offset.offset + i) as VectorOffsetType)
                     .unwrap()
+                {
+                    MmapChunkView::Slice(slice) => Cow::Borrowed(slice),
+                    MmapChunkView::Box(boxed) => Cow::Owned(boxed.into_vec()),
+                }
             })
         })
     }
@@ -191,7 +204,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.vectors.dim());
-        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
+        let multivector_size_in_bytes = std::mem::size_of_val(&*multi_vector.flattened_vectors);
         let max_vector_size_bytes = self.vectors.max_vector_size_bytes();
         if multivector_size_in_bytes >= max_vector_size_bytes {
             return Err(OperationError::service_error(format!(
@@ -226,7 +239,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
 
         self.vectors.insert_many(
             offset.offset as VectorOffsetType,
-            multi_vector.flattened_vectors,
+            &multi_vector.flattened_vectors,
             multi_vector.vectors_count(),
             hw_counter,
         )?;

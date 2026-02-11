@@ -1,4 +1,5 @@
 use std::io;
+use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
@@ -16,7 +17,7 @@ const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
 /// Memory mapped chunk data, that can be read and written and also maintain sequential read-only view
 #[derive(Debug)]
-pub struct UniversalMmapChunk<T: Sized + 'static> {
+pub struct UniversalMmapChunk<T: Copy + Sized + 'static> {
     /// Main data mmap slice for read/write
     ///
     /// Best suited for random reads.
@@ -28,17 +29,60 @@ pub struct UniversalMmapChunk<T: Sized + 'static> {
     _mmap_seq: Option<MmapSliceReadOnly<T>>,
 }
 
-impl<T: Sized + 'static> UniversalMmapChunk<T> {
+pub enum MmapChunkView<'a, T: Copy + Sized + 'static> {
+    Slice(&'a [T]),
+    Box(Box<[T]>),
+}
+
+pub enum MmapChunkViewMut<'a, T: Copy + Sized + 'static> {
+    Slice(&'a mut [T]),
+    Box(Box<[T]>),
+}
+
+impl<T: Copy + Sized + 'static> MmapChunkView<'_, T> {
     pub fn as_slice(&self) -> &[T] {
-        &self.mmap
+        match self {
+            MmapChunkView::Slice(slice) => slice,
+            MmapChunkView::Box(boxed) => boxed.as_ref(),
+        }
+    }
+}
+
+impl<T: Copy + Sized + 'static> Default for MmapChunkView<'_, T> {
+    fn default() -> Self {
+        MmapChunkView::Slice(&[])
+    }
+}
+
+impl<T: Copy + Sized + 'static> AsRef<[T]> for MmapChunkView<'_, T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T: Copy + Sized + 'static> Deref for MmapChunkView<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<T: Copy + Sized + 'static> UniversalMmapChunk<T> {
+    pub fn get(&self, range: Range<usize>) -> MmapChunkView<'_, T> {
+        std::hint::black_box(MmapChunkView::Slice(&self.mmap[range]))
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.mmap
+    pub fn get_seq(&self, range: Range<usize>) -> MmapChunkView<'_, T> {
+        std::hint::black_box(MmapChunkView::Slice(&self.as_seq_slice()[range]))
+    }
+
+    pub fn write(&mut self, range: Range<usize>, data: &[T]) {
+        self.mmap[range].copy_from_slice(data);
     }
 
     /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
-    pub fn as_seq_slice(&self) -> &[T] {
+    fn as_seq_slice(&self) -> &[T] {
         #[expect(clippy::used_underscore_binding)]
         self._mmap_seq
             .as_ref()
@@ -76,7 +120,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps<T: Sized>(
+pub fn read_mmaps<T: Copy + Sized>(
     directory: &Path,
     populate: bool,
     advice: AdviceSetting,
@@ -133,7 +177,7 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<T: Sized>(
+pub fn create_chunk<T: Copy + Sized>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,

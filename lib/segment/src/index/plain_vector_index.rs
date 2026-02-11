@@ -201,7 +201,7 @@ impl VectorIndex for PlainVectorIndex {
         let mut vector_storage = self.vector_storage.borrow_mut();
 
         if let Some(vector) = vector {
-            vector_storage.insert_vector(id, vector, hw_counter)?;
+            vector_storage.insert_vector(id, vector.clone(), hw_counter)?;
 
             let mut quantized_vectors = self.quantized_vectors.borrow_mut();
             if let Some(quantized_vectors) = quantized_vectors.as_mut() {

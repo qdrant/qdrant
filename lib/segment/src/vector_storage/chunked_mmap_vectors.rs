@@ -8,7 +8,8 @@ use common::fs::{atomic_save_json, clear_disk_cache};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::chunked::{chunk_name, create_chunk, read_mmaps};
 use common::mmap::{
-    Advice, AdviceSetting, MmapType, UniversalMmapChunk, create_and_ensure_length, open_write_mmap,
+    Advice, AdviceSetting, MmapChunkView, MmapType, UniversalMmapChunk, create_and_ensure_length,
+    open_write_mmap,
 };
 use fs_err as fs;
 use fs_err::File;
@@ -40,7 +41,7 @@ struct ChunkedMmapConfig {
 }
 
 #[derive(Debug)]
-pub struct ChunkedMmapVectors<T: Sized + 'static> {
+pub struct ChunkedMmapVectors<T: Copy + Sized + 'static> {
     config: ChunkedMmapConfig,
     status: MmapType<Status>,
     chunks: Vec<UniversalMmapChunk<T>>,
@@ -227,7 +228,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.as_mut_slice()[chunk_offset..chunk_offset + vectors.len()].copy_from_slice(vectors);
+        chunk.write(chunk_offset..chunk_offset + vectors.len(), vectors);
 
         hw_counter
             .vector_io_write_counter()
@@ -260,12 +261,12 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
     #[inline]
-    fn get_many_impl(
-        &self,
+    fn get_many_impl<'a>(
+        &'a self,
         start_key: VectorOffsetType,
         count: usize,
         force_sequential: bool,
-    ) -> Option<&[T]> {
+    ) -> Option<MmapChunkView<'a, T>> {
         let start_key: usize = start_key.as_();
         let chunk_idx = self.get_chunk_index(start_key);
         if chunk_idx >= self.chunks.len() {
@@ -279,9 +280,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         if chunk_end > chunk.len() {
             None
         } else if force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4 {
-            Some(&chunk.as_seq_slice()[chunk_offset..chunk_end])
+            Some(chunk.get_seq(chunk_offset..chunk_end))
         } else {
-            Some(&chunk.as_slice()[chunk_offset..chunk_end])
+            Some(chunk.get(chunk_offset..chunk_end))
         }
     }
 
@@ -292,7 +293,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
         // then fetching and scoring in a single loop.
-        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = maybe_uninit_fill_from(
             &mut vectors_buffer,
             keys.iter().map(|&key| {
@@ -303,7 +304,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         .0;
 
         for (i, vec) in vectors.iter().enumerate() {
-            f(i, vec);
+            f(i, vec.as_slice());
         }
     }
 
@@ -336,12 +337,16 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     #[inline]
-    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<MmapChunkView<'_, T>> {
         self.get_many_impl(key, 1, P::IS_SEQUENTIAL)
     }
 
     #[inline]
-    pub fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+    pub fn get_many<P: AccessPattern>(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+    ) -> Option<MmapChunkView<'_, T>> {
         self.get_many_impl(key, count, P::IS_SEQUENTIAL)
     }
 

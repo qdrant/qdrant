@@ -58,11 +58,11 @@ fn avg_vectors<'a>(
             VectorRef::MultiDense(vector) => {
                 multi_count += 1;
                 avg_multi = Some(avg_multi.map_or_else(
-                    || vector.to_owned(),
+                    || vector.clone().to_owned(),
                     |mut avg_multi| {
                         avg_multi
                             .flattened_vectors
-                            .extend_from_slice(vector.flattened_vectors);
+                            .extend_from_slice(&vector.flattened_vectors);
                         avg_multi
                     },
                 ));
