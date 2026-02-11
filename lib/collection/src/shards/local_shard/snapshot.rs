@@ -18,13 +18,11 @@ use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
-use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
-use crate::update_handler::UpdateSignal;
 use crate::wal_delta::LockedWal;
 
 impl LocalShard {
@@ -74,10 +72,7 @@ impl LocalShard {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
             // updates have made it to the segments. So we use the Plunger to achieve that.
             // It will notify us when all submitted updates so far have been processed.
-            let (tx, rx) = oneshot::channel();
-            let plunger = UpdateSignal::Plunger(tx);
-            self.update_sender.load().send(plunger).await?;
-            Some(rx)
+            Some(self.plunge_async().await?)
         } else {
             None
         };
