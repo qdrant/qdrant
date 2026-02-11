@@ -484,7 +484,7 @@ impl Shard {
         // Fake plunger for variants that have no queue
         let fake_plunger = || {
             let (tx, rx) = oneshot::channel();
-            tx.send(()).unwrap();
+            let _ = tx.send(());
             rx
         };
 

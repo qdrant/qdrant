@@ -434,7 +434,7 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     # Insert points with wait=false
     # These updates will be pending for some time as they hang in the queue
     # Insert with low point IDs here to make it more likely to conflict with the transfer
-    upsert_random_points(peer_api_uris[0], 100, offset=0, wait="false")
+    upsert_random_points(peer_api_uris[0], 100, offset=0, wait="false", batch_size=1)
 
     # NOTE: the core issue happened here!
     # We now have pending updates in the queue which are not applied yet. Below
