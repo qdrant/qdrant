@@ -55,6 +55,7 @@ def check_data_consistency(data):
 
             assert False, "Data on all nodes should be consistent"
 
+
 # Transfer shards from one node to another
 #
 # Simply does the most basic transfer: no concurrent updates during the
