@@ -59,7 +59,6 @@ class TestSnapshotsRecovery:
         config_file = self.create_config_with_storage(storage_method, tmp_path)
 
         config = QdrantContainerConfig(
-            network_mode="host",
             volumes={
                 str(config_file): {
                     'bind': '/qdrant/config/config.yaml',
@@ -93,7 +92,8 @@ class TestSnapshotsRecovery:
             f.write(snapshot_content)
 
         # Test 1: Recover from URL
-        snapshot_url = f"http://{client.host}:{client.port}/collections/test_collection/snapshots/{snapshot_name}"
+        # Use localhost:6333 (internal container address) so the server can download from itself
+        snapshot_url = f"http://localhost:6333/collections/test_collection/snapshots/{snapshot_name}"
         client.recover_snapshot_from_url("test_collection_recovered_1", snapshot_url, snapshot_checksum)
 
         # Verify recovered collection exists
@@ -122,7 +122,7 @@ class TestSnapshotsRecovery:
             f.write(shard_snapshot_content)
 
         # Test 3: Recover shard from URL
-        shard_snapshot_url = f"http://{client.host}:{client.port}/collections/test_collection/shards/0/snapshots/{shard_snapshot_name}"
+        shard_snapshot_url = f"http://localhost:6333/collections/test_collection/shards/0/snapshots/{shard_snapshot_name}"
         client.recover_shard_snapshot_from_url("test_collection_recovered_1", 0, shard_snapshot_url)
 
         # Test 4: Upload shard snapshot as file
