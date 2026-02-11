@@ -286,8 +286,7 @@ impl LocalShard {
             scroll_read_lock.clone(),
             update_tracker.clone(),
             applied_seq_handler.clone(),
-        )
-        .await;
+        );
 
         let (update_sender, update_receiver) =
             mpsc::channel(shared_storage_config.update_queue_size);

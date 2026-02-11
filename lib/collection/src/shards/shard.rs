@@ -157,9 +157,7 @@ impl Shard {
                     .await?,
             )),
             Shard::Dummy(dummy_shard) => {
-                return Err(dummy_shard
-                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
-                    .await);
+                return Err(dummy_shard.create_snapshot(temp_path, tar, format, manifest, save_wal));
             }
         };
 
@@ -185,7 +183,7 @@ impl Shard {
             Shard::Proxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::QueueProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update().await,
+            Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update(),
         }
     }
 
@@ -195,7 +193,7 @@ impl Shard {
             Shard::Proxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
             Shard::ForwardProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
             Shard::QueueProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
-            Shard::Dummy(dummy_shard) => dummy_shard.on_strict_mode_config_update().await,
+            Shard::Dummy(dummy_shard) => dummy_shard.on_strict_mode_config_update(),
         }
     }
 

@@ -296,15 +296,12 @@ impl LocalShard {
         } = rescore_params;
 
         match rescore {
-            ScoringQuery::Fusion(fusion) => {
-                self.fusion_rescore(
-                    sources,
-                    fusion,
-                    score_threshold.map(OrderedFloat::into_inner),
-                    limit,
-                )
-                .await
-            }
+            ScoringQuery::Fusion(fusion) => Self::fusion_rescore(
+                sources,
+                fusion,
+                score_threshold.map(OrderedFloat::into_inner),
+                limit,
+            ),
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
                 let filter = filter_with_sources_ids(sources.into_iter());
@@ -420,8 +417,7 @@ impl LocalShard {
         }
     }
 
-    async fn fusion_rescore(
-        &self,
+    fn fusion_rescore(
         sources: Vec<Vec<ScoredPoint>>,
         fusion: FusionInternal,
         score_threshold: Option<f32>,
