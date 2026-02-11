@@ -1303,7 +1303,7 @@ mod tests {
         let mut wals = std::iter::repeat_with(fixture_empty_wal)
             .take(node_count)
             .collect::<Vec<_>>();
-        let mut clock_sets = std::iter::repeat_with(ClockSet::new)
+        let mut clock_sets = std::iter::repeat_with(|| ClockSet::with_max_clocks(256))
             .take(node_count)
             .collect::<Vec<_>>();
 

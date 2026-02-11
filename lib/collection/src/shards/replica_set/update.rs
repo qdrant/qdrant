@@ -6,6 +6,7 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
 use tokio::sync::oneshot;
+use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::{ShardReplicaSet, clock_set};
@@ -238,6 +239,7 @@ impl ShardReplicaSet {
                     format!("Failed to acquire clock for update operation within {timeout:?}"),
                 ));
             }
+            yield_now().await;
         }
     }
 

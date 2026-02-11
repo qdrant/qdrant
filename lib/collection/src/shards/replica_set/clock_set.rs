@@ -7,16 +7,30 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// Limiting number of clocks essentially means that we are limiting number of parallel
 /// update operations which can happen on the cluster, but this number should be high enough
 /// for all reasonable use cases.
-const MAX_CLOCKS: usize = 64;
+const DEFAULT_MAX_CLOCKS: usize = 64;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ClockSet {
     clocks: Vec<Arc<Clock>>,
+    max_clocks: usize,
+}
+
+impl Default for ClockSet {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClockSet {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_max_clocks(DEFAULT_MAX_CLOCKS)
+    }
+
+    pub fn with_max_clocks(max_clocks: usize) -> Self {
+        Self {
+            clocks: Vec::new(),
+            max_clocks,
+        }
     }
 
     /// Get the first available clock from the set, or create a new one.
@@ -27,8 +41,8 @@ impl ClockSet {
             }
         }
 
-        let id = self.clocks.len() as u32;
-        if id >= MAX_CLOCKS as u32 {
+        let id = self.clocks.len();
+        if id >= self.max_clocks {
             return None;
         }
 
@@ -36,7 +50,7 @@ impl ClockSet {
 
         self.clocks.push(clock.clone());
 
-        Some(ClockGuard::new(id, clock))
+        Some(ClockGuard::new(id as u32, clock))
     }
 }
 
@@ -406,7 +420,7 @@ mod tests {
     fn test_clock_set_many() {
         const N: usize = 5000;
 
-        let mut clock_set = ClockSet::new();
+        let mut clock_set = ClockSet::with_max_clocks(N);
 
         // Tick all clocks past 0
         {
@@ -483,7 +497,7 @@ mod tests {
     fn test_clock_set_many_staggered_stuck() {
         const N: usize = 500;
 
-        let mut clock_set = ClockSet::new();
+        let mut clock_set = ClockSet::with_max_clocks(N);
 
         let mut stuck_clocks = Vec::new();
 
