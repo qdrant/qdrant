@@ -35,7 +35,7 @@ use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::FieldIndexBuilderTrait;
 use super::histogram::Point;
 use super::mmap_point_to_values::MmapValue;
-use super::utils::check_boundaries;
+use super::utils::{check_boundaries, value_to_integer};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable};
@@ -1073,7 +1073,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
     }
 
     fn get_value(value: &Value) -> Option<IntPayloadType> {
-        value.as_i64()
+        value_to_integer(value)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

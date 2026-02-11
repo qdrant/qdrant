@@ -33,6 +33,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::stat_tools::number_of_selected_points;
+use crate::index::field_index::utils::value_to_integer;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
@@ -1297,10 +1298,7 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
     }
 
     fn get_value(value: &Value) -> Option<IntPayloadType> {
-        if let Value::Number(num) = value {
-            return num.as_i64();
-        }
-        None
+        value_to_integer(value)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
