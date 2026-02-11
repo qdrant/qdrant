@@ -137,11 +137,11 @@ impl StrictModeVerification for PointInsertOperations {
         check_collection_size_limit(collection, strict_mode_config).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
-            check_multivectors_limits_insert(self, multivector_config).await?;
+            check_multivectors_limits_insert(self, multivector_config)?;
         }
 
         if let Some(sparse_config) = &strict_mode_config.sparse_config {
-            check_sparse_vector_limits_insert(self, sparse_config).await?;
+            check_sparse_vector_limits_insert(self, sparse_config)?;
         }
 
         Ok(())
@@ -199,11 +199,11 @@ impl StrictModeVerification for UpdateVectors {
         check_collection_size_limit(collection, strict_mode_config).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
-            check_multivectors_limits_update(self, multivector_config).await?;
+            check_multivectors_limits_update(self, multivector_config)?;
         }
 
         if let Some(sparse_config) = &strict_mode_config.sparse_config {
-            check_sparse_vector_limits_update(self, sparse_config).await?;
+            check_sparse_vector_limits_update(self, sparse_config)?;
         }
 
         Ok(())
@@ -324,7 +324,7 @@ fn check_collection_payload_size_limit(
 /// Uses a tiny map as we expect a small number of multivectors to be configured per collection in strict mode.
 ///
 /// Return None if no multivectors are configured with strict mode
-async fn multivector_limits_by_name(
+fn multivector_limits_by_name(
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> Option<TinyMap<VectorNameBuf, usize>> {
     // If no multivectors strict mode no need to check anything.
@@ -350,12 +350,11 @@ async fn multivector_limits_by_name(
     }
 }
 
-async fn check_multivectors_limits_update(
+fn check_multivectors_limits_update(
     point_insert: &UpdateVectors,
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> CollectionResult<()> {
-    let Some(multivector_max_size_by_name) =
-        multivector_limits_by_name(multivector_strict_config).await
+    let Some(multivector_max_size_by_name) = multivector_limits_by_name(multivector_strict_config)
     else {
         return Ok(());
     };
@@ -371,9 +370,7 @@ async fn check_multivectors_limits_update(
     Ok(())
 }
 
-async fn sparse_limits(
-    sparse_config: &StrictModeSparseConfig,
-) -> Option<TinyMap<&VectorName, usize>> {
+fn sparse_limits(sparse_config: &StrictModeSparseConfig) -> Option<TinyMap<&VectorName, usize>> {
     if sparse_config.config.is_empty() {
         return None;
     }
@@ -391,11 +388,11 @@ async fn sparse_limits(
     (!sparse_max_size.is_empty()).then_some(sparse_max_size)
 }
 
-async fn check_sparse_vector_limits_update(
+fn check_sparse_vector_limits_update(
     point_insert: &UpdateVectors,
     sparse_config: &StrictModeSparseConfig,
 ) -> CollectionResult<()> {
-    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config).await else {
+    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config) else {
         return Ok(());
     };
 
@@ -406,11 +403,11 @@ async fn check_sparse_vector_limits_update(
     Ok(())
 }
 
-async fn check_sparse_vector_limits_insert(
+fn check_sparse_vector_limits_insert(
     point_insert: &PointInsertOperations,
     sparse_config: &StrictModeSparseConfig,
 ) -> CollectionResult<()> {
-    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config).await else {
+    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config) else {
         return Ok(());
     };
 
@@ -498,12 +495,11 @@ fn check_sparse_vector_limit(
     Ok(())
 }
 
-async fn check_multivectors_limits_insert(
+fn check_multivectors_limits_insert(
     point_insert: &PointInsertOperations,
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> CollectionResult<()> {
-    let Some(multivector_max_size_by_name) =
-        multivector_limits_by_name(multivector_strict_config).await
+    let Some(multivector_max_size_by_name) = multivector_limits_by_name(multivector_strict_config)
     else {
         return Ok(());
     };

@@ -137,7 +137,7 @@ pub struct UpdateHandler {
 
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
-    pub async fn new(
+    pub fn new(
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
