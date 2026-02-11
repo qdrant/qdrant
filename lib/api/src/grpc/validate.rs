@@ -367,6 +367,7 @@ impl Validate for super::qdrant::query::Variant {
             grpc::query::Variant::Context(q) => q.validate(),
             grpc::query::Variant::Formula(q) => q.validate(),
             grpc::query::Variant::Rrf(q) => q.validate(),
+            grpc::query::Variant::RelevanceFeedback(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),
@@ -417,6 +418,16 @@ impl Validate for super::qdrant::expression::Variant {
             }
             grpc::expression::Variant::LinDecay(decay_params_expression) => {
                 decay_params_expression.validate()
+            }
+        }
+    }
+}
+
+impl Validate for grpc::feedback_strategy::Variant {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::feedback_strategy::Variant::Naive(naive_feedback_strategy) => {
+                naive_feedback_strategy.validate()
             }
         }
     }

@@ -821,6 +821,33 @@ message ContextInput {
   repeated ContextInputPair pairs = 1;
 }
 
+message RelevanceFeedbackInput {
+  // The original query vector
+  VectorInput target = 1;
+  // Previous results scored by the feedback provider.
+  repeated FeedbackItem feedback = 2;
+  // Formula and trained coefficients to use.
+  FeedbackStrategy strategy = 3;
+}
+
+message FeedbackItem {
+  VectorInput example = 1; // The id or vector from the original model
+  float score = 2; // Score for this vector as determined by the feedback provider
+}
+
+message FeedbackStrategy {
+  oneof variant {
+    // a * score + sim(confidence^b * c * delta)
+    NaiveFeedbackStrategy naive = 1;
+  }
+}
+
+message NaiveFeedbackStrategy {
+  float a = 1;
+  float b = 2;
+  float c = 3;
+}
+
 enum Fusion {
   // Reciprocal Rank Fusion (with default parameters)
   RRF = 0;
@@ -983,6 +1010,8 @@ message Query {
     NearestInputWithMmr nearest_with_mmr = 9;
     // Parameterized reciprocal rank fusion
     Rrf rrf = 10;
+    // Search with feedback from some oracle.
+    RelevanceFeedbackInput relevance_feedback = 11;
   }
 }
 

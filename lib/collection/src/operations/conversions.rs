@@ -7,12 +7,15 @@ use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist,
 };
+use api::grpc::qdrant as grpc;
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
 use api::rest::schema::ShardKeySelector;
-use api::rest::{BaseGroupRequest, LookupLocation, MaxOptimizationThreads, ShardKeyWithFallback};
+use api::rest::{
+    BaseGroupRequest, LookupLocation, MaxOptimizationThreads, ShardKeyWithFallback, schema as rest,
+};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::modifier::Modifier;
@@ -56,6 +59,7 @@ use crate::operations::types::{
     CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RemoteShardInfo,
     ShardTransferInfo, UpdateQueueInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
+use crate::operations::universal_query::collection_query::FeedbackStrategy;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
@@ -1930,5 +1934,35 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 Some(api::conversions::json::proto_to_payloads(metadata)?)
             },
         })
+    }
+}
+
+impl From<rest::FeedbackStrategy> for FeedbackStrategy {
+    fn from(strategy: rest::FeedbackStrategy) -> Self {
+        match strategy {
+            rest::FeedbackStrategy::Naive(rest::NaiveFeedbackStrategy { a, b, c }) => {
+                FeedbackStrategy::Naive { a, b, c }
+            }
+        }
+    }
+}
+
+impl TryFrom<grpc::FeedbackStrategy> for FeedbackStrategy {
+    type Error = Status;
+
+    fn try_from(value: grpc::FeedbackStrategy) -> Result<Self, Self::Error> {
+        use grpc::feedback_strategy::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("Missing variant"))?;
+
+        let strategy = match variant {
+            Variant::Naive(grpc::NaiveFeedbackStrategy { a, b, c }) => {
+                FeedbackStrategy::Naive { a, b, c }
+            }
+        };
+
+        Ok(strategy)
     }
 }
