@@ -672,7 +672,7 @@ impl MetricsProvider for WebApiTelemetry {
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder = OperationDurationMetricsBuilder::default();
-        for (endpoint, stats) in &self.responses {
+        for (endpoint, responses) in &self.responses {
             // Endpoint must be whitelisted
             if GRPC_ENDPOINT_WHITELIST
                 .binary_search(&endpoint.as_str())
@@ -680,7 +680,16 @@ impl MetricsProvider for GrpcTelemetry {
             {
                 continue;
             }
-            builder.add(stats, &[("endpoint", endpoint.as_str())], true);
+            for (status, stats) in responses {
+                builder.add(
+                    stats,
+                    &[
+                        ("endpoint", endpoint.as_str()),
+                        ("status", &status.to_string()),
+                    ],
+                    true,
+                );
+            }
         }
         builder.build(prefix, "grpc", metrics);
     }
@@ -818,7 +827,6 @@ impl MetricsProvider for HardwareTelemetry {
 #[derive(Default)]
 struct OperationDurationMetricsBuilder {
     total: Vec<Metric>,
-    fail_total: Vec<Metric>,
     avg_secs: Vec<Metric>,
     min_secs: Vec<Metric>,
     max_secs: Vec<Metric>,
@@ -835,8 +843,6 @@ impl OperationDurationMetricsBuilder {
         add_timings: bool,
     ) {
         self.total.push(counter(stat.count as f64, labels));
-        self.fail_total
-            .push(counter(stat.fail_count.unwrap_or_default() as f64, labels));
 
         if !add_timings {
             return;
@@ -868,48 +874,49 @@ impl OperationDurationMetricsBuilder {
 
     /// Build metrics and add them to the provided vector.
     pub fn build(self, global_prefix: Option<&str>, prefix: &str, metrics: &mut MetricsData) {
+        let OperationDurationMetricsBuilder {
+            total,
+            avg_secs,
+            min_secs,
+            max_secs,
+            duration_histogram_secs,
+        } = self;
+
         let prefix = format!("{}{prefix}_", global_prefix.unwrap_or(""));
 
         metrics.push_metric(metric_family(
             "responses_total",
             "total number of responses",
             MetricType::COUNTER,
-            self.total,
-            Some(&prefix),
-        ));
-        metrics.push_metric(metric_family(
-            "responses_fail_total",
-            "total number of failed responses",
-            MetricType::COUNTER,
-            self.fail_total,
+            total,
             Some(&prefix),
         ));
         metrics.push_metric(metric_family(
             "responses_avg_duration_seconds",
             "average response duration",
             MetricType::GAUGE,
-            self.avg_secs,
+            avg_secs,
             Some(&prefix),
         ));
         metrics.push_metric(metric_family(
             "responses_min_duration_seconds",
             "minimum response duration",
             MetricType::GAUGE,
-            self.min_secs,
+            min_secs,
             Some(&prefix),
         ));
         metrics.push_metric(metric_family(
             "responses_max_duration_seconds",
             "maximum response duration",
             MetricType::GAUGE,
-            self.max_secs,
+            max_secs,
             Some(&prefix),
         ));
         metrics.push_metric(metric_family(
             "responses_duration_seconds",
             "response duration histogram",
             MetricType::HISTOGRAM,
-            self.duration_histogram_secs,
+            duration_histogram_secs,
             Some(&prefix),
         ));
     }
