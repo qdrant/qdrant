@@ -10,7 +10,7 @@ use crate::operations::universal_query::collection_query::{
 };
 
 impl Query {
-    async fn check_strict_mode(
+    fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
@@ -157,9 +157,7 @@ impl StrictModeVerification for CollectionQueryRequest {
                     .await?;
             }
             // check for unindexed fields in formula
-            query
-                .check_strict_mode(collection, strict_mode_config)
-                .await?
+            query.check_strict_mode(collection, strict_mode_config)?
         }
 
         Ok(())
@@ -208,9 +206,7 @@ impl StrictModeVerification for CollectionPrefetch {
                 )
                 .await?;
             // check for unindexed fields in formula
-            query
-                .check_strict_mode(collection, strict_mode_config)
-                .await?
+            query.check_strict_mode(collection, strict_mode_config)?
         }
 
         Ok(())
@@ -256,9 +252,7 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
                     .await?;
             }
             // check for unindexed fields in formula
-            query
-                .check_strict_mode(collection, strict_mode_config)
-                .await?
+            query.check_strict_mode(collection, strict_mode_config)?
         }
         // check for unindexed fields targeted by group_by
         check_grouping_field(&self.group_by, collection, strict_mode_config)?;
