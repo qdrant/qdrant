@@ -403,8 +403,6 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
 
-    skip_if_no_feature(peer_api_uris[0], "staging")
-
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
@@ -423,13 +421,14 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
     shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
 
     # Send delay update operation which will lag all following operations
-    r = requests.post(
-        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/debug", json={
-            "delay": {
-                "duration_sec": 2.0
-            }
-        })
-    assert_http_ok(r)
+    if check_feature_enabled(peer_api_uris[0], "staging"):
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/debug", json={
+                "delay": {
+                    "duration_sec": 2.0
+                }
+            })
+        assert_http_ok(r)
 
     # Insert points with wait=false
     # These updates will be pending for some time as they hang in the queue
