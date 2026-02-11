@@ -5,6 +5,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::{ShardReplicaSet, clock_set};
@@ -745,6 +746,21 @@ impl ShardReplicaSet {
 
         result.status = status;
         result
+    }
+
+    /// Send plunger operation
+    ///
+    /// Returns oneshot channel receiver that will be notified once the plunger operation is
+    /// processed. Returns `None` if local shard is not present.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn plunge_local_async(&self) -> CollectionResult<Option<oneshot::Receiver<()>>> {
+        match self.local.read().await.deref() {
+            Some(local) => local.plunge_async().await.map(Some),
+            None => Ok(None),
+        }
     }
 }
 

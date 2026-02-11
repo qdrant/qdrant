@@ -55,6 +55,7 @@ def check_data_consistency(data):
 
             assert False, "Data on all nodes should be consistent"
 
+
 # Transfer shards from one node to another
 #
 # Simply does the most basic transfer: no concurrent updates during the
@@ -386,3 +387,94 @@ def test_transfer_change_pending_point(tmp_path: pathlib.Path):
     update_process_1.kill()
     update_process_2.kill()
     update_process_3.kill()
+
+
+# Transfer a shard, and assert pending operations are also transferred
+#
+# When we start the transfer, there may still be a (large) number of operations
+# pending. Such pending operations may be in the update queue (channel) until
+# the update worker applies them. In Qdrant <1.17.0 these operations were
+# missed. This test proves all operations in the update queue are properly
+# transferred to the target node, and applied there.
+#
+# See: <https://github.com/qdrant/qdrant/pull/8103>
+def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    # Insert some initial number of points
+    upsert_random_points(peer_api_uris[0], 100, offset=100)
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
+
+    # Send delay update operation which will lag all following operations
+    if check_feature_enabled(peer_api_uris[0], "staging"):
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/debug", json={
+                "delay": {
+                    "duration_sec": 2.0
+                }
+            })
+        assert_http_ok(r)
+
+    # Insert points with wait=false
+    # These updates will be pending for some time as they hang in the queue
+    # Insert with low point IDs here to make it more likely to conflict with the transfer
+    upsert_random_points(peer_api_uris[0], 100, offset=0, wait="false", batch_size=1)
+
+    # NOTE: the core issue happened here!
+    # We now have pending updates in the queue which are not applied yet. Below
+    # we start a stream records transfer. The transfer will only transfer
+    # records that have been applied. Only new incoming operations are forwarded
+    # to the remote over a separate channel. It means that all updates in this
+    # gap (the operations pending in the queue) do not appear on the receiver.
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "stream_records",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Assert target peer actually has two shards now
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
+    assert number_local_shards == 2
+
+    # Synchronize peers
+    # Send one more wait=true operation to ensure all peers have processed all operations
+    upsert_random_points(peer_api_uris[0], 1, offset=200, wait="true")
+
+    # Point counts must be consistent across nodes
+    counts = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
+                "exact": True
+            }
+        )
+        assert_http_ok(r)
+        counts.append(r.json()["result"]['count'])
+    assert counts[0] == counts[1] == counts[2]

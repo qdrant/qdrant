@@ -21,7 +21,7 @@ use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 use super::update_tracker::UpdateTracker;
@@ -38,7 +38,6 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
-use crate::update_handler::UpdateSignal;
 
 type ChangedPointsSet = Arc<RwLock<AHashSet<PointIdType>>>;
 
@@ -112,17 +111,11 @@ impl ProxyShard {
         // Clear the update queue
         let mut attempt = 1;
         loop {
-            let (tx, rx) = oneshot::channel();
-            let plunger = UpdateSignal::Plunger(tx);
-            self.wrapped_shard
-                .update_sender
-                .load()
-                .send(plunger)
-                .await?;
+            let plunger = self.wrapped_shard.plunge_async().await?;
             let attempt_timeout = UPDATE_QUEUE_CLEAR_TIMEOUT * 2_u32.pow(attempt);
             // It is possible, that the queue is recreated while we are waiting for plunger.
             // So we will timeout and try again
-            if timeout(attempt_timeout, rx).await.is_err() {
+            if timeout(attempt_timeout, plunger).await.is_err() {
                 log::warn!(
                     "Timeout {attempt_timeout:?} while waiting for the wrapped shard to finish the update queue, retrying",
                 );

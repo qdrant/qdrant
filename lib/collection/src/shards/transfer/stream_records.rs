@@ -89,6 +89,16 @@ pub(super) async fn transfer_stream_records(
             .proxify_local(remote_shard.clone(), None, filter.clone())
             .await?;
 
+        // Plunge all pending operations in update queue
+        // Required to ensure all operations that were in flight before the transfer are included
+        // in the transfer
+        let Some(plunger) = replica_set.plunge_local_async().await? else {
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be proxied because it does not exist"
+            )));
+        };
+        plunger.await?;
+
         // Don't increment hardware usage for internal operations
         let hw_acc = HwMeasurementAcc::disposable();
         let Some(count_result) = replica_set
