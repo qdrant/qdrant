@@ -26,7 +26,7 @@ pub fn value_to_integer(value: &Value) -> Option<i64> {
         value.as_f64().and_then(|v| {
             let int = v as i64;
             // This covers fractions, ranges, infinity and NaN cases
-            if int as f64 == v { Some(int) } else { None }
+            (int as f64 == v).then_some(int)
         })
     })
 }
