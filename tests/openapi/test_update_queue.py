@@ -9,7 +9,7 @@ from openapi.helpers.helpers import (
 from openapi.helpers.settings import QDRANT_HOST
 from openapi.helpers.collection_setup import drop_collection
 
-  
+
 @pytest.fixture(autouse=True)
 def setup(collection_name):
     drop_collection(collection_name)
@@ -36,17 +36,17 @@ def get_queue_info(collection_name):
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-        
+
     return response.json()["result"]["update_queue"]
-    
+
 
 def test_queue_op_num(collection_name):
     queue_info = get_queue_info(collection_name)
-    
+
     # empty collection
     assert queue_info["length"] == 0
     assert queue_info["op_num"] == 0
-    
+
     # apply first update
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -60,16 +60,16 @@ def test_queue_op_num(collection_name):
                     "vector": [0.05, 0.61, 0.76, 0.74],
                     "payload": {}
                 }
-            ]}        
+            ]}
     )
     assert response.ok
-    
+
     queue_info = get_queue_info(collection_name)
-    
+
     # wait=true so ack. after application
     assert queue_info["length"] == 0
     assert queue_info["op_num"] == 1
-    
+
     # apply second update
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -83,10 +83,10 @@ def test_queue_op_num(collection_name):
                     "vector": [0.05, 0.61, 0.76, 0.74],
                     "payload": {}
                 }
-            ]}        
+            ]}
     )
     assert response.ok
-    
+
     queue_info = get_queue_info(collection_name)
     # wait=true so ack. after application
     assert queue_info["length"] == 0
@@ -95,7 +95,7 @@ def test_queue_op_num(collection_name):
 
 def test_queue_length(collection_name):
     skip_if_no_feature("staging")
-    
+
     queue_info = get_queue_info(collection_name)
 
     # empty collection

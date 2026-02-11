@@ -12,6 +12,7 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
+use tokio::sync::oneshot;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -470,6 +471,32 @@ impl Shard {
             Shard::ForwardProxy(forward_proxy_shard) => forward_proxy_shard.stop_gracefully().await,
             Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.stop_gracefully().await,
             Shard::Dummy(_) => {}
+        }
+    }
+
+    /// Send plunger operation
+    ///
+    /// Returns oneshot channel receiver that will be notified once the plunger operation is
+    /// processed.
+    pub async fn plunge_async(&self) -> CollectionResult<oneshot::Receiver<()>> {
+        // Fake plunger for variants that have no queue
+        let fake_plunger = || {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(());
+            rx
+        };
+
+        match self {
+            Shard::Local(local_shard) => local_shard.plunge_async().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.wrapped_shard.plunge_async().await,
+            Shard::ForwardProxy(forward_proxy_shard) => {
+                forward_proxy_shard.wrapped_shard.plunge_async().await
+            }
+            Shard::QueueProxy(queue_proxy_shard) => match queue_proxy_shard.wrapped_shard() {
+                Some(wrapped_shard) => wrapped_shard.plunge_async().await,
+                None => Ok(fake_plunger()),
+            },
+            Shard::Dummy(_) => Ok(fake_plunger()),
         }
     }
 }
