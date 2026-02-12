@@ -44,9 +44,18 @@ pub fn fill_query_context(
     let start = std::time::Instant::now();
 
     let segments: Vec<_> = {
+        let lock_wait = std::time::Instant::now();
         let Some(holder_guard) = segments.try_read_for(timeout) else {
+            let waited = lock_wait.elapsed().as_millis();
+            log::warn!(
+                "[OPT-PROFILE] fill_query_context: holder read-lock TIMEOUT after {waited}ms"
+            );
             return Err(OperationError::timeout(timeout, "fill query context"));
         };
+        let waited = lock_wait.elapsed().as_millis();
+        if waited > 1 {
+            log::warn!("[OPT-PROFILE] fill_query_context: holder read-lock waited {waited}ms");
+        }
         holder_guard
             .non_appendable_then_appendable_segments()
             .collect()

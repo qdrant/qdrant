@@ -29,6 +29,7 @@ use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
+use crate::collection_manager::optimizers::optimizer_profiling as prof;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -222,9 +223,12 @@ impl SegmentsSearcher {
             let segments: Vec<_> = {
                 // Unfortunately, we have to do `segments.read()` twice, once in blocking task
                 // and once here, due to `Send` bounds :/
+                let lock_wait = prof::on_search_lock_wait_start();
                 let Some(segments_lock) = segments.try_read_for(timeout) else {
+                    prof::on_search_lock_wait_end(lock_wait, "search");
                     return Err(CollectionError::timeout(timeout, "search"));
                 };
+                prof::on_search_lock_wait_end(lock_wait, "search");
 
                 // Collect the segments first so we don't lock the segment holder during the operations.
                 segments_lock
@@ -675,9 +679,12 @@ fn execute_batch_search(
     timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
+    let lock_wait = prof::on_search_lock_wait_start();
     let Some(read_segment) = locked_segment.try_read_for(timeout) else {
+        prof::on_search_lock_wait_end(lock_wait, "batch_search_segment");
         return Err(CollectionError::timeout(timeout, "batch search"));
     };
+    prof::on_search_lock_wait_end(lock_wait, "batch_search_segment");
 
     let segment_points = read_segment.available_point_count();
     let segment_config = read_segment.config();
