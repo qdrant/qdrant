@@ -10,6 +10,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
+use parking_lot::RwLock;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
@@ -57,7 +58,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         true,
     )
     .unwrap();
-    let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
+    let wrapped_payload_index = Arc::new(RwLock::new(payload_index));
 
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
     let mut vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &stopped).unwrap();

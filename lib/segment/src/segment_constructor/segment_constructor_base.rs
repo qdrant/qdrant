@@ -46,9 +46,7 @@ use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 #[cfg(feature = "rocksdb")]
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{
-    SEGMENT_STATE_FILE, Segment, SegmentVersion, UpdatablePayloadData, VectorData, VersionTracker,
-};
+use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData, VersionTracker};
 #[cfg(feature = "rocksdb")]
 use crate::types::MultiVectorConfig;
 use crate::types::{
@@ -290,7 +288,7 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub payload_index: Arc<RwLock<StructPayloadIndex>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
 }
 
@@ -521,14 +519,15 @@ fn create_segment(
     }
 
     let payload_index_path = get_payload_index_path(segment_path);
-    let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
-        payload_storage.clone(),
-        id_tracker.clone(),
-        vector_storages.clone(),
-        &payload_index_path,
-        appendable_flag,
-        create,
-    )?);
+    let payload_index: Arc<RwLock<StructPayloadIndex>> =
+        Arc::new(RwLock::new(StructPayloadIndex::open(
+            payload_storage.clone(),
+            id_tracker.clone(),
+            vector_storages.clone(),
+            &payload_index_path,
+            appendable_flag,
+            create,
+        )?));
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
@@ -626,12 +625,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let version_tracker = Arc::new(AtomicRefCell::new(VersionTracker::default()));
-
-    let payload_index_info = RwLock::new(UpdatablePayloadData {
-        version_tracker: version_tracker.clone(),
-        payload_index,
-    });
+    let version_tracker = Arc::new(RwLock::new(VersionTracker::default()));
 
     Ok(Segment {
         uuid,
@@ -645,7 +639,7 @@ fn create_segment(
         vector_data,
         segment_type,
         appendable_flag,
-        payload_index_info,
+        payload_index,
         payload_storage,
         segment_config: config.clone(),
         error_status: RwLock::new(None),

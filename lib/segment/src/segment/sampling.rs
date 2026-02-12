@@ -17,8 +17,7 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        let payload_index_info = self.payload_index_info.read();
-        let payload_index = payload_index_info.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         let id_tracker = self.id_tracker.borrow();
 
@@ -47,8 +46,7 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        let payload_index_info = self.payload_index_info.read();
-        let payload_index = payload_index_info.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker

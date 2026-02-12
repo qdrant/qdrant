@@ -169,11 +169,7 @@ fn sparse_index_discover_test() {
             .unwrap();
     }
 
-    let payload_index_ptr = sparse_segment
-        .payload_index_info
-        .read()
-        .payload_index
-        .clone();
+    let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
@@ -293,11 +289,7 @@ fn sparse_index_hardware_measurement_test() {
             .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
             .unwrap();
     }
-    let payload_index_ptr = sparse_segment
-        .payload_index_info
-        .read()
-        .payload_index
-        .clone();
+    let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
