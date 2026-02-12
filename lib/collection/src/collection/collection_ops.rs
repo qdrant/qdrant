@@ -334,19 +334,33 @@ impl Collection {
         };
 
         while let Some(response) = requests.try_next().await? {
-            info.status = cmp::max(info.status, response.status);
-            info.optimizer_status = cmp::max(info.optimizer_status, response.optimizer_status);
+            let CollectionInfo {
+                status,
+                optimizer_status,
+                warnings,
+                indexed_vectors_count,
+                points_count,
+                segments_count,
+                config: _,
+                payload_schema,
+                update_queue,
+            } = response;
+            info.status = cmp::max(info.status, status);
+            info.optimizer_status = cmp::max(info.optimizer_status, optimizer_status);
             info.indexed_vectors_count = info
                 .indexed_vectors_count
-                .zip(response.indexed_vectors_count)
+                .zip(indexed_vectors_count)
                 .map(|(a, b)| a + b);
-            info.points_count = info
-                .points_count
-                .zip(response.points_count)
-                .map(|(a, b)| a + b);
-            info.segments_count += response.segments_count;
-
-            for (key, response_schema) in response.payload_schema {
+            info.points_count = info.points_count.zip(points_count).map(|(a, b)| a + b);
+            info.segments_count += segments_count;
+            info.warnings.extend(warnings);
+            if let Some(queue) = &mut info.update_queue {
+                // TODO remove field `op_num`, no sane way to aggregate across shards
+                queue.length += update_queue.map(|q| q.length).unwrap_or(0);
+            } else {
+                info.update_queue = update_queue;
+            }
+            for (key, response_schema) in payload_schema {
                 info.payload_schema
                     .entry(key)
                     .and_modify(|info_schema| info_schema.points += response_schema.points)
