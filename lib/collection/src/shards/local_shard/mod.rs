@@ -1081,7 +1081,7 @@ impl LocalShard {
         let queued = scheduled
             .into_iter()
             .map(|(optimizer, segment_ids)| PendingOptimization {
-                optimizer: optimizer.name(),
+                optimizer: optimizer.name().to_string(),
                 segments: segment_ids
                     .into_iter()
                     .filter_map(|segment_id| {

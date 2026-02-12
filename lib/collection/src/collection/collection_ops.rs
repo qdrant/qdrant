@@ -443,73 +443,48 @@ impl Collection {
         &self,
         options: OptimizationsRequestOptions,
     ) -> CollectionResult<OptimizationsResponse> {
-        let OptimizationsRequestOptions {
-            queued: with_queued,
-            completed_limit,
-            idle_segments: with_idle_segments,
-        } = options;
-
-        // OptimizationsResponse fields
-        let mut running = Vec::new();
-        let mut completed = Vec::new();
-        let mut idle_segments = with_idle_segments.then_some(Vec::new());
-        let mut queued = with_queued.then_some(Vec::new());
-
-        // OptimizationsSummary fields
-        let mut queued_optimizations = 0;
-        let mut queued_segments = 0;
-        let mut queued_points = 0;
-        let mut idle_segments_count = 0;
-
         let shards_holder = self.shards_holder.read().await;
+
+        let mut merged: Option<OptimizationsResponse> = None;
+
         for shard in shards_holder.all_shards() {
-            let Some(log) = shard.optimizers_log().await else {
-                continue;
-            };
-            for tracker in log.lock().iter() {
-                if tracker.state.lock().status.is_running() {
-                    running.push(tracker.to_optimization());
-                } else if completed_limit.is_some() {
-                    completed.push(tracker.to_optimization());
+            let shard_response = shard.optimizations(options).await;
+            match &mut merged {
+                Some(merged) => {
+                    merged.merge(shard_response);
                 }
-            }
-            if let Some(shard_optimizations) = shard.optimizations().await {
-                queued_optimizations += shard_optimizations.queued.len();
-                for queued_optimization in &shard_optimizations.queued {
-                    queued_segments += queued_optimization.segments.len();
-                    for segment in &queued_optimization.segments {
-                        queued_points += segment.points_count;
-                    }
-                }
-                idle_segments_count += shard_optimizations.idle_segments.len();
-                if let Some(queued) = &mut queued {
-                    queued.extend(shard_optimizations.queued);
-                }
-                if let Some(idle_segments) = &mut idle_segments {
-                    idle_segments.extend(shard_optimizations.idle_segments);
+                None => {
+                    merged = Some(shard_response);
                 }
             }
         }
 
-        // Sort from newest to oldest
-        running.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
-
-        Ok(OptimizationsResponse {
+        let mut response = merged.unwrap_or_else(|| OptimizationsResponse {
             summary: OptimizationsSummary {
-                queued_optimizations,
-                queued_segments,
-                queued_points,
-                idle_segments: idle_segments_count,
+                queued_optimizations: 0,
+                queued_segments: 0,
+                queued_points: 0,
+                idle_segments: 0,
             },
-            running,
-            queued,
-            completed: completed_limit.map(|completed_limit| {
-                completed.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
-                completed.truncate(completed_limit);
-                completed
-            }),
-            idle_segments,
-        })
+            running: Vec::new(),
+            queued: options.queued.then_some(Vec::new()),
+            completed: options.completed_limit.map(|_| Vec::new()),
+            idle_segments: options.idle_segments.then_some(Vec::new()),
+        });
+
+        // Sort from newest to oldest
+        response
+            .running
+            .sort_by_key(|v| cmp::Reverse(v.progress.started_at));
+
+        if let Some(completed) = &mut response.completed {
+            completed.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
+            if let Some(limit) = options.completed_limit {
+                completed.truncate(limit);
+            }
+        }
+
+        Ok(response)
     }
 
     pub async fn print_warnings(&self) {

@@ -19,7 +19,6 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::Mutex as ParkingMutex;
 use replica_set_state::{ReplicaSetState, ReplicaState};
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
 use serde::{Deserialize, Serialize};
@@ -35,17 +34,18 @@ use super::local_shard::clock_map::RecoveryPoint;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
+use crate::operations::types::{
+    CollectionError, CollectionResult, OptimizationsRequestOptions, OptimizationsResponse,
+    OptimizationsSummary, UpdateResult, UpdateStatus,
+};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
-use crate::shards::local_shard::LocalShardOptimizations;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -1371,14 +1371,122 @@ impl ShardReplicaSet {
         self.payload_index_schema.clone()
     }
 
-    pub async fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
-        let local = self.local.read().await;
-        local.as_ref().and_then(|shard| shard.optimizers_log())
+    /// Get optimizations info for this shard replica set.
+    ///
+    /// Collects data from local shard (optimizers log + planned optimizations)
+    /// and from remote shards via gRPC, then merges the results.
+    pub async fn optimizations(
+        &self,
+        options: OptimizationsRequestOptions,
+    ) -> OptimizationsResponse {
+        let mut response = self.local_optimizations(options).await;
+
+        // Collect from remote shards
+        {
+            let remotes = self.remotes.read().await;
+            for remote in remotes.iter() {
+                match remote.optimizations(options).await {
+                    Ok(remote_response) => {
+                        response.merge(remote_response);
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to get optimizations from remote shard {} on peer {}: {err}",
+                            self.shard_id,
+                            remote.peer_id,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Sort from newest to oldest
+        response
+            .running
+            .sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+
+        if let Some(completed) = &mut response.completed {
+            completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+            if let Some(limit) = options.completed_limit {
+                completed.truncate(limit);
+            }
+        }
+
+        response
     }
 
-    pub async fn optimizations(&self) -> Option<LocalShardOptimizations> {
+    /// Get optimizations info from only the local shard.
+    ///
+    /// This is used by the internal gRPC handler to return local data
+    /// without querying remote shards (which would cause recursion).
+    pub async fn local_optimizations(
+        &self,
+        options: OptimizationsRequestOptions,
+    ) -> OptimizationsResponse {
+        let OptimizationsRequestOptions {
+            queued: with_queued,
+            completed_limit,
+            idle_segments: with_idle_segments,
+        } = options;
+
+        let mut running = Vec::new();
+        let mut completed = Vec::new();
+        let mut idle_segments = with_idle_segments.then_some(Vec::new());
+        let mut queued = with_queued.then_some(Vec::new());
+
+        let mut queued_optimizations = 0;
+        let mut queued_segments = 0;
+        let mut queued_points = 0;
+        let mut idle_segments_count = 0;
+
         let local = self.local.read().await;
-        local.as_ref().and_then(|shard| shard.optimizations())
+        if let Some(shard) = local.as_ref() {
+            if let Some(log) = shard.optimizers_log() {
+                for tracker in log.lock().iter() {
+                    if tracker.state.lock().status.is_running() {
+                        running.push(tracker.to_optimization());
+                    } else if completed_limit.is_some() {
+                        completed.push(tracker.to_optimization());
+                    }
+                }
+            }
+            if let Some(shard_optimizations) = shard.optimizations() {
+                queued_optimizations += shard_optimizations.queued.len();
+                for queued_optimization in &shard_optimizations.queued {
+                    queued_segments += queued_optimization.segments.len();
+                    for segment in &queued_optimization.segments {
+                        queued_points += segment.points_count;
+                    }
+                }
+                idle_segments_count += shard_optimizations.idle_segments.len();
+                if let Some(queued) = &mut queued {
+                    queued.extend(shard_optimizations.queued);
+                }
+                if let Some(idle_segments) = &mut idle_segments {
+                    idle_segments.extend(shard_optimizations.idle_segments);
+                }
+            }
+        }
+
+        // Sort from newest to oldest
+        running.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+
+        OptimizationsResponse {
+            summary: OptimizationsSummary {
+                queued_optimizations,
+                queued_segments,
+                queued_points,
+                idle_segments: idle_segments_count,
+            },
+            running,
+            queued,
+            completed: completed_limit.map(|completed_limit| {
+                completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+                completed.truncate(completed_limit);
+                completed
+            }),
+            idle_segments,
+        }
     }
 
     /// Truncate unapplied WAL records for the local shard (if present).

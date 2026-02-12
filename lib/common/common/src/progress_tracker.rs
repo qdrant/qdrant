@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Read-only view of a root progress node.
 ///
@@ -39,7 +39,7 @@ pub struct ProgressView {
     started_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ProgressTree {
     /// Name of the operation.
     pub name: String,

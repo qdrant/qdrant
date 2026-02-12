@@ -195,6 +195,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("WaitForShardStateRequest.timeout", "range(min = 1)"),
             ("GetShardRecoveryPointRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
             ("UpdateShardCutoffPointRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
+            ("GetShardOptimizationsRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
         ], &[])
         // Service: points.proto
         .validates(&[

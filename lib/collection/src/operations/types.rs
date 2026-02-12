@@ -324,7 +324,7 @@ pub struct OptimizationsRequestOptions {
 }
 
 /// Optimizations progress for the collection
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationsResponse {
     pub summary: OptimizationsSummary,
     /// Currently running optimizations.
@@ -343,7 +343,7 @@ pub struct OptimizationsResponse {
     pub idle_segments: Option<Vec<OptimizationSegmentInfo>>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationsSummary {
     /// Number of pending optimizations in the queue.
     /// Each optimization will take one or more unoptimized segments and produce
@@ -357,7 +357,7 @@ pub struct OptimizationsSummary {
     pub idle_segments: usize,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Optimization {
     /// Unique identifier of the optimization process.
     ///
@@ -365,7 +365,7 @@ pub struct Optimization {
     /// this UUID.
     pub uuid: Uuid,
     /// Name of the optimizer that performed this optimization.
-    pub optimizer: &'static str,
+    pub optimizer: String,
     pub status: TrackerStatus,
     /// Segments being optimized.
     ///
@@ -375,16 +375,42 @@ pub struct Optimization {
     pub progress: ProgressTree,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PendingOptimization {
     /// Name of the optimizer that scheduled this optimization.
-    pub optimizer: &'static str,
+    pub optimizer: String,
     /// Segments that will be optimized.
     pub segments: Vec<OptimizationSegmentInfo>,
 }
 
+impl OptimizationsResponse {
+    /// Merge another `OptimizationsResponse` into this one.
+    pub fn merge(&mut self, other: OptimizationsResponse) {
+        self.running.extend(other.running);
+        self.summary.queued_optimizations += other.summary.queued_optimizations;
+        self.summary.queued_segments += other.summary.queued_segments;
+        self.summary.queued_points += other.summary.queued_points;
+        self.summary.idle_segments += other.summary.idle_segments;
+        if let Some(completed) = &mut self.completed
+            && let Some(other_completed) = other.completed
+        {
+            completed.extend(other_completed);
+        }
+        if let Some(queued) = &mut self.queued
+            && let Some(other_queued) = other.queued
+        {
+            queued.extend(other_queued);
+        }
+        if let Some(idle) = &mut self.idle_segments
+            && let Some(other_idle) = other.idle_segments
+        {
+            idle.extend(other_idle);
+        }
+    }
+}
+
 // See also [`segment::types::SegmentInfo`] which is used in telemetry.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationSegmentInfo {
     /// Unique identifier of the segment.
     pub uuid: Uuid,

@@ -40,7 +40,10 @@ use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::OperationWithClockTag;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
+use crate::operations::types::{
+    CollectionError, CollectionResult, NodeType, OptimizationsRequestOptions,
+    OptimizationsResponse, OptimizersStatus,
+};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -576,6 +579,26 @@ impl Collection {
         };
 
         replica_set.get_wal_entries(count).await
+    }
+
+    /// Get optimizations info from the local shard only.
+    ///
+    /// Used by the internal gRPC handler to serve requests from remote peers.
+    pub async fn local_shard_optimizations(
+        &self,
+        shard_id: ShardId,
+        options: OptimizationsRequestOptions,
+    ) -> CollectionResult<OptimizationsResponse> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(shard_id);
+        let Some(replica_set) = shard else {
+            return Err(CollectionError::NotFound {
+                what: format!("Shard {shard_id}"),
+            });
+        };
+
+        Ok(replica_set.local_optimizations(options).await)
     }
 
     pub async fn state(&self) -> State {
