@@ -365,10 +365,10 @@ mod tests {
 
         // Create clock set for peer A, start first clock from 1
         let mut a_clock_set = ClockSet::new();
-        a_clock_set.get_clock().advance_to(0);
+        a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create operation on peer A
-        let mut a_clock_0 = a_clock_set.get_clock();
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
         let clock_tick = a_clock_0.tick_once();
         let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let bare_operation = mock_operation(1);
@@ -387,7 +387,7 @@ mod tests {
         drop(a_clock_0);
 
         // Create operation on peer A
-        let mut a_clock_0 = a_clock_set.get_clock();
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
         let clock_tick = a_clock_0.tick_once();
         let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let bare_operation = mock_operation(2);
@@ -463,11 +463,11 @@ mod tests {
 
         // Create clock set for peer A, start first clock from 1
         let mut a_clock_set = ClockSet::new();
-        a_clock_set.get_clock().advance_to(0);
+        a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create N operations on peer A
         for n in 0..N {
-            let mut a_clock_0 = a_clock_set.get_clock();
+            let mut a_clock_0 = a_clock_set.get_clock().unwrap();
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let bare_operation = mock_operation((1 + n) as u64);
@@ -488,7 +488,7 @@ mod tests {
         // Introduce a gap in the clocks on A
         if with_gap {
             for _ in 0..GAP_SIZE {
-                let mut a_clock_0 = a_clock_set.get_clock();
+                let mut a_clock_0 = a_clock_set.get_clock().unwrap();
                 let clock_tick = a_clock_0.tick_once();
                 a_clock_0.advance_to(clock_tick);
             }
@@ -496,7 +496,7 @@ mod tests {
 
         // Create N operations on peer A, which are missed on node C
         for n in 0..N {
-            let mut a_clock_0 = a_clock_set.get_clock();
+            let mut a_clock_0 = a_clock_set.get_clock().unwrap();
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let bare_operation = mock_operation((1 + N + n) as u64);
@@ -568,11 +568,11 @@ mod tests {
 
         // Create clock set for peer A, start first clock from 1
         let mut a_clock_set = ClockSet::new();
-        a_clock_set.get_clock().advance_to(0);
+        a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create N operations on peer A
         for i in 0..N {
-            let mut a_clock_0 = a_clock_set.get_clock();
+            let mut a_clock_0 = a_clock_set.get_clock().unwrap();
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let bare_operation = mock_operation(i as u64);
@@ -592,7 +592,7 @@ mod tests {
 
         // Create M operations on peer A, which are missed on node C
         for i in N..N + M {
-            let mut a_clock_0 = a_clock_set.get_clock();
+            let mut a_clock_0 = a_clock_set.get_clock().unwrap();
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let bare_operation = mock_operation(i as u64);
@@ -669,7 +669,7 @@ mod tests {
 
         // Create N operations on peer A
         for i in 0..N {
-            let mut a_clock_0 = a_clock_set.get_clock();
+            let mut a_clock_0 = a_clock_set.get_clock().unwrap();
             a_clock_0.advance_to(0);
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
@@ -694,9 +694,9 @@ mod tests {
             let peer_id = if is_node_a { 1 } else { 2 };
 
             let mut clock = if is_node_a {
-                a_clock_set.get_clock()
+                a_clock_set.get_clock().unwrap()
             } else {
-                b_clock_set.get_clock()
+                b_clock_set.get_clock().unwrap()
             };
             clock.advance_to(0);
             let clock_tick = clock.tick_once();
@@ -768,11 +768,11 @@ mod tests {
         // Create clock sets for peer A and B, start first clocks from 1
         let mut a_clock_set = ClockSet::new();
         let mut b_clock_set = ClockSet::new();
-        a_clock_set.get_clock().advance_to(0);
-        b_clock_set.get_clock().advance_to(0);
+        a_clock_set.get_clock().unwrap().advance_to(0);
+        b_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create operation on peer A
-        let mut a_clock_0 = a_clock_set.get_clock();
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
         let clock_tick = a_clock_0.tick_once();
         let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let bare_operation = mock_operation(1);
@@ -791,8 +791,8 @@ mod tests {
         drop(a_clock_0);
 
         // Create operations on nodes A and B
-        let mut a_clock_0 = a_clock_set.get_clock();
-        let mut b_clock_0 = b_clock_set.get_clock();
+        let mut a_clock_0 = a_clock_set.get_clock().unwrap();
+        let mut b_clock_0 = b_clock_set.get_clock().unwrap();
         let a_clock_tick = a_clock_0.tick_once();
         let b_clock_tick = b_clock_0.tick_once();
         let a_clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_tick);
@@ -978,7 +978,7 @@ mod tests {
         // Initial normal operation, written to both A and B  + additionally Em but we will need it later
         {
             // Node C is sending updates to A and B
-            let mut c_clock_0 = c_clock_set.get_clock();
+            let mut c_clock_0 = c_clock_set.get_clock().unwrap();
             c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
@@ -1003,7 +1003,7 @@ mod tests {
         // Initial normal operation, written to both
         {
             // Node C is sending updates to A and B
-            let mut c_clock_0 = c_clock_set.get_clock();
+            let mut c_clock_0 = c_clock_set.get_clock().unwrap();
             c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
@@ -1026,8 +1026,8 @@ mod tests {
         // Next operation gets written to A, but not B
         {
             // Node C is sending updates to A and B
-            let mut c_clock_0 = c_clock_set.get_clock();
-            let mut c_clock_1 = c_clock_set.get_clock();
+            let mut c_clock_0 = c_clock_set.get_clock().unwrap();
+            let mut c_clock_1 = c_clock_set.get_clock().unwrap();
             c_clock_0.advance_to(0);
             c_clock_1.advance_to(0);
 
@@ -1064,7 +1064,7 @@ mod tests {
 
         // Node D sends an update to both A and B, both successfully written
         {
-            let mut d_clock_0 = d_clock_set.get_clock();
+            let mut d_clock_0 = d_clock_set.get_clock().unwrap();
             d_clock_0.advance_to(0);
             let clock_tick = d_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
@@ -1085,7 +1085,7 @@ mod tests {
 
         // Node D sends an update to both A and B, both successfully written
         {
-            let mut d_clock_0 = d_clock_set.get_clock();
+            let mut d_clock_0 = d_clock_set.get_clock().unwrap();
             d_clock_0.advance_to(0);
             let clock_tick = d_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
@@ -1138,7 +1138,7 @@ mod tests {
         // In between the recovery, we have a new update from C
         // It is written to both A and B, plus forwarded to B with forward proxy
         {
-            let mut c_clock_0 = c_clock_set.get_clock();
+            let mut c_clock_0 = c_clock_set.get_clock().unwrap();
             c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
@@ -1233,7 +1233,7 @@ mod tests {
         // Add operation to B but not A
         {
             // Node D is sending updates to B
-            let mut d_clock = d_clock_set.get_clock();
+            let mut d_clock = d_clock_set.get_clock().unwrap();
             d_clock.advance_to(0);
 
             // First parallel operation
@@ -1303,7 +1303,7 @@ mod tests {
         let mut wals = std::iter::repeat_with(fixture_empty_wal)
             .take(node_count)
             .collect::<Vec<_>>();
-        let mut clock_sets = std::iter::repeat_with(ClockSet::new)
+        let mut clock_sets = std::iter::repeat_with(|| ClockSet::with_max_clocks(256))
             .take(node_count)
             .collect::<Vec<_>>();
 
@@ -1321,7 +1321,7 @@ mod tests {
             for _ in 0..rng.random_range(0..10) {
                 let entrypoint = rng.random_range(0..node_count);
 
-                let mut clock = clock_sets[entrypoint].get_clock();
+                let mut clock = clock_sets[entrypoint].get_clock().unwrap();
                 clock.advance_to(0);
                 let clock_tick = clock.tick_once();
                 let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
@@ -1349,7 +1349,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.random_range(0..3);
+                let keep_clock_for = rng.random_range(0..10);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }
@@ -1367,7 +1367,7 @@ mod tests {
             for _ in 0..operation_count {
                 let entrypoint = *alive_nodes.choose(&mut rng).unwrap();
 
-                let mut clock = clock_sets[entrypoint].get_clock();
+                let mut clock = clock_sets[entrypoint].get_clock().unwrap();
                 clock.advance_to(0);
                 let clock_tick = clock.tick_once();
                 let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
@@ -1399,7 +1399,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.random_range(0..10);
+                let keep_clock_for = rng.random_range(0..3);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }
@@ -1454,7 +1454,13 @@ mod tests {
             });
 
             // Release some kept clocks
-            kept_clocks.retain(|(keep_for, _)| *keep_for > 1);
+            kept_clocks.retain_mut(|(keep_for, _)| {
+                if *keep_for == 0 {
+                    return false;
+                }
+                *keep_for -= 1;
+                true
+            });
         }
 
         for (wal, _) in wals {

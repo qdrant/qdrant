@@ -1,30 +1,56 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-#[derive(Clone, Debug, Default)]
+/// We want to have limited amount of clocks, because all the clocks we create during
+/// qdrant operations are preserved for the entire live-span of the cluster.
+///
+/// Limiting number of clocks essentially means that we are limiting number of parallel
+/// update operations which can happen on the cluster, but this number should be high enough
+/// for all reasonable use cases.
+const DEFAULT_MAX_CLOCKS: usize = 64;
+
+#[derive(Clone, Debug)]
 pub struct ClockSet {
     clocks: Vec<Arc<Clock>>,
+    max_clocks: usize,
+}
+
+impl Default for ClockSet {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClockSet {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_max_clocks(DEFAULT_MAX_CLOCKS)
+    }
+
+    pub fn with_max_clocks(max_clocks: usize) -> Self {
+        Self {
+            clocks: Vec::new(),
+            max_clocks,
+        }
     }
 
     /// Get the first available clock from the set, or create a new one.
-    pub fn get_clock(&mut self) -> ClockGuard {
+    pub fn get_clock(&mut self) -> Option<ClockGuard> {
         for (id, clock) in self.clocks.iter().enumerate() {
             if clock.try_lock() {
-                return ClockGuard::new(id as u32, clock.clone());
+                return Some(ClockGuard::new(id as u32, clock.clone()));
             }
         }
 
-        let id = self.clocks.len() as u32;
+        let id = self.clocks.len();
+        if id >= self.max_clocks {
+            return None;
+        }
+
         let clock = Arc::new(Clock::new_locked());
 
         self.clocks.push(clock.clone());
 
-        ClockGuard::new(id, clock)
+        Some(ClockGuard::new(id as u32, clock))
     }
 }
 
@@ -147,17 +173,17 @@ mod tests {
         let mut clock_set = ClockSet::new();
 
         // Don't tick from 0 unless we explicitly advance
-        assert_eq!(clock_set.get_clock().tick_once(), 0);
-        assert_eq!(clock_set.get_clock().tick_once(), 0);
-        assert_eq!(clock_set.get_clock().tick_once(), 0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
 
-        clock_set.get_clock().advance_to(0);
+        clock_set.get_clock().unwrap().advance_to(0);
 
         // Following ticks should increment
-        assert_eq!(clock_set.get_clock().tick_once(), 1);
-        assert_eq!(clock_set.get_clock().tick_once(), 2);
-        assert_eq!(clock_set.get_clock().tick_once(), 3);
-        assert_eq!(clock_set.get_clock().tick_once(), 4);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 1);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 2);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 3);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 4);
     }
 
     /// Test a single clock, but tick it multiple times on the same guard.
@@ -167,7 +193,7 @@ mod tests {
 
         // Don't tick from 0 unless we explicitly advance
         {
-            let mut clock = clock_set.get_clock();
+            let mut clock = clock_set.get_clock().unwrap();
             assert_eq!(clock.tick_once(), 0);
             assert_eq!(clock.tick_once(), 0);
             clock.advance_to(0);
@@ -175,7 +201,7 @@ mod tests {
 
         // Following ticks should increment
         {
-            let mut clock = clock_set.get_clock();
+            let mut clock = clock_set.get_clock().unwrap();
             assert_eq!(clock.tick_once(), 1);
             assert_eq!(clock.tick_once(), 2);
             assert_eq!(clock.tick_once(), 3);
@@ -189,16 +215,16 @@ mod tests {
         let mut clock_set = ClockSet::new();
 
         // Bring the clock up to 4
-        assert_eq!(clock_set.get_clock().tick_once(), 0);
-        clock_set.get_clock().advance_to(0);
-        assert_eq!(clock_set.get_clock().tick_once(), 1);
-        assert_eq!(clock_set.get_clock().tick_once(), 2);
-        assert_eq!(clock_set.get_clock().tick_once(), 3);
-        assert_eq!(clock_set.get_clock().tick_once(), 4);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
+        clock_set.get_clock().unwrap().advance_to(0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 1);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 2);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 3);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 4);
 
         // If we advance to 100, we should continue from 101
-        clock_set.get_clock().advance_to(100);
-        assert_eq!(clock_set.get_clock().tick_once(), 101);
+        clock_set.get_clock().unwrap().advance_to(100);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 101);
     }
 
     /// Advance a clock to a lower number, which should not do anything.
@@ -207,19 +233,19 @@ mod tests {
         let mut clock_set = ClockSet::new();
 
         // Bring the clock up to 4
-        assert_eq!(clock_set.get_clock().tick_once(), 0);
-        clock_set.get_clock().advance_to(0);
-        assert_eq!(clock_set.get_clock().tick_once(), 1);
-        assert_eq!(clock_set.get_clock().tick_once(), 2);
-        assert_eq!(clock_set.get_clock().tick_once(), 3);
-        assert_eq!(clock_set.get_clock().tick_once(), 4);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
+        clock_set.get_clock().unwrap().advance_to(0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 1);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 2);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 3);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 4);
 
         // If we advance to a low number, just continue
-        clock_set.get_clock().advance_to(0);
-        assert_eq!(clock_set.get_clock().tick_once(), 5);
+        clock_set.get_clock().unwrap().advance_to(0);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 5);
 
-        clock_set.get_clock().advance_to(1);
-        assert_eq!(clock_set.get_clock().tick_once(), 6);
+        clock_set.get_clock().unwrap().advance_to(1);
+        assert_eq!(clock_set.get_clock().unwrap().tick_once(), 6);
     }
 
     /// Test multiple clocks in various configurations.
@@ -229,16 +255,16 @@ mod tests {
 
         // 2 parallel operations, that fails and doesn't advance
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 0);
             assert_eq!(clock2.tick_once(), 0);
         }
 
         // 2 parallel operations
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 0);
             assert_eq!(clock2.tick_once(), 0);
             clock1.advance_to(0);
@@ -247,21 +273,21 @@ mod tests {
 
         // 1 operation
         {
-            let mut clock1 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 1);
             clock1.advance_to(1);
         }
 
         // 1 operation, without advancing should still tick
         {
-            let mut clock1 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 2);
         }
 
         // 2 parallel operations
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 3);
             assert_eq!(clock2.tick_once(), 1);
             clock1.advance_to(3);
@@ -270,9 +296,9 @@ mod tests {
 
         // 3 parallel operations, but clock 2 was much newer on some node
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 4);
             assert_eq!(clock2.tick_once(), 2);
             assert_eq!(clock3.tick_once(), 0);
@@ -283,9 +309,9 @@ mod tests {
 
         // 3 parallel operations, advancing in a different order should not matter
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 5);
             assert_eq!(clock2.tick_once(), 11);
             assert_eq!(clock3.tick_once(), 1);
@@ -296,9 +322,9 @@ mod tests {
 
         // 3 parallel operations, advancing just some should still tick all
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 6);
             assert_eq!(clock2.tick_once(), 12);
             assert_eq!(clock3.tick_once(), 2);
@@ -307,16 +333,16 @@ mod tests {
 
         // 1 operation
         {
-            let mut clock1 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 7);
         }
 
         // Test final state of all clocks
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
-            let mut clock4 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
+            let mut clock4 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 8);
             assert_eq!(clock2.tick_once(), 13);
             assert_eq!(clock3.tick_once(), 3);
@@ -331,13 +357,13 @@ mod tests {
         let mut clock_set = ClockSet::new();
 
         // Clock 1 runs for a long while
-        let mut clock1 = clock_set.get_clock();
+        let mut clock1 = clock_set.get_clock().unwrap();
         assert_eq!(clock1.tick_once(), 0);
 
         // 2 quick parallel operations
         {
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
             assert_eq!(clock2.tick_once(), 0);
             assert_eq!(clock3.tick_once(), 0);
             clock2.advance_to(0);
@@ -345,13 +371,13 @@ mod tests {
         }
 
         // Clock 2 runs for a long while
-        let clock2 = clock_set.get_clock();
+        let clock2 = clock_set.get_clock().unwrap();
         assert_eq!(clock1.tick_once(), 0);
 
         // 2 quick parallel operations
         {
-            let mut clock3 = clock_set.get_clock();
-            let mut clock4 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock().unwrap();
+            let mut clock4 = clock_set.get_clock().unwrap();
             assert_eq!(clock3.tick_once(), 1);
             assert_eq!(clock4.tick_once(), 0);
             clock4.advance_to(0);
@@ -363,9 +389,9 @@ mod tests {
 
         // 3 quick parallel operations
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
-            let mut clock4 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
+            let mut clock4 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 1);
             assert_eq!(clock3.tick_once(), 2);
             assert_eq!(clock4.tick_once(), 1);
@@ -376,11 +402,11 @@ mod tests {
 
         // Test final state of all clocks
         {
-            let mut clock1 = clock_set.get_clock();
-            let mut clock2 = clock_set.get_clock();
-            let mut clock3 = clock_set.get_clock();
-            let mut clock4 = clock_set.get_clock();
-            let mut clock5 = clock_set.get_clock();
+            let mut clock1 = clock_set.get_clock().unwrap();
+            let mut clock2 = clock_set.get_clock().unwrap();
+            let mut clock3 = clock_set.get_clock().unwrap();
+            let mut clock4 = clock_set.get_clock().unwrap();
+            let mut clock5 = clock_set.get_clock().unwrap();
             assert_eq!(clock1.tick_once(), 2);
             assert_eq!(clock2.tick_once(), 1);
             assert_eq!(clock3.tick_once(), 3);
@@ -394,11 +420,11 @@ mod tests {
     fn test_clock_set_many() {
         const N: usize = 5000;
 
-        let mut clock_set = ClockSet::new();
+        let mut clock_set = ClockSet::with_max_clocks(N);
 
         // Tick all clocks past 0
         {
-            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                 .take(N)
                 .collect::<Vec<_>>();
             clocks.shuffle(&mut rand::rng());
@@ -412,7 +438,7 @@ mod tests {
         // Tick all clocks 10 times
         {
             for tick in 0..10 {
-                let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                     .take(N)
                     .collect::<Vec<_>>();
                 clocks.shuffle(&mut rand::rng());
@@ -424,7 +450,7 @@ mod tests {
         }
 
         // Now the first 10% gets stuck
-        let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock())
+        let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
             .take(N / 10)
             .collect::<Vec<_>>();
         for clock in stuck_clocks.iter_mut() {
@@ -434,7 +460,7 @@ mod tests {
         // Tick all other clocks 10 times
         {
             for tick in 0..10 {
-                let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                     .take(N - (N / 10))
                     .collect::<Vec<_>>();
                 clocks.shuffle(&mut rand::rng());
@@ -450,10 +476,10 @@ mod tests {
 
         // Test all clocks
         {
-            let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock())
+            let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                 .take(N / 10)
                 .collect::<Vec<_>>();
-            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                 .take(N - (N / 10))
                 .collect::<Vec<_>>();
 
@@ -471,13 +497,13 @@ mod tests {
     fn test_clock_set_many_staggered_stuck() {
         const N: usize = 500;
 
-        let mut clock_set = ClockSet::new();
+        let mut clock_set = ClockSet::with_max_clocks(N);
 
         let mut stuck_clocks = Vec::new();
 
         for i in 0..N {
-            let mut clock_to_stuck = clock_set.get_clock();
-            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+            let mut clock_to_stuck = clock_set.get_clock().unwrap();
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                 .take(N - i - 1)
                 .collect::<Vec<_>>();
 
@@ -499,7 +525,7 @@ mod tests {
 
         // Test all clocks
         {
-            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock().unwrap())
                 .take(N)
                 .enumerate()
                 .collect::<Vec<_>>();
