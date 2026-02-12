@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
@@ -122,6 +123,35 @@ impl IdTracker for InMemoryIdTracker {
 
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
         self.mappings.iter_random()
+    }
+
+    fn for_each_external(&self, f: &mut dyn FnMut(PointIdType) -> ControlFlow<()>) {
+        self.mappings.for_each_external(f);
+    }
+
+    fn for_each_internal(&self, f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>) {
+        self.mappings.for_each_internal(f);
+    }
+
+    fn for_each_internal_excluding(
+        &self,
+        exclude_bitslice: &BitSlice,
+        f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>,
+    ) {
+        self.mappings
+            .for_each_internal_excluding(exclude_bitslice, f);
+    }
+
+    fn for_each_from(
+        &self,
+        external_id: Option<PointIdType>,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    ) {
+        self.mappings.for_each_from(external_id, f);
+    }
+
+    fn for_each_random(&self, f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>) {
+        self.mappings.for_each_random(f);
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.

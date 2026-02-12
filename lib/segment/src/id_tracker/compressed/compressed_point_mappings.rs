@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::btree_map::Entry;
 use std::iter;
+use std::ops::ControlFlow;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]
@@ -169,6 +171,84 @@ impl CompressedPointMappings {
             .iter()
             .enumerate()
             .map(|(offset, point_id)| (offset as _, point_id))
+    }
+
+    pub(crate) fn for_each_external(&self, f: &mut dyn FnMut(PointIdType) -> ControlFlow<()>) {
+        for (point_id, _) in self.external_to_internal.iter() {
+            if f(point_id).is_break() {
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn for_each_internal(&self, f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>) {
+        for i in 0..self.internal_to_external.len() as PointOffsetType {
+            if !self.deleted[i as usize] {
+                if f(i).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn for_each_internal_excluding(
+        &self,
+        exclude_bitslice: &BitSlice,
+        f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>,
+    ) {
+        for i in 0..self.internal_to_external.len() as PointOffsetType {
+            if !self.deleted[i as usize] && !exclude_bitslice.get_bit(i as usize).unwrap_or(false) {
+                if f(i).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn for_each_from(
+        &self,
+        external_id: Option<PointIdType>,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    ) {
+        let iter: Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> = match external_id
+        {
+            None => Box::new(self.external_to_internal.iter()),
+            Some(point_id) => Box::new(self.external_to_internal.iter_from(point_id)),
+        };
+        for (ext, int) in iter {
+            if f(ext, int).is_break() {
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn for_each_random(
+        &self,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    ) {
+        let rng = rand::rng();
+        let max_internal = self.internal_to_external.len();
+        if max_internal == 0 {
+            return;
+        }
+        let uniform = rand::distr::Uniform::new(0, max_internal)
+            .expect("above check guarantees max_internal > 0");
+        for i in Distribution::sample_iter(uniform, rng)
+            .unique()
+            .take(max_internal)
+        {
+            if !self.deleted[i] {
+                let point_offset = i as PointOffsetType;
+                if f(
+                    self.internal_to_external.get(point_offset).unwrap(),
+                    point_offset,
+                )
+                .is_break()
+                {
+                    return;
+                }
+            }
+        }
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {

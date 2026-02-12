@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
@@ -100,6 +101,41 @@ pub trait IdTracker: fmt::Debug {
     ///
     /// Excludes soft deleted points.
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
+
+    /// Visit all external IDs
+    ///
+    /// Visitor-pattern counterpart of [`iter_external`](Self::iter_external).
+    /// The callback should return [`ControlFlow::Continue`] to keep going
+    /// or [`ControlFlow::Break`] to stop early.
+    fn for_each_external(&self, f: &mut dyn FnMut(PointIdType) -> ControlFlow<()>);
+
+    /// Visit all internal IDs (offsets)
+    ///
+    /// Visitor-pattern counterpart of [`iter_internal`](Self::iter_internal).
+    fn for_each_internal(&self, f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>);
+
+    /// Visit all internal IDs (offsets), excluding flagged items
+    ///
+    /// Visitor-pattern counterpart of [`iter_internal_excluding`](Self::iter_internal_excluding).
+    fn for_each_internal_excluding(
+        &self,
+        exclude_bitslice: &BitSlice,
+        f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>,
+    );
+
+    /// Visit all points starting from a given external ID
+    ///
+    /// Visitor-pattern counterpart of [`iter_from`](Self::iter_from).
+    fn for_each_from(
+        &self,
+        external_id: Option<PointIdType>,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    );
+
+    /// Visit all points in a random order
+    ///
+    /// Visitor-pattern counterpart of [`iter_random`](Self::iter_random).
+    fn for_each_random(&self, f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>);
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
@@ -366,6 +402,76 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_random(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_random(),
+        }
+    }
+
+    fn for_each_external(&self, f: &mut dyn FnMut(PointIdType) -> ControlFlow<()>) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.for_each_external(f),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.for_each_external(f),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.for_each_external(f),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.for_each_external(f),
+        }
+    }
+
+    fn for_each_internal(&self, f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.for_each_internal(f),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.for_each_internal(f),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.for_each_internal(f),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.for_each_internal(f),
+        }
+    }
+
+    fn for_each_internal_excluding(
+        &self,
+        exclude_bitslice: &BitSlice,
+        f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>,
+    ) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.for_each_internal_excluding(exclude_bitslice, f)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.for_each_internal_excluding(exclude_bitslice, f)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.for_each_internal_excluding(exclude_bitslice, f)
+            }
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
+                id_tracker.for_each_internal_excluding(exclude_bitslice, f)
+            }
+        }
+    }
+
+    fn for_each_from(
+        &self,
+        external_id: Option<PointIdType>,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    ) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.for_each_from(external_id, f),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.for_each_from(external_id, f)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.for_each_from(external_id, f)
+            }
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.for_each_from(external_id, f),
+        }
+    }
+
+    fn for_each_random(&self, f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>) {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.for_each_random(f),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.for_each_random(f),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.for_each_random(f),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.for_each_random(f),
         }
     }
 

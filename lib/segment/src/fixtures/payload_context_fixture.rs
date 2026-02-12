@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::iter;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -138,6 +140,70 @@ impl IdTracker for FixtureIdTracker {
     }
 
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        unimplemented!("Not used for tests yet")
+    }
+
+    fn for_each_external(&self, f: &mut dyn FnMut(PointIdType) -> ControlFlow<()>) {
+        for &internal_id in &self.ids {
+            if !self.is_deleted_point(internal_id) {
+                if f(PointIdType::NumId(u64::from(internal_id))).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn for_each_internal(&self, f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>) {
+        for &internal_id in &self.ids {
+            if !self.is_deleted_point(internal_id) {
+                if f(internal_id).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn for_each_internal_excluding(
+        &self,
+        exclude_bitslice: &BitSlice,
+        f: &mut dyn FnMut(PointOffsetType) -> ControlFlow<()>,
+    ) {
+        for &internal_id in &self.ids {
+            if !self.is_deleted_point(internal_id)
+                && !exclude_bitslice
+                    .get_bit(internal_id as usize)
+                    .unwrap_or(false)
+            {
+                if f(internal_id).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn for_each_from(
+        &self,
+        external_id: Option<PointIdType>,
+        f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>,
+    ) {
+        let start = match external_id {
+            None => 0,
+            Some(PointIdType::NumId(num)) => num as PointOffsetType,
+            Some(PointIdType::Uuid(_)) => unreachable!(),
+        };
+        for &internal_id in &self.ids {
+            if internal_id < start {
+                continue;
+            }
+            if !self.is_deleted_point(internal_id) {
+                if f(PointIdType::NumId(u64::from(internal_id)), internal_id).is_break() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn for_each_random(&self, _f: &mut dyn FnMut(PointIdType, PointOffsetType) -> ControlFlow<()>) {
         unimplemented!("Not used for tests yet")
     }
 
