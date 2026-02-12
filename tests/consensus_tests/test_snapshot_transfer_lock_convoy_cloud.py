@@ -108,13 +108,6 @@ def bfb_upload():
     ))
 
 
-def bfb_search(n=1_000_000):
-    return subprocess.Popen(_bfb(
-        "-n", n, "--threads", 1, "--parallel", 1,
-        "--skip-create", "--skip-upload", "--skip-wait-index",
-        "--search", "--search-limit", 10, "--quantization-rescore", "true",
-    ))
-
 
 # ---------------------------------------------------------------------------
 # Cluster helpers
@@ -250,14 +243,13 @@ def freeze_scenario(n_downloads=3):
     assert not timedout and resp.ok, "Baseline search failed"
     print(f"Baseline search: {dur:.3f}s")
 
-    upload_proc = search_proc = None
+    upload_proc = None
     stop_event = threading.Event()
     dl_threads = []
     patch_thread = None
     try:
         upload_proc = bfb_upload()
-        search_proc = bfb_search()
-        print("bfb upload + search started")
+        print("bfb upload started")
         time.sleep(3)
 
         dl_results, dl_threads = start_slow_downloads(shard_peer, shard_id, stop_event, n_downloads)
@@ -280,8 +272,7 @@ def freeze_scenario(n_downloads=3):
             t.join(timeout=30)
         if patch_thread:
             patch_thread.join(timeout=30)
-        for p in (upload_proc, search_proc):
-            _kill_proc(p)
+        _kill_proc(upload_proc)
         _cleanup_docker()
 
 

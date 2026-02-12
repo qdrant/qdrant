@@ -133,14 +133,6 @@ def bfb_upload(grpc_uris):
     ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def bfb_search(grpc_uris, n=1_000_000):
-    """Continuous searches in background."""
-    return subprocess.Popen(_bfb(grpc_uris,
-        "-n", n, "--threads", 1, "--parallel", 1,
-        "--skip-create", "--skip-upload", "--skip-wait-index",
-        "--search", "--search-limit", 10, "--quantization-rescore", "true",
-    ), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
 
 def timed_req(method, url, timeout=TIMEOUT, **kw):
     t0 = time.time()
@@ -232,12 +224,11 @@ def test_slow_downloads_plus_consensus_write_freezes(tmp_path: pathlib.Path):
     bfb_init(grpc_uris)
     wait_for(check_collection_green, peer_uris[0], COLLECTION, wait_for_timeout=60)
 
-    upload_proc = search_proc = None
+    upload_proc = None
     stop = threading.Event()
     dl_threads = []
     try:
         upload_proc = bfb_upload(grpc_uris)
-        search_proc = bfb_search(grpc_uris)
 
         src_uri, shard_id, _ = find_shard_peer(peer_uris)
         assert src_uri
@@ -279,6 +270,5 @@ def test_slow_downloads_plus_consensus_write_freezes(tmp_path: pathlib.Path):
         stop.set()
         for t in dl_threads:
             t.join(timeout=15)
-        for p in (upload_proc, search_proc):
-            _kill_proc(p)
+        _kill_proc(upload_proc)
         _cleanup_docker()
