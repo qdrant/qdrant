@@ -29,6 +29,7 @@ pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;
 pub mod sort_utils;
+pub mod spike_profiler;
 pub mod stable_hash;
 pub mod tar_ext;
 pub mod tar_unpack;

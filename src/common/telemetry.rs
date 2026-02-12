@@ -60,6 +60,9 @@ pub struct TelemetryData {
     pub(crate) memory: Option<MemoryTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hardware: Option<HardwareTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub(crate) search_spikes: Option<Vec<common::spike_profiler::SpikeRecord>>,
 }
 
 impl TelemetryCollector {
@@ -145,6 +148,14 @@ impl TelemetryCollector {
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
                 .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
+            search_spikes: {
+                let spikes = common::spike_profiler::get_spike_records();
+                if spikes.is_empty() {
+                    None
+                } else {
+                    Some(spikes)
+                }
+            },
         })
     }
 }
@@ -185,6 +196,7 @@ impl TryFrom<grpc::PeerTelemetry> for TelemetryData {
             requests: None,
             memory: None,
             hardware: None,
+            search_spikes: None,
         })
     }
 }
@@ -201,6 +213,7 @@ impl TryFrom<TelemetryData> for grpc::PeerTelemetry {
             requests: _,
             memory: _,
             hardware: _,
+            search_spikes: _,
         } = telemetry_data;
 
         let app = app.map(grpc::AppTelemetry::from);

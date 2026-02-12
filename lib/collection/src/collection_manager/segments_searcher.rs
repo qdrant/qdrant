@@ -593,6 +593,8 @@ fn search_in_segment(
     segment_query_context: &SegmentQueryContext,
     timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
+    let _spike_guard = common::spike_profiler::start_spiked_scope("search_in_segment");
+
     if segment_query_context.is_stopped() {
         return Err(CollectionError::cancelled(
             "Search in segment was cancelled",
@@ -675,8 +677,12 @@ fn execute_batch_search(
     timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
-    let Some(read_segment) = locked_segment.try_read_for(timeout) else {
-        return Err(CollectionError::timeout(timeout, "batch search"));
+    let read_segment = {
+        let _scope = common::spike_profiler::spiked_scope("segment_lock");
+        let Some(read_segment) = locked_segment.try_read_for(timeout) else {
+            return Err(CollectionError::timeout(timeout, "batch search"));
+        };
+        read_segment
     };
 
     let segment_points = read_segment.available_point_count();
@@ -698,16 +704,19 @@ fn execute_batch_search(
     };
 
     let vectors_batch = &vectors_batch.iter().collect_vec();
-    let res = read_segment.search_batch(
-        search_params.vector_name,
-        vectors_batch,
-        &search_params.with_payload,
-        &search_params.with_vector,
-        search_params.filter,
-        top,
-        search_params.params,
-        segment_query_context,
-    )?;
+    let res = {
+        let _scope = common::spike_profiler::spiked_scope("search_batch");
+        read_segment.search_batch(
+            search_params.vector_name,
+            vectors_batch,
+            &search_params.with_payload,
+            &search_params.with_vector,
+            search_params.filter,
+            top,
+            search_params.params,
+            segment_query_context,
+        )?
+    };
 
     drop(read_segment);
 

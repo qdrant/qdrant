@@ -41,9 +41,11 @@ pub fn fill_query_context(
     timeout: Duration,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Option<QueryContext>> {
+    let _spike_guard = common::spike_profiler::start_spiked_scope("fill_query_context");
     let start = std::time::Instant::now();
 
     let segments: Vec<_> = {
+        let _scope = common::spike_profiler::spiked_scope("holder_lock");
         let Some(holder_guard) = segments.try_read_for(timeout) else {
             return Err(OperationError::timeout(timeout, "fill query context"));
         };
@@ -59,9 +61,12 @@ pub fn fill_query_context(
     for locked_segment in segments.into_iter().stop_if(is_stopped) {
         let segment = locked_segment.get();
         let timeout = timeout.saturating_sub(start.elapsed());
+        let _scope = common::spike_profiler::spiked_scope("segment_lock");
         let Some(segment_guard) = segment.try_read_for(timeout) else {
             return Err(OperationError::timeout(timeout, "fill query context"));
         };
+        drop(_scope);
+        let _scope = common::spike_profiler::spiked_scope("fill_segment");
         segment_guard.fill_query_context(&mut query_context);
     }
     Ok(Some(query_context))
