@@ -112,7 +112,7 @@ fn blocks_for_range_in(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cache::BLOCK_SIZE;
+    use crate::disk_cache::BLOCK_SIZE;
 
     #[test]
     fn test_block_request_calculation() {

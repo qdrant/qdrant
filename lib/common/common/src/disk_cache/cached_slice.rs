@@ -63,11 +63,15 @@ where
     }
 }
 
-fn transmute_zerocopy_vec<T>(mut vec_u8: Vec<u8>) -> Vec<T>
+pub fn transmute_zerocopy_vec<T>(vec_u8: Vec<u8>) -> Vec<T>
 where
     [T]: ToOwned<Owned = Vec<T>>,
     T: Clone + FromBytes + Immutable + KnownLayout,
 {
+    unsafe { unsafe_transmute_zerocopy_vec(vec_u8) }
+}
+
+pub unsafe fn unsafe_transmute_zerocopy_vec<T>(mut vec_u8: Vec<u8>) -> Vec<T> {
     let t_size = mem::size_of::<T>();
 
     // Make sure `capacity` is also an exact multiple of `size_of::<T>()`

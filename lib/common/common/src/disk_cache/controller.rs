@@ -20,7 +20,7 @@ use crate::fs::clear_disk_cache;
 
 /// Number to subtract to the cache capacity, so that we always make sure to
 /// have an empty block to write.
-const CACHE_CAPACITY_SAFETY_MARGIN: u64 = 1;
+const CACHE_CAPACITY_SAFETY_MARGIN: u64 = 2048; // FIXME
 
 /// Caching layer stub.
 ///

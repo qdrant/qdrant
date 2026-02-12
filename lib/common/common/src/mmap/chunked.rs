@@ -27,6 +27,8 @@ pub struct UniversalMmapChunk<T: Copy + Sized + 'static> {
     /// `None` on platforms that do not support multiple memory maps to the same file.
     /// Use [`as_seq_slice`] utility function to access this mmap slice if available.
     _mmap_seq: Option<MmapSliceReadOnly<T>>,
+
+    cached: Option<crate::disk_cache::CachedFile>,
 }
 
 pub enum MmapChunkView<'a, T: Copy + Sized + 'static> {
@@ -70,11 +72,17 @@ impl<T: Copy + Sized + 'static> Deref for MmapChunkView<'_, T> {
 
 impl<T: Copy + Sized + 'static> UniversalMmapChunk<T> {
     pub fn get(&self, range: Range<usize>) -> MmapChunkView<'_, T> {
-        std::hint::black_box(MmapChunkView::Slice(&self.mmap[range]))
+        if let Some(cached) = &self.cached {
+            return get_cached(&cached, range);
+        }
+        MmapChunkView::Slice(&self.mmap[range])
     }
 
     pub fn get_seq(&self, range: Range<usize>) -> MmapChunkView<'_, T> {
-        std::hint::black_box(MmapChunkView::Slice(&self.as_seq_slice()[range]))
+        if let Some(cached) = &self.cached {
+            return get_cached(&cached, range);
+        }
+        MmapChunkView::Slice(&self.as_seq_slice()[range])
     }
 
     pub fn write(&mut self, range: Range<usize>, data: &[T]) {
@@ -163,9 +171,14 @@ pub fn read_mmaps<T: Copy + Sized>(
             None
         };
 
+        let cached = crate::disk_cache::CacheController::global()
+            .map(|controller| controller.open_file(&mmap_file))
+            .transpose()?;
+
         result.push(UniversalMmapChunk {
             mmap,
             _mmap_seq: mmap_seq,
+            cached,
         });
     }
     Ok(result)
@@ -206,5 +219,16 @@ pub fn create_chunk<T: Copy + Sized>(
     Ok(UniversalMmapChunk {
         mmap,
         _mmap_seq: mmap_seq,
+        cached: None,
     })
+}
+
+fn get_cached<'a, T: Copy + Sized + 'static>(
+    file: &'a crate::disk_cache::CachedFile,
+    range: Range<usize>,
+) -> MmapChunkView<'a, T> {
+    let slice = file.get_range(range).into_owned();
+    MmapChunkView::Box(
+        unsafe { crate::disk_cache::unsafe_transmute_zerocopy_vec(slice) }.into_boxed_slice(),
+    )
 }
