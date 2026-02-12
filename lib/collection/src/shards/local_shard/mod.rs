@@ -1317,18 +1317,16 @@ impl LocalShardClocks {
     }
 
     /// Put clock data from the disk into an archive.
-    pub async fn archive_data(from: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+    pub fn archive_data(from: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         let newest_clocks_from = Self::newest_clocks_path(from);
         let oldest_clocks_from = Self::oldest_clocks_path(from);
 
         if newest_clocks_from.exists() {
-            tar.append_file(&newest_clocks_from, Path::new(NEWEST_CLOCKS_PATH))
-                .await?;
+            tar.blocking_append_file(&newest_clocks_from, Path::new(NEWEST_CLOCKS_PATH))?;
         }
 
         if oldest_clocks_from.exists() {
-            tar.append_file(&oldest_clocks_from, Path::new(OLDEST_CLOCKS_PATH))
-                .await?;
+            tar.blocking_append_file(&oldest_clocks_from, Path::new(OLDEST_CLOCKS_PATH))?;
         }
 
         Ok(())

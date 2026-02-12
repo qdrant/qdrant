@@ -20,6 +20,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
 use shard::wal::SerdeWal;
+use tokio::sync::OwnedMutexGuard;
 use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
 
@@ -97,48 +98,41 @@ impl LocalShard {
                     manifest.as_ref(),
                 )?;
 
-                let mut wal_guard = wal.blocking_lock_owned();
+                let wal_guard = wal.blocking_lock_owned();
+
+                LocalShardClocks::archive_data(&shard_path, &tar_internal)?;
+
+                // Staging delay
+                #[cfg(feature = "staging")]
+                {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!("Staging: Delaying snapshotting WAL for {delay_secs}s");
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                        log::debug!("Staging: Delay complete, snapshotting WAL");
+                    }
+                }
 
                 if save_wal {
                     // snapshot all shard's WAL
-                    Self::snapshot_wal(&mut wal_guard, &tar_internal)?;
+                    Self::snapshot_wal(wal_guard, &tar_internal)?;
                     // snapshot applied_seq, it is preferred to save applied_seq later,
                     // as higher applied_seq means more updates will be processed on restore,
                     // which is more safe than having applied_seq too old.
                     Self::snapshot_applied_seq(applied_seq_path, &tar_internal)?;
                 } else {
-                    Self::snapshot_empty_wal(
-                        wal_guard.segment_capacity(),
-                        wal_guard.last_index(),
-                        &temp_path,
-                        &tar_internal,
-                    )?;
+                    Self::snapshot_empty_wal(wal_guard, &temp_path, &tar_internal)?;
                 }
 
-                CollectionResult::Ok(wal_guard)
+                CollectionResult::Ok(())
             });
 
-            // Keep WAL lock while archiving shard clocks
-            let _wal_guard = AbortOnDropHandle::new(handle).await??;
-
-            // Staging delay
-            #[cfg(feature = "staging")]
-            {
-                let delay_secs: f64 = std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY")
-                    .ok()
-                    .and_then(|str| str.parse().ok())
-                    .unwrap_or(0.0);
-
-                if delay_secs > 0.0 {
-                    log::debug!(
-                        "Staging: Delaying snapshotting shard clocks for {delay_secs}s"
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
-                    log::debug!("Staging: Delay complete, snapshotting shard clocks");
-                }
-            }
-
-            LocalShardClocks::archive_data(&shard_path, &tar_c).await?;
+            AbortOnDropHandle::new(handle).await??;
 
             Ok(())
         };
@@ -152,11 +146,16 @@ impl LocalShard {
     ///
     /// This function panics if called within an asynchronous execution context.
     fn snapshot_empty_wal(
-        wal_segment_capacity: usize,
-        wal_last_index: u64,
+        wal_guard: OwnedMutexGuard<SerdeWal<OperationWithClockTag>>,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
     ) -> CollectionResult<()> {
+        let wal_segment_capacity = wal_guard.segment_capacity();
+        let wal_last_index = wal_guard.last_index();
+
+        // Empty snapshot only need indexes to be correct
+        drop(wal_guard);
+
         let temp_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
             CollectionError::service_error(format!(
                 "Can not create temporary directory for WAL: {err}",
@@ -188,11 +187,11 @@ impl LocalShard {
     ///
     /// This function panics if called within an asynchronous execution context.
     fn snapshot_wal(
-        wal: &mut SerdeWal<OperationWithClockTag>,
+        mut wal_guard: OwnedMutexGuard<SerdeWal<OperationWithClockTag>>,
         tar: &tar_ext::BuilderExt,
     ) -> CollectionResult<()> {
-        wal.flush()?;
-        let source_wal_path = wal.path();
+        wal_guard.flush()?;
+        let source_wal_path = wal_guard.path();
 
         let tar = tar.descend(Path::new(WAL_PATH))?;
         for entry in fs::read_dir(source_wal_path).map_err(|err| {
