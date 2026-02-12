@@ -1349,7 +1349,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.random_range(0..3);
+                let keep_clock_for = rng.random_range(0..10);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }
@@ -1399,7 +1399,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.random_range(0..10);
+                let keep_clock_for = rng.random_range(0..3);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }
@@ -1454,7 +1454,13 @@ mod tests {
             });
 
             // Release some kept clocks
-            kept_clocks.retain(|(keep_for, _)| *keep_for > 1);
+            kept_clocks.retain_mut(|(keep_for, _)| {
+                if *keep_for == 0 {
+                    return false;
+                }
+                *keep_for -= 1;
+                true
+            });
         }
 
         for (wal, _) in wals {
