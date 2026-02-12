@@ -99,8 +99,7 @@ fn test_gpu_filterable_hnsw() {
             .unwrap();
     }
 
-    let payload_index_info = segment.payload_index_info.get_mut();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -116,7 +115,7 @@ fn test_gpu_filterable_hnsw() {
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,

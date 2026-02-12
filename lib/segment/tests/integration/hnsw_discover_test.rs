@@ -86,8 +86,7 @@ fn hnsw_discover_precision() {
             .unwrap();
     }
 
-    let payload_index_info = segment.payload_index_info.read();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -207,10 +206,9 @@ fn filtered_hnsw_discover_precision() {
             .unwrap();
     }
 
-    let payload_index_info = segment.payload_index_info.read();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(keyword_key),
             PayloadSchemaType::Keyword,
