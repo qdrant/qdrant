@@ -29,7 +29,6 @@ use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
 use shard::segment_holder::locked::LockedSegmentHolder;
 use uuid::Uuid;
 
-use super::optimizer_profiling as prof;
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::config::CollectionParams;
@@ -720,7 +719,6 @@ pub trait SegmentOptimizer {
         let (proxy_ids, cow_segment_id_opt, counter_handler): (Vec<_>, _, _) = {
             // Exclusive lock for the segments operations.
             let mut segment_holder_write = RwLockUpgradableReadGuard::upgrade(segment_holder_read);
-            prof::on_proxy_swap_write_lock_acquired();
             let mut proxy_ids = Vec::new();
             for (proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
                 // During optimization, we expect that logical point data in the wrapped segment is
@@ -740,15 +738,7 @@ pub trait SegmentOptimizer {
                 // The probability is small, though,
                 // so we can afford this operation under the full collection write lock
                 if let Some(extra_cow_segment) = &extra_cow_segment_opt {
-                    let field_count = proxy
-                        .wrapped_segment
-                        .get()
-                        .read()
-                        .get_indexed_fields()
-                        .len();
-                    prof::on_proxy_swap_replicate_start(field_count);
                     proxy.replicate_field_indexes(0, &hw_counter, extra_cow_segment)?; // Slow only in case the index is change in the gap between two calls
-                    prof::on_proxy_swap_replicate_end();
                 }
 
                 let locked_proxy = LockedSegment::from(proxy);
@@ -765,7 +755,6 @@ pub trait SegmentOptimizer {
             // We'll decrease it after inserting the optimized segment.
             let counter_handler = segment_holder_write.running_optimizations.inc();
 
-            prof::on_proxy_swap_write_lock_released();
             (proxy_ids, cow_segment_id_opt, counter_handler)
         };
 
@@ -938,7 +927,6 @@ pub trait SegmentOptimizer {
     ) -> CollectionResult<usize> {
         // This block locks all write operations with collection. It should be fast.
         let upgradable_segment_holder = segment_holder.upgradable_read();
-        prof::on_finish_upgradable_acquired();
 
         // This mutex prevents update operations, which could create inconsistency during transition.
         let update_guard = segment_holder.acquire_updates_lock();
@@ -953,14 +941,12 @@ pub trait SegmentOptimizer {
             // Applied optimizations are not removed from `proxy_index_changes`.
             match change {
                 ProxyIndexChange::Create(schema, version) => {
-                    prof::on_create_field_index_start(field_name);
                     optimized_segment.create_field_index(
                         *version,
                         field_name,
                         Some(schema),
                         hw_counter,
                     )?;
-                    prof::on_create_field_index_end(field_name);
                 }
                 ProxyIndexChange::Delete(version) => {
                     optimized_segment.delete_field_index(*version, field_name)?;
@@ -980,9 +966,6 @@ pub trait SegmentOptimizer {
             .iter()
             .filter(|&(point_id, _version)| !already_remove_points.contains_key(point_id));
 
-        let points_diff: Vec<_> = points_diff.collect();
-        prof::on_delete_points_start(points_diff.len());
-
         for (&point_id, &versions) in points_diff {
             // In this specific case we're sure logical point data in the wrapped segment is not
             // changed at all. We ensure this with an assertion at time of proxying, which makes
@@ -998,14 +981,12 @@ pub trait SegmentOptimizer {
                 .delete_point(versions.operation_version, point_id, hw_counter)
                 .unwrap();
         }
-        prof::on_delete_points_end();
 
         // Replace proxy segments with new optimized segment
         let point_count = optimized_segment.available_point_count();
 
         let mut writable_segment_holder =
             RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
-        prof::on_finish_write_lock_acquired();
 
         let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
         debug_assert_eq!(
@@ -1023,7 +1004,6 @@ pub trait SegmentOptimizer {
         drop(writable_segment_holder);
         // Allow updates again
         drop(update_guard);
-        prof::on_finish_write_lock_released();
 
         // Drop all pointers to proxies, so we can de-arc them
         drop(locked_proxies);
