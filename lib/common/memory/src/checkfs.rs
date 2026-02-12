@@ -72,7 +72,10 @@ impl FsType {
         }
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(all(
+        fs_type_check_supported,
+        not(any(target_os = "linux", target_os = "android"))
+    ))]
     fn from_name(name: &str) -> Self {
         // Names reference is taken from
         // https://github.com/happyfish100/libfastcommon/blob/7f1a85b025675671905447da13b7727323eb0c28/src/system_info.c#L203
