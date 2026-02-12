@@ -53,11 +53,11 @@ impl TransferStage {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Proxifying => "proxifying",
-            Self::Plunging => "plunging",
+            Self::Plunging => "applying queued updates",
             Self::CreatingSnapshot => "creating snapshot",
             Self::Transferring => "transferring",
             Self::Recovering => "recovering",
-            Self::FlushingQueue => "flushing queue",
+            Self::FlushingQueue => "syncing queued updates",
             Self::WaitingConsensus => "waiting consensus",
             Self::Finalizing => "finalizing",
         }
