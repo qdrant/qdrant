@@ -121,14 +121,13 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let payload_index_info = segment.payload_index_info.read();
     let hnsw_index_dense = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),
             id_tracker: segment.id_tracker.clone(),
             vector_storage: vector_storage.clone(),
             quantized_vectors: quantized_vectors.clone(),
-            payload_index: payload_index_info.payload_index.clone(),
+            payload_index: segment.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {
@@ -151,7 +150,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         id_tracker: segment.id_tracker.clone(),
         vector_storage: multi_storage,
         quantized_vectors: quantized_vectors.clone(),
-        payload_index: payload_index_info.payload_index.clone(),
+        payload_index: segment.payload_index.clone(),
         hnsw_config,
     })
     .unwrap();

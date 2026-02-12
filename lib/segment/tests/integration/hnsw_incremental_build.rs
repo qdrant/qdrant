@@ -138,7 +138,6 @@ fn build_hnsw_index<R: Rng + ?Sized>(
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
-    let payload_index_info = segment.payload_index_info.read();
     HNSWIndex::build(
         HnswIndexOpenArgs {
             path,
@@ -147,7 +146,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
                 .vector_storage
                 .clone(),
             quantized_vectors: Default::default(),
-            payload_index: payload_index_info.payload_index.clone(),
+            payload_index: segment.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {

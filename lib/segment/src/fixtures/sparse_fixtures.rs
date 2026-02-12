@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use parking_lot::RwLock;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
@@ -49,7 +50,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         true,
         true,
     )?;
-    let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
+    let wrapped_payload_index = Arc::new(RwLock::new(payload_index));
 
     let vector_storage = Arc::new(AtomicRefCell::new(VectorStorageEnum::SparseMmap(
         MmapSparseVectorStorage::open_or_create(storage_dir)?,

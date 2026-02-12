@@ -56,14 +56,6 @@ impl StorageVersion for SegmentVersion {
     }
 }
 
-// Values that can be modified at non-appendable segment: chaning payload index changes versions. This structure is
-// intended to be kept under read-write lock (without Arc) for segment's interior mutability.
-#[derive(Debug)]
-pub struct UpdatablePayloadData {
-    pub version_tracker: Arc<AtomicRefCell<VersionTracker>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-}
-
 /// Segment - an object which manages an independent group of points.
 ///
 /// - Provides storage, indexing and managing operations for points (vectors + payload)
@@ -85,11 +77,11 @@ pub struct Segment {
     pub is_alive_flush_lock: IsAliveLock,
     /// Path to the segment directory
     pub segment_path: PathBuf,
-    pub version_tracker: Arc<AtomicRefCell<VersionTracker>>,
+    pub version_tracker: Arc<RwLock<VersionTracker>>,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
-    pub payload_index_info: RwLock<UpdatablePayloadData>,
+    pub payload_index: Arc<RwLock<StructPayloadIndex>>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
@@ -125,13 +117,7 @@ impl Drop for Segment {
             log::error!("Failed to clear cache of payload_storage: {e}");
         }
 
-        if let Err(e) = self
-            .payload_index_info
-            .get_mut()
-            .payload_index
-            .borrow()
-            .clear_cache()
-        {
+        if let Err(e) = self.payload_index.read().clear_cache() {
             log::error!("Failed to clear cache of payload_index: {e}");
         }
 

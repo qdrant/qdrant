@@ -130,8 +130,7 @@ fn test_batch_and_single_request_equivalency() {
 
     let stopped = AtomicBool::new(false);
 
-    let payload_index_info = segment.payload_index_info.read();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let m = 8;
     let ef_construct = 100;

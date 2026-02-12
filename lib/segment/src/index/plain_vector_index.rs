@@ -4,7 +4,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use super::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;
@@ -30,7 +30,7 @@ pub struct PlainVectorIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    payload_index: Arc<RwLock<StructPayloadIndex>>,
     filtered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_searches_telemetry: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -40,7 +40,7 @@ impl PlainVectorIndex {
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+        payload_index: Arc<RwLock<StructPayloadIndex>>,
     ) -> PlainVectorIndex {
         PlainVectorIndex {
             id_tracker,
@@ -69,7 +69,7 @@ impl PlainVectorIndex {
         let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
         if let Some(payload_filter) = filter {
-            let payload_index = self.payload_index.borrow();
+            let payload_index = self.payload_index.read();
             let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter);
             let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
             scan_size <= indexing_threshold_bytes
@@ -135,8 +135,10 @@ impl VectorIndex for PlainVectorIndex {
 
         let mut search_results = match filter {
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
-                let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
+                let filtered_ids_vec =
+                    self.payload_index
+                        .read()
+                        .query_points(filter, &hw_counter, &is_stopped);
                 batch_searcher.peek_top_iter(&mut filtered_ids_vec.iter().copied(), &is_stopped)?
             }
             None => batch_searcher.peek_top_all(&is_stopped)?,

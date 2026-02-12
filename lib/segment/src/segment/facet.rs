@@ -21,8 +21,7 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let payload_index_info = self.payload_index_info.read();
-        let payload_index = payload_index_info.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         // Shortcut if this segment has no points, prevent division by zero later
         let available_points = self.available_point_count();
@@ -122,8 +121,7 @@ impl Segment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
-        let payload_index_info = self.payload_index_info.read();
-        let payload_index = payload_index_info.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         let facet_index = payload_index.get_facet_index(key)?;
 

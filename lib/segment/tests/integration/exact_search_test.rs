@@ -72,8 +72,7 @@ fn exact_search_test() {
     }
     // let opnum = num_vectors + 1;
 
-    let payload_index_info = segment.payload_index_info.get_mut();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -86,14 +85,14 @@ fn exact_search_test() {
     };
 
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,
             &hw_counter,
         )
         .unwrap();
-    let borrowed_payload_index = payload_index_ptr.borrow();
+    let borrowed_payload_index = payload_index_ptr.read();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .collect_vec();
@@ -106,7 +105,7 @@ fn exact_search_test() {
 
     let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
     for block in &blocks {
-        let px = payload_index_ptr.borrow();
+        let px = payload_index_ptr.read();
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
         let points = px.query_points(&filter, &hw_counter, &is_stopped);
         for point in points {

@@ -10,6 +10,7 @@ use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
+use parking_lot::RwLock;
 use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
@@ -46,7 +47,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    payload_index: Arc<RwLock<StructPayloadIndex>>,
     path: PathBuf,
     inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
@@ -69,7 +70,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         &self.vector_storage
     }
 
-    pub fn payload_index(&self) -> &Arc<AtomicRefCell<StructPayloadIndex>> {
+    pub fn payload_index(&self) -> &Arc<RwLock<StructPayloadIndex>> {
         &self.payload_index
     }
 
@@ -82,7 +83,7 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub config: SparseIndexConfig,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub payload_index: Arc<RwLock<StructPayloadIndex>>,
     pub path: &'a Path,
     pub stopped: &'a AtomicBool,
     pub tick_progress: F,
@@ -272,7 +273,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> CardinalityEstimation {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
+        let payload_index = self.payload_index.read();
         let available_vector_count = vector_storage.available_vector_count();
         let query_point_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
         adjust_to_available_vectors(
@@ -311,7 +312,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let hw_counter = vector_query_context.hardware_counter();
         let mut results = match filter {
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
+                let payload_index = self.payload_index.read();
                 let mut filtered_points = match prefiltered_points {
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
@@ -339,7 +340,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -426,7 +427,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         match filter {
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
+                let payload_index = self.payload_index.read();
                 let filter_context = payload_index.filter_context(filter, &hw_counter);
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)

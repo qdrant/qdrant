@@ -123,8 +123,6 @@ fn hnsw_quantized_search_test(
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = {
-        let payload_index_info = segment.payload_index_info.read();
-
         HNSWIndex::build(
             HnswIndexOpenArgs {
                 path: hnsw_dir.path(),
@@ -135,7 +133,7 @@ fn hnsw_quantized_search_test(
                 quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
                     .quantized_vectors
                     .clone(),
-                payload_index: payload_index_info.payload_index.clone(),
+                payload_index: segment.payload_index.clone(),
                 hnsw_config,
             },
             VectorIndexBuildArgs {

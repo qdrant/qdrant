@@ -45,8 +45,7 @@ impl Segment {
             })
             .collect::<Vec<_>>();
 
-        let payload_index_info = self.payload_index_info.read();
-        let payload_index = payload_index_info.payload_index.borrow();
+        let payload_index = self.payload_index.read();
 
         let scorer = payload_index.formula_scorer(formula, &prefetches_scores, hw_counter);
 

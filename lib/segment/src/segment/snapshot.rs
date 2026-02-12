@@ -131,7 +131,7 @@ impl Segment {
                 .flat_map(|(vector_name, vector_data)| {
                     let version = self
                         .version_tracker
-                        .borrow()
+                        .read()
                         .get_vector(vector_name)
                         .or(*self.version.lock());
 
@@ -146,7 +146,7 @@ impl Segment {
         let payload_storage_files = {
             let version = self
                 .version_tracker
-                .borrow()
+                .read()
                 .get_payload()
                 .or(*self.version.lock());
 
@@ -162,23 +162,21 @@ impl Segment {
             (file, FileVersion::from(version))
         });
 
-        let payload_index_info = self.payload_index_info.read();
+        let payload_index_files =
+            self.payload_index
+                .read()
+                .immutable_files()
+                .into_iter()
+                .map(|(field, file)| {
+                    let version = self
+                        .version_tracker
+                        .read()
+                        .get_payload_index_schema(&field)
+                        .or(self.initial_version)
+                        .unwrap_or(0);
 
-        let payload_index_files = payload_index_info
-            .payload_index
-            .borrow()
-            .immutable_files()
-            .into_iter()
-            .map(|(field, file)| {
-                let version = payload_index_info
-                    .version_tracker
-                    .borrow()
-                    .get_payload_index_schema(&field)
-                    .or(self.initial_version)
-                    .unwrap_or(0);
-
-                (file, FileVersion::from(version))
-            });
+                    (file, FileVersion::from(version))
+                });
 
         let mut file_versions = HashMap::with_capacity(files.len());
 
@@ -222,13 +220,7 @@ impl Segment {
             }
         }
 
-        files.extend(
-            self.payload_index_info
-                .read()
-                .payload_index
-                .borrow()
-                .files(),
-        );
+        files.extend(self.payload_index.read().files());
         files.extend(self.payload_storage.borrow().files());
 
         files
@@ -249,10 +241,8 @@ impl Segment {
         }
 
         files.extend(
-            self.payload_index_info
+            self.payload_index
                 .read()
-                .payload_index
-                .borrow()
                 .immutable_files()
                 .into_iter()
                 .map(|(_, path)| path),
@@ -327,13 +317,7 @@ pub fn snapshot_files(
         }
     }
 
-    for file in segment
-        .payload_index_info
-        .read()
-        .payload_index
-        .borrow()
-        .files()
-    {
+    for file in segment.payload_index.read().files() {
         let stripped_path = strip_prefix(&file, &segment.segment_path)?;
 
         if include_if(stripped_path) {

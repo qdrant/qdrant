@@ -448,9 +448,8 @@ pub trait SegmentOptimizer {
 
         let mut defragmentation_keys = HashSet::new();
         for segment in &segments {
-            let payload_index_info = &segment.read().payload_index_info;
-            let payload_index = &payload_index_info.read().payload_index;
-            let payload_index = payload_index.borrow();
+            let segment_read = segment.read();
+            let payload_index = segment_read.payload_index.read();
 
             let keys = payload_index
                 .config()

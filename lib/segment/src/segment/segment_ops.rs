@@ -53,7 +53,7 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, vector, hw_counter)?;
             self.version_tracker
-                .borrow_mut()
+                .write()
                 .set_vector(vector_name, Some(op_num));
         }
         Ok(())
@@ -87,7 +87,7 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
             self.version_tracker
-                .borrow_mut()
+                .write()
                 .set_vector(&vector_name, Some(op_num));
         }
         Ok(())
@@ -113,7 +113,7 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(new_index, vector_opt, hw_counter)?;
             self.version_tracker
-                .borrow_mut()
+                .write()
                 .set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
@@ -313,10 +313,8 @@ impl Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Mark point as deleted, drop mapping
-        self.payload_index_info
-            .get_mut()
-            .payload_index
-            .borrow_mut()
+        self.payload_index
+            .write()
             .clear_payload(internal_id, hw_counter)?;
 
         self.id_tracker.borrow_mut().drop_internal(internal_id)?;
@@ -461,10 +459,8 @@ impl Segment {
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload_index_info
+        self.payload_index
             .read()
-            .payload_index
-            .borrow()
             .get_payload(point_offset, hw_counter)
     }
 
@@ -533,12 +529,7 @@ impl Segment {
         &mut self,
         desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> OperationResult<()> {
-        let schema_applied = self
-            .payload_index_info
-            .get_mut()
-            .payload_index
-            .borrow()
-            .indexed_fields();
+        let schema_applied = self.payload_index.read().indexed_fields();
         let schema_config = desired_schemas;
 
         // Create or update payload indices if they don't match configuration

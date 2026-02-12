@@ -92,8 +92,7 @@ fn _test_filterable_hnsw(
             .unwrap();
     }
 
-    let payload_index_info = segment.payload_index_info.read();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -109,14 +108,14 @@ fn _test_filterable_hnsw(
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,
             &hw_counter,
         )
         .unwrap();
-    let borrowed_payload_index = payload_index_ptr.borrow();
+    let borrowed_payload_index = payload_index_ptr.read();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .collect_vec();
@@ -128,7 +127,7 @@ fn _test_filterable_hnsw(
     }
 
     let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
-    let px = payload_index_ptr.borrow();
+    let px = payload_index_ptr.read();
     for block in &blocks {
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
         let points = px.query_points(&filter, &hw_counter, &stopped);
@@ -277,8 +276,7 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
             .unwrap();
     }
 
-    let payload_index_info = segment.payload_index_info.read();
-    let payload_index_ptr = payload_index_info.payload_index.clone();
+    let payload_index_ptr = segment.payload_index.clone();
 
     let hnsw_config = HnswConfig {
         m,
@@ -294,14 +292,14 @@ fn test_hnsw_search_top_zero(#[case] num_vectors: u64, #[case] full_scan_thresho
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,
             &hw_counter,
         )
         .unwrap();
-    let borrowed_payload_index = payload_index_ptr.borrow();
+    let borrowed_payload_index = payload_index_ptr.read();
     let blocks = borrowed_payload_index
         .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .collect_vec();

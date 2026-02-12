@@ -89,7 +89,7 @@ fn sparse_vector_index_search_benchmark_impl(
     let hw_counter = HardwareCounterCell::new();
 
     // all points have the same payload
-    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().write();
     for idx in 0..NUM_VECTORS {
         payload_index
             .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
@@ -178,7 +178,7 @@ fn sparse_vector_index_search_benchmark_impl(
         });
     }
 
-    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().write();
 
     // create payload field index
     payload_index
