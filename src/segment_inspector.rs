@@ -3,9 +3,10 @@ use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
 use common::counter::hardware_counter::HardwareCounterCell;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::NonAppendableSegmentEntry;
 use segment::segment_constructor::load_segment;
 use segment::types::PointIdType;
+use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -42,9 +43,12 @@ fn main() {
 
         // Open segment
 
-        let segment = load_segment(path, &AtomicBool::new(false))
-            .unwrap()
-            .unwrap();
+        let segment_uuid = path
+            .file_name()
+            .and_then(|s| Uuid::try_parse(s.to_str()?).ok())
+            .unwrap_or(Uuid::nil());
+
+        let segment = load_segment(path, segment_uuid, &AtomicBool::new(false)).unwrap();
 
         eprintln!(
             "path = {:#?}, size-points = {}",

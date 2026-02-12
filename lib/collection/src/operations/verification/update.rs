@@ -71,7 +71,7 @@ impl StrictModeVerification for SetPayload {
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
         if let Some(payload_size_limit_bytes) = strict_mode_config.max_collection_payload_size_bytes
-            && let Some(local_stats) = collection.estimated_collection_stats().await
+            && let Some(local_stats) = collection.estimated_collection_stats().await?
         {
             check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
         }
@@ -164,11 +164,13 @@ impl StrictModeVerification for PointInsertOperations {
                 batch: _,
                 shard_key: _,
                 update_filter: _,
+                update_mode: _,
             }) => None,
             PointInsertOperations::PointsList(PointsList {
                 points: _,
                 shard_key: _,
                 update_filter: _,
+                update_mode: _,
             }) => None,
         }
     }
@@ -250,7 +252,7 @@ async fn check_collection_size_limit(
         return Ok(());
     }
 
-    let Some(stats) = collection.estimated_collection_stats().await else {
+    let Some(stats) = collection.estimated_collection_stats().await? else {
         return Ok(());
     };
 

@@ -10,7 +10,7 @@ use segment::types::*;
 use super::quantization::*;
 use crate::repr::*;
 
-#[pyclass(name = "VectorDataConfig")]
+#[pyclass(name = "VectorDataConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyVectorDataConfig(pub VectorDataConfig);
@@ -35,12 +35,10 @@ impl PyVectorDataConfig {
 #[pymethods]
 impl PyVectorDataConfig {
     #[new]
-    #[pyo3(signature = (size, distance, storage_type, index, quantization_config=None, multivector_config=None, datatype=None))]
+    #[pyo3(signature = (size, distance, quantization_config=None, multivector_config=None, datatype=None))]
     pub fn new(
         size: usize,
         distance: PyDistance,
-        storage_type: PyVectorStorageType,
-        index: PyIndexes,
         quantization_config: Option<PyQuantizationConfig>,
         multivector_config: Option<PyMultiVectorConfig>,
         datatype: Option<PyVectorStorageDatatype>,
@@ -48,8 +46,8 @@ impl PyVectorDataConfig {
         Self(VectorDataConfig {
             size,
             distance: Distance::from(distance),
-            storage_type: VectorStorageType::from(storage_type),
-            index: Indexes::from(index),
+            storage_type: VectorStorageType::InRamChunkedMmap,
+            index: Indexes::Plain {},
             quantization_config: quantization_config.map(QuantizationConfig::from),
             multivector_config: multivector_config.map(MultiVectorConfig::from),
             datatype: datatype.map(VectorStorageDatatype::from),
@@ -121,7 +119,7 @@ impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
     }
 }
 
-#[pyclass(name = "Distance")]
+#[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDistance {
     Cosine,
@@ -172,13 +170,14 @@ impl From<PyDistance> for Distance {
     }
 }
 
-#[pyclass(name = "VectorStorageType")]
+#[pyclass(name = "VectorStorageType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageType {
     Memory,
     Mmap,
     ChunkedMmap,
     InRamChunkedMmap,
+    InRamMmap,
 }
 
 #[pymethods]
@@ -195,6 +194,7 @@ impl Repr for PyVectorStorageType {
             Self::Mmap => "Mmap",
             Self::ChunkedMmap => "ChunkedMmap",
             Self::InRamChunkedMmap => "InRamChunkedMmap",
+            Self::InRamMmap => "InRamMmap",
         };
 
         f.simple_enum::<Self>(repr)
@@ -208,6 +208,7 @@ impl From<VectorStorageType> for PyVectorStorageType {
             VectorStorageType::Mmap => PyVectorStorageType::Mmap,
             VectorStorageType::ChunkedMmap => PyVectorStorageType::ChunkedMmap,
             VectorStorageType::InRamChunkedMmap => PyVectorStorageType::InRamChunkedMmap,
+            VectorStorageType::InRamMmap => PyVectorStorageType::InRamMmap,
         }
     }
 }
@@ -219,6 +220,7 @@ impl From<PyVectorStorageType> for VectorStorageType {
             PyVectorStorageType::Mmap => VectorStorageType::Mmap,
             PyVectorStorageType::ChunkedMmap => VectorStorageType::ChunkedMmap,
             PyVectorStorageType::InRamChunkedMmap => VectorStorageType::InRamChunkedMmap,
+            PyVectorStorageType::InRamMmap => VectorStorageType::InRamMmap,
         }
     }
 }
@@ -275,7 +277,7 @@ impl Repr for PyIndexes {
     }
 }
 
-#[pyclass(name = "PlainIndexConfig")]
+#[pyclass(name = "PlainIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Default, Into)]
 pub struct PyPlainIndexConfig;
 
@@ -292,7 +294,7 @@ impl PyPlainIndexConfig {
     }
 }
 
-#[pyclass(name = "HnswIndexConfig")]
+#[pyclass(name = "HnswIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyHnswIndexConfig(HnswConfig);
@@ -371,7 +373,7 @@ impl PyHnswIndexConfig {
     }
 }
 
-#[pyclass(name = "MultiVectorConfig")]
+#[pyclass(name = "MultiVectorConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMultiVectorConfig(MultiVectorConfig);
@@ -403,7 +405,7 @@ impl PyMultiVectorConfig {
     }
 }
 
-#[pyclass(name = "MultiVectorComparator")]
+#[pyclass(name = "MultiVectorComparator", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyMultiVectorComparator {
     MaxSim,
@@ -442,7 +444,7 @@ impl From<PyMultiVectorComparator> for MultiVectorComparator {
     }
 }
 
-#[pyclass(name = "VectorStorageDatatype")]
+#[pyclass(name = "VectorStorageDatatype", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyVectorStorageDatatype {
     Float32,

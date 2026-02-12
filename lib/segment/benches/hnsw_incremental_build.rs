@@ -28,7 +28,7 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorElementType, VectorInternal, only_default_vector,
 };
-use segment::entry::SegmentEntry as _;
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::id_tracker::IdTrackerSS;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
@@ -50,6 +50,9 @@ use zerocopy::IntoBytes;
 /// To speed up the benchmark across runs, some operations that not related
 /// to incremental HNSW are cached.
 ///
+/// To benchmark only the regular (aka non-incremental) HNSW building,
+/// run it with `--iterations 0` and without `--cache`.
+///
 /// # Plan
 ///
 /// 1. Non-incrementally build initial segment of size `init-vectors`.
@@ -68,8 +71,11 @@ struct Args {
     #[clap(long)]
     bench: bool,
 
-    /// Path to a dataset in numpy format.
+    /// Path to a dataset in numpy format, to benchmark on real data.
     /// Incompatible with `--dimensions`.
+    ///
+    /// See https://github.com/qdrant/qdrant/pull/6615#issuecomment-3018646477
+    /// for scripts to prepare datasets.
     #[clap(long)]
     dataset: Option<PathBuf>,
 
@@ -149,6 +155,7 @@ fn main() {
     let cache_path = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(env!("CARGO_PKG_NAME"))
         .join(env!("CARGO_CRATE_NAME"));
+    fs::create_dir_all(&cache_path).unwrap();
 
     // Load the dataset or generate random vectors.
     let (dataset_mmap, dataset);

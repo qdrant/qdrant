@@ -9,7 +9,7 @@ use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
 use crate::search::CoreSearchRequest;
-use crate::segment_holder::LockedSegmentHolder;
+use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn init_query_context(
     batch_request: &[CoreSearchRequest],
@@ -42,16 +42,21 @@ pub fn fill_query_context(
     is_stopped: &AtomicBool,
 ) -> OperationResult<Option<QueryContext>> {
     let start = std::time::Instant::now();
-    let Some(segments) = segments.try_read_for(timeout) else {
-        return Err(OperationError::timeout(timeout, "fill query context"));
+
+    let segments: Vec<_> = {
+        let Some(holder_guard) = segments.try_read_for(timeout) else {
+            return Err(OperationError::timeout(timeout, "fill query context"));
+        };
+        holder_guard
+            .non_appendable_then_appendable_segments()
+            .collect()
     };
 
     if segments.is_empty() {
         return Ok(None);
     }
 
-    let segments = segments.non_appendable_then_appendable_segments();
-    for locked_segment in segments.stop_if(is_stopped) {
+    for locked_segment in segments.into_iter().stop_if(is_stopped) {
         let segment = locked_segment.get();
         let timeout = timeout.saturating_sub(start.elapsed());
         let Some(segment_guard) = segment.try_read_for(timeout) else {

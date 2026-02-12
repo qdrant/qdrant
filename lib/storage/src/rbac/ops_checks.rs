@@ -7,16 +7,18 @@ use collection::lookup::WithLookup;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::types::{
     CoreSearchRequest, CountRequestInternal, DiscoverRequestInternal, PointRequestInternal,
-    RecommendRequestInternal, ScrollRequestInternal,
+    RecommendRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest,
 };
 use segment::data_types::facets::FacetParams;
+use shard::scroll::ScrollRequestInternal;
 
 use super::{Access, AccessRequirements, CollectionAccessList, CollectionPass};
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::errors::{StorageError, StorageResult};
+use crate::rbac::auditable_operation::AuditableOperation;
 
 impl Access {
     #[allow(private_bounds)]
@@ -298,11 +300,51 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 manage: true,
                 extras: true,
             },
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(_) => AccessRequirements {
+                write: true,
+                manage: false,
+                extras: false,
+            },
         }
     }
 
     fn check_access(&self, _access: &CollectionAccessList) -> Result<(), StorageError> {
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auth wrappers – placed here so they can reference the private
+// `CheckableCollectionOperation` trait.
+// ---------------------------------------------------------------------------
+
+use super::auth::Auth;
+
+impl Auth {
+    /// Check point-level access and emit an audit log entry.
+    #[allow(private_bounds)]
+    pub(crate) fn check_point_op<'a>(
+        &self,
+        collection_name: &'a str,
+        op: &impl CheckableCollectionOperation,
+        method: &str,
+    ) -> Result<CollectionPass<'a>, StorageError> {
+        let result = self.unlogged_access().check_point_op(collection_name, op);
+        self.emit_audit(method, Some(collection_name), &result);
+        result
+    }
+
+    /// Check collection meta-operation access and emit an audit log entry.
+    pub(crate) fn check_collection_meta_operation(
+        &self,
+        operation: &CollectionMetaOperations,
+    ) -> Result<(), StorageError> {
+        let result = self
+            .unlogged_access()
+            .check_collection_meta_operation(operation);
+        self.emit_audit(operation.operation_name(), None, &result);
+        result
     }
 }
 
@@ -646,6 +688,14 @@ mod tests_ops {
             CollectionUpdateOperationsDiscriminants::FieldIndexOperation => {
                 check_collection_update_operations_field_index()
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperationsDiscriminants::StagingOperation => {
+                use shard::operations::staging::{StagingOperations, TestDelayOperation};
+                let op = CollectionUpdateOperations::StagingOperation(StagingOperations::Delay(
+                    TestDelayOperation::new(1.0),
+                ));
+                assert_requires_whole_write_access(&op);
+            }
         });
     }
 
@@ -692,6 +742,7 @@ mod tests_ops {
                     PointOperations::UpsertPointsConditional(ConditionalInsertOperationInternal {
                         points_op: inner,
                         condition: filter,
+                        update_mode: None,
                     }),
                 );
 
@@ -722,14 +773,6 @@ mod tests_ops {
                         to_id: None,
                         points: Vec::new(),
                     },
-                ));
-                assert_requires_whole_write_access(&op);
-            }
-            #[cfg(feature = "staging")]
-            PointOperationsDiscriminants::TestDelay => {
-                use shard::operations::staging::TestDelayOperation;
-                let op = CollectionUpdateOperations::PointOperation(PointOperations::TestDelay(
-                    TestDelayOperation::new(1.0),
                 ));
                 assert_requires_whole_write_access(&op);
             }

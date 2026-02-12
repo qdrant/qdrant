@@ -28,6 +28,12 @@ pub struct KeywordIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 // Integer
@@ -62,6 +68,12 @@ pub struct IntegerIndexParams {
     /// Default is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 impl Validate for IntegerIndexParams {
@@ -72,6 +84,7 @@ impl Validate for IntegerIndexParams {
             range,
             is_principal: _,
             on_disk: _,
+            enable_hnsw: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }
@@ -113,6 +126,12 @@ pub struct UuidIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 // Float
@@ -137,6 +156,12 @@ pub struct FloatIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 // Geo
@@ -157,6 +182,12 @@ pub struct GeoIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 // Text
@@ -218,6 +249,12 @@ pub struct TextIndexParams {
     /// Algorithm for stemming. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stemmer: Option<StemmingAlgorithm>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -356,7 +393,7 @@ impl StopwordsInterface {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, JsonSchema, Clone, PartialEq, PartialOrd, Ord, Hash, Eq,
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
@@ -469,6 +506,12 @@ pub struct BoolIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 // Datetime
@@ -493,6 +536,12 @@ pub struct DatetimeIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_hnsw: Option<bool>,
 }
 
 #[cfg(test)]

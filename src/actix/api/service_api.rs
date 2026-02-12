@@ -7,17 +7,20 @@ use actix_web::http::header::ContentType;
 use actix_web::rt::time::Instant;
 use actix_web::web::Data;
 use actix_web::{HttpResponse, Responder, get, post, web};
-use actix_web_validator::Query;
+use actix_web_validator::{Path, Query};
+use collection::operations::verification::new_unchecked_verification_pass;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 use validator::Validate;
 
-use crate::actix::auth::ActixAccess;
+use super::CollectionPath;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
 use crate::common::metrics::MetricsData;
@@ -44,7 +47,7 @@ impl TelemetryParam {
 fn telemetry(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
         let anonymize = params.anonymize.unwrap_or(false);
@@ -59,7 +62,7 @@ fn telemetry(
         let telemetry_data = telemetry_collector
             .lock()
             .await
-            .prepare_data(&access, detail, params.timeout())
+            .prepare_data(&auth, detail, None, params.timeout())
             .await?;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
@@ -88,9 +91,12 @@ async fn metrics(
     telemetry_collector: Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
     config: Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> HttpResponse {
-    if let Err(err) = access.check_global_access(AccessRequirements::new()) {
+    if let Err(err) = auth
+        .unlogged_access() // Do not log access to metrics, as it is too noizy
+        .check_global_access(AccessRequirements::new())
+    {
         return process_response_error(err, Instant::now(), None);
     }
 
@@ -99,11 +105,12 @@ async fn metrics(
         .lock()
         .await
         .prepare_data(
-            &access,
+            &auth,
             TelemetryDetail {
                 level: DetailsLevel::Level4,
                 histograms: true,
             },
+            None,
             params.timeout(),
         )
         .await;
@@ -128,9 +135,9 @@ async fn metrics(
 }
 
 #[get("/stacktrace")]
-fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
+fn get_stacktrace(ActixAuth(auth): ActixAuth) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "get_stacktrace")?;
         Ok(get_stack_trace())
     })
 }
@@ -172,13 +179,13 @@ fn kubernetes_healthz() -> impl Responder {
 
 #[get("/logger")]
 async fn get_logger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     handle: web::Data<tracing::LoggerHandle>,
 ) -> impl Responder {
     let timing = Instant::now();
 
     let future = async {
-        let _ = access.check_global_access(AccessRequirements::new())?;
+        let _ = auth.check_global_access(AccessRequirements::new(), "get_logger_config")?;
         let config = handle.get_config().await;
         Ok(config)
     };
@@ -188,14 +195,15 @@ async fn get_logger_config(
 
 #[post("/logger")]
 async fn update_logger_config(
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
     handle: web::Data<tracing::LoggerHandle>,
     mut config: web::Json<tracing::LoggerConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
 
     let future = async {
-        let _ = access.check_global_access(AccessRequirements::new().manage())?;
+        let _ =
+            auth.check_global_access(AccessRequirements::new().manage(), "update_logger_config")?;
 
         // Log file can only be set in Qdrant config file
         config.on_disk.log_file = None;
@@ -211,6 +219,39 @@ async fn update_logger_config(
     helpers::process_response(future.await, timing, None)
 }
 
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct TruncateUnappliedWalParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<bool>,
+}
+
+#[post("/collections/{name}/truncate_unapplied_wal")]
+async fn truncate_unapplied_wal(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    params: Query<TruncateUnappliedWalParams>,
+    ActixAuth(auth): ActixAuth,
+) -> impl Responder {
+    let future = async move {
+        let collection_pass = auth
+            .check_global_access(AccessRequirements::new().manage(), "truncate_unapplied_wal")?
+            .issue_pass(&collection.name)
+            .into_static();
+
+        let pass = new_unchecked_verification_pass();
+        let collection = dispatcher
+            .toc(&auth, &pass)
+            .get_collection(&collection_pass)
+            .await?;
+
+        collection
+            .truncate_unapplied_wal()
+            .await
+            .map_err(StorageError::from)
+    };
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
+}
+
 // Configure services
 pub fn config_service_api(cfg: &mut web::ServiceConfig) {
     cfg.service(telemetry)
@@ -220,5 +261,11 @@ pub fn config_service_api(cfg: &mut web::ServiceConfig) {
         .service(livez)
         .service(readyz)
         .service(get_logger_config)
-        .service(update_logger_config);
+        .service(update_logger_config)
+        .service(truncate_unapplied_wal);
+}
+
+// Dedicated service for metrics
+pub fn config_metrics_api(cfg: &mut web::ServiceConfig) {
+    cfg.service(metrics);
 }

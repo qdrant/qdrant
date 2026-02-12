@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values_opt};
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::{AccessRequirements, Auth};
 use storage::types::{ClusterStatus, ConsensusThreadStatus, PeerInfo, StateRole};
 
 use crate::settings::Settings;
@@ -80,17 +80,22 @@ pub struct ClusterTelemetry {
     pub peer_metadata: Option<HashMap<PeerId, PeerMetadata>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resharding_enabled: Option<bool>,
 }
 
 impl ClusterTelemetry {
     pub fn collect(
-        access: &Access,
+        auth: &Auth,
         detail: TelemetryDetail,
         dispatcher: &Dispatcher,
         settings: &Settings,
     ) -> Option<ClusterTelemetry> {
         let global_access = AccessRequirements::new();
-        if access.check_global_access(global_access).is_err() {
+        if auth
+            .check_global_access(global_access, "telemetry_cluster")
+            .is_err()
+        {
             return None;
         }
 
@@ -134,6 +139,7 @@ impl ClusterTelemetry {
                         .filter(|metadata| !metadata.is_empty())
                 })
                 .flatten(),
+            resharding_enabled: Some(settings.cluster.resharding_enabled),
         })
     }
 

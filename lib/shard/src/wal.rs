@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::path::Path;
 use std::result;
 use std::thread::JoinHandle;
@@ -25,6 +26,10 @@ pub struct SerdeWal<R> {
 }
 
 const FIRST_INDEX_FILE: &str = "first-index";
+
+/// When increased retention is used, how many times more segments to retain.
+/// (this is used to extend recoverable history and allow WAL shard transfers)
+const INCREASED_RETENTION_FACTOR: usize = 10;
 
 impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn new(dir: &Path, wal_options: WalOptions) -> Result<SerdeWal<R>> {
@@ -75,15 +80,36 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
         }
     }
 
+    pub fn read_single_record(&self, idx: u64) -> Result<Option<R>> {
+        if let Some(entry) = self.wal.entry(idx) {
+            let record: R = serde_cbor::from_slice(&entry)
+                .or_else(|_err| rmp_serde::from_slice(&entry))
+                .map_err(|err| {
+                    WalError::WriteWalError(format!(
+                        "Can't deserialize entry, probably corrupted WAL or version mismatch: {err:?}"
+                    ))
+                })?;
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
 
         let to = self.first_index() + self.len(false);
+        self.read_range(from..to)
+    }
 
-        (from..to).map(move |idx| {
-            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+    pub fn read_range(&self, range: Range<u64>) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        range.map(move |idx| {
+            let record_bin = self
+                .wal
+                .entry(idx)
+                .unwrap_or_else(|| panic!("Can't read entry {idx} from WAL"));
 
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))
@@ -210,6 +236,24 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     pub fn segment_capacity(&self) -> usize {
         self.options.segment_capacity
     }
+
+    pub fn set_extended_retention(&mut self) {
+        let normal_retention = self.options.retain_closed.get();
+        self.wal
+            .set_retention(normal_retention * INCREASED_RETENTION_FACTOR);
+    }
+
+    pub fn set_normal_retention(&mut self) {
+        let normal_retention = self.options.retain_closed.get();
+        self.wal.set_retention(normal_retention);
+    }
+
+    pub fn drop_from(&mut self, from_index: u64) -> Result<()> {
+        debug_assert!(from_index >= self.first_index());
+        self.wal
+            .truncate(from_index)
+            .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -250,7 +294,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     #[serde(untagged)]
     enum TestRecord {
@@ -258,13 +302,13 @@ mod tests {
         Struct2(TestInternalStruct2),
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     struct TestInternalStruct1 {
         data: usize,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Debug, Deserialize, Serialize, PartialEq)]
     #[serde(rename_all = "snake_case")]
     struct TestInternalStruct2 {
         a: i32,
@@ -310,6 +354,16 @@ mod tests {
         assert_eq!(idx1, 0);
         assert_eq!(idx2, 1);
 
+        assert_eq!(
+            serde_wal.read_single_record(idx1).unwrap().unwrap(),
+            record1
+        );
+        assert_eq!(
+            serde_wal.read_single_record(idx2).unwrap().unwrap(),
+            record2
+        );
+        assert_eq!(serde_wal.read_single_record(100).unwrap(), None);
+
         match record1 {
             TestRecord::Struct1(x) => assert_eq!(x.data, 10),
             TestRecord::Struct2(_) => panic!("Wrong structure"),
@@ -320,6 +374,36 @@ mod tests {
             TestRecord::Struct2(x) => {
                 assert_eq!(x.a, 12);
                 assert_eq!(x.b, 13);
+            }
+        }
+    }
+
+    #[test]
+    fn test_wal_drop() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let capacity = 32 * 1024 * 1024;
+        let wal_options = WalOptions {
+            segment_capacity: capacity,
+            segment_queue_len: 0,
+            retain_closed: NonZeroUsize::new(1).unwrap(),
+        };
+
+        let mut serde_wal: SerdeWal<TestRecord> = SerdeWal::new(dir.path(), wal_options).unwrap();
+
+        for i in 0..10 {
+            let record = TestRecord::Struct1(TestInternalStruct1 { data: i });
+            serde_wal.write(&record).expect("Can't write");
+        }
+        assert_eq!(serde_wal.len(false), 10);
+
+        serde_wal.drop_from(5).expect("Can't drop WAL from index");
+        assert_eq!(serde_wal.len(false), 5);
+
+        for (idx, record) in serde_wal.read(0) {
+            assert!(idx <= 4);
+            match record {
+                TestRecord::Struct1(x) => assert_eq!(x.data, idx as usize),
+                TestRecord::Struct2(_) => panic!("Wrong structure"),
             }
         }
     }

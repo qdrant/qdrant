@@ -378,6 +378,7 @@ ACTION_ACCESS = {
     ),
     ### Cluster ###
     "get_cluster": EndpointAccess(True, False, True, "GET /cluster", coll_r=False),
+    "cluster_telemetry": EndpointAccess(True, True, True, "GET /cluster/telemetry"),
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
     ### Points ###
@@ -1424,6 +1425,10 @@ def test_download_full_snapshot():
 
 def test_get_cluster():
     check_access("get_cluster")
+
+
+def test_cluster_telemetry():
+    check_access("cluster_telemetry")
 
 
 def test_recover_raft_state():

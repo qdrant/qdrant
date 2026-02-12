@@ -1,0 +1,41 @@
+[package]
+name = "trififo"
+version = "0.0.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+bench_all = []
+
+[dependencies]
+ahash = {workspace = true}
+
+[dev-dependencies]
+itertools = { workspace = true }
+strum = { workspace = true }
+criterion = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+parking_lot = { workspace = true }
+rayon = { workspace = true }
+static_assertions = { version = "1.1.0" }
+
+# Compare against these caches
+quick_cache = "0.6"
+schnellru = "0.2"
+foyer = "0.22"
+
+# For memory measurement
+cap = "0.1"
+
+# For async runtime (needed by foyer)
+tokio = { workspace = true }
+
+[[bench]]
+name = "cache_comparison"
+harness = false

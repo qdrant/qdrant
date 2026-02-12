@@ -6,7 +6,7 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use reqwest::Client;
 use segment::common::anonymize::Anonymize;
 use storage::content_manager::errors::StorageResult;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth, AuthType};
 use tokio::sync::Mutex;
 
 use super::telemetry::TelemetryCollector;
@@ -22,7 +22,14 @@ pub struct TelemetryReporter {
     telemetry: Arc<Mutex<TelemetryCollector>>,
 }
 
-const FULL_ACCESS: Access = Access::full("Telemetry reporter");
+fn full_reporter_auth() -> Auth {
+    Auth::new(
+        Access::full("Telemetry reporter"),
+        None,
+        None,
+        AuthType::Internal,
+    )
+}
 
 impl TelemetryReporter {
     fn new(telemetry: Arc<Mutex<TelemetryCollector>>) -> Self {
@@ -43,7 +50,7 @@ impl TelemetryReporter {
             .telemetry
             .lock()
             .await
-            .prepare_data(&FULL_ACCESS, DETAIL, None)
+            .prepare_data(&full_reporter_auth(), DETAIL, None, None)
             .await?
             .anonymize();
         let data = serde_json::to_string(&data)?;

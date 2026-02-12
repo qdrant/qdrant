@@ -94,6 +94,8 @@ pub struct CollectionParamsDiff {
     pub write_consistency_factor: Option<NonZeroU32>,
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
     pub read_fan_out_factor: Option<u32>,
+    ///  Delay in milliseconds before sending read requests to remote nodes
+    pub read_fan_out_delay_ms: Option<u64>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -102,7 +104,7 @@ pub struct CollectionParamsDiff {
     pub on_disk_payload: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[validate(range(min = 0.0, max = 1.0))]
@@ -158,6 +160,14 @@ pub struct OptimizersConfigDiff {
     /// If "auto" - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
     pub max_optimization_threads: Option<MaxOptimizationThreads>,
+
+    /// If this option is set, service will try to prevent creation of large unoptimized segments.
+    /// When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
+    /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+    /// Using this option may lead to increased delay between submitting an update and its application.
+    /// Default is disabled.
+    #[serde(default)]
+    pub prevent_unoptimized: Option<bool>,
 }
 
 impl std::hash::Hash for OptimizersConfigDiff {
@@ -172,6 +182,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = self;
 
         deleted_threshold.map(f64::to_le_bytes).hash(state);
@@ -182,22 +193,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
         indexing_threshold.hash(state);
         flush_interval_sec.hash(state);
         max_optimization_threads.hash(state);
-    }
-}
-
-impl PartialEq for OptimizersConfigDiff {
-    fn eq(&self, other: &Self) -> bool {
-        #[expect(deprecated)]
-        let eq_memmap_threshold = self.memmap_threshold == other.memmap_threshold;
-        self.deleted_threshold.map(f64::to_le_bytes)
-            == other.deleted_threshold.map(f64::to_le_bytes)
-            && self.vacuum_min_vector_number == other.vacuum_min_vector_number
-            && self.default_segment_number == other.default_segment_number
-            && self.max_segment_size == other.max_segment_size
-            && eq_memmap_threshold
-            && self.indexing_threshold == other.indexing_threshold
-            && self.flush_interval_sec == other.flush_interval_sec
-            && self.max_optimization_threads == other.max_optimization_threads
+        prevent_unoptimized.hash(state);
     }
 }
 
@@ -262,6 +258,7 @@ impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = diff;
 
         OptimizersConfig {
@@ -275,6 +272,7 @@ impl DiffConfig<OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec: flush_interval_sec.unwrap_or(self.flush_interval_sec),
             max_optimization_threads: max_optimization_threads
                 .map_or(self.max_optimization_threads, From::from),
+            prevent_unoptimized: prevent_unoptimized.or(self.prevent_unoptimized),
         }
     }
 }
@@ -301,6 +299,7 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             replication_factor,
             write_consistency_factor,
             read_fan_out_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
         } = diff;
 
@@ -309,6 +308,7 @@ impl DiffConfig<CollectionParamsDiff> for CollectionParams {
             write_consistency_factor: write_consistency_factor
                 .unwrap_or(self.write_consistency_factor),
             read_fan_out_factor: read_fan_out_factor.or(self.read_fan_out_factor),
+            read_fan_out_delay_ms: read_fan_out_delay_ms.or(self.read_fan_out_delay_ms),
             on_disk_payload: on_disk_payload.unwrap_or(self.on_disk_payload),
             shard_number: self.shard_number,
             sharding_method: self.sharding_method,
@@ -422,6 +422,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             replication_factor,
             write_consistency_factor,
             read_fan_out_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
             shard_number: _,
             sharding_method: _,
@@ -433,6 +434,7 @@ impl From<CollectionParams> for CollectionParamsDiff {
             replication_factor: Some(replication_factor),
             write_consistency_factor: Some(write_consistency_factor),
             read_fan_out_factor,
+            read_fan_out_delay_ms,
             on_disk_payload: Some(on_disk_payload),
         }
     }
@@ -450,6 +452,7 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = config;
 
         Self {
@@ -462,6 +465,7 @@ impl From<OptimizersConfig> for OptimizersConfigDiff {
             indexing_threshold,
             flush_interval_sec: Some(flush_interval_sec),
             max_optimization_threads: max_optimization_threads.map(MaxOptimizationThreads::Threads),
+            prevent_unoptimized,
         }
     }
 }
@@ -520,6 +524,7 @@ mod tests {
             replication_factor: None,
             write_consistency_factor: Some(NonZeroU32::new(2).unwrap()),
             read_fan_out_factor: None,
+            read_fan_out_delay_ms: None,
             on_disk_payload: None,
         };
 
@@ -549,6 +554,7 @@ mod tests {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(1),
+            prevent_unoptimized: None,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
@@ -573,6 +579,7 @@ mod tests {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(1),
+            prevent_unoptimized: None,
         };
 
         let update: OptimizersConfigDiff = serde_json::from_str(json_diff).unwrap();

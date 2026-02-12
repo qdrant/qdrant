@@ -164,7 +164,7 @@ impl Repr for PyNamedVector {
     }
 }
 
-#[pyclass(name = "SparseVector")]
+#[pyclass(name = "SparseVector", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySparseVector(pub SparseVector);

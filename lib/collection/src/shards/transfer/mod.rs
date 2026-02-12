@@ -24,6 +24,68 @@ pub mod stream_records;
 pub mod transfer_tasks_pool;
 pub mod wal_delta;
 
+/// Current stage of a shard transfer operation.
+///
+/// Stages are intentionally coarse-grained for clarity.
+/// The transfer method (snapshot, stream_records, etc.) provides additional context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferStage {
+    /// Setting up queue/forward proxy on source shard
+    Proxifying,
+    /// Creating snapshot of the shard (snapshot method only)
+    CreatingSnapshot,
+    /// Transferring data to remote (snapshot file or record batches)
+    Transferring,
+    /// Remote is recovering/applying the transferred data
+    Recovering,
+    /// Transferring queued updates accumulated during transfer
+    FlushingQueue,
+    /// Waiting for consensus state synchronization
+    WaitingConsensus,
+    /// Finalizing transfer (un-proxifying)
+    Finalizing,
+}
+
+impl TransferStage {
+    /// Short lowercase name for display in comment
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Proxifying => "proxifying",
+            Self::CreatingSnapshot => "creating snapshot",
+            Self::Transferring => "transferring",
+            Self::Recovering => "recovering",
+            Self::FlushingQueue => "flushing queue",
+            Self::WaitingConsensus => "waiting consensus",
+            Self::Finalizing => "finalizing",
+        }
+    }
+}
+
+/// Current stage of snapshot recovery on the receiver (destination) node.
+///
+/// These sub-stages break down what happens during the `Recovering` stage
+/// as seen from the destination peer's perspective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryStage {
+    /// HTTP download of snapshot from source node
+    Downloading,
+    /// Extracting tar archive
+    Unpacking,
+    /// Applying data to shard
+    Restoring,
+}
+
+impl RecoveryStage {
+    /// Short lowercase name for display in comment
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Downloading => "downloading",
+            Self::Unpacking => "unpacking",
+            Self::Restoring => "restoring",
+        }
+    }
+}
+
 /// Time between consensus confirmation retries.
 const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 
@@ -35,7 +97,7 @@ pub struct ShardTransfer {
     pub shard_id: ShardId,
     /// Target shard ID if different than source shard ID
     ///
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_shard_id: Option<ShardId>,
     pub from: PeerId,

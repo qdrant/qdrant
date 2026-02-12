@@ -21,10 +21,10 @@ use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::Shard;
+use super::EdgeShard;
 use crate::DEFAULT_EDGE_TIMEOUT;
 
-impl Shard {
+impl EdgeShard {
     pub fn query(&self, request: ShardQueryRequest) -> OperationResult<Vec<ScoredPoint>> {
         let planned_query = PlannedQuery::try_from(vec![request])?;
 
@@ -50,7 +50,7 @@ impl Shard {
                 root_plan,
                 &mut search_results,
                 &mut scroll_results,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable_edge(),
             )?;
 
             scored_points_batch.push(scored_points)
@@ -200,11 +200,11 @@ impl Shard {
         match rescore {
             ScoringQuery::Fusion(fusion) => {
                 let top_fused = Self::fusion_rescore(
-                    sources.into_iter(),
+                    sources,
                     fusion,
                     score_threshold.map(OrderedFloat::into_inner),
                     limit,
-                );
+                )?;
                 Ok(top_fused)
             }
 
@@ -270,13 +270,18 @@ impl Shard {
     }
 
     fn fusion_rescore(
-        sources: impl Iterator<Item = Vec<ScoredPoint>>,
+        sources: Vec<Vec<ScoredPoint>>,
         fusion: FusionInternal,
         score_threshold: Option<f32>,
         limit: usize,
-    ) -> Vec<ScoredPoint> {
+    ) -> OperationResult<Vec<ScoredPoint>> {
         let fused = match fusion {
-            FusionInternal::RrfK(k) => rrf_scoring(sources, k),
+            FusionInternal::Rrf { k, ref weights } => {
+                let weights_slice = weights
+                    .as_ref()
+                    .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
+                rrf_scoring(sources, k, weights_slice.as_deref())?
+            }
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 
@@ -290,7 +295,7 @@ impl Shard {
             fused.into_iter().take(limit).collect()
         };
 
-        top_fused
+        Ok(top_fused)
     }
 
     pub fn rescore_with_formula(
@@ -312,11 +317,14 @@ impl Shard {
 
         let mut rescored_results = Vec::new();
 
-        for segment in self
+        // Collect the segments first so we don't lock the segment holder during the operations.
+        let segments = self
             .segments
             .read()
             .non_appendable_then_appendable_segments()
-        {
+            .collect::<Vec<_>>();
+
+        for segment in segments {
             let rescored_result = segment
                 .get()
                 .read()

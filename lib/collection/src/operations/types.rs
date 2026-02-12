@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTimeError};
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
-    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
-    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
+    BaseGroupRequest, LookupLocation, RecommendStrategy, SearchGroupsRequestInternal,
+    SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
 use common::progress_tracker::ProgressTree;
@@ -35,7 +35,10 @@ use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
+pub use shard::count::CountRequestInternal;
+use shard::payload_index_schema::PayloadIndexSchema;
 pub use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
+pub use shard::scroll::ScrollRequestInternal;
 pub use shard::search::CoreSearchRequest;
 use shard::wal::WalError;
 use sparse::common::sparse_vector::SparseVector;
@@ -48,11 +51,13 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::ClockTag;
+use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
+use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -131,6 +136,16 @@ pub struct CollectionWarning {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
+pub struct UpdateQueueInfo {
+    /// Number of elements in the queue
+    #[anonymize(false)]
+    pub length: usize,
+    /// last operation number processed
+    #[anonymize(false)]
+    pub op_num: Option<usize>,
+}
+
 // Version of the collection config we can present to the user
 /// Information about the collection configuration
 #[derive(Debug, Serialize, JsonSchema)]
@@ -200,10 +215,16 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Update queue info
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_queue: Option<UpdateQueueInfo>,
 }
 
 impl CollectionInfo {
-    pub fn empty(collection_config: CollectionConfigInternal) -> Self {
+    pub fn empty(
+        collection_config: CollectionConfigInternal,
+        payload_schema: PayloadIndexSchema,
+    ) -> Self {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
@@ -212,7 +233,12 @@ impl CollectionInfo {
             points_count: Some(0),
             segments_count: 0,
             config: CollectionConfig::from(collection_config),
-            payload_schema: HashMap::new(),
+            payload_schema: payload_schema
+                .schema
+                .into_iter()
+                .map(|(k, v)| (k, PayloadIndexInfo::new(v, 0)))
+                .collect(),
+            update_queue: Some(UpdateQueueInfo::default()),
         }
     }
 }
@@ -227,6 +253,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            update_queue,
         } = info;
         Self {
             status: status.into(),
@@ -237,6 +264,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             segments_count,
             config: CollectionConfig::from(config),
             payload_schema,
+            update_queue: Some(update_queue),
         }
     }
 }
@@ -262,6 +290,8 @@ pub struct ShardInfoInternal {
     pub config: CollectionConfigInternal,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Update queue state
+    pub update_queue: UpdateQueueInfo,
 }
 
 /// Current clustering distribution for the collection
@@ -283,16 +313,83 @@ pub struct CollectionClusterInfo {
     pub resharding_operations: Option<Vec<ReshardingInfo>>,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct OptimizationsRequestOptions {
+    /// `?with=queued`
+    pub queued: bool,
+    /// `?with=completed` and `?completed_limit=N`
+    pub completed_limit: Option<usize>,
+    /// `?with=idle_segments`
+    pub idle_segments: bool,
+}
+
 /// Optimizations progress for the collection
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct OptimizationsResponse {
-    /// Ongoing optimizations from newest to oldest.
-    pub ongoing: Vec<ProgressTree>,
-    /// Completed optimizations from newest to oldest.
-    // NOTE: `None` when `?completed=false`,
-    //        empty vec when `?completed=true` but no completed optimizations.
+    pub summary: OptimizationsSummary,
+    /// Currently running optimizations.
+    pub running: Vec<Optimization>,
+    /// An estimated queue of pending optimizations.
+    /// Requires `?with=queued`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed: Option<Vec<ProgressTree>>,
+    pub queued: Option<Vec<PendingOptimization>>,
+    /// Completed optimizations.
+    /// Requires `?with=completed`. Limited by `?completed_limit=N`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed: Option<Vec<Optimization>>,
+    /// Segments that don't require optimization.
+    /// Requires `?with=idle_segments`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle_segments: Option<Vec<OptimizationSegmentInfo>>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct OptimizationsSummary {
+    /// Number of pending optimizations in the queue.
+    /// Each optimization will take one or more unoptimized segments and produce
+    /// one optimized segment.
+    pub queued_optimizations: usize,
+    /// Number of unoptimized segments in the queue.
+    pub queued_segments: usize,
+    /// Number of points in unoptimized segments in the queue.
+    pub queued_points: usize,
+    /// Number of segments that don't require optimization.
+    pub idle_segments: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Optimization {
+    /// Unique identifier of the optimization process.
+    ///
+    /// After the optimization is complete, a new segment will be created with
+    /// this UUID.
+    pub uuid: Uuid,
+    /// Name of the optimizer that performed this optimization.
+    pub optimizer: &'static str,
+    pub status: TrackerStatus,
+    /// Segments being optimized.
+    ///
+    /// After the optimization is complete, these segments will be replaced
+    /// by the new optimized segment.
+    pub segments: Vec<OptimizationSegmentInfo>,
+    pub progress: ProgressTree,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct PendingOptimization {
+    /// Name of the optimizer that scheduled this optimization.
+    pub optimizer: &'static str,
+    /// Segments that will be optimized.
+    pub segments: Vec<OptimizationSegmentInfo>,
+}
+
+// See also [`segment::types::SegmentInfo`] which is used in telemetry.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct OptimizationSegmentInfo {
+    /// Unique identifier of the segment.
+    pub uuid: Uuid,
+    /// Number of non-deleted points in the segment.
+    pub points_count: usize,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
@@ -302,7 +399,7 @@ pub struct ShardTransferInfo {
 
     /// Target shard ID if different than source shard ID
     ///
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub to_shard_id: Option<ShardId>,
@@ -345,6 +442,11 @@ pub struct ReshardingInfo {
     pub peer_id: PeerId,
 
     pub shard_key: Option<ShardKey>,
+
+    /// Only included in peer telemetry
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub stage: ReshardingStage,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -377,14 +479,39 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
+/// `WaitTimeout` - Request is waiting for timeout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
+    WaitTimeout,
     /// Internal: update is rejected due to an outdated clock
     #[schemars(skip)]
     ClockRejected,
+}
+
+impl UpdateStatus {
+    /// Returns priority of the update status
+    ///
+    /// A higher value means the status is more significant
+    pub fn priority(&self) -> i32 {
+        match self {
+            UpdateStatus::Acknowledged => 0,
+            UpdateStatus::Completed => 1,
+            UpdateStatus::WaitTimeout => 2,
+            UpdateStatus::ClockRejected => 3,
+        }
+    }
+
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            UpdateStatus::WaitTimeout => true,
+            UpdateStatus::Acknowledged => false,
+            UpdateStatus::Completed => false,
+            UpdateStatus::ClockRejected => false,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
@@ -412,59 +539,6 @@ pub struct ScrollRequest {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-}
-
-/// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub struct ScrollRequestInternal {
-    /// Start ID to read points from.
-    pub offset: Option<PointIdType>,
-
-    /// Page size. Default: 10
-    #[validate(range(min = 1))]
-    pub limit: Option<usize>,
-
-    /// Look only for points which satisfies this conditions. If not provided - all points.
-    #[validate(nested)]
-    pub filter: Option<Filter>,
-
-    /// Select which payload to return with the response. Default is true.
-    pub with_payload: Option<WithPayloadInterface>,
-
-    /// Options for specifying which vectors to include into response. Default is false.
-    #[serde(default, alias = "with_vectors")]
-    pub with_vector: WithVector,
-
-    /// Order the records by a payload field.
-    pub order_by: Option<OrderByInterface>,
-}
-
-impl ScrollRequestInternal {
-    pub(crate) fn default_limit() -> usize {
-        10
-    }
-
-    pub(crate) fn default_with_payload() -> WithPayloadInterface {
-        WithPayloadInterface::Bool(true)
-    }
-
-    pub(crate) fn default_with_vector() -> WithVector {
-        WithVector::Bool(false)
-    }
-}
-
-impl Default for ScrollRequestInternal {
-    fn default() -> Self {
-        ScrollRequestInternal {
-            offset: None,
-            limit: Some(Self::default_limit()),
-            filter: None,
-            with_payload: Some(Self::default_with_payload()),
-            with_vector: Self::default_with_vector(),
-            order_by: None,
-        }
-    }
 }
 
 fn points_example() -> Vec<api::rest::Record> {
@@ -865,25 +939,6 @@ pub struct CountRequest {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-}
-
-/// Count Request
-/// Counts the number of points which satisfy the given filter.
-/// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub struct CountRequestInternal {
-    /// Look only for points which satisfies this conditions
-    #[validate(nested)]
-    pub filter: Option<Filter>,
-    /// If true, count exact number of points. If false, count approximate number of points faster.
-    /// Approximate count might be unreliable during the indexing process. Default: true
-    #[serde(default = "default_exact_count")]
-    pub exact: bool,
-}
-
-pub const fn default_exact_count() -> bool {
-    true
 }
 
 #[derive(Debug, Default, Serialize, JsonSchema)]

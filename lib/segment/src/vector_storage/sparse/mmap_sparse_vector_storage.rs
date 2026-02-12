@@ -70,7 +70,7 @@ impl MmapSparseVectorStorage {
         let next_point_offset = deleted
             .get_bitslice()
             .last_one()
-            .max(Some(storage.max_point_id() as usize))
+            .max(Some(storage.max_point_offset() as usize))
             .unwrap_or_default();
 
         Ok(Self {

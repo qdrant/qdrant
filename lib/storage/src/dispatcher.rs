@@ -15,7 +15,7 @@ use segment::types::ShardKey;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::{Access, CollectionMultipass};
+use crate::rbac::{Auth, CollectionMultipass};
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -46,13 +46,9 @@ impl Dispatcher {
     }
 
     /// Get the table of content.
-    /// The `_access` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
+    /// The `_auth` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
     /// of both objects.
-    pub fn toc(
-        &self,
-        _access: &Access,
-        _verification_pass: &VerificationPass,
-    ) -> &Arc<TableOfContent> {
+    pub fn toc(&self, _auth: &Auth, _verification_pass: &VerificationPass) -> &Arc<TableOfContent> {
         &self.toc
     }
 
@@ -76,10 +72,10 @@ impl Dispatcher {
     pub async fn submit_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        access: Access,
+        auth: Auth,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        access.check_collection_meta_operation(&operation)?;
+        auth.check_collection_meta_operation(&operation)?;
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
@@ -343,7 +339,7 @@ impl Dispatcher {
     }
 
     #[must_use]
-    pub fn get_collection_hw_metrics(&self, collection: String) -> HwSharedDrain {
+    pub fn get_collection_hw_metrics(&self, collection: String) -> Arc<HwSharedDrain> {
         self.toc.get_collection_hw_metrics(collection)
     }
 }

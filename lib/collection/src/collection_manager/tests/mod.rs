@@ -8,12 +8,13 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::update::{delete_points, set_payload, upsert_points};
 use tempfile::Builder;
 
@@ -21,9 +22,7 @@ use crate::collection_manager::fixtures::{
     TEST_TIMEOUT, build_segment_1, build_segment_2, empty_segment,
 };
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
 mod test_search_aggregation;
@@ -52,7 +51,7 @@ fn test_update_proxy_segments() {
     let sid1 = holder.add_new(segment1);
     let _sid2 = holder.add_new(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     let _proxy_id = wrap_proxy(segments.clone(), sid1);
 
@@ -109,7 +108,7 @@ fn test_move_points_to_copy_on_write() {
     let sid1 = holder.add_new(segment1);
     let sid2 = holder.add_new(segment2);
 
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     let proxy_id = wrap_proxy(segments.clone(), sid1);
 
@@ -284,7 +283,7 @@ fn test_delete_all_point_versions() {
     let mut holder = SegmentHolder::default();
     let sid1 = holder.add_new(segment1);
     let sid2 = holder.add_new(segment2);
-    let segments = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     // We should be able to retrieve point 123
     let retrieved = retrieve_blocking(
@@ -443,7 +442,7 @@ fn test_proxy_shared_updates() {
         );
     }
 
-    let locked_holder = Arc::new(RwLock::new(holder));
+    let locked_holder = LockedSegmentHolder::new(holder);
 
     let is_stopped = AtomicBool::new(false);
 
@@ -579,7 +578,7 @@ fn test_proxy_shared_updates_same_version() {
         );
     }
 
-    let locked_holder = Arc::new(RwLock::new(holder));
+    let locked_holder = LockedSegmentHolder::new(holder);
 
     let is_stopped = AtomicBool::new(false);
 

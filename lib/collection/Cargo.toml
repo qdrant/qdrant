@@ -43,12 +43,11 @@ rand = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = "~1.3"
+rmp-serde = { workspace = true }
 wal = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
-tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
-lazy_static = "1.5.0"
+tinyvec = { workspace = true }
 siphasher = "1.0.1"
 smallvec = { workspace = true }
 count-min-sketch = "0.1.8"
@@ -58,17 +57,17 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 atomicwrites = { workspace = true}
 log = { workspace = true }
-env_logger = "0.11"
-async-trait = "0.1.89"
-arc-swap = "1.7.1"
+env_logger = { workspace = true }
+async-trait = { workspace = true }
+arc-swap = "1.8.1"
 tonic = { workspace = true }
 uuid = { workspace = true }
-url = { version = "2", features = ["serde"] }
+url = { workspace = true }
 validator = { workspace = true }
 http = { workspace = true }
-actix-web-validator = "7.0.0"
-actix-web = { version = "4.12.1" }
-actix-files = "0.6.9"
+actix-web-validator = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
@@ -83,7 +82,7 @@ itertools = { workspace = true }
 indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
-fs_extra = "1.3.0"
+fs_extra = { workspace = true }
 semver = { workspace = true }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
@@ -98,7 +97,7 @@ tracing = { workspace = true, optional = true }
 fs4 = "0.13.1"
 
 # AWS S3 support
-object_store = { version = "0.12.4", features = ["aws"] }
+object_store = { version = "0.13.1", features = ["aws"] }
 
 
 [[bench]]

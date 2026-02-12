@@ -2,9 +2,11 @@ use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
+use common::sort_utils::sort_permutation;
+use log::trace;
 use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SegmentEntry;
+use segment::entry::NonAppendableSegmentEntry;
 use segment::types::SeqNumberType;
 
 use crate::locked_segment::LockedSegment;
@@ -19,10 +21,10 @@ impl SegmentHolder {
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
-        let lock_order: Vec<_> = self.segment_flush_ordering().collect();
+        let lock_order: Vec<_> = self.non_appendable_then_appendable_segments_ids().collect();
 
         // Grab and keep to segment RwLock's until the end of this function
-        let segments = self.segment_locks(lock_order.iter().cloned())?;
+        let segments = self.read_segment_locks(lock_order.iter().cloned())?;
 
         // We can never have zero segments
         // Having zero segments could permanently corrupt the WAL by acknowledging u64::MAX
@@ -49,7 +51,7 @@ impl SegmentHolder {
         //
         // WARNING: Ordering is very important here. Specifically:
         // - We MUST lock non-appendable first, then appendable.
-        // - We MUST flush appendable first, then non-appendable
+        // - We MUST flush according to the copy-on-write dependency graph.
         // Because of this, two rev(erse) calls are used below here.
         //
         // Locking must happen in this order because `apply_points_to_appendable` can take two
@@ -57,13 +59,10 @@ impl SegmentHolder {
         // up with a deadlock.
         let mut segment_reads: Vec<_> = segments
             .iter()
-            .rev()
             .map(|segment| Self::aloha_lock_segment_read(segment))
             .collect();
-        segment_reads.reverse();
 
-        // Re-sort segments for flush ordering also considering proxies, required to guarantee data consistency
-        segment_reads.sort_by_cached_key(|segment| segment.flush_ordering());
+        let max_applied_version = segment_reads.iter().map(|s| s.version()).max().unwrap_or(0);
 
         if !sync && self.is_background_flushing() {
             // There is already a background flush ongoing, return current max persisted version
@@ -74,16 +73,25 @@ impl SegmentHolder {
         // as it is exclusive
         let mut background_flush_lock = self.lock_flushing()?;
 
-        if sync {
-            for read_segment in segment_reads.iter() {
-                read_segment.flush(force)?;
-            }
-        } else {
-            let flushers: Vec<_> = segment_reads
-                .iter()
-                .filter_map(|read_segment| read_segment.flusher(force))
-                .collect();
+        sort_permutation(&mut segment_reads, &lock_order, |segment_ids| {
+            self.sort_segment_ids_by_flush_dependency(segment_ids)
+        });
 
+        // Capture all flushers first to improve data consistency
+        let flushers: Vec<_> = segment_reads
+            .iter()
+            .filter_map(|read_segment| read_segment.flusher(force))
+            .collect();
+
+        if sync {
+            for flusher in flushers {
+                flusher()?;
+            }
+            self.flush_dependency
+                .lock()
+                .retain(|_, _, version| *version > max_applied_version);
+        } else {
+            let flush_dependency = self.flush_dependency.clone();
             *background_flush_lock = Some(
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
@@ -91,6 +99,9 @@ impl SegmentHolder {
                         for flusher in flushers {
                             flusher()?;
                         }
+                        flush_dependency
+                            .lock()
+                            .retain(|_, _, version| *version > max_applied_version);
                         Ok(())
                     })
                     .unwrap(),
@@ -100,18 +111,40 @@ impl SegmentHolder {
         Ok(self.get_max_persisted_version(segment_reads, lock_order))
     }
 
-    /// Defines naive flush ordering for segments.
-    ///
-    /// Flush appendable segments first, then non-appendable.
-    /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
-    /// is persisted, before marking records in non-appendable segments as removed.
-    fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
-        let appendable_segments = self.appendable_segments_ids();
+    fn non_appendable_then_appendable_segments_ids(&self) -> impl Iterator<Item = SegmentId> {
         let non_appendable_segments = self.non_appendable_segments_ids();
+        let appendable_segments = self.appendable_segments_ids();
 
-        appendable_segments
+        non_appendable_segments
             .into_iter()
-            .chain(non_appendable_segments)
+            .chain(appendable_segments)
+    }
+
+    fn sort_segment_ids_by_flush_dependency(&self, segment_ids: &[SegmentId]) -> Vec<SegmentId> {
+        let flush_topology = self.flush_dependency.lock().clone();
+        trace!("{flush_topology:?}");
+
+        let mut iter = flush_topology.sort_elements(segment_ids);
+        let sorted_keys: Vec<_> = iter.by_ref().collect();
+
+        // Collect any remaining elements (circular dependencies)
+        let remaining = iter.into_unordered_vec();
+
+        debug_assert!(
+            remaining.is_empty(),
+            "circular dependencies detected in flush topology: {remaining:?}",
+        );
+        #[cfg(feature = "staging")]
+        if !remaining.is_empty() {
+            log::warn!(
+                "circular dependencies detected in flush topology for segments: {remaining:?}"
+            );
+        }
+
+        // Build combined order: sorted first, then unordered remainder
+        let mut final_order: Vec<_> = sorted_keys;
+        final_order.extend(remaining);
+        final_order
     }
 
     // Joins flush thread if exists
@@ -149,7 +182,7 @@ impl SegmentHolder {
     /// If all changes are saved - returns max version.
     fn get_max_persisted_version(
         &self,
-        segment_reads: Vec<RwLockReadGuard<'_, dyn SegmentEntry>>,
+        segment_reads: Vec<RwLockReadGuard<'_, dyn NonAppendableSegmentEntry>>,
         lock_order: Vec<SegmentId>,
     ) -> SeqNumberType {
         // Start with the max_persisted_vesrion at the set overwrite value, which may just be 0
@@ -197,10 +230,10 @@ impl SegmentHolder {
     }
 
     /// Grab the RwLock's for all the given segment IDs.
-    fn segment_locks(
+    fn read_segment_locks(
         &self,
         segment_ids: impl IntoIterator<Item = SegmentId>,
-    ) -> OperationResult<Vec<&RwLock<dyn SegmentEntry>>> {
+    ) -> OperationResult<Vec<&RwLock<dyn NonAppendableSegmentEntry>>> {
         segment_ids
             .into_iter()
             .map(|segment_id| {
@@ -208,7 +241,7 @@ impl SegmentHolder {
                     .ok_or_else(|| {
                         OperationError::service_error(format!("No segment with ID {segment_id}"))
                     })
-                    .map(LockedSegment::get)
+                    .map(LockedSegment::get_non_appendable)
             })
             .collect()
     }

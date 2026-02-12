@@ -12,11 +12,12 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedF
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
 use shard::query::*;
+use shard::scroll::OrderByInterface;
 
 use super::*;
 use crate::repr::*;
 
-#[pyclass(name = "QueryRequest")]
+#[pyclass(name = "QueryRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PyQueryRequest(ShardQueryRequest);
 
@@ -24,28 +25,41 @@ pub struct PyQueryRequest(ShardQueryRequest);
 #[pymethods]
 impl PyQueryRequest {
     #[new]
+    #[pyo3(signature = (
+        limit,
+        offset = None,
+        query = None,
+        prefetches = None,
+        with_vector = None,
+        with_payload = None,
+        filter = None,
+        score_threshold = None,
+        params = None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
+        limit: usize,
+        offset: Option<usize>,
         query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
+        with_vector: Option<PyWithVector>,
+        with_payload: Option<PyWithPayload>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
-        limit: usize,
-        offset: usize,
         params: Option<PySearchParams>,
-        with_vector: PyWithVector,
-        with_payload: PyWithPayload,
     ) -> Self {
         Self(ShardQueryRequest {
-            prefetches: PyPrefetch::peel_vec(prefetches),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
+            limit,
+            offset: offset.unwrap_or(0),
+            with_vector: with_vector.map(WithVector::from).unwrap_or_default(),
+            with_payload: with_payload
+                .map(WithPayloadInterface::from)
+                .unwrap_or_default(),
             query: query.map(ScoringQuery::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
-            limit,
-            offset,
             params: params.map(SearchParams::from),
-            with_vector: WithVector::from(with_vector),
-            with_payload: WithPayloadInterface::from(with_payload),
         })
     }
 
@@ -118,7 +132,7 @@ impl PyQueryRequest {
     }
 }
 
-#[pyclass(name = "Prefetch")]
+#[pyclass(name = "Prefetch", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyPrefetch(ShardPrefetch);
@@ -127,18 +141,26 @@ pub struct PyPrefetch(ShardPrefetch);
 #[pymethods]
 impl PyPrefetch {
     #[new]
+    #[pyo3(signature = (
+        limit,
+        query = None,
+        prefetches = None,
+        params = None,
+        filter = None,
+        score_threshold = None,
+    ))]
     pub fn new(
-        prefetches: Vec<PyPrefetch>,
-        query: Option<PyScoringQuery>,
         limit: usize,
+        query: Option<PyScoringQuery>,
+        prefetches: Option<Vec<PyPrefetch>>,
         params: Option<PySearchParams>,
         filter: Option<PyFilter>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(ShardPrefetch {
-            prefetches: PyPrefetch::peel_vec(prefetches),
-            query: query.map(ScoringQuery::from),
+            prefetches: PyPrefetch::peel_vec(prefetches.unwrap_or_default()),
             limit,
+            query: query.map(ScoringQuery::from),
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::from),
             score_threshold: score_threshold.map(OrderedFloat),
@@ -279,7 +301,7 @@ impl Repr for PyScoringQuery {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             ScoringQuery::Vector(vector) => PyQuery::wrap_ref(vector).fmt(f),
-            ScoringQuery::Fusion(fusion) => PyFusion::from(*fusion).fmt(f),
+            ScoringQuery::Fusion(fusion) => PyFusion::from(fusion.clone()).fmt(f),
             ScoringQuery::OrderBy(order_by) => PyOrderBy::wrap_ref(order_by).fmt(f),
             ScoringQuery::Formula(_formula) => f.unimplemented(), // TODO!
             ScoringQuery::Sample(sample) => PySample::from(*sample).fmt(f),
@@ -288,10 +310,14 @@ impl Repr for PyScoringQuery {
     }
 }
 
-#[pyclass(name = "Fusion")]
-#[derive(Copy, Clone, Debug)]
+#[pyclass(name = "Fusion", from_py_object)]
+#[derive(Clone, Debug)]
 pub enum PyFusion {
-    Rrfk { rrfk: usize },
+    #[pyo3(constructor = (k, weights = None))]
+    Rrf {
+        k: usize,
+        weights: Option<Vec<f32>>,
+    },
     Dbsf {},
 }
 
@@ -304,19 +330,26 @@ impl PyFusion {
 
 impl Repr for PyFusion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let (repr, fields): (_, &[(_, &dyn Repr)]) = match self {
-            PyFusion::Rrfk { rrfk } => ("Rrfk", &[("rrfk", rrfk)]),
-            PyFusion::Dbsf {} => ("Dbsf", &[]),
-        };
-
-        f.complex_enum::<Self>(repr, fields)
+        match self {
+            PyFusion::Rrf { k, weights: None } => {
+                f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr)])
+            }
+            PyFusion::Rrf {
+                k,
+                weights: Some(weights),
+            } => f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr), ("weights", weights)]),
+            PyFusion::Dbsf {} => f.complex_enum::<Self>("Dbsf", &[]),
+        }
     }
 }
 
 impl From<FusionInternal> for PyFusion {
     fn from(fusion: FusionInternal) -> Self {
         match fusion {
-            FusionInternal::RrfK(rrfk) => PyFusion::Rrfk { rrfk },
+            FusionInternal::Rrf { k, weights } => PyFusion::Rrf {
+                k,
+                weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
+            },
             FusionInternal::Dbsf => PyFusion::Dbsf {},
         }
     }
@@ -325,13 +358,16 @@ impl From<FusionInternal> for PyFusion {
 impl From<PyFusion> for FusionInternal {
     fn from(fusion: PyFusion) -> Self {
         match fusion {
-            PyFusion::Rrfk { rrfk } => FusionInternal::RrfK(rrfk),
+            PyFusion::Rrf { k, weights } => FusionInternal::Rrf {
+                k,
+                weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
+            },
             PyFusion::Dbsf {} => FusionInternal::Dbsf,
         }
     }
 }
 
-#[pyclass(name = "OrderBy")]
+#[pyclass(name = "OrderBy", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyOrderBy(OrderBy);
@@ -340,6 +376,7 @@ pub struct PyOrderBy(OrderBy);
 #[pymethods]
 impl PyOrderBy {
     #[new]
+    #[pyo3(signature = (key, direction = None, start_from = None))]
     pub fn new(
         key: PyJsonPath,
         direction: Option<PyDirection>,
@@ -385,7 +422,19 @@ impl PyOrderBy {
     }
 }
 
-#[pyclass(name = "Direction")]
+impl From<OrderByInterface> for PyOrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        Self(OrderBy::from(order_by))
+    }
+}
+
+impl From<PyOrderBy> for OrderByInterface {
+    fn from(order_by: PyOrderBy) -> Self {
+        OrderByInterface::Struct(OrderBy::from(order_by))
+    }
+}
+
+#[pyclass(name = "Direction", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyDirection {
     Asc,
@@ -500,7 +549,7 @@ impl Repr for PyStartFrom {
     }
 }
 
-#[pyclass(name = "Sample")]
+#[pyclass(name = "Sample", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySample {
     Random,
@@ -539,7 +588,7 @@ impl From<PySample> for SampleInternal {
     }
 }
 
-#[pyclass(name = "Mmr")]
+#[pyclass(name = "Mmr", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyMmr(MmrInternal);
@@ -548,16 +597,17 @@ pub struct PyMmr(MmrInternal);
 #[pymethods]
 impl PyMmr {
     #[new]
+    #[pyo3(signature = (vector, lambda_, candidates_limit, using = None))]
     pub fn new(
         vector: PyNamedVectorInternal,
-        using: Option<String>,
-        lambda: f32,
+        lambda_: f32,
         candidates_limit: usize,
+        using: Option<String>,
     ) -> Self {
         let mmr = MmrInternal {
             vector: VectorInternal::from(vector),
             using: using.unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_string()),
-            lambda: OrderedFloat(lambda),
+            lambda: OrderedFloat(lambda_),
             candidates_limit,
         };
 
@@ -575,7 +625,7 @@ impl PyMmr {
     }
 
     #[getter]
-    pub fn lambda(&self) -> f32 {
+    pub fn lambda_(&self) -> f32 {
         self.0.lambda.into_inner()
     }
 

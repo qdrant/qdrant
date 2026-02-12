@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock};
 
 use super::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 /// A buffered wrapper around DynamicMmapFlags that provides manual flushing, without interface for reading.
 ///
@@ -64,18 +64,20 @@ impl BufferedDynamicFlags {
         };
 
         // Weak reference to detect when the storage has been deleted
-        let flags_arc = Arc::downgrade(&self.storage);
-        let buffer = Arc::downgrade(&self.buffer);
+        let flags_weak = Arc::downgrade(&self.storage);
+        let buffer_weak = Arc::downgrade(&self.buffer);
         let is_alive_flush_lock = self.is_alive_flush_lock.handle();
 
         Box::new(move || {
             let (Some(is_alive_flush_guard), Some(flags_arc), Some(buffer_arc)) = (
                 is_alive_flush_lock.lock_if_alive(),
-                flags_arc.upgrade(),
-                buffer.upgrade(),
+                flags_weak.upgrade(),
+                buffer_weak.upgrade(),
             ) else {
-                log::debug!("skipping flushing on deleted storage");
-                return Ok(());
+                log::trace!("BufferedDynamicFlags was dropped, cancelling flush");
+                return Err(OperationError::cancelled(
+                    "Aborted flushing on a dropped BufferedDynamicFlags instance",
+                ));
             };
 
             // lock for the entire flushing process
@@ -92,10 +94,11 @@ impl BufferedDynamicFlags {
 
             flags_guard.flusher()()?;
 
-            reconcile_persisted_buffer(&buffer_arc, updates);
-
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            // Keep the guard till here to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
             drop(is_alive_flush_guard);
+
+            reconcile_persisted_buffer(&buffer_arc, updates);
 
             Ok(())
         })

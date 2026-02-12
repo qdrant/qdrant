@@ -65,6 +65,11 @@ pub struct FeatureFlags {
     ///
     /// Enabled by default in Qdrant 1.16.0.
     pub appendable_quantization: bool,
+
+    /// Use single-file mmap in-ram vector storage (InRamMmap)
+    ///
+    /// Enabled by default in Qdrant 1.17.1+
+    pub single_file_mmap_vector_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -80,6 +85,7 @@ impl Default for FeatureFlags {
             migrate_rocksdb_payload_storage: true,
             migrate_rocksdb_payload_indices: true,
             appendable_quantization: true,
+            single_file_mmap_vector_storage: false,
         }
     }
 }
@@ -105,6 +111,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         migrate_rocksdb_payload_storage,
         migrate_rocksdb_payload_indices,
         appendable_quantization,
+        single_file_mmap_vector_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -118,6 +125,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *migrate_rocksdb_payload_storage = true;
         *migrate_rocksdb_payload_indices = true;
         *appendable_quantization = true;
+        *single_file_mmap_vector_storage = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);

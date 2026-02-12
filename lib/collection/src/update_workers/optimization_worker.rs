@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
@@ -9,22 +8,28 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
+use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::QuantizationConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
-use shard::segment_holder::LockedSegmentHolder;
-use tokio::sync::Mutex as TokioMutex;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{Mutex as TokioMutex, watch};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
-use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, plan_optimizations,
+};
+use crate::collection_manager::optimizers::{
+    Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
+};
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -55,6 +60,7 @@ impl UpdateWorkers {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
+        optimization_finished_sender: watch::Sender<()>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -179,6 +185,7 @@ impl UpdateWorkers {
                 total_optimized_points.clone(),
                 &optimizer_resource_budget,
                 sender.clone(),
+                optimization_finished_sender.clone(),
                 limit,
             )
             .await;
@@ -226,6 +233,7 @@ impl UpdateWorkers {
         total_optimized_points: Arc<AtomicUsize>,
         optimizer_resource_budget: &ResourceBudget,
         sender: Sender<OptimizerSignal>,
+        optimization_finished_sender: watch::Sender<()>,
         limit: usize,
     ) {
         let mut new_handles = Self::launch_optimization(
@@ -235,6 +243,10 @@ impl UpdateWorkers {
             optimizer_resource_budget,
             segments.clone(),
             move || {
+                // Notify other components that optimization is finished
+                // We do not care if there are no receivers or if they are lagging behind
+                let _ = optimization_finished_sender.send(());
+
                 // After optimization is finished, we still need to check if there are
                 // some further optimizations possible.
                 // If receiver is already dead - we do not care.
@@ -262,148 +274,160 @@ impl UpdateWorkers {
     where
         F: Fn() + Send + Clone + Sync + 'static,
     {
-        let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
         let is_optimization_failed = Arc::new(AtomicBool::new(false));
 
-        'outer: for optimizer in optimizers.iter() {
-            // Loop until there are no more segments to with given optimizer
-            loop {
-                // Return early if we reached the optimization job limit
-                if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
-                    log::trace!("Reached optimization job limit, postponing other optimizations");
-                    break 'outer;
-                }
+        let scheduled = plan_optimizations(&segments.read(), &optimizers);
+        for (optimizer, segments_to_merge) in scheduled {
+            // Return early if we reached the optimization job limit
+            if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
+                log::trace!("Reached optimization job limit, postponing other optimizations");
+                break;
+            }
 
-                // If optimization failed, we should not endlessly try to optimize same segments
-                if is_optimization_failed.load(Ordering::Relaxed) {
-                    log::debug!("Skipping further optimizations due to previous failure");
-                    break 'outer;
-                }
+            // If optimization failed, we should not endlessly try to optimize same segments
+            if is_optimization_failed.load(Ordering::Relaxed) {
+                log::debug!("Skipping further optimizations due to previous failure");
+                break;
+            }
 
-                let nonoptimal_segment_ids =
-                    optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
-                if nonoptimal_segment_ids.is_empty() {
-                    break;
-                }
+            let segment_infos = {
+                let segments = segments.read();
+                segments_to_merge
+                    .iter()
+                    .filter_map(|&id| {
+                        let Some(segment) = segments.get(id) else {
+                            log::warn!("Failed to get segment with internal id {id}");
+                            return None;
+                        };
+                        let segment = segment.get().read();
+                        Some(TrackerSegmentInfo {
+                            id,
+                            uuid: segment.segment_uuid(),
+                            points_count: segment.available_point_count(),
+                        })
+                    })
+                    .collect_vec()
+            };
 
-                log::debug!(
-                    "Optimizer '{}' running on segments: {:?}",
+            log::debug!(
+                "Optimizer '{}' running on segments: {uuids}",
+                optimizer.name(),
+                uuids = segment_infos.iter().format_with(", ", |segment_info, f| {
+                    f(&format_args!("{}", segment_info.uuid))
+                })
+            );
+
+            // Determine how many Resources we prefer for optimization task, acquire permit for it
+            // And use same amount of IO threads as CPUs
+            let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
+            let desired_io = num_rayon_threads(max_indexing_threads);
+            let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
+                // If there is no Resource budget, break and return early
+                // If we have no handles (no optimizations) trigger callback so that we wake up
+                // our optimization worker to try again later, otherwise it could get stuck
+                log::trace!(
+                    "No available IO permit for {} optimizer, postponing",
                     optimizer.name(),
-                    &nonoptimal_segment_ids
                 );
+                if handles.is_empty() {
+                    callback();
+                }
+                break;
+            };
+            log::trace!(
+                "Acquired {} IO permit for {} optimizer",
+                permit.num_io,
+                optimizer.name(),
+            );
 
-                // Determine how many Resources we prefer for optimization task, acquire permit for it
-                // And use same amount of IO threads as CPUs
-                let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
-                let desired_io = num_rayon_threads(max_indexing_threads);
-                let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
-                    // If there is no Resource budget, break outer loop and return early
-                    // If we have no handles (no optimizations) trigger callback so that we wake up
-                    // our optimization worker to try again later, otherwise it could get stuck
-                    log::trace!(
-                        "No available IO permit for {} optimizer, postponing",
-                        optimizer.name(),
-                    );
-                    if handles.is_empty() {
+            let permit_callback = callback.clone();
+
+            permit.set_on_manual_release(move || {
+                // Notify scheduler that resource budget is explicitly changed
+                permit_callback();
+            });
+
+            let callback = callback.clone();
+            let optimizer = optimizer.clone();
+            let optimizers_log = optimizers_log.clone();
+            let total_optimized_points = total_optimized_points.clone();
+            let segments = segments.clone();
+            let is_optimization_failed = is_optimization_failed.clone();
+            let resource_budget = optimizer_resource_budget.clone();
+
+            // Track optimizer status
+            let new_segment_uuid = Uuid::new_v4();
+            let (tracker, progress) =
+                Tracker::start(optimizer.name(), new_segment_uuid, segment_infos);
+            let tracker_handle = tracker.handle();
+
+            let handle = spawn_stoppable(move |stopped| {
+                let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    optimizer.as_ref().optimize(
+                        segments.clone(),
+                        segments_to_merge,
+                        new_segment_uuid,
+                        permit,
+                        resource_budget,
+                        stopped,
+                        progress,
+                        Box::new(move || {
+                            // Do not clutter the log with early cancelled optimizations,
+                            // wait for `on_successful_start` instead.
+                            optimizers_log.lock().register(tracker);
+                        }),
+                    )
+                }));
+                let is_optimized;
+                let status;
+                let reported_error;
+                match result {
+                    // Success
+                    Ok(Ok(optimized_points)) => {
+                        is_optimized = optimized_points > 0;
+                        status = TrackerStatus::Done;
+                        reported_error = None;
+                        total_optimized_points.fetch_add(optimized_points, Ordering::Relaxed);
                         callback();
                     }
-                    break 'outer;
-                };
-                log::trace!(
-                    "Acquired {} IO permit for {} optimizer",
-                    permit.num_io,
-                    optimizer.name(),
-                );
-
-                let permit_callback = callback.clone();
-
-                permit.set_on_manual_release(move || {
-                    // Notify scheduler that resource budget is explicitly changed
-                    permit_callback();
-                });
-
-                let callback = callback.clone();
-                let optimizer = optimizer.clone();
-                let optimizers_log = optimizers_log.clone();
-                let total_optimized_points = total_optimized_points.clone();
-                let segments = segments.clone();
-                let nsi = nonoptimal_segment_ids.clone();
-                scheduled_segment_ids.extend(&nsi);
-                let is_optimization_failed = is_optimization_failed.clone();
-                let resource_budget = optimizer_resource_budget.clone();
-
-                // Track optimizer status
-                let (tracker, progress) = Tracker::start(optimizer.as_ref().name(), nsi.clone());
-                let tracker_handle = tracker.handle();
-
-                let handle = spawn_stoppable(move |stopped| {
-                    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        optimizer.as_ref().optimize(
-                            segments.clone(),
-                            nsi,
-                            permit,
-                            resource_budget,
-                            stopped,
-                            progress,
-                            Box::new(move || {
-                                // Do not clutter the log with early cancelled optimizations,
-                                // wait for `on_successful_start` instead.
-                                optimizers_log.lock().register(tracker);
-                            }),
-                        )
-                    }));
-                    let is_optimized;
-                    let status;
-                    let reported_error;
-                    match result {
-                        // Success
-                        Ok(Ok(optimized_points)) => {
-                            is_optimized = optimized_points > 0;
-                            status = TrackerStatus::Done;
-                            reported_error = None;
-                            total_optimized_points.fetch_add(optimized_points, Ordering::Relaxed);
-                            callback();
-                        }
-                        // Cancelled
-                        Ok(Err(CollectionError::Cancelled { description })) => {
-                            is_optimized = false;
-                            log::debug!("Optimization cancelled - {description}");
-                            status = TrackerStatus::Cancelled(description);
-                            reported_error = None;
-                        }
-                        // `optimize()` returned Result::Err
-                        Ok(Err(error)) => {
-                            is_optimized = false;
-                            status = TrackerStatus::Error(error.to_string());
-                            log::error!("Optimization error: {error}");
-                            reported_error = Some(error);
-                        }
-                        // `optimize()` panicked
-                        Err(panic_payload) => {
-                            let message = panic::downcast_str(&panic_payload).unwrap_or("");
-                            let separator = if !message.is_empty() { ": " } else { "" };
-                            let status_msg =
-                                format!("Optimization task panicked{separator}{message}");
-
-                            is_optimized = false;
-                            status = TrackerStatus::Error(status_msg.clone());
-                            reported_error = Some(CollectionError::service_error(status_msg));
-                            log::warn!(
-                                "Optimization task panicked, collection may be in unstable state\
-                                 {separator}{message}"
-                            );
-                        }
+                    // Cancelled
+                    Ok(Err(CollectionError::Cancelled { description })) => {
+                        is_optimized = false;
+                        log::debug!("Optimization cancelled - {description}");
+                        status = TrackerStatus::Cancelled(description);
+                        reported_error = None;
                     }
-                    tracker_handle.update(status);
-                    if let Some(reported_error) = reported_error {
-                        segments.write().report_optimizer_error(reported_error);
-                        is_optimization_failed.store(true, Ordering::Relaxed);
+                    // `optimize()` returned Result::Err
+                    Ok(Err(error)) => {
+                        is_optimized = false;
+                        status = TrackerStatus::Error(error.to_string());
+                        log::error!("Optimization error: {error}");
+                        reported_error = Some(error);
                     }
-                    is_optimized
-                });
-                handles.push(handle);
-            }
+                    // `optimize()` panicked
+                    Err(panic_payload) => {
+                        let message = panic::downcast_str(&panic_payload).unwrap_or("");
+                        let separator = if !message.is_empty() { ": " } else { "" };
+                        let status_msg = format!("Optimization task panicked{separator}{message}");
+
+                        is_optimized = false;
+                        status = TrackerStatus::Error(status_msg.clone());
+                        reported_error = Some(CollectionError::service_error(status_msg));
+                        log::warn!(
+                            "Optimization task panicked, collection may be in unstable state\
+                             {separator}{message}"
+                        );
+                    }
+                }
+                tracker_handle.update(status);
+                if let Some(reported_error) = reported_error {
+                    segments.write().report_optimizer_error(reported_error);
+                    is_optimization_failed.store(true, Ordering::Relaxed);
+                }
+                is_optimized
+            });
+            handles.push(handle);
         }
 
         handles
@@ -450,11 +474,15 @@ impl UpdateWorkers {
                 .to_base_segment_config(collection_quantization)
                 .map_err(|err| OperationError::service_error(err.to_string()))?;
 
-            segments.write().create_appendable_segment(
+            let segments_guard = segments.upgradable_read();
+            let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                segment_config,
+                Some(segment_config),
                 payload_index_schema,
+                true,
             )?;
+            let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
+            write_guard.add_new_locked(new_segment);
         }
 
         Ok(())

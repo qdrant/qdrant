@@ -1,12 +1,10 @@
 use std::borrow::Cow;
-use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use memory::madvise::AdviceSetting;
@@ -20,17 +18,16 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
-use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
-use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    AccessPattern, DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
+};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
-pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> {
-    vectors: S,
+pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
+    vectors: ChunkedMmapVectors<T>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -41,7 +38,7 @@ pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: Chunke
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseVectorStorage<T, S> {
+impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
@@ -78,9 +75,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseV
     }
 }
 
-impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T>
-    for AppendableMmapDenseVectorStorage<T, S>
-{
+impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }
@@ -91,24 +86,12 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
-    fn get_dense_batch<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        let mut vector_offsets = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
-        let vector_offsets = maybe_uninit_fill_from(
-            &mut vector_offsets,
-            keys.iter().map(|key| *key as VectorOffsetType),
-        )
-        .0;
-        self.vectors.get_batch(vector_offsets, vectors)
+    fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
+        self.vectors.for_each_in_batch(keys, f);
     }
 }
 
-impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
-    for AppendableMmapDenseVectorStorage<T, S>
-{
+impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -209,13 +192,16 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
     }
 }
 
-pub fn open_appendable_memmap_vector_storage(
+pub fn open_appendable_memmap_vector_storage_full(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
+    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+        path, dim, distance, madvise, populate,
+    )?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
 }
@@ -224,8 +210,11 @@ pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl(path, dim, distance, madvise, populate)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
         storage,
@@ -236,8 +225,11 @@ pub fn open_appendable_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl(path, dim, distance, madvise, populate)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
         storage,
@@ -248,96 +240,16 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let populate = false;
+    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, madvise, Some(populate))?;
 
-    let vectors =
-        ChunkedMmapVectors::<T>::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
-
-    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
-    let deleted_count = deleted.count_trues();
-
-    Ok(AppendableMmapDenseVectorStorage {
-        vectors,
-        deleted,
-        distance,
-        deleted_count,
-        _phantom: Default::default(),
-    })
-}
-
-pub fn open_appendable_in_ram_vector_storage(
-    storage_element_type: VectorStorageDatatype,
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    match storage_element_type {
-        VectorStorageDatatype::Float32 => {
-            open_appendable_in_ram_vector_storage_full(path, dim, distance)
-        }
-        VectorStorageDatatype::Float16 => {
-            open_appendable_in_ram_vector_storage_half(path, dim, distance)
-        }
-        VectorStorageDatatype::Uint8 => {
-            open_appendable_in_ram_vector_storage_byte(path, dim, distance)
-        }
-    }
-}
-
-fn open_appendable_in_ram_vector_storage_full(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_in_ram_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableInRam(Box::new(storage)))
-}
-
-fn open_appendable_in_ram_vector_storage_byte(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_in_ram_vector_storage_impl(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableInRamByte(Box::new(
-        storage,
-    )))
-}
-
-fn open_appendable_in_ram_vector_storage_half(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_in_ram_vector_storage_impl(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableInRamHalf(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_in_ram_vector_storage_impl<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<AppendableMmapDenseVectorStorage<T, InRamPersistedVectors<T>>> {
-    fs::create_dir_all(path)?;
-
-    let vectors_path = path.join(VECTORS_DIR_PATH);
-    let deleted_path = path.join(DELETED_DIR_PATH);
-
-    let vectors = InRamPersistedVectors::<T>::open(&vectors_path, dim)?;
-
-    let populate = true;
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();
 
@@ -382,8 +294,14 @@ mod tests {
         const DIM: usize = 128;
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let mut storage =
-            open_appendable_memmap_vector_storage(dir.path(), DIM, Distance::Dot).unwrap();
+        let mut storage = open_appendable_memmap_vector_storage_full(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
         let hw_counter = HardwareCounterCell::disposable();

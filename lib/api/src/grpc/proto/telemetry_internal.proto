@@ -5,28 +5,43 @@ import "collections.proto";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-message GetPeerTelemetryRequest {
-  // The peer id to ask for telemetry
-  uint64 peer_id = 1;
+message GetTelemetryRequest {
   // The level of detail needed
-  uint32 details_level = 2;
+  uint32 details_level = 1;
+  // If present, select these collections
+  CollectionsSelector collections_selector = 2;
+  // Timeout in secs for the request
+  uint64 timeout = 3;
 }
 
-message GetPeerTelemetryResponse {
-  // id
-  reserved 1;
-  // app
-  reserved 2;
+message CollectionsSelector {
+  repeated string only_collections = 1;
+}
+
+message GetTelemetryResponse {
+  PeerTelemetry result = 1;
+  double time = 2;
+}
+
+message PeerTelemetry {
+  reserved 1; // id
+  AppTelemetry app = 2; // app
   // Mapping from collection name to its telemetry
   map<string, CollectionTelemetry> collections = 3;
   // Telemetry about the cluster and peers
   ClusterTelemetry cluster = 4;
-  // requests
-  reserved 5;
-  // memory
-  reserved 6;
-  // hardware
-  reserved 7;
+  reserved 5; // requests
+  reserved 6; // memory
+  reserved 7; // hardware
+}
+
+message AppTelemetry {
+    // Name of service
+    string name = 1;
+    // Qdrant version
+    string version = 2;
+    // Last startup timestamp in seconds
+    int64 startup = 3;
 }
 
 message CollectionTelemetry {
@@ -36,9 +51,9 @@ message CollectionTelemetry {
   reserved 2;
   // config
   reserved 3;
-  // shards
-  reserved 4;
-  // Shard transfers in progress
+  // Shards information
+  repeated ReplicaSetTelemetry shards = 4;
+  // Shard (replica) transfers in progress
   repeated ShardTransferTelemetry transfers = 5;
   // Resharding(s) in progress
   repeated ReshardingTelemetry resharding = 6;
@@ -50,7 +65,7 @@ message ShardTransferTelemetry {
   // Local shard id
   uint32 shard_id = 1;
   // Target shard ID if different than source shard ID.
-  // Used exclusively with `ReshardStreamRecords` transfer method.
+  // Used exclusively with `ReshardingStreamRecords` transfer method.
   optional uint32 to_shard_id = 2;
   // From peer id
   uint64 from = 3;
@@ -60,7 +75,7 @@ message ShardTransferTelemetry {
   // If `false` transfer is a moving of a shard from one peer to another.
   bool sync = 5;
   // Method of transferring points
-  ShardTransferMethod method = 6;
+  optional ShardTransferMethod method = 6;
   // Freeform string. Typically reports progress
   string comment = 7;
 }
@@ -110,16 +125,75 @@ message ShardCleanStatusTelemetry {
   }
 }
 
+message ReplicaSetTelemetry {
+  // Shard ID
+  uint32 id = 1;
+  // Optional shard key for custom sharding
+  optional ShardKey key = 2;
+  // Local shard information
+  LocalShardTelemetry local = 3;
+  // Remote shards
+  repeated RemoteShardTelemetry remote = 4;
+  map<uint64, ReplicaState> replica_states = 5;
+  // Snapshot operations telemetry
+  optional PartialSnapshotTelemetry partial_snapshot = 6;
+}
+
+message LocalShardTelemetry {
+  // Optimization status
+  optional ShardStatus status = 3;
+  // Total optimized points
+  uint64 total_optimized_points = 4;
+  // Estimated vectors size in bytes
+  optional uint64 vectors_size_bytes = 5;
+  // Estimated payloads size in bytes
+  optional uint64 payloads_size_bytes = 6;
+  // Approximate number of points
+  optional uint64 num_points = 7;
+  // Approximate number of vectors
+  optional uint64 num_vectors = 8;
+  // Approximate number of vectors by vector name
+  map<string, uint64> num_vectors_by_name = 9;
+  // segments
+  reserved 10;
+  // optimizations
+  reserved 11;
+  // Number of vectors excluded from search if `indexed_only` is used
+  map<string, uint64> indexed_only_excluded_vectors = 12;
+}
+
+enum ShardStatus {
+    // Shard is completely ready for requests
+    GREEN = 0;
+    // Shard is available, but some segments are under optimization
+    YELLOW = 1;
+    // Shard is available, but some segments are pending optimization
+    GREY = 2;
+    // Something is not OK:
+    // - some operations failed and was not recovered
+    RED = 3;
+}
+
+message RemoteShardTelemetry {
+    uint32 shard_id = 1;
+    uint64 peer_id = 2;
+}
+
+message PartialSnapshotTelemetry {
+  // Number of ongoing snapshot creation requests
+  uint64 ongoing_create_snapshot_requests = 1;
+  // Whether the shard is recovering
+  bool is_recovering = 2;
+  // Last successful recovery timestamp
+  uint64 recovery_timestamp = 3;
+}
+
 message ClusterTelemetry {
   ClusterStatusTelemetry status = 1;
-  // config
-  reserved 2;
-  // peers
-  reserved 3;
-  // peer_metadata
-  reserved 4;
-  // metadata
-  reserved 5;
+  reserved 2; // config
+  map<uint64, PeerInfo> peers = 3;
+  reserved 4; // peer_metadata
+  reserved 5; // metadata
 }
 
 message ClusterStatusTelemetry {
@@ -127,9 +201,9 @@ message ClusterStatusTelemetry {
   uint64 term = 2;
   uint64 commit = 3;
   uint64 pending_operations = 4;
-  StateRole role = 5;
+  optional StateRole role = 5;
   bool is_voter = 6;
-  uint64 peer_id = 7;
+  optional uint64 peer_id = 7;
   ConsensusThreadStatus consensus_thread_status = 8;
 }
 
@@ -151,6 +225,10 @@ message ConsensusThreadStatus {
   message StoppedWithErr {
     string err = 1;
   }
+}
+
+message PeerInfo {
+  string uri = 1;
 }
 
 enum StateRole {

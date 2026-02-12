@@ -384,6 +384,28 @@ def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str
             return False
     return True
 
+def peers_have_version(peer_api_uris: [str]) -> bool:
+    for peer_api_uri in peer_api_uris:
+        try:
+            # Check versions in local telemetry of each peer
+            # Not using cluster level telemetry because it shows versions before
+            # they are fully propagated through consensus
+            r = requests.get(f"{peer_api_uri}/telemetry?details_level=3")
+            assert_http_ok(r)
+            cluster = r.json()["result"]["cluster"]
+            peers = cluster["peers"]
+            peer_metadata = cluster["peer_metadata"]
+
+            for peer_id in peers.keys():
+                # Peers without metadata are not listed
+                if peer_id not in peer_metadata:
+                    return False
+                if peer_metadata[peer_id].get("version") is None:
+                    return False
+        except requests.exceptions.ConnectionError:
+            print(f"Could not contact peer {peer_api_uri} to fetch versions")
+            return False
+    return True
 
 def all_nodes_have_same_commit(peer_api_uris: [str]) -> bool:
     commits = []
@@ -509,7 +531,10 @@ def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name:
         comment = transfer["comment"]
 
         # Compare progress or total
-        current, total = re.search(r"Transferring records \((\d+)/(\d+)\), started", comment).groups()
+        m = re.search(r"Transferring records \((\d+)/(\d+)\)", comment)
+        if m is None:
+            continue
+        current, total = m.groups()
         if current is not None and expected_transfer_progress is not None and int(
                 current) >= expected_transfer_progress:
             return True
@@ -606,6 +631,12 @@ def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str, 
         print_clusters_info(peer_api_uris)
         raise e
 
+def wait_for_all_peers_versions(peer_api_uris: [str]):
+    try:
+        wait_for(peers_have_version, peer_api_uris)
+    except Exception as e:
+        print_clusters_info(peer_api_uris)
+        raise e
 
 def wait_for_same_commit(peer_api_uris: [str]):
     try:
@@ -808,14 +839,17 @@ def move_shard(source_uri, collection_name, shard_id, source_peer_id, target_pee
         })
     assert_http_ok(r)
 
-def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, target_peer_id):
+def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, target_peer_id, method=None):
+    payload = {
+        "shard_id": shard_id,
+        "from_peer_id": source_peer_id,
+        "to_peer_id": target_peer_id
+    }
+    if method:
+        payload["method"] = method
     r = requests.post(
         f"{source_uri}/collections/{collection_name}/cluster", json={
-            "replicate_shard": {
-                "shard_id": shard_id,
-                "from_peer_id": source_peer_id,
-                "to_peer_id": target_peer_id
-            }
+            "replicate_shard": payload
         })
     assert_http_ok(r)
 

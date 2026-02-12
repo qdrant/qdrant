@@ -36,6 +36,7 @@ impl LocalShard {
             arc_ctx,
             &self.search_runtime,
             hw_measurement_acc,
+            timeout,
         );
 
         let res = tokio::time::timeout(timeout, future)

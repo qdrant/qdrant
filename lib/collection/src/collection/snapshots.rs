@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 
 use common::tar_ext::BuilderExt;
-use common::tempfile_ext::MaybeTempPath;
+use common::tar_unpack::tar_unpack_file;
 use fs_err::File;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
-use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::types::SnapshotFormat;
+use segment::utils::fs::move_all;
+use shard::snapshots::snapshot_data::SnapshotData;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
@@ -23,7 +23,6 @@ use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::replica_set::snapshots::RecoveryType;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
@@ -159,14 +158,22 @@ impl Collection {
     ///
     /// This method performs blocking IO.
     pub fn restore_snapshot(
-        snapshot_path: &Path,
+        snapshot_data: SnapshotData,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
     ) -> CollectionResult<()> {
-        // decompress archive
-        let mut ar = open_snapshot_archive_with_validation(snapshot_path)?;
-        ar.unpack(target_dir)?;
+        match snapshot_data {
+            SnapshotData::Packed(snapshot_path) => {
+                tar_unpack_file(&snapshot_path, target_dir)?;
+                snapshot_path.close()?;
+            }
+            SnapshotData::Unpacked(snapshot_dir) => {
+                // already unpacked snapshot, validate files and move to target dir
+                let snapshot_dir_path = snapshot_dir.path();
+                move_all(snapshot_dir_path, target_dir)?;
+            }
+        }
 
         let config = CollectionConfigInternal::load(target_dir)?;
         config.validate_and_warn();
@@ -286,8 +293,8 @@ impl Collection {
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
-            Arc::clone(&self.shards_holder).read_owned().await,
-            |x| x.get_shard(shard_id),
+            self.shards_holder.clone().read_owned().await,
+            |shard_holder| shard_holder.get_shard(shard_id),
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
@@ -301,7 +308,7 @@ impl Collection {
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
-        snapshot_path: MaybeTempPath,
+        snapshot_data: SnapshotData,
         recovery_type: RecoveryType,
         this_peer_id: PeerId,
         is_distributed: bool,
@@ -310,14 +317,7 @@ impl Collection {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + 'static> {
         // `ShardHolder::validate_shard_snapshot` is cancel safe, so we explicitly cancel it
         // when token is triggered
-        let shard_holder = cancel::future::cancel_on_token(cancel.clone(), async {
-            let shard_holder = self.shards_holder.clone().read_owned().await;
-
-            shard_holder.validate_shard_snapshot(&snapshot_path).await?;
-
-            CollectionResult::Ok(shard_holder)
-        })
-        .await??;
+        let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let collection_path = self.path.clone();
         let collection_name = self.name().to_string();
@@ -329,7 +329,7 @@ impl Collection {
         let restore = self.update_runtime.spawn(async move {
             shard_holder
                 .restore_shard_snapshot(
-                    &snapshot_path,
+                    snapshot_data,
                     recovery_type,
                     &collection_path,
                     &collection_name,
@@ -340,10 +340,6 @@ impl Collection {
                     cancel,
                 )
                 .await?;
-
-            if let Err(err) = snapshot_path.close() {
-                log::error!("Failed to remove downloaded snapshot archive after recovery: {err}");
-            }
 
             CollectionResult::Ok(())
         });

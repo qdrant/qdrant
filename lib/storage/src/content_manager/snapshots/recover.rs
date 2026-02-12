@@ -1,22 +1,25 @@
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
-use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::common::sha_256::hashes_equal;
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
-use collection::shards::replica_set::replica_set_state::ReplicaState;
-use collection::shards::replica_set::snapshots::RecoveryType;
+use collection::shards::replica_set::replica_set_state::{
+    MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
+};
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
+use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
+use crate::content_manager::snapshots::download_result::DownloadResult;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::rbac::{AccessRequirements, Auth, CollectionPass};
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -58,22 +61,23 @@ pub async fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    access: Access,
+    auth: Auth,
     client: reqwest::Client,
 ) -> Result<bool, StorageError> {
-    let multipass = access.check_global_access(AccessRequirements::new().manage())?;
+    let multipass =
+        auth.check_global_access(AccessRequirements::new().manage(), "recover_from_snapshot")?;
 
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
 
     let toc = dispatcher
-        .toc(&access, &new_unchecked_verification_pass())
+        .toc(&auth, &new_unchecked_verification_pass())
         .clone();
 
     let res = toc
         .general_runtime_handle()
         .spawn(async move {
-            _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
+            _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client).await
         })
         .await??;
 
@@ -85,7 +89,7 @@ pub async fn do_recover_from_snapshot(
 /// This method is *not* cancel safe.
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
-    access: Access,
+    auth: Auth,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
@@ -100,7 +104,7 @@ async fn _do_recover_from_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc(&access, &pass);
+    let toc = dispatcher.toc(&auth, &pass);
 
     // Measure this scope for metrics/telemetry.
     // (This must be a named variable so it doesn't get dropped prematurely!)
@@ -113,15 +117,24 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshot_path = download_snapshot(
+    let DownloadResult {
+        snapshot: snapshot_data,
+        hash: snapshot_hash,
+    } = download_snapshot(
         client,
         location,
-        &toc.optional_temp_or_snapshot_temp_path()?,
+        // Default temporary path to storage dir, to allow faster recovery within the same volume
+        &toc.optional_temp_or_storage_temp_path()?,
+        checksum.is_some(),
     )
     .await?;
 
     if let Some(checksum) = checksum {
-        let snapshot_checksum = hash_file(&snapshot_path).await?;
+        let Some(snapshot_checksum) = snapshot_hash else {
+            return Err(StorageError::service_error(
+                "Snapshot checksum was not computed during download",
+            ));
+        };
         if !hashes_equal(&snapshot_checksum, &checksum) {
             return Err(StorageError::bad_input(format!(
                 "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
@@ -129,33 +142,23 @@ async fn _do_recover_from_snapshot(
         }
     }
 
-    log::debug!("Snapshot downloaded to {}", snapshot_path.display());
-
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
 
     let tmp_collection_dir = tempfile::Builder::new()
         .prefix(&format!("col-{collection_pass}-recovery-"))
         .tempdir_in(temp_storage_path)?;
 
-    log::debug!(
-        "Recovering collection {collection_pass} from snapshot {}",
-        snapshot_path.display(),
-    );
-
-    log::debug!(
-        "Unpacking snapshot to {}",
-        tmp_collection_dir.path().display(),
-    );
-
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
-    let snapshot_path_clone = snapshot_path.to_path_buf();
+
     let restoring = tokio::task::spawn_blocking(move || {
         Collection::restore_snapshot(
-            &snapshot_path_clone,
+            snapshot_data,
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,
-        )
+        )?;
+        common::fs::bulk_sync_dir(&tmp_collection_dir_clone)?;
+        Ok::<(), StorageError>(())
     });
     restoring.await??;
 
@@ -183,7 +186,7 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 )?);
             dispatcher
-                .submit_collection_meta_op(operation, access.clone(), None)
+                .submit_collection_meta_op(operation, auth.clone(), None)
                 .await?;
 
             // Since we not just copy files into a collection dir,
@@ -198,7 +201,7 @@ async fn _do_recover_from_snapshot(
                     });
 
                 dispatcher
-                    .submit_collection_meta_op(consensus_op, access.clone(), None)
+                    .submit_collection_meta_op(consensus_op, auth.clone(), None)
                     .await?;
             }
 
@@ -224,18 +227,28 @@ async fn _do_recover_from_snapshot(
         )));
     }
 
+    let is_manual_recovery_state_supported = toc
+        .get_channel_service()
+        .all_peers_at_version(&MANUAL_RECOVERY_SHARD_STATE_VERSION);
+
+    let recovery_state = if is_manual_recovery_state_supported {
+        ReplicaState::ManualRecovery
+    } else {
+        ReplicaState::Partial
+    };
+
     // Deactivate collection local shards during recovery
     for (shard_id, shard_info) in &state.shards {
         let local_shard_state = shard_info.replicas.get(&this_peer_id);
         match local_shard_state {
             None => {} // Shard is not on this node, skip
             Some(state) => {
-                if state != &ReplicaState::Partial {
+                if state != &recovery_state {
                     toc.send_set_replica_state_proposal(
                         collection_pass.to_string(),
                         this_peer_id,
                         *shard_id,
-                        ReplicaState::Partial,
+                        recovery_state,
                         None,
                     )?;
                 }
@@ -271,6 +284,22 @@ async fn _do_recover_from_snapshot(
         if !recovered {
             log::debug!("Shard {shard_id} is not in snapshot");
             continue;
+        }
+
+        // Staging delay: Allow observing Partial state before activation
+        #[cfg(feature = "staging")]
+        {
+            let delay_secs: f64 = std::env::var("QDRANT__STAGING__SNAPSHOT_RECOVERY_DELAY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            if delay_secs > 0.0 {
+                log::debug!(
+                    "Staging: Delaying shard {shard_id} activation for {delay_secs}s (shard is in Partial state)"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                log::debug!("Staging: Delay complete, proceeding with activation");
+            }
         }
 
         // If this is the only replica, we can activate it
@@ -366,11 +395,6 @@ async fn _do_recover_from_snapshot(
 
     // Remove tmp collection dir
     tokio_fs::remove_dir_all(&tmp_collection_dir).await?;
-
-    // Remove snapshot after recovery if downloaded
-    if let Err(err) = snapshot_path.close() {
-        log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
-    }
 
     Ok(true)
 }

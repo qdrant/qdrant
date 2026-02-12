@@ -19,6 +19,16 @@ enum WriteOrderingType {
   Strong = 2;
 }
 
+// Defines the mode of the upsert operation
+enum UpdateMode {
+  // Default mode - insert new points, update existing points
+  Upsert = 0;
+  // Only insert new points, do not update existing points
+  InsertOnly = 1;
+  // Only update existing points, do not insert new points
+  UpdateOnly = 2;
+}
+
 message WriteOrdering {
   // Write ordering guarantees
   WriteOrderingType type = 1;
@@ -162,10 +172,13 @@ message UpsertPoints {
   optional WriteOrdering ordering = 4;
   // Option for custom sharding to specify used shard keys
   optional ShardKeySelector shard_key_selector = 5;
-  // If specified, only points that match this filter will be updated, others will be inserted
+  // Filter to apply when updating existing points. Only points matching this filter will be updated.
+  // Points that don't match will keep their current state. New points will be inserted regardless of the filter.
   optional Filter update_filter = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
+  // Mode of the upsert operation: insert_only, upsert (default), update_only
+  optional UpdateMode update_mode = 8;
 }
 
 message DeletePoints {
@@ -940,6 +953,12 @@ message Mmr {
 message Rrf {
   // K parameter for reciprocal rank fusion
   optional uint32 k = 1;
+
+  // Weights for each prefetch source.
+  // Higher weight gives more influence on the final ranking.
+  // If not specified, all prefetches are weighted equally.
+  // The number of weights should match the number of prefetches.
+  repeated float weights = 2;
 }
 
 message Query {
@@ -1164,8 +1183,11 @@ message PointsUpdateOperation {
     repeated PointStruct points = 1;
     // Option for custom sharding to specify used shard keys
     optional ShardKeySelector shard_key_selector = 2;
-    // If specified, only points that match this filter will be updated, others will be inserted
+    // Filter to apply when updating existing points. Only points matching this filter will be updated.
+    // Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     optional Filter update_filter = 3;
+    // Mode of the upsert operation: insert_only, upsert (default), update_only
+    optional UpdateMode update_mode = 4;
   }
   message SetPayload {
     map<string, Value> payload = 1;
@@ -1273,6 +1295,8 @@ enum UpdateStatus {
   Completed = 2;
   // Internal: update is rejected due to an outdated clock
   ClockRejected = 3;
+  // Timeout of awaited operations
+  WaitTimeout = 4;
 }
 
 message OrderValue {

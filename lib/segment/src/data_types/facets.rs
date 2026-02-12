@@ -1,6 +1,8 @@
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::hash::Hash;
 
+use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -90,6 +92,21 @@ pub struct FacetHit<T: FacetValueTrait> {
 #[derive(Clone, Debug, Default)]
 pub struct FacetResponse {
     pub hits: Vec<FacetValueHit>,
+}
+
+impl FacetResponse {
+    /// Convert a count map to top `limit` hits sorted by count descending.
+    ///
+    /// Shared utility used by Edge and Collection facet implementations.
+    pub fn top_hits(counts: HashMap<FacetValue, usize>, limit: usize) -> Self {
+        let hits = counts
+            .into_iter()
+            .map(|(value, count)| FacetValueHit { value, count })
+            .k_largest(limit)
+            .collect();
+
+        Self { hits }
+    }
 }
 
 impl<T: FacetValueTrait> Ord for FacetHit<T> {

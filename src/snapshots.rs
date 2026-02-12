@@ -3,10 +3,12 @@ use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
+use io::safe_delete::safe_delete_in_tmp;
 use log::info;
-use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use shard::snapshots::snapshot_data::SnapshotData;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
 use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
@@ -24,12 +26,12 @@ use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
 pub fn recover_snapshots(
     mapping: &[String],
     force: bool,
-    temp_dir: Option<&str>,
-    storage_dir: &str,
+    temp_dir: Option<&Path>,
+    storage_dir: &Path,
     this_peer_id: PeerId,
     is_distributed: bool,
 ) -> Vec<String> {
-    let collection_dir_path = Path::new(storage_dir).join(COLLECTIONS_DIR);
+    let collection_dir_path = storage_dir.join(COLLECTIONS_DIR);
     let mut recovered_collections: Vec<String> = vec![];
 
     for snapshot_params in mapping {
@@ -38,7 +40,8 @@ pub fn recover_snapshots(
             .next()
             .unwrap_or_else(|| panic!("Snapshot path is missing: {snapshot_params}"));
 
-        let snapshot_path = Path::new(path);
+        let snapshot_data = SnapshotData::new_packed_persistent(path);
+
         let collection_name = split
             .next()
             .unwrap_or_else(|| panic!("Collection name is missing: {snapshot_params}"));
@@ -61,11 +64,10 @@ pub fn recover_snapshots(
             }
             info!("Overwriting collection {collection_name}");
         }
-        let collection_temp_path = temp_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| collection_path.with_extension("tmp"));
+        let collection_temp_path =
+            temp_dir.map_or_else(|| collection_path.with_extension("tmp"), PathBuf::from);
         if let Err(err) = Collection::restore_snapshot(
-            snapshot_path,
+            snapshot_data,
             &collection_temp_path,
             this_peer_id,
             is_distributed,
@@ -74,7 +76,8 @@ pub fn recover_snapshots(
         }
         // Remove collection_path directory if exists
         if collection_path.exists()
-            && let Err(err) = fs::remove_dir_all(&collection_path)
+            && let Err(err) = safe_delete_in_tmp(&collection_path, &storage_dir.join(".deleted"))
+                .and_then(|to_delete| to_delete.close())
         {
             panic!("Failed to remove collection {collection_name}: {err}");
         }
@@ -84,21 +87,20 @@ pub fn recover_snapshots(
 }
 
 pub fn recover_full_snapshot(
-    temp_dir: Option<&str>,
+    temp_dir: Option<&Path>,
     snapshot_path: &str,
-    storage_dir: &str,
+    storage_dir: &Path,
     force: bool,
     this_peer_id: PeerId,
     is_distributed: bool,
 ) -> Vec<String> {
     let snapshot_temp_path = temp_dir
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(storage_dir).join("snapshots_recovery_tmp"));
+        .unwrap_or_else(|| storage_dir.join("snapshots_recovery_tmp"));
     fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
-    let mut ar = open_snapshot_archive_with_validation(Path::new(snapshot_path)).unwrap();
-    ar.unpack(&snapshot_temp_path).unwrap();
+    tar_unpack_file(Path::new(snapshot_path), &snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");
@@ -127,7 +129,7 @@ pub fn recover_full_snapshot(
         is_distributed,
     );
 
-    let alias_path = Path::new(storage_dir).join(ALIASES_PATH);
+    let alias_path = storage_dir.join(ALIASES_PATH);
     let mut alias_persistence =
         AliasPersistence::open(&alias_path).expect("Can't open database by the provided config");
     for (alias, collection_name) in config_json.collections_aliases {

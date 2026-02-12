@@ -18,25 +18,25 @@ gpu = ["gpu/gpu"]
 rocksdb = ["dep:rocksdb"]
 
 [build-dependencies]
-cc = "1.2"
+cc = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true }
 criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
-env_logger = "0.11"
+env_logger = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 humantime = { workspace = true }
 indicatif = { workspace = true }
-ndarray = "0.17.1"
+ndarray = "0.17.2"
 ndarray-npy = { version = "0.10.0", default-features = false }
-rmp-serde = "~1.3"
+rmp-serde = { workspace = true }
 rand_distr = { workspace = true }
 walkdir = { workspace = true }
 rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
-anyhow = "1.0.100"
+anyhow = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
@@ -81,15 +81,15 @@ bitvec = { workspace = true }
 seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }
-fs_extra = "1.3.0"
-tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
+fs_extra = { workspace = true }
+tinyvec = { workspace = true }
 validator = { workspace = true }
 chrono = { workspace = true }
 ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-self_cell = "1.2.1"
+self_cell = { workspace = true }
 sha2 = { workspace = true }
 smallvec = { workspace = true }
 is_sorted = "0.1.1"
@@ -97,10 +97,9 @@ strum = { workspace = true }
 byteorder = { workspace = true }
 tap = { workspace = true }
 zerocopy = { workspace = true }
-lazy_static = "1.5.0"
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers.git", tag = "v1.2.1" }
-sysinfo = "0.37"
+sysinfo = "0.38"
 charabia = { version = "0.9.7", default-features = false, features = [
     "greek",
     "hebrew",
@@ -124,7 +123,7 @@ tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.2"
 nom = "8.0.0"
 half = { workspace = true }
-roaring = { version = "0.11.2" }
+roaring = { version = "0.11.3" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

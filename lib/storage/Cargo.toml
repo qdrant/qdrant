@@ -18,7 +18,8 @@ staging = ["collection/staging"]
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
-env_logger = "0.11"
+mockito = { workspace = true }
+env_logger = { workspace = true }
 
 [dependencies]
 ahash = { workspace = true }
@@ -43,6 +44,7 @@ chrono = { workspace = true }
 validator = { workspace = true }
 dashmap = { workspace = true }
 semver = { workspace = true }
+sha2 = { workspace = true }
 
 # Consensus related
 atomicwrites = { workspace = true }
@@ -61,11 +63,12 @@ collection = { path = "../collection" }
 shard = { path = "../shard" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.100"
+anyhow = { workspace = true }
 uuid = { workspace = true }
-url = "2.5.7"
+url = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 
 tracing = { workspace = true, optional = true }
+tracing-appender = "0.2"

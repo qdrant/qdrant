@@ -12,6 +12,7 @@ pub mod snapshot;
 
 #[cfg(test)]
 mod tests;
+mod vectors;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,6 +25,7 @@ use io::storage_version::StorageVersion;
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
+use uuid::Uuid;
 
 use self::version_tracker::VersionTracker;
 use crate::common::operation_error::SegmentFailedState;
@@ -62,6 +64,7 @@ impl StorageVersion for SegmentVersion {
 /// - Keeps track of occurred errors
 #[derive(Debug)]
 pub struct Segment {
+    pub uuid: Uuid,
     /// Initial version this segment was created at
     pub initial_version: Option<SeqNumberType>,
     /// Latest update operation number, applied to this segment
@@ -72,8 +75,8 @@ pub struct Segment {
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     pub is_alive_flush_lock: IsAliveLock,
-    /// Path of the storage root
-    pub current_path: PathBuf,
+    /// Path to the segment directory
+    pub segment_path: PathBuf,
     pub version_tracker: VersionTracker,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

@@ -1,30 +1,33 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
+use cancel::CancellationToken;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
+use shard::operations::CollectionUpdateOperations;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver};
-use tokio::sync::{Mutex as TokioMutex, oneshot};
+use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    SegmentOptimizer, plan_optimizations,
+};
 use crate::common::stoppable_task::StoppableTaskHandle;
-use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::CollectionResult;
 use crate::shards::CollectionId;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_workers::UpdateWorkers;
+use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
@@ -34,12 +37,11 @@ pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 pub struct OperationData {
     /// Sequential number of the operation
     pub op_num: SeqNumberType,
-    /// Operation
-    pub operation: CollectionUpdateOperations,
-    /// If operation was requested to wait for result
-    pub wait: bool,
+    /// Operation. If None, then the operation data is read from WAL
+    pub operation: Option<Box<CollectionUpdateOperations>>,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    /// Hardware measurement for the operation
     pub hw_measurements: HwMeasurementAcc,
 }
 
@@ -49,8 +51,6 @@ pub struct OperationData {
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
-    /// Stop all optimizers and listening
-    Stop,
     /// Empty signal used to trigger optimizers
     Nop,
     /// Ensures that previous updates are applied
@@ -86,8 +86,11 @@ pub struct UpdateHandler {
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
-    /// Process, that listens updates signals and perform updates
-    update_worker: Option<JoinHandle<()>>,
+    /// Process, that listens updates signals and perform updates.
+    /// Returns the receiver with pending updates when stopped.
+    update_worker: Option<JoinHandle<Receiver<UpdateSignal>>>,
+    /// Cancellation token for the update worker
+    update_worker_cancel: CancellationToken,
     /// Process, that listens for post-update signals and performs optimization
     optimizer_worker: Option<JoinHandle<()>>,
     /// Process that periodically flushes segments and tries to truncate wal
@@ -106,6 +109,12 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
+
+    /// If specified, this threshold (in kilobytes) configures a max size of unoptimized segment
+    /// which can still be updated. If there are unoptimized segments larger than this threshold,
+    /// updates will be blocked until those segments are optimized.
+    prevent_unoptimized_threshold_kb: Option<usize>,
+
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
@@ -121,11 +130,14 @@ pub struct UpdateHandler {
     scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 
     update_tracker: UpdateTracker,
+
+    /// Persist the applied op_num sequence number
+    applied_seq_handler: Arc<AppliedSeqHandler>,
 }
 
 impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         collection_name: CollectionId,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -138,11 +150,13 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
+        prevent_unoptimized_threshold_kb: Option<usize>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-    ) -> UpdateHandler {
+        applied_seq_handler: Arc<AppliedSeqHandler>,
+    ) -> Self {
         UpdateHandler {
             collection_name,
             shared_storage_config,
@@ -150,6 +164,7 @@ impl UpdateHandler {
             optimizers,
             segments,
             update_worker: None,
+            update_worker_cancel: CancellationToken::new(),
             optimizer_worker: None,
             optimizers_log,
             total_optimized_points,
@@ -162,16 +177,21 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            prevent_unoptimized_threshold_kb,
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
             scroll_read_lock,
             update_tracker,
+            applied_seq_handler,
         }
     }
 
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
+
+        // Optimization notifier is triggered when a new optimization is finished
+        let (optimization_finished_sender, optimization_finished_receiver) = watch::channel(());
 
         self.optimizer_worker = Some(self.runtime_handle.spawn(
             UpdateWorkers::optimization_worker_fn(
@@ -189,6 +209,7 @@ impl UpdateHandler {
                 self.payload_index_schema.clone(),
                 self.scroll_read_lock.clone(),
                 self.update_tracker.clone(),
+                optimization_finished_sender,
             ),
         ));
 
@@ -197,6 +218,12 @@ impl UpdateHandler {
         let scroll_read_lock = self.scroll_read_lock.clone();
         let update_tracker = self.update_tracker.clone();
         let collection_name = self.collection_name.clone();
+        let applied_seq_handler = self.applied_seq_handler.clone();
+
+        // Create a new cancellation token for this worker
+        self.update_worker_cancel = CancellationToken::new();
+        let cancel = self.update_worker_cancel.clone();
+
         self.update_worker = Some(self.runtime_handle.spawn(UpdateWorkers::update_worker_fn(
             collection_name,
             update_receiver,
@@ -205,6 +232,11 @@ impl UpdateHandler {
             segments,
             scroll_read_lock,
             update_tracker,
+            self.prevent_unoptimized_threshold_kb,
+            self.optimization_handles.clone(),
+            optimization_finished_receiver,
+            applied_seq_handler,
+            cancel,
         )));
 
         let segments = self.segments.clone();
@@ -235,6 +267,11 @@ impl UpdateHandler {
         }
     }
 
+    /// Signal the update worker to stop *without* waiting
+    pub fn stop_update_worker(&self) {
+        self.update_worker_cancel.cancel();
+    }
+
     /// Notify optimization handles to stop *without* waiting
     ///
     /// Blocking operation
@@ -248,15 +285,20 @@ impl UpdateHandler {
 
     /// Gracefully wait before all optimizations stop
     /// If some optimization is in progress - it will be finished before shutdown.
-    pub async fn wait_workers_stops(&mut self) -> CollectionResult<()> {
+    /// Returns the receiver with any pending update operations. None if there were no update worker.
+    pub async fn wait_workers_stops(&mut self) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let maybe_handle = self.update_worker.take();
-        if let Some(handle) = maybe_handle {
-            handle.await?;
-        }
+        let pending_receiver = if let Some(handle) = maybe_handle {
+            Some(handle.await?)
+        } else {
+            None
+        };
+
         let maybe_handle = self.optimizer_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
         }
+
         let maybe_handle = self.flush_worker.take();
         if let Some(handle) = maybe_handle {
             handle.await?;
@@ -274,7 +316,7 @@ impl UpdateHandler {
                 join_handle.await?;
             }
         }
-        Ok(())
+        Ok(pending_receiver)
     }
 
     /// Checks whether all update-related workers have stopped.
@@ -293,14 +335,8 @@ impl UpdateHandler {
     pub(crate) fn check_optimizer_conditions(&self) -> (bool, bool) {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
-
-        let excluded_ids = HashSet::<_>::default();
-        let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
-            let nonoptimal_segment_ids =
-                optimizer.check_condition(self.segments.clone(), &excluded_ids);
-            !nonoptimal_segment_ids.is_empty()
-        });
-
+        let has_suboptimal_optimizers =
+            !plan_optimizations(&self.segments.read(), &self.optimizers).is_empty();
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 

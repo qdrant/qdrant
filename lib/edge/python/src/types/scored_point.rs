@@ -7,7 +7,7 @@ use super::PyOrderValue;
 use crate::repr::*;
 use crate::{PyPayload, PyPointId, PyVectorInternal};
 
-#[pyclass(name = "ScoredPoint")]
+#[pyclass(name = "ScoredPoint", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyScoredPoint(pub ScoredPoint);

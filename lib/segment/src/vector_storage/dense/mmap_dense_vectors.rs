@@ -22,7 +22,7 @@ use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
-use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_points;
+use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
 use crate::vector_storage::{AccessPattern, Random, Sequential};
 
 const HEADER_SIZE: usize = 4;
@@ -46,7 +46,7 @@ pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     _mmap_seq: Option<Arc<Mmap>>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Mutex<Option<UringReader<T>>>,
+    uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
@@ -59,11 +59,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         deleted_path: &Path,
         dim: usize,
         with_async_io: bool,
+        madvise: AdviceSetting,
+        populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
-        let mmap = mmap_ops::open_read_mmap(vectors_path, AdviceSetting::Global, false)
+        let mmap = mmap_ops::open_read_mmap(vectors_path, madvise, populate)
             .describe("Open mmap for reading")?;
 
         // Only open second mmap for sequential reads if supported
@@ -71,7 +73,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             let mmap_seq = mmap_ops::open_read_mmap(
                 vectors_path,
                 AdviceSetting::Advice(Advice::Sequential),
-                false,
+                populate,
             )
             .describe("Open mmap for sequential reading")?;
             Some(Arc::new(mmap_seq))
@@ -112,14 +114,14 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             num_vectors,
             mmap: mmap.into(),
             _mmap_seq: mmap_seq,
-            uring_reader: Mutex::new(uring_reader),
+            uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
         })
     }
 
     pub fn has_async_reader(&self) -> bool {
-        self.uring_reader.lock().is_some()
+        self.uring_reader.is_some()
     }
 
     pub fn flusher(&self) -> MmapFlusher {
@@ -168,19 +170,23 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             .map(|offset| self.raw_vector_offset::<P>(offset))
     }
 
-    pub fn get_vectors<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<&'a [T]>],
-    ) -> &'a [&'a [T]] {
-        debug_assert_eq!(keys.len(), vectors.len());
+    pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        if is_read_with_prefetch_efficient_points(keys) {
+
+        // The `f` is most likely a scorer function.
+        // Fetching all vectors first then scoring them is more cache friendly
+        // then fetching and scoring in a single loop.
+        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let vectors = if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
-            maybe_uninit_fill_from(vectors, iter).0
+            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
         } else {
             let iter = keys.iter().map(|key| self.get_vector::<Random>(*key));
-            maybe_uninit_fill_from(vectors, iter).0
+            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+        };
+
+        for (i, vec) in vectors.iter().enumerate() {
+            f(i, vec);
         }
     }
 
@@ -207,20 +213,6 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self.deleted
     }
 
-    #[cfg(target_os = "linux")]
-    fn process_points_uring(
-        &self,
-        points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) -> OperationResult<()> {
-        self.uring_reader
-            .lock()
-            .as_mut()
-            .expect("io_uring reader should be initialized")
-            .read_stream(points, callback)
-    }
-
-    #[cfg(not(target_os = "linux"))]
     fn process_points_simple(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
@@ -240,16 +232,23 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
-        #[cfg(target_os = "linux")]
-        {
-            self.process_points_uring(points, callback)
-        }
+        match &self.uring_reader {
+            None => self.process_points_simple(points, callback),
 
-        #[cfg(not(target_os = "linux"))]
-        {
-            self.process_points_simple(points, callback);
-            Ok(())
+            #[cfg(target_os = "linux")]
+            Some(uring_reader) => {
+                // Use `UringReader` on Linux
+                let mut uring_guard = uring_reader.lock();
+                uring_guard.read_stream(points, callback)?;
+            }
+
+            #[cfg(not(target_os = "linux"))]
+            Some(_) => {
+                // Fallback to synchronous processing on non-Linux platforms
+                self.process_points_simple(points, callback);
+            }
         }
+        Ok(())
     }
 
     pub fn populate(&self) {

@@ -1,16 +1,18 @@
+use std::sync::atomic::AtomicBool;
+
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::named_vectors::NamedVectors;
 #[cfg(feature = "testing")]
 use crate::data_types::query_context::QueryContext;
+use crate::data_types::segment_record::SegmentRecord;
 #[cfg(feature = "testing")]
 use crate::data_types::vectors::QueryVector;
 use crate::data_types::vectors::VectorStructInternal;
-#[cfg(feature = "testing")]
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::NonAppendableSegmentEntry;
 #[cfg(feature = "testing")]
 use crate::types::VectorName;
 #[cfg(feature = "testing")]
@@ -25,72 +27,81 @@ impl Segment {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
-        internal_result
+        let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
             .into_iter()
             .filter_map(|scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
-                let external_id = id_tracker.external_id(point_offset);
-                match external_id {
-                    Some(point_id) => Some((point_id, scored_point_offset)),
-                    None => {
-                        log::warn!(
-                            "Point with internal ID {point_offset} not found in id tracker, skipping"
-                        );
-                        None
-                    }
-                }
+                let point_id = id_tracker.external_id(point_offset);
+                // This can happen if point was modified between retrieving and post-processing
+                // But this function locks the segment, so it can't be modified during its execution
+                debug_assert!(
+                    point_id.is_some(),
+                    "Point with internal ID {point_offset} not found in id tracker"
+                );
+                point_id.map(|id| (id, scored_point_offset))
             })
-            .map(|(point_id, scored_point_offset)| {
-                let point_offset = scored_point_offset.idx;
-                let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
-                    OperationError::service_error(format!(
-                        "Corrupter id_tracker, no version for point {point_id}"
-                    ))
-                })?;
-                let payload = if with_payload.enable {
-                    let initial_payload = self.payload_by_offset(point_offset, hw_counter)?;
+            .unzip();
 
-                    let processed_payload = if let Some(i) = &with_payload.payload_selector {
-                        i.process(initial_payload)
-                    } else {
-                        initial_payload
-                    };
-                    Some(processed_payload)
-                } else {
-                    None
-                };
-                let vector = match with_vector {
-                    WithVector::Bool(false) => None,
-                    WithVector::Bool(true) => {
-                        let named_vector = self.all_vectors_by_offset(point_offset, hw_counter)?;
-                        Some(VectorStructInternal::from(named_vector))
-                    },
-                    WithVector::Selector(vectors) => {
-                        let mut result = NamedVectors::default();
-                        for vector_name in vectors {
-                            if let Some(vector) =
-                                self.vector_by_offset(vector_name, point_offset, hw_counter)?
-                            {
-                                result.insert(vector_name.clone(), vector);
-                            }
-                        }
-                        Some(VectorStructInternal::from(result))
-                    }
-                };
+        let mut segment_records: AHashMap<_, _> = self
+            .retrieve(
+                &point_ids,
+                with_payload,
+                with_vector,
+                hw_counter,
+                is_stopped,
+            )?
+            .into_iter()
+            .map(|record| (record.id, record))
+            .collect();
 
-                Ok(ScoredPoint {
-                    id: point_id,
-                    version: point_version,
-                    score: scored_point_offset.score,
-                    payload,
-                    vector,
-                    shard_key: None,
-                    order_value: None,
-                })
-            })
-            .collect()
+        let mut results = Vec::with_capacity(point_ids.len());
+
+        for (point_id, scored_offset) in point_ids.into_iter().zip(scored_offsets) {
+            let ScoredPointOffset {
+                idx: point_offset,
+                score: point_score,
+            } = scored_offset;
+
+            let record = segment_records.remove(&point_id);
+
+            // It is still possible, that for some reason scored points have duplicates
+            // so we probably don't want to return error in release mode.
+            // We also don't want to copy all data just to handle this unexpected case.
+            let Some(record) = record else {
+                debug_assert!(
+                    false,
+                    "Record for point ID {point_id} not found during search result processing"
+                );
+                continue;
+            };
+
+            let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Corrupter id_tracker, no version for point {point_id}"
+                ))
+            })?;
+
+            let SegmentRecord {
+                id,
+                vectors,
+                payload,
+            } = record;
+
+            results.push(ScoredPoint {
+                id,
+                version: point_version,
+                score: point_score,
+                payload,
+                vector: vectors.map(VectorStructInternal::from),
+                shard_key: None,
+                order_value: None,
+            });
+        }
+
+        Ok(results)
     }
 
     /// This function is a simplified version of `search_batch` intended for testing purposes.

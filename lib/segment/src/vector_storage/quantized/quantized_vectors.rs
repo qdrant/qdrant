@@ -561,30 +561,6 @@ impl QuantizedVectors {
                 max_threads,
                 stopped,
             ),
-            VectorStorageEnum::DenseAppendableInRam(v) => Self::create_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            VectorStorageEnum::DenseAppendableInRamByte(v) => Self::create_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => Self::create_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
@@ -659,30 +635,6 @@ impl QuantizedVectors {
                 stopped,
             ),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Self::create_multi_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => Self::create_multi_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => Self::create_multi_impl(
-                v.as_ref(),
-                quantization_config,
-                storage_type,
-                path,
-                max_threads,
-                stopped,
-            ),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => Self::create_multi_impl(
                 v.as_ref(),
                 quantization_config,
                 storage_type,
@@ -1301,7 +1253,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_scalar<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
@@ -1361,7 +1313,7 @@ impl QuantizedVectors {
 
     #[allow(clippy::too_many_arguments)]
     fn create_scalar_multi<'a>(
-        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,

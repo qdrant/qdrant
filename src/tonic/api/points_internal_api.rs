@@ -26,19 +26,21 @@ use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth, AuthType};
 use tonic::{Request, Response, Status};
 
 use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
+use crate::common::inference::api_keys::extract_inference_auth;
 use crate::common::inference::params::InferenceParams;
-use crate::common::inference::token::extract_token;
 use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 
-const FULL_ACCESS: Access = Access::full("Internal API");
+fn full_internal_auth() -> Auth {
+    Auth::new(Access::full("Internal API"), None, None, AuthType::Internal)
+}
 
 /// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {
@@ -72,7 +74,7 @@ impl PointsInternalService {
             self.toc.clone(),
             sync_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params,
         )
         .await?
@@ -102,7 +104,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
         )
@@ -129,7 +131,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -156,7 +158,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             inference_params.clone(),
             hw_metrics,
         )
@@ -183,7 +185,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -209,7 +211,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -235,7 +237,7 @@ impl PointsInternalService {
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -261,7 +263,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -287,7 +289,7 @@ impl PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             clear_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_metrics,
         )
         .await
@@ -456,8 +458,8 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let api_keys = extract_inference_auth(&request);
+        let inference_params = InferenceParams::new(api_keys, None);
 
         self.upsert_internal(request.into_inner(), inference_params)
             .await
@@ -478,8 +480,8 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = extract_token(&request);
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let api_keys = extract_inference_auth(&request);
+        let inference_params = InferenceParams::new(api_keys, None);
 
         self.update_vectors_internal(request.into_inner(), inference_params)
             .await
@@ -554,10 +556,10 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = extract_token(&request);
+        let api_keys = extract_inference_auth(&request);
 
         // Update operation doesn't specify explicit timeout yet
-        let inference_params = InferenceParams::new(inference_token.clone(), None);
+        let inference_params = InferenceParams::new(api_keys, None);
 
         let request_inner = request.into_inner();
 
@@ -662,7 +664,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             timeout,
             hw_data,
         )
@@ -694,7 +696,7 @@ impl PointsInternal for PointsInternalService {
         let res = recommend(
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await?;
@@ -726,7 +728,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             scroll_points,
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await
@@ -756,7 +758,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             get_points,
             shard_id,
-            FULL_ACCESS.clone(),
+            full_internal_auth(),
             hw_data,
         )
         .await
@@ -782,7 +784,7 @@ impl PointsInternal for PointsInternalService {
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
-            &FULL_ACCESS,
+            full_internal_auth(),
             hw_data,
         )
         .await?;
@@ -794,10 +796,10 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
-        let inference_token = extract_token(&request);
+        let api_keys = extract_inference_auth(&request);
 
         // Internal operation, we don't expect timeout here
-        let inference_params = InferenceParams::new(inference_token, None);
+        let inference_params = InferenceParams::new(api_keys, None);
 
         self.sync_internal(request.into_inner(), inference_params)
             .await

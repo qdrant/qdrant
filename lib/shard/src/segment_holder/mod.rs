@@ -1,4 +1,6 @@
 mod flush;
+pub mod locked;
+pub mod read_points;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -9,19 +11,21 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
+use common::toposort::TopoSort;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
 use smallvec::{SmallVec, smallvec};
@@ -71,9 +75,18 @@ pub struct SegmentHolder {
     /// To acknowledge them in WAL, we overwrite the max_persisted value in `Self::flush_all` with the segment version stored here.
     max_persisted_segment_version_overwrite: AtomicU64,
 
+    /// Dependency map for flushing segments.
+    /// This structure defines which segments must be flushed before others.
+    /// Dependency graph also stores the maximum version of the operation, which created the dependency,
+    /// so we can clear all dependencies after flushing up to certain operation.
+    flush_dependency: Arc<Mutex<TopoSort<SegmentId, SeqNumberType>>>,
+
     /// Holder for a thread, which does flushing of all segments sequentially.
     /// This is used to avoid multiple concurrent flushes.
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<()>>>>,
+
+    /// The amount of currently running optimizations.
+    pub running_optimizations: ProcessCounter,
 }
 
 impl Drop for SegmentHolder {
@@ -84,16 +97,23 @@ impl Drop for SegmentHolder {
     }
 }
 
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
-
 impl SegmentHolder {
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
-    pub fn iter(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
+    pub fn iter(&self) -> impl Iterator<Item = (SegmentId, &LockedSegment)> {
         self.appendable_segments
             .iter()
             .chain(self.non_appendable_segments.iter())
+            .map(|(id, segment)| (*id, segment))
+    }
+
+    /// Iterate over all non-proxy segments with their IDs
+    pub fn iter_original(&self) -> impl Iterator<Item = (SegmentId, &Arc<RwLock<Segment>>)> {
+        self.iter().filter_map(|(id, segment)| match segment {
+            LockedSegment::Original(original) => Some((id, original)),
+            LockedSegment::Proxy(_) => None,
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -197,15 +217,6 @@ impl SegmentHolder {
         T: Into<LockedSegment>,
     {
         let new_id = self.add_new(segment);
-        (new_id, self.remove(remove_ids))
-    }
-
-    pub fn swap_new_locked(
-        &mut self,
-        segment: LockedSegment,
-        remove_ids: &[SegmentId],
-    ) -> (SegmentId, Vec<LockedSegment>) {
-        let new_id = self.add_new_locked(segment);
         (new_id, self.remove(remove_ids))
     }
 
@@ -344,7 +355,10 @@ impl SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(
+        ids: &[PointIdType],
+        segment: &dyn NonAppendableSegmentEntry,
+    ) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -383,12 +397,12 @@ impl SegmentHolder {
                 match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((point_version, smallvec![*segment_id]));
+                        entry.insert((point_version, smallvec![segment_id]));
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
                         let (old_version, old_segment_ids) =
-                            entry.insert((point_version, smallvec![*segment_id]));
+                            entry.insert((point_version, smallvec![segment_id]));
 
                         // Mark other point for deletion if the version is older
                         // TODO(timvisee): remove this check once deleting old points uses correct version
@@ -404,14 +418,11 @@ impl SegmentHolder {
                     // Ignore points with the same version, only update one of them
                     // TODO(timvisee): remove this branch once deleting old points uses correct version
                     Entry::Occupied(mut entry) if entry.get().0 == point_version => {
-                        entry.get_mut().1.push(*segment_id);
+                        entry.get_mut().1.push(segment_id);
                     }
                     // Point we have seen before is newer, mark this point for deletion
                     Entry::Occupied(_) => {
-                        to_delete
-                            .entry(*segment_id)
-                            .or_default()
-                            .push(segment_point);
+                        to_delete.entry(segment_id).or_default().push(segment_point);
                     }
                 }
             }
@@ -450,11 +461,13 @@ impl SegmentHolder {
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
+        F: FnMut(
+            &RwLockReadGuard<dyn NonAppendableSegmentEntry + 'static>,
+        ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&segment.get().read())?;
+            let is_applied = f(&segment.get_non_appendable().read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -463,12 +476,12 @@ impl SegmentHolder {
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(
-            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
+            &mut RwLockUpgradableReadGuard<dyn NonAppendableSegmentEntry + 'static>,
         ) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get().upgradable_read())?;
+            let is_applied = f(&mut segment.get_non_appendable().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
@@ -487,7 +500,7 @@ impl SegmentHolder {
             // It is important to iterate over all segments for each batch
             // to avoid blocking of a single segment with sequential updates
             for (segment_id, segment) in self.iter() {
-                did_apply |= f(&mut segment.get().write(), *segment_id)?;
+                did_apply |= f(&mut segment.get().write(), segment_id)?;
             }
 
             // No segment update => we're done
@@ -501,33 +514,23 @@ impl SegmentHolder {
 
     /// Apply an operation `point_operation` to a set of points `ids`.
     ///
-    /// A point may exist in multiple segments, having multiple versions. Depending on the kind of
-    /// operation, it either needs to be applied to just the latest point version, or to all of
-    /// them. This is controllable by the `all_point_versions` flag.
-    /// See: <https://github.com/qdrant/qdrant/pull/5956>
-    ///
-    /// In case of operations that may do a copy-on-write, we must only apply the operation to the
-    /// latest point version. Otherwise our copy on write mechanism may repurpose old point data.
-    /// See: <https://github.com/qdrant/qdrant/pull/5528>
+    /// This operation additionally checks if there are older versions of the points we are
+    /// about to update, and deletes those older versions first.
+    /// Older points are obsolete and updating them would bump their version,
+    /// which could make the inconsistent with actual latest version of the point.
     ///
     /// In case of delete operations, we must apply them to all versions of a point. Otherwise
     /// future operations may revive deletions through older point versions.
-    ///
-    /// The `segment_data` function is called no more than once for each segment and its result is
-    /// passed to `point_operation`.
-    pub fn apply_points<T, D, O>(
+    pub fn apply_points<F>(
         &self,
         ids: &[PointIdType],
-        mut segment_data: D,
-        mut point_operation: O,
+        mut point_operation: F,
     ) -> OperationResult<usize>
     where
-        D: FnMut(&dyn SegmentEntry) -> T,
-        O: FnMut(
+        F: FnMut(
             PointIdType,
             SegmentId,
             &mut RwLockWriteGuard<dyn SegmentEntry>,
-            &T,
         ) -> OperationResult<bool>,
     {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
@@ -555,11 +558,9 @@ impl SegmentHolder {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
-            let segment_data = segment_data(write_segment.deref());
 
             for point_id in points {
-                let is_applied =
-                    point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
+                let is_applied = point_operation(point_id, segment_id, &mut write_segment)?;
                 applied_points += usize::from(is_applied);
             }
         }
@@ -570,8 +571,8 @@ impl SegmentHolder {
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     fn aloha_lock_segment_read(
-        segment: &'_ RwLock<dyn SegmentEntry>,
-    ) -> RwLockReadGuard<'_, dyn SegmentEntry> {
+        segment: &'_ RwLock<dyn NonAppendableSegmentEntry>,
+    ) -> RwLockReadGuard<'_, dyn NonAppendableSegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
@@ -630,18 +631,8 @@ impl SegmentHolder {
     /// Apply an operation `point_operation` to a set of points `ids`, and, if necessary, move the
     /// points into appendable segments.
     ///
-    /// Moving is not performed in the following cases:
-    /// - The segment containing the point is appendable.
-    /// - The `update_nonappendable` function returns true for the segment.
-    ///
-    /// Otherwise, the operation is applied to the containing segment in place.
-    ///
-    /// Rationale: non-appendable segments may contain immutable indexes that could be left in an
-    /// inconsistent state after applying the operation. When it's known that the operation will not
-    /// affect the indexes, `update_nonappendable` can return true to avoid moving the points as a
-    /// performance optimization.
-    ///
-    /// It's always safe to pass a closure that always returns false (i.e. `|_| false`).
+    /// If the segment containing the point is appendable, then point is updated in-place without moving.
+    /// If the segment containing the point is immutable, then point is moved to a random appendable segment.
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
     ///
@@ -653,110 +644,108 @@ impl SegmentHolder {
     /// 1. moving a point first and deleting it after is unnecessary overhead.
     /// 2. this leaves older point versions in place, which may accidentally be revived by some
     ///    other operation later.
-    pub fn apply_points_with_conditional_move<F, G, H>(
+    pub fn apply_points_with_conditional_move<F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut point_operation: F,
-        mut point_cow_operation: H,
-        update_nonappendable: G,
+        mut point_cow_operation: G,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
-        G: FnMut(&dyn SegmentEntry) -> bool,
+        for<'n, 'o, 'p> G: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
     {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
 
-        let _applied_points_count = self.apply_points(
-            ids,
-            update_nonappendable,
-            |point_id, _idx, write_segment, &update_nonappendable| {
-                if let Some(point_version) = write_segment.point_version(point_id)
-                    && point_version >= op_num
-                {
-                    applied_points.insert(point_id);
-                    return Ok(false);
-                }
-
-                let can_apply_operation = !write_segment.is_proxy()
-                    && (update_nonappendable || write_segment.is_appendable());
-
-                let is_applied = if can_apply_operation {
-                    point_operation(point_id, write_segment)?
-                } else {
-                    self.aloha_random_write(
-                        &appendable_segments,
-                        |_appendable_idx, appendable_write_segment| {
-                            let mut all_vectors =
-                                write_segment.all_vectors(point_id, hw_counter)?;
-                            let mut payload = write_segment.payload(point_id, hw_counter)?;
-
-                            point_cow_operation(point_id, &mut all_vectors, &mut payload);
-
-                            appendable_write_segment.upsert_point(
-                                op_num,
-                                point_id,
-                                all_vectors,
-                                hw_counter,
-                            )?;
-                            appendable_write_segment
-                                .set_full_payload(op_num, point_id, &payload, hw_counter)?;
-
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
-
-                            Ok(true)
-                        },
-                    )?
-                };
+        let _applied_points_count = self.apply_points(ids, |point_id, idx, write_segment| {
+            if let Some(point_version) = write_segment.point_version(point_id)
+                && point_version >= op_num
+            {
                 applied_points.insert(point_id);
-                Ok(is_applied)
-            },
-        )?;
+                return Ok(false);
+            }
+
+            let can_apply_operation = !write_segment.is_proxy() && write_segment.is_appendable();
+
+            let is_applied = if can_apply_operation {
+                point_operation(point_id, write_segment)?
+            } else {
+                self.aloha_random_write(
+                    &appendable_segments,
+                    |appendable_idx, appendable_write_segment| {
+                        // If we are moving point from one segment to another,
+                        // we must guarantee, that data in new segment will be persisted before
+                        // deleting point from old segment.
+                        // Do ensure that, we add a flush dependency
+                        self.flush_dependency
+                            .lock()
+                            .add_dependency(idx, appendable_idx, op_num);
+
+                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
+                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+
+                        point_cow_operation(point_id, &mut all_vectors, &mut payload);
+
+                        appendable_write_segment.upsert_point(
+                            op_num,
+                            point_id,
+                            all_vectors,
+                            hw_counter,
+                        )?;
+                        appendable_write_segment
+                            .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+
+                        write_segment.delete_point(op_num, point_id, hw_counter)?;
+
+                        Ok(true)
+                    },
+                )?
+            };
+            applied_points.insert(point_id);
+            Ok(is_applied)
+        })?;
         Ok(applied_points)
     }
 
-    pub fn read_points<F>(
-        &self,
-        ids: &[PointIdType],
-        is_stopped: &AtomicBool,
-        mut f: F,
-    ) -> OperationResult<usize>
-    where
-        F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-    {
-        // We must go over non-appendable segments first, then go over appendable segments after
-        // Points may be moved from non-appendable to appendable, because we don't lock all
-        // segments together read ordering is very important here!
-        //
-        // Consider the following sequence:
-        //
-        // 1. Read-lock non-appendable segment A
-        // 2. Atomic move from A to B
-        // 3. Read-lock appendable segment B
-        //
-        // We are guaranteed to read all data consistently, and don't lose any points
-        let segments = self.non_appendable_then_appendable_segments();
+    /// Out of a list of point IDs, select only those that exist in at least one segment.
+    ///
+    /// Optimized for many segments and long lists of IDs:
+    /// - Removes found IDs from consideration for subsequent segments
+    /// - Early terminates when all IDs are found
+    /// - Pre-allocates result set
+    pub fn select_existing_points(&self, ids: Vec<PointIdType>) -> AHashSet<PointIdType> {
+        let mut remaining_ids = ids;
+        if remaining_ids.is_empty() {
+            return AHashSet::new();
+        }
 
-        let mut read_points = 0;
-        for segment in segments {
-            let segment_arc = segment.get();
-            let read_segment = segment_arc.read();
-            let points = ids
-                .iter()
-                .cloned()
-                .stop_if(is_stopped)
-                .filter(|id| read_segment.has_point(*id));
-            for point in points {
-                let is_ok = f(point, &read_segment)?;
-                read_points += usize::from(is_ok);
+        let mut existing_points = AHashSet::with_capacity(remaining_ids.len());
+
+        // Iterate through segments in proper order (non-appendable first for consistency)
+        for segment in self.non_appendable_then_appendable_segments() {
+            let segment_guard = segment.get().read();
+
+            // Partition remaining IDs: found ones go to existing_points, rest stay in remaining
+            remaining_ids.retain(|&id| {
+                if segment_guard.has_point(id) {
+                    existing_points.insert(id);
+                    false // Remove from remaining
+                } else {
+                    true // Keep in remaining
+                }
+            });
+
+            // Early termination if all points found
+            if remaining_ids.is_empty() {
+                break;
             }
         }
-        Ok(read_points)
+
+        existing_points
     }
 
     /// Create a new appendable segment and add it to the segment holder.
@@ -795,7 +784,7 @@ impl SegmentHolder {
     /// This builds a segment on disk, but does NOT add it to the current segment holder. That must
     /// be done explicitly. `save_version` must be true for the segment to be loaded when Qdrant
     /// restarts.
-    fn build_tmp_segment(
+    pub fn build_tmp_segment(
         &self,
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
@@ -918,7 +907,7 @@ impl SegmentHolder {
     fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
         let segments = self
             .iter()
-            .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
+            .map(|(segment_id, locked_segment)| (segment_id, locked_segment.get()))
             .collect::<Vec<_>>();
         let locked_segments = segments
             .iter()

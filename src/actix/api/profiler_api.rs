@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use storage::rbac::AccessRequirements;
 use validator::Validate;
 
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 
 #[derive(Deserialize, Validate)]
 struct LogParams {
@@ -24,12 +24,9 @@ struct SlowRequestsResponse {
 const DEFAULT_SLOW_REQUESTS_LIMIT: usize = 10;
 
 #[get("/profiler/slow_requests")]
-async fn get_slow_requests(
-    ActixAccess(access): ActixAccess,
-    params: Query<LogParams>,
-) -> impl Responder {
+async fn get_slow_requests(ActixAuth(auth): ActixAuth, params: Query<LogParams>) -> impl Responder {
     crate::actix::helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
+        auth.check_global_access(AccessRequirements::new().manage(), "get_slow_requests")?;
         let LogParams { limit, request } = params.into_inner();
 
         let slow_requests = get_requests_profile_log(

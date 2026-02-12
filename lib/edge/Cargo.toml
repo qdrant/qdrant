@@ -8,8 +8,12 @@ edition = "2024"
 [lints]
 workspace = true
 
+[features]
+staging = ["shard/staging"]
+
 [dependencies]
 common = { path = "../common/common" }
+io = { path = "../common/io" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
 
@@ -24,5 +28,6 @@ wal = { workspace = true }
 
 
 [dev-dependencies]
-anyhow = "1.0"
+anyhow = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
+serde_json = { workspace = true }

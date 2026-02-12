@@ -7,7 +7,23 @@ use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
 
+pub mod auditable_operation;
+pub mod auth;
 mod ops_checks;
+
+pub use auth::Auth;
+
+/// How the request was authenticated.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub enum AuthType {
+    Jwt,
+    ApiKey,
+    /// No authentication was configured or required.
+    None,
+    /// Request originated from the cluster itself (internal P2P communication).
+    /// These requests are not audit-logged.
+    Internal,
+}
 
 /// A structure that defines access rights.
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]

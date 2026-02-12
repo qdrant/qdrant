@@ -11,7 +11,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.92"
 default-run = "qdrant"
 
 [lints]
@@ -43,12 +43,11 @@ staging = ["collection/staging", "storage/staging", "shard/staging"]
 serde_urlencoded = "0.7"
 sealed_test = "1.1.0"
 
+mockito = { workspace = true }
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
 nix = { workspace = true, features = ["process"] }
 fs-err = { workspace = true, features = ["debug", "debug_tokio", "tokio"] } # for nicer error messages
-
-mockito = "1.7"
 
 
 [dependencies]
@@ -60,6 +59,7 @@ log = { workspace = true }
 colored = "3"
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
 schemars = { workspace = true }
@@ -82,9 +82,9 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 
 actix-cors = "0.7.1"
-actix-files = "0.6.6"
-actix-web = { version = "4.11.0", features = ["rustls-0_23", "actix-tls"] }
-actix-web-validator = "7.0.0"
+actix-web-validator = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { version = "0.5.2", features = ["util"] }
@@ -103,7 +103,7 @@ prometheus = { version = "0.14.0", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
 
-murmur3 = { git = "https://github.com/stusmall/murmur3", rev = "2c39087" }
+murmur3 = { git = "https://github.com/qdrant/murmur3", rev = "2c39087" }
 
 tempfile = { workspace = true }
 
@@ -121,6 +121,7 @@ raft-proto = { version = "0.7.0", features = [
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
+io = { path = "lib/common/io" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
@@ -200,25 +201,33 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 private_intra_doc_links = "allow"
 
 [workspace.dependencies]
+actix-web-validator = "7.0.0"
+actix-web = { version = "4.12.1", features = ["rustls-0_23", "actix-tls"] }
+actix-files = "0.6.10"
 ahash = { version = "0.8.11", features = ["serde"] }
+anyhow = "1.0.100"
+async-trait = "0.1.89"
 atomicwrites = "0.4.4"
 bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
-bitpacking = "0.9.2"
-bytemuck = { version = "1.24.0", features = [
+bitpacking = "0.9.3"
+bytemuck = { version = "1.25.0", features = [
     "derive",
     "extern_crate_alloc",
     "must_cast",
     "transparentwrapper_extra",
 ] }
-bytes = "1.10.1"
-chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.53", features = ["derive", "env"] }
+bytes = "1.11.1"
+cc = "1.2"
+chrono = { version = "0.4.43", features = ["serde"] }
+clap = { version = "4.5.56", features = ["derive", "env"] }
 criterion = "0.8.1"
-data-encoding = "2.9.0"
-delegate = "0.13.4"
+data-encoding = "2.10.0"
+delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
+env_logger = "0.11"
 fnv = "1.0"
-fs-err = { version = "3.2.0", features = ["tokio"] }
+fs-err = { version = "3.2.2", features = ["tokio"] }
+fs_extra = "1.3.0"
 futures = "0.3.31"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"
@@ -230,20 +239,22 @@ half = { version = "2.7.1", features = [
 http = "1.3.1"
 humantime = "2.3.0"
 indexmap = { version = "2", features = ["serde"] }
+url = { version = "2.5.8", features = ["serde"] }
 urlencoding = "2.1.3"
 indicatif = { version = "0.18.3", features = ["rayon"] }
 integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.29"
 memmap2 = "0.9.9"
-nix = { version = "0.30", features = ["fs", "feature"] }
+mockito = "1.7"
+nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
 parking_lot = { version = "0.12.5", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
-proptest = { version = "1.8.0", default-features = false, features = ["std"] }
+proptest = { version = "1.9.0", default-features = false, features = ["std"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
@@ -251,7 +262,8 @@ prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost u
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 rand = "0.9.2"
 rand_distr = "0.5.1"
-reqwest = { version = "0.12.26", default-features = false, features = [
+rmp-serde = "~1.3"
+reqwest = { version = "0.12.28", default-features = false, features = [
     "json",
     "http2",
     "stream",
@@ -267,28 +279,31 @@ schemars = { version = "0.8.22", features = [
     "indexmap2",
 ] }
 semver = { version = "1.0", features = ["serde"] }
+self_cell = "1.2.2"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_cbor = "0.11.2"
 serde_variant = "0.1.3"
+serde_with = "3.16.1"
 sha2 = "0.10.9"
 serde_json = { version = "~1.0", features = ["preserve_order"] }
 strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 tar = "0.4.41"
-tempfile = "3.23.0"
-tokio = { version = "1.48.0", features = ["full"] }
+tempfile = "3.24.0"
+tinyvec = { version = "1.10.0", features = ["alloc", "latest_stable_rust"] }
+tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
-uuid = { version = "1.19", features = ["v4", "serde"] }
+uuid = { version = "1.20", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "b03a156b0ffdbe8109b2c3c409ce3be2ec6d229e" }
-zerocopy = { version = "0.8.31", features = ["derive"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "2209eb2c4a359d9c32f63d868c580df360efa4a9" }
+zerocopy = { version = "0.8.37", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 bitvec = "1.0.1"
 smallvec = { version = "1.15.1", features = ["write"] }
 dashmap = "6.1"
@@ -338,6 +353,7 @@ members = [
     "lib/shard",
     "lib/sparse",
     "lib/storage",
+    "lib/trififo",
 ]
 
 [profile.release]
@@ -375,10 +391,6 @@ opt-level = 3
 # Override for fast sha256 hashing in ci builds
 [profile.ci.package.sha2]
 opt-level = 3
-
-[patch.crates-io]
-# Temporary patch until our PRs are merged.
-tar = { git = "https://github.com/qdrant/tar-rs", branch = "main" }
 
 [package.metadata.deb]
 maintainer = "Qdrant Team <team@qdrant.com>"

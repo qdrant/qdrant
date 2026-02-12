@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::config::{self, CollectionConfigInternal, CollectionParams, ShardingMethod};
@@ -8,7 +9,8 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 
-use super::TableOfContent;
+use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
+use crate::common::utils::try_unwrap_with_timeout_async;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -145,6 +147,7 @@ impl TableOfContent {
                 },
             )?,
             read_fan_out_factor: None,
+            read_fan_out_delay_ms: None,
         };
         let wal_config = self.storage_config.wal.update_opt(wal_config_diff.as_ref());
 
@@ -242,13 +245,32 @@ impl TableOfContent {
             let mut write_collections = self.collections.write().await;
             write_collections.validate_collection_not_exists(collection_name)?;
             let existing_collection =
-                write_collections.insert(collection_name.to_string(), collection);
+                write_collections.insert(collection_name.to_string(), Arc::new(collection));
             if let Some(existing_collection) = existing_collection {
                 debug_assert!(
                     false,
                     "Collection `{collection_name}` was not expected to exist"
                 );
+
                 existing_collection.stop_gracefully().await;
+
+                let removed_collection_res = try_unwrap_with_timeout_async(
+                    existing_collection,
+                    COLLECTION_DELETE_SPIN_INTERVAL,
+                    COLLECTION_DELETE_WAIT_TIMEOUT,
+                )
+                .await;
+
+                match removed_collection_res {
+                    Ok(collection) => drop(collection),
+                    Err(busy_collection) => {
+                        debug_assert!(false, "Collection `{collection_name}` is busy");
+                        log::error!(
+                            "Collection `{collection_name}` is busy and cannot be removed in time."
+                        );
+                        drop(busy_collection);
+                    }
+                };
             }
 
             self.telemetry.init_snapshot_telemetry(collection_name);

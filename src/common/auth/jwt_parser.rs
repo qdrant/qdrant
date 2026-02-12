@@ -84,6 +84,7 @@ mod tests {
                 payload: None,
             }])),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 
@@ -114,6 +115,7 @@ mod tests {
                 })),
             }])),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 
@@ -135,6 +137,7 @@ mod tests {
             exp: Some(exp),
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
+            subject: None,
         };
 
         let token = create_token(&claims);
@@ -156,12 +159,31 @@ mod tests {
     }
 
     #[test]
+    fn test_no_exp() {
+        let claims = Claims {
+            sub: None,
+            exp: None,
+            access: Access::Global(GlobalAccessMode::Read),
+            value_exists: None,
+            subject: None,
+        };
+
+        let token = create_token(&claims);
+
+        let secret = "secret";
+        let parser = JwtParser::new(secret);
+
+        assert!(matches!(parser.decode(&token), Some(Ok(_))));
+    }
+
+    #[test]
     fn test_invalid_token() {
         let claims = Claims {
             sub: None,
             exp: None,
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
+            subject: None,
         };
         let token = create_token(&claims);
 

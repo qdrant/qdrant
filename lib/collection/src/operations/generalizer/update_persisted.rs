@@ -40,6 +40,10 @@ impl Generalizer for CollectionUpdateOperations {
             CollectionUpdateOperations::FieldIndexOperation(field_operation) => {
                 CollectionUpdateOperations::FieldIndexOperation(field_operation.remove_details())
             }
+            #[cfg(feature = "staging")]
+            CollectionUpdateOperations::StagingOperation(op) => {
+                CollectionUpdateOperations::StagingOperation(op.clone())
+            }
         }
     }
 }
@@ -64,8 +68,6 @@ impl Generalizer for PointOperations {
             PointOperations::SyncPoints(sync_operation) => {
                 PointOperations::SyncPoints(sync_operation.remove_details())
             }
-            #[cfg(feature = "staging")]
-            PointOperations::TestDelay(op) => PointOperations::TestDelay(op.clone()),
         }
     }
 }
@@ -107,11 +109,13 @@ impl Generalizer for ConditionalInsertOperationInternal {
         let Self {
             points_op,
             condition,
+            update_mode,
         } = self;
 
         Self {
             condition: condition.clone(),
             points_op: points_op.remove_details(),
+            update_mode: *update_mode,
         }
     }
 }

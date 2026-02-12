@@ -1,3 +1,6 @@
+pub mod with_payload;
+pub mod with_vector;
+
 use std::fmt;
 
 use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
@@ -8,6 +11,8 @@ use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::vector_storage::query::*;
 use shard::query::query_enum::QueryEnum;
 
+pub use self::with_payload::*;
+pub use self::with_vector::*;
 use crate::repr::*;
 use crate::types::*;
 
@@ -152,7 +157,7 @@ impl Repr for PyQuery {
     }
 }
 
-#[pyclass(name = "Query")]
+#[pyclass(name = "Query", from_py_object)]
 #[derive(Clone, Debug)]
 pub enum PyQueryInterface {
     #[pyo3(constructor = (query, using = None))]
@@ -218,7 +223,7 @@ impl Repr for PyQueryInterface {
     }
 }
 
-#[pyclass(name = "RecommendQuery")]
+#[pyclass(name = "RecommendQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyRecommendQuery(RecoQuery<VectorInternal>);
@@ -262,7 +267,7 @@ impl PyRecommendQuery {
     }
 }
 
-#[pyclass(name = "DiscoverQuery")]
+#[pyclass(name = "DiscoverQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
@@ -303,7 +308,7 @@ impl PyDiscoverQuery {
     }
 }
 
-#[pyclass(name = "ContextQuery")]
+#[pyclass(name = "ContextQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyContextQuery(ContextQuery<VectorInternal>);
@@ -335,7 +340,7 @@ impl PyContextQuery {
     }
 }
 
-#[pyclass(name = "ContextPair")]
+#[pyclass(name = "ContextPair", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyContextPair(ContextPair<VectorInternal>);
@@ -386,7 +391,7 @@ impl<'py> IntoPyObject<'py> for &PyContextPair {
     }
 }
 
-#[pyclass(name = "FeedbackNaiveQuery")]
+#[pyclass(name = "FeedbackNaiveQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFeedbackNaiveQuery(NaiveFeedbackQuery<VectorInternal>);
@@ -438,7 +443,7 @@ impl PyFeedbackNaiveQuery {
     }
 }
 
-#[pyclass(name = "FeedbackItem")]
+#[pyclass(name = "FeedbackItem", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyFeedbackItem(FeedbackItem<VectorInternal>);
@@ -489,7 +494,7 @@ impl<'py> IntoPyObject<'py> for &PyFeedbackItem {
     }
 }
 
-#[pyclass(name = "NaiveFeedbackStrategy")]
+#[pyclass(name = "NaiveFeedbackStrategy", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyNaiveFeedbackCoefficients(NaiveFeedbackCoefficients);
 

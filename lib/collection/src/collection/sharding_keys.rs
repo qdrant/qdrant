@@ -128,6 +128,7 @@ impl Collection {
                     .update_local(
                         OperationWithClockTag::from(create_index_op),
                         true,
+                        None,
                         hw_counter.clone(),
                         false,
                     ) // TODO: Assign clock tag!? 🤔

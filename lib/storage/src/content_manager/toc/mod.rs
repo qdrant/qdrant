@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
@@ -33,9 +34,11 @@ use common::cpu::get_num_cpus;
 use dashmap::DashMap;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
+use futures::{StreamExt, stream};
+use io::safe_delete::safe_delete_in_tmp;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use tokio::runtime::{Handle, Runtime};
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 use self::dispatcher::TocDispatcher;
 use crate::ConsensusOperations;
@@ -46,12 +49,16 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::content_manager::toc::telemetry::TocTelemetryCollector;
-use crate::rbac::{Access, AccessRequirements, CollectionPass};
+use crate::rbac::{Access, AccessRequirements, CollectionMultipass, CollectionPass};
 use crate::types::StorageConfig;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
+
+/// How long to wait till deleted collection is released from previous operations
+pub const COLLECTION_DELETE_WAIT_TIMEOUT: Duration = Duration::from_secs(60 * 10); // 10 mins
+pub const COLLECTION_DELETE_SPIN_INTERVAL: Duration = Duration::from_millis(200);
 
 /// The main object of the service. It holds all objects, required for proper functioning.
 ///
@@ -83,7 +90,7 @@ pub struct TableOfContent {
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
-    collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
+    collection_hw_metrics: DashMap<CollectionId, Arc<HwSharedDrain>>,
     /// Collector for various telemetry/metrics.
     telemetry: TocTelemetryCollector,
 }
@@ -101,16 +108,17 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
+        let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
         fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
-            let temp_path = Path::new(path);
-            fs::create_dir_all(temp_path).expect("Can't create temporary files directory");
+            fs::create_dir_all(path).expect("Can't create temporary files directory");
         }
         let collection_paths =
             fs::read_dir(&collections_path).expect("Can't read Collections directory");
-        let mut collections: HashMap<String, Collection> = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
+
+        // Collect valid collection paths for loading
+        let mut collection_load_tasks = Vec::new();
         for entry in collection_paths {
             let collection_path = entry
                 .expect("Can't access of one of the collection files")
@@ -131,41 +139,65 @@ impl TableOfContent {
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
 
-            let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
             let collection_snapshots_path =
-                Self::collection_snapshots_path(&snapshots_path, &collection_name);
+                Self::collection_snapshots_path(&storage_config.snapshots_path, &collection_name);
 
-            log::info!("Loading collection: {collection_name}");
-            let collection = general_runtime.block_on(Collection::load(
-                collection_name.clone(),
-                this_peer_id,
-                &collection_path,
-                &collection_snapshots_path,
-                storage_config
-                    .to_shared_storage_config(is_distributed)
-                    .into(),
-                channel_service.clone(),
-                Self::change_peer_from_state_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                    ReplicaState::Dead,
-                ),
-                Self::request_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Self::abort_shard_transfer_callback(
-                    consensus_proposal_sender.clone(),
-                    collection_name.clone(),
-                ),
-                Some(search_runtime.handle().clone()),
-                Some(update_runtime.handle().clone()),
-                optimizer_resource_budget.clone(),
-                storage_config.optimizers_overwrite.clone(),
-            ));
+            let consensus_proposal_sender = consensus_proposal_sender.clone();
+            let channel_service = channel_service.clone();
+            let storage_config = storage_config.clone();
+            let search_runtime_handle = search_runtime.handle().clone();
+            let update_runtime_handle = update_runtime.handle().clone();
+            let optimizer_resource_budget = optimizer_resource_budget.clone();
 
-            collections.insert(collection_name.clone(), collection);
+            collection_load_tasks.push(async move {
+                log::info!("Loading collection: {collection_name}");
+                let collection = Collection::load(
+                    collection_name.clone(),
+                    this_peer_id,
+                    &collection_path,
+                    &collection_snapshots_path,
+                    storage_config
+                        .to_shared_storage_config(is_distributed)
+                        .into(),
+                    channel_service,
+                    Self::change_peer_from_state_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                        ReplicaState::Dead,
+                    ),
+                    Self::request_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Self::abort_shard_transfer_callback(
+                        consensus_proposal_sender.clone(),
+                        collection_name.clone(),
+                    ),
+                    Some(search_runtime_handle),
+                    Some(update_runtime_handle),
+                    optimizer_resource_budget,
+                    storage_config.optimizers_overwrite.clone(),
+                )
+                .await;
+                (collection_name.clone(), collection)
+            });
         }
+
+        // Load collections with specified concurrency
+        let mut collection_stream = stream::iter(collection_load_tasks).buffer_unordered(
+            storage_config
+                .performance
+                .load_concurrency
+                .get_concurrent_collections()
+                .get(),
+        );
+
+        let mut collections: HashMap<String, Arc<Collection>> = Default::default();
+        general_runtime.block_on(async {
+            while let Some((collection_name, collection)) = collection_stream.next().await {
+                collections.insert(collection_name, Arc::new(collection));
+            }
+        });
 
         // Initialize snapshot telemetry for all loaded collections.
         let telemetry = TocTelemetryCollector::default();
@@ -173,7 +205,7 @@ impl TableOfContent {
             telemetry.init_snapshot_telemetry(collection_name);
         }
 
-        let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
+        let alias_path = storage_config.storage_path.join(ALIASES_PATH);
         let alias_persistence = AliasPersistence::open(&alias_path)
             .expect("Can't open database by the provided config");
 
@@ -218,7 +250,7 @@ impl TableOfContent {
         self.consensus_proposal_sender.is_some()
     }
 
-    pub fn storage_path(&self) -> &str {
+    pub fn storage_path(&self) -> &Path {
         &self.storage_config.storage_path
     }
 
@@ -231,6 +263,18 @@ impl TableOfContent {
     pub async fn all_collections_access(&self, access: &Access) -> Vec<CollectionPass<'static>> {
         self.all_collections_with_access_requirements(access, AccessRequirements::new())
             .await
+    }
+
+    pub async fn multipass_into_collections(
+        &self,
+        multipass: &CollectionMultipass,
+    ) -> Vec<CollectionPass<'static>> {
+        self.collections
+            .read()
+            .await
+            .keys()
+            .map(|name| multipass.issue_pass(name).into_static())
+            .collect()
     }
 
     async fn all_collections_with_access_requirements(
@@ -267,30 +311,25 @@ impl TableOfContent {
     async fn get_collection_unchecked(
         &self,
         collection_name: &str,
-    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
+    ) -> Result<Arc<Collection>, StorageError> {
         let read_collection = self.collections.read().await;
 
         let real_collection_name = {
             let alias_persistence = self.alias_persistence.read().await;
             Self::resolve_name(collection_name, &read_collection, &alias_persistence)?
         };
-        // resolve_name already checked collection existence, unwrap is safe here
-        Ok(RwLockReadGuard::map(read_collection, |collection| {
-            collection.get(&real_collection_name).unwrap() // TODO: WTF!?
-        }))
+
+        Ok(read_collection.get(&real_collection_name).unwrap().clone())
     }
 
     pub async fn get_collection(
         &self,
         collection: &CollectionPass<'_>,
-    ) -> Result<RwLockReadGuard<'_, Collection>, StorageError> {
+    ) -> Result<Arc<Collection>, StorageError> {
         self.get_collection_unchecked(collection.name()).await
     }
 
-    async fn get_collection_opt(
-        &self,
-        collection_name: String,
-    ) -> Option<RwLockReadGuard<'_, Collection>> {
+    async fn get_collection_opt(&self, collection_name: String) -> Option<Arc<Collection>> {
         self.get_collection_unchecked(&collection_name).await.ok()
     }
 
@@ -320,6 +359,17 @@ impl TableOfContent {
         };
         collections.validate_collection_exists(&resolved_name)?;
         Ok(resolved_name)
+    }
+
+    pub async fn all_collection_aliases(
+        &self,
+        collection_name: &str,
+        _multipass: &CollectionMultipass,
+    ) -> Vec<String> {
+        self.alias_persistence
+            .read()
+            .await
+            .collection_aliases(collection_name)
     }
 
     /// List of all aliases for a given collection
@@ -638,11 +688,13 @@ impl TableOfContent {
                     "Removing invalid collection path {path} from storage",
                     path = path.display(),
                 );
-                tokio_fs::remove_dir_all(&path).await.map_err(|err| {
-                    StorageError::service_error(format!(
-                        "Can't clear directory for collection {collection_name}. Error: {err}"
-                    ))
-                })?;
+
+                let path = path.clone();
+                let deleted_dir = self.storage_config.storage_path.join(".deleted");
+                tokio::task::spawn_blocking(move || {
+                    safe_delete_in_tmp(&path, &deleted_dir)?.close()
+                })
+                .await??;
             }
         }
 
@@ -656,7 +708,8 @@ impl TableOfContent {
     }
 
     fn get_collection_path(&self, collection_name: &str) -> PathBuf {
-        Path::new(&self.storage_config.storage_path)
+        self.storage_config
+            .storage_path
             .join(COLLECTIONS_DIR)
             .join(collection_name)
     }

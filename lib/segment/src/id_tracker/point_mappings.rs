@@ -271,7 +271,7 @@ impl PointMappings {
     /// Generate a random [`PointMappings`].
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, total_size: u32) -> Self {
-        Self::random_with_params(rand, total_size, total_size, 128)
+        Self::random_with_params(rand, total_size, 128)
     }
 
     /// Generate a random [`PointMappings`] using the following parameters:
@@ -284,12 +284,7 @@ impl PointMappings {
     ///   E.g. if `bits_in_id` is 8, then only 512 unique ids will be generated.
     ///   (256 uuids + 256 u64s)
     #[cfg(test)]
-    pub fn random_with_params(
-        rand: &mut StdRng,
-        total_size: u32,
-        preserved_size: u32,
-        bits_in_id: u8,
-    ) -> Self {
+    pub fn random_with_params(rand: &mut StdRng, total_size: u32, bits_in_id: u8) -> Self {
         let mask: u128 = make_bitmask(bits_in_id);
         let mask_u64: u64 = mask as u64;
 
@@ -300,7 +295,6 @@ impl PointMappings {
 
         let mut internal_ids = (0..total_size).collect_vec();
         internal_ids.shuffle(rand);
-        internal_ids.truncate(preserved_size as usize);
 
         let mut deleted = BitVec::repeat(true, total_size as usize);
         for id in &internal_ids {

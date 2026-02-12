@@ -1,6 +1,6 @@
+use std::sync::LazyLock;
 use std::time::Duration;
 
-use lazy_static::lazy_static;
 use semver::Version;
 
 use crate::cpu;
@@ -8,16 +8,13 @@ use crate::cpu;
 /// Current Qdrant version string
 pub const QDRANT_VERSION_STRING: &str = "1.16.3";
 
-lazy_static! {
-    /// Current Qdrant semver version
-    pub static ref QDRANT_VERSION: Version = Version::parse(QDRANT_VERSION_STRING).expect("malformed version string");
+/// Current Qdrant semver version
+pub static QDRANT_VERSION: LazyLock<Version> =
+    LazyLock::new(|| Version::parse(QDRANT_VERSION_STRING).expect("valid version string"));
 
-    /// User-agent string to use in HTTP clients
-    pub static ref APP_USER_AGENT: String = format!("Qdrant/{QDRANT_VERSION_STRING}");
-}
-
-/// Maximum number of segments to load concurrently when loading a collection.
-pub const MAX_CONCURRENT_SEGMENT_LOADS: usize = 8;
+/// User-agent string to use in HTTP clients
+pub static APP_USER_AGENT: LazyLock<String> =
+    LazyLock::new(|| format!("Qdrant/{QDRANT_VERSION_STRING}"));
 
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
@@ -25,11 +22,9 @@ pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
 /// Default timeout for consensus meta operations.
 pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
 
-lazy_static! {
-    /// Max number of pooled elements to preserve in memory.
-    /// Scaled according to the number of logical CPU cores to account for concurrent operations.
-    pub static ref POOL_KEEP_LIMIT: usize = cpu::get_num_cpus().clamp(16, 128);
-}
+/// Max number of pooled elements to preserve in memory.
+/// Scaled according to the number of logical CPU cores to account for concurrent operations.
+pub static POOL_KEEP_LIMIT: LazyLock<usize> = LazyLock::new(|| cpu::get_num_cpus().clamp(16, 128));
 
 /// Default value of CPU budget parameter.
 ///

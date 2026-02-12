@@ -8,9 +8,9 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SizeStats, SnapshotFormat};
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -19,7 +19,7 @@ use crate::operations::operation_effect::{EstimateOperationEffectArea, Operation
 use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
-use crate::shards::local_shard::LocalShard;
+use crate::shards::local_shard::{LocalShard, LocalShardOptimizations};
 use crate::shards::proxy_shard::ProxyShard;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -248,6 +248,34 @@ impl Shard {
         Some(optimizers_log)
     }
 
+    pub fn optimizations(&self) -> Option<LocalShardOptimizations> {
+        Some(match self {
+            Self::Local(local_shard) => local_shard.optimizations(),
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.wrapped_shard.optimizations(),
+            Self::QueueProxy(proxy_shard) => proxy_shard.wrapped_shard()?.optimizations(),
+            Self::Dummy(_) => return None,
+        })
+    }
+
+    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
+        match self {
+            Self::Local(local_shard) => local_shard.truncate_unapplied_wal().await,
+            Self::Proxy(proxy_shard) => proxy_shard.wrapped_shard.truncate_unapplied_wal().await,
+            Self::ForwardProxy(proxy_shard) => {
+                proxy_shard.wrapped_shard.truncate_unapplied_wal().await
+            }
+            Self::QueueProxy(proxy_shard) => {
+                if let Some(local_shard) = proxy_shard.wrapped_shard() {
+                    local_shard.truncate_unapplied_wal().await
+                } else {
+                    Ok(0)
+                }
+            }
+            Self::Dummy(_) => Ok(0),
+        }
+    }
+
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         match self {
             Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
@@ -365,6 +393,27 @@ impl Shard {
                     self.variant_name(),
                 )))
             }
+        }
+    }
+
+    pub async fn set_extended_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_extended_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_extended_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_extended_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_extended_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
+        }
+    }
+
+    /// WAL is keeping normal amount of data after truncation.
+    pub async fn set_normal_wal_retention(&self) {
+        match self {
+            Shard::Local(local) => local.set_normal_wal_retention().await,
+            Shard::Proxy(proxy) => proxy.set_normal_wal_retention().await,
+            Shard::ForwardProxy(forward_proxy) => forward_proxy.set_normal_wal_retention().await,
+            Shard::QueueProxy(queue_proxy) => queue_proxy.set_normal_wal_retention().await,
+            Shard::Dummy(_) => {} // Do nothing for dummy shard
         }
     }
 

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
-use parking_lot::RwLock;
 use segment::types::SnapshotFormat;
 use shard::fixtures::{build_segment_1, build_segment_2};
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tempfile::Builder;
 
 use crate::shards::local_shard::snapshot::snapshot_all_segments;
@@ -25,12 +25,12 @@ fn test_snapshot_all() {
     let sid2 = holder.add_new(segment2);
     assert_ne!(sid1, sid2);
 
-    let holder = Arc::new(RwLock::new(holder));
+    let holder = LockedSegmentHolder::new(holder);
 
     let before_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -42,8 +42,6 @@ fn test_snapshot_all() {
     let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
-    let update_lock = Arc::new(tokio::sync::RwLock::new(()));
-
     snapshot_all_segments(
         holder.clone(),
         segments_dir.path(),
@@ -53,14 +51,13 @@ fn test_snapshot_all() {
         &tar,
         SnapshotFormat::Regular,
         None,
-        update_lock,
     )
     .unwrap();
 
     let after_ids = holder
         .read()
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, _)| id)
         .collect::<HashSet<_>>();
 
     assert_eq!(

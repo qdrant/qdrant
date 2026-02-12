@@ -71,7 +71,7 @@ jobs:
             unzip protoc.zip -d /usr
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qdrant-edge-${{ matrix.manylinux }}-${{ matrix.arch || matrix.target }}-${{ matrix.python }}
           path: lib/edge/python/dist
@@ -117,7 +117,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qdrant-edge-macos-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
           path: lib/edge/python/dist
@@ -163,7 +163,7 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Upload Python wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qdrant-edge-windows-${{ matrix.target }}-${{ matrix.python.label || matrix.python }}
           path: lib/edge/python/dist
@@ -182,7 +182,7 @@ jobs:
 
     steps:
       - name: Merge release artifacts
-        uses: actions/upload-artifact/merge@v4
+        uses: actions/upload-artifact/merge@v6
         with:
           name: qdrant-edge
           pattern: qdrant-edge-*
@@ -203,7 +203,7 @@ jobs:
         uses: actions/setup-python@v6
 
       - name: Download release wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: qdrant-edge
 

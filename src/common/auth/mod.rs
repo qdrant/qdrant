@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::ScrollRequestInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
+use shard::scroll::ScrollRequestInternal;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -11,10 +12,14 @@ use storage::rbac::Access;
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
-use crate::common::inference::token::InferenceToken;
+use crate::common::inference::api_keys::InferenceToken;
 use crate::settings::ServiceConfig;
 pub mod claims;
 pub mod jwt_parser;
+
+// Re-export Auth and AuthType from storage crate.
+pub use storage::rbac::AuthType;
+pub use storage::rbac::auth::Auth;
 
 pub const HTTP_HEADER_API_KEY: &str = "api-key";
 
@@ -24,11 +29,17 @@ pub struct AuthKeys {
     /// A key allowing Read or Write operations
     read_write: Option<String>,
 
+    /// Alternative to `read_write` key
+    alt_read_write: Option<String>,
+
     /// A key allowing Read operations
     read_only: Option<String>,
 
     /// A JWT parser, based on the read_write key
     jwt_parser: Option<JwtParser>,
+
+    /// Alternative JWT parser, based on the alt_read_write key
+    alt_jwt_parser: Option<JwtParser>,
 
     /// Table of content, needed to do stateful validation of JWT
     toc: Arc<TableOfContent>,
@@ -42,14 +53,20 @@ pub enum AuthError {
 }
 
 impl AuthKeys {
-    fn get_jwt_parser(service_config: &ServiceConfig) -> Option<JwtParser> {
+    fn get_jwt_parser(service_config: &ServiceConfig) -> (Option<JwtParser>, Option<JwtParser>) {
         if service_config.jwt_rbac.unwrap_or_default() {
-            service_config
-                .api_key
-                .as_ref()
-                .map(|secret| JwtParser::new(secret))
+            (
+                service_config
+                    .api_key
+                    .as_ref()
+                    .map(|secret| JwtParser::new(secret)),
+                service_config
+                    .alt_api_key
+                    .as_ref()
+                    .map(|secret| JwtParser::new(secret)),
+            )
         } else {
-            None
+            (None, None)
         }
     }
 
@@ -59,23 +76,32 @@ impl AuthKeys {
     pub fn try_create(service_config: &ServiceConfig, toc: Arc<TableOfContent>) -> Option<Self> {
         match (
             service_config.api_key.clone(),
+            service_config.alt_api_key.clone(),
             service_config.read_only_api_key.clone(),
         ) {
-            (None, None) => None,
-            (read_write, read_only) => Some(Self {
-                read_write,
-                read_only,
-                jwt_parser: Self::get_jwt_parser(service_config),
-                toc,
-            }),
+            (None, None, None) => None,
+            (read_write, alt_read_write, read_only) => {
+                let (jwt_parser, alt_jwt_parser) = Self::get_jwt_parser(service_config);
+
+                Some(Self {
+                    read_write,
+                    alt_read_write,
+                    read_only,
+                    jwt_parser,
+                    alt_jwt_parser,
+                    toc,
+                })
+            }
         }
     }
 
     /// Validate that the specified request is allowed for given keys.
+    ///
+    /// Returns `(Access, InferenceToken, AuthType, Option<subject>)`.
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-    ) -> Result<(Access, InferenceToken), AuthError> {
+    ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -88,6 +114,8 @@ impl AuthKeys {
             return Ok((
                 Access::full("Read-write access by key"),
                 InferenceToken(None),
+                AuthType::ApiKey,
+                None,
             ));
         }
 
@@ -95,24 +123,40 @@ impl AuthKeys {
             return Ok((
                 Access::full_ro("Read-only access by key"),
                 InferenceToken(None),
+                AuthType::ApiKey,
+                None,
             ));
         }
 
-        if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
+        let (claims, errors): (Vec<_>, Vec<_>) =
+            [self.jwt_parser.as_ref(), self.alt_jwt_parser.as_ref()]
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p.decode(key))
+                .partition_result();
+
+        if let Some(claims) = claims.into_iter().next() {
             let Claims {
                 sub,
                 exp: _, // already validated on decoding
                 access,
                 value_exists,
-            } = claims?;
+                subject,
+            } = claims;
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, InferenceToken(sub)));
+            return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));
         }
 
+        // JTW parser exists, but can't decode the token
+        if let Some(error) = errors.into_iter().next() {
+            return Err(error);
+        }
+
+        // No JTW parser configured
         Err(AuthError::Unauthorized(
             "Invalid API key or JWT".to_string(),
         ))
@@ -136,7 +180,12 @@ impl AuthKeys {
                 None,
                 None, // no timeout
                 ShardSelectorInternal::All,
-                Access::full("JWT stateful validation"),
+                Auth::new(
+                    Access::full("JWT stateful validation"),
+                    None,
+                    None,
+                    AuthType::Internal,
+                ),
                 HwMeasurementAcc::disposable(),
             )
             .await
@@ -167,8 +216,14 @@ impl AuthKeys {
     /// Check if a key is allowed to write
     #[inline]
     fn can_write(&self, key: &str) -> bool {
-        self.read_write
+        let can_write = self
+            .read_write
             .as_ref()
-            .is_some_and(|rw_key| ct_eq(rw_key, key))
+            .is_some_and(|rw_key| ct_eq(rw_key, key));
+        let alt_can_write = self
+            .alt_read_write
+            .as_ref()
+            .is_some_and(|alt_rw_key| ct_eq(alt_rw_key, key));
+        can_write || alt_can_write
     }
 }

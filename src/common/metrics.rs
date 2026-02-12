@@ -128,7 +128,9 @@ trait MetricsProvider {
 
 impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
-        self.app.add_metrics(metrics, prefix);
+        if let Some(app) = &self.app {
+            app.add_metrics(metrics, prefix);
+        }
 
         let this_peer_id = self.cluster.as_ref().and_then(|i| i.this_peer_id());
         self.collections.add_metrics(metrics, prefix, this_peer_id);
@@ -226,6 +228,9 @@ impl CollectionsTelemetry {
         // Shard transfers
         let mut shard_transfers_in = Vec::with_capacity(num_collections);
         let mut shard_transfers_out = Vec::with_capacity(num_collections);
+
+        // Update queue
+        let mut update_queue_length = Vec::with_capacity(num_collections);
 
         for collection in self.collections.iter().flatten() {
             let collection = match collection {
@@ -361,6 +366,18 @@ impl CollectionsTelemetry {
                 f64::from(outgoing_transfers),
                 &[("id", &collection.id)],
             ));
+
+            // Update queue
+            let total_queue_length: usize = collection
+                .shards
+                .iter()
+                .flatten()
+                .filter_map(|shard| shard.local.as_ref())
+                .filter_map(|local| local.update_queue.as_ref())
+                .map(|uq| uq.length)
+                .sum();
+
+            update_queue_length.push(gauge(total_queue_length as f64, &[("id", &collection.id)]));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -502,6 +519,14 @@ impl CollectionsTelemetry {
             shard_transfers_out,
             prefix,
         ));
+
+        metrics.push_metric(metric_family(
+            "collection_update_queue_length",
+            "number of pending operations in update queues per collection",
+            MetricType::GAUGE,
+            update_queue_length,
+            prefix,
+        ));
     }
 }
 
@@ -514,6 +539,7 @@ impl MetricsProvider for ClusterTelemetry {
             peers: _,
             peer_metadata: _,
             metadata: _,
+            resharding_enabled: _,
         } = self;
 
         metrics.push_metric(metric_family(

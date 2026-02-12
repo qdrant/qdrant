@@ -1,9 +1,15 @@
 pub mod config;
+pub mod count;
+pub mod facet;
+pub mod info;
 pub mod query;
 pub mod repr;
+pub mod scroll;
 pub mod search;
+pub mod snapshots;
 pub mod types;
 pub mod update;
+pub mod utils;
 
 use std::path::PathBuf;
 
@@ -14,7 +20,11 @@ use segment::common::operation_error::OperationError;
 use segment::types::*;
 
 use self::config::*;
+use self::count::*;
+use self::facet::*;
+use self::info::*;
 use self::query::*;
+use self::scroll::*;
 use self::search::*;
 use self::types::*;
 use self::update::*;
@@ -22,7 +32,7 @@ use self::update::*;
 #[pymodule]
 mod qdrant_edge {
     #[pymodule_export]
-    use super::PyShard;
+    use super::PyEdgeShard;
     #[pymodule_export]
     use super::config::quantization::{
         PyBinaryQuantizationConfig, PyBinaryQuantizationEncoding,
@@ -40,15 +50,20 @@ mod qdrant_edge {
         PyPlainIndexConfig, PyVectorDataConfig, PyVectorStorageDatatype, PyVectorStorageType,
     };
     #[pymodule_export]
-    use super::config::{PyPayloadStorageType, PySegmentConfig};
+    use super::config::{PyEdgeConfig, PyPayloadStorageType};
+    #[pymodule_export]
+    use super::count::PyCountRequest;
+    #[pymodule_export]
+    use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
     use super::query::{
         PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryRequest, PySample,
     };
     #[pymodule_export]
+    use super::scroll::PyScrollRequest;
+    #[pymodule_export]
     use super::search::{
-        PyAcornSearchParams, PyPayloadSelectorInterface, PyQuantizationSearchParams,
-        PySearchParams, PySearchRequest,
+        PyAcornSearchParams, PyQuantizationSearchParams, PySearchParams, PySearchRequest,
     };
     #[pymodule_export]
     use super::types::filter::{
@@ -62,41 +77,68 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::query::{
         PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
-        PyNaiveFeedbackCoefficients, PyQueryInterface, PyRecommendQuery,
+        PyNaiveFeedbackCoefficients, PyPayloadSelectorInterface, PyQueryInterface,
+        PyRecommendQuery,
     };
     #[pymodule_export]
     use super::types::{PyPoint, PyPointVectors, PyRecord, PyScoredPoint, PySparseVector};
     #[pymodule_export]
-    use super::update::PyUpdateOperation;
+    use super::update::{PyUpdateMode, PyUpdateOperation};
 }
 
-#[pyclass(name = "Shard")]
+#[pyclass(name = "EdgeShard")]
 #[derive(Debug)]
-pub struct PyShard(edge::Shard);
+pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
-impl PyShard {
+impl PyEdgeShard {
     #[new]
-    pub fn load(path: PathBuf, config: Option<PySegmentConfig>) -> Result<Self> {
-        let shard = edge::Shard::load(&path, config.map(SegmentConfig::from))?;
-        Ok(Self(shard))
+    #[pyo3(signature = (path, config = None))]
+    pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
+        let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
+        Ok(Self(Some(shard)))
+    }
+
+    pub fn flush(&self) -> Result<()> {
+        self.get_shard()?.flush();
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        self.0.take(); // `edge::Shard` is automatically flushed on drop
     }
 
     pub fn update(&self, operation: PyUpdateOperation) -> Result<()> {
-        self.0.update(operation.into())?;
+        self.get_shard()?.update(operation.into())?;
         Ok(())
     }
 
     pub fn query(&self, query: PyQueryRequest) -> Result<Vec<PyScoredPoint>> {
-        let points = self.0.query(query.into())?;
+        let points = self.get_shard()?.query(query.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
     }
 
     pub fn search(&self, search: PySearchRequest) -> Result<Vec<PyScoredPoint>> {
-        let points = self.0.search(search.into())?;
+        let points = self.get_shard()?.search(search.into())?;
         let points = PyScoredPoint::wrap_vec(points);
         Ok(points)
+    }
+
+    pub fn scroll(&self, scroll: PyScrollRequest) -> Result<(Vec<PyRecord>, Option<PyPointId>)> {
+        let (points, next_offset) = self.get_shard()?.scroll(scroll.into())?;
+        let points = PyRecord::wrap_vec(points);
+        Ok((points, next_offset.map(PyPointId)))
+    }
+
+    pub fn count(&self, count: PyCountRequest) -> Result<usize> {
+        let points_count = self.get_shard()?.count(count.into())?;
+        Ok(points_count)
+    }
+
+    pub fn facet(&self, facet: PyFacetRequest) -> Result<PyFacetResponse> {
+        let response = self.get_shard()?.facet(facet.into())?;
+        Ok(PyFacetResponse::new(response))
     }
 
     pub fn retrieve(
@@ -106,13 +148,42 @@ impl PyShard {
         with_vector: Option<PyWithVector>,
     ) -> Result<Vec<PyRecord>> {
         let point_ids = PyPointId::peel_vec(point_ids);
-        let points = self.0.retrieve(
+        let points = self.get_shard()?.retrieve(
             &point_ids,
             with_payload.map(WithPayloadInterface::from),
             with_vector.map(WithVector::from),
         )?;
         let points = PyRecord::wrap_vec(points);
         Ok(points)
+    }
+
+    pub fn info(&self) -> Result<PyShardInfo> {
+        let info = self.get_shard()?.info();
+        let info = PyShardInfo(info);
+        Ok(info)
+    }
+
+    // ------- Snapshot related methods -------
+
+    #[staticmethod]
+    pub fn unpack_snapshot(snapshot_path: PathBuf, target_path: PathBuf) -> Result<()> {
+        edge::EdgeShard::unpack_snapshot(&snapshot_path, &target_path)?;
+        Ok(())
+    }
+
+    pub fn snapshot_manifest(&self) -> Result<PyValue> {
+        let manifest = self.get_shard()?.snapshot_manifest()?;
+        Ok(PyValue::new(serde_json::to_value(&manifest).unwrap()))
+    }
+
+    #[pyo3(signature = (snapshot_path, tmp_dir=None))]
+    pub fn update_from_snapshot(
+        &mut self,
+        snapshot_path: PathBuf,
+        tmp_dir: Option<PathBuf>,
+    ) -> Result<()> {
+        self._update_from_snapshot(snapshot_path, tmp_dir)?;
+        Ok(())
     }
 }
 

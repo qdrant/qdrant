@@ -32,6 +32,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
     max_optimization_threads: Some(2),
+    prevent_unoptimized: None,
 };
 
 #[cfg(test)]
@@ -101,7 +102,7 @@ pub async fn new_local_collection(
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
         None,
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
@@ -136,7 +137,7 @@ pub async fn load_local_collection(
         path,
         snapshots_path,
         Default::default(),
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),

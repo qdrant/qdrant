@@ -8,7 +8,9 @@ use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -31,14 +33,11 @@ impl Collection {
         wait: bool,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let results = self
             .update_runtime
             .spawn(async move {
-                let _update_lock = update_lock;
-
                 // `ShardReplicaSet::update_local` is *not* cancel safe, so we *have to* execute *all*
                 // `update_local` requests to completion.
                 //
@@ -56,6 +55,7 @@ impl Collection {
                         shard.update_local(
                             OperationWithClockTag::from(operation.clone()),
                             wait,
+                            None,
                             hw_measurement_acc.clone(),
                             false,
                         )
@@ -93,21 +93,19 @@ impl Collection {
         operation: OperationWithClockTag,
         shard_selection: ShardId,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
         let result = self.update_runtime.spawn(async move {
-            let _update_lock = update_lock;
-
             let Some(shard) = shard_holder.get_shard(shard_selection) else {
                 return Ok(None);
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone(), false).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, timeout, hw_measurement_acc.clone(), false).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
@@ -118,7 +116,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering, false, hw_measurement_acc)
+                        .update_with_consistency(operation.operation, wait, timeout, ordering, false, hw_measurement_acc)
                         .await
                         .map(Some)
                 }
@@ -144,18 +142,17 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
+        let start_time = std::time::Instant::now();
 
-        let mut results = self
+        let results = self
             .update_runtime
             .spawn(async move {
-                let _update_lock = update_lock;
-
                 let updates = FuturesUnordered::new();
                 let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
 
@@ -175,6 +172,7 @@ impl Collection {
                                 .update_with_consistency(
                                     operation,
                                     wait,
+                                    timeout,
                                     ordering,
                                     false,
                                     hw_acc.clone(),
@@ -187,6 +185,7 @@ impl Collection {
                                 .update_with_consistency(
                                     operation,
                                     wait,
+                                    timeout,
                                     ordering,
                                     true,
                                     hw_acc.clone(),
@@ -241,8 +240,44 @@ impl Collection {
                 first_err
             }
         } else {
-            // At least one result is always present.
-            results.pop().unwrap()
+            // If client-side timeout is specified, we can return `WaitTimeout` status as-is.
+            // Otherwise, we fall back to timeout error.
+
+            let is_user_timeout = timeout.is_some();
+
+            let results: Vec<_> = results.into_iter().flatten().collect();
+            // Aggregate status: WaitTimeout > .. > ClockRejected
+            let status = results
+                .iter()
+                .map(|res| res.status)
+                .max_by_key(|s| s.priority())
+                .unwrap_or(UpdateStatus::Acknowledged);
+
+            if !is_user_timeout && results.iter().any(|res| res.status.is_timeout()) {
+                // if user didn't specify timeout, but one of the shards timed out,
+                // we need to return timeout error
+
+                let total_timeout_shards = results
+                    .iter()
+                    .filter(|result| result.status.is_timeout())
+                    .count();
+
+                let elapsed_sec = start_time.elapsed().as_secs_f32();
+
+                return Err(CollectionError::Timeout {
+                    description: format!(
+                        "Update operation timed out in {elapsed_sec:.2} seconds on {total_timeout_shards} out of {result_len} shards."
+                    ),
+                });
+            }
+
+            let max_operation_id = results.into_iter().map(|r| r.operation_id).max().unwrap(); // We checked that results is not empty above
+
+            Ok(UpdateResult {
+                operation_id: max_operation_id,
+                status,
+                clock_tag: None, // clock_tag is not used in the user response
+            })
         }
     }
 
@@ -253,10 +288,11 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        timeout: Option<Duration>,
         ordering: WriteOrdering,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, ordering, None, hw_measurement_acc)
+        self.update_from_client(operation, wait, timeout, ordering, None, hw_measurement_acc)
             .await
     }
 

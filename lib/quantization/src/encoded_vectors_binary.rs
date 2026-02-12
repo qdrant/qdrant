@@ -8,6 +8,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use io::file_operations::atomic_save_json;
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
@@ -457,7 +458,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
             let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
-            let bytes = transmute_to_u8_slice(encoded_vector_slice);
+            // TODO Safety: bytemuck::Pod type, but is it enough for slice?
+            #[expect(deprecated, reason = "legacy code")]
+            let bytes = unsafe { transmute_to_u8_slice(encoded_vector_slice) };
             storage_builder.push_vector_data(bytes).map_err(|e| {
                 EncodingError::EncodingError(format!("Failed to push encoded vector: {e}",))
             })?;
@@ -870,8 +873,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
             .vector_io_read()
             .incr_delta(vector_data_1.len() + vector_data_2.len());
 
-        let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
-        let vector_data_usize_2 = transmute_from_u8_to_slice(vector_data_2);
+        // TODO Safety
+        #[expect(deprecated, reason = "legacy code")]
+        let vector_data_usize_1 = unsafe { transmute_from_u8_to_slice(vector_data_1) };
+        // TODO Safety
+        #[expect(deprecated, reason = "legacy code")]
+        let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(vector_data_2) };
 
         hw_counter
             .cpu_counter()
@@ -888,9 +895,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         &self,
         id: PointOffsetType,
     ) -> Option<EncodedQueryBQ<TBitsStoreType>> {
+        #[expect(deprecated, reason = "legacy code")]
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
-            encoded_vector: transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id))
-                .to_vec(),
+            // TODO Safety
+            encoded_vector: unsafe {
+                transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id)).to_vec()
+            },
         }))
     }
 
@@ -934,6 +944,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     }
 
     type SupportsBytes = True;
+
     fn score_bytes(
         &self,
         _: Self::SupportsBytes,
@@ -941,7 +952,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         bytes: &[u8],
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_usize = transmute_from_u8_to_slice(bytes);
+        // TODO Safety
+        #[expect(deprecated, reason = "legacy code")]
+        let vector_data_usize = unsafe { transmute_from_u8_to_slice(bytes) };
 
         hw_counter.cpu_counter().incr_delta(bytes.len());
 

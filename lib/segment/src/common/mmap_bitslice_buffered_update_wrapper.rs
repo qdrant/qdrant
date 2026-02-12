@@ -4,9 +4,10 @@ use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use common::is_alive_lock::IsAliveLock;
 use memory::mmap_type::MmapBitSlice;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 
 use crate::common::Flusher;
+use crate::common::operation_error::OperationError;
 
 /// A wrapper around `MmapBitSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
@@ -15,7 +16,7 @@ use crate::common::Flusher;
 pub struct MmapBitSliceBufferedUpdateWrapper {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
-    pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
+    pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
     /// Lock to prevent concurrent flush and drop
     is_alive_flush_lock: IsAliveLock,
 }
@@ -26,7 +27,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
             len,
-            pending_updates: Arc::new(Mutex::new(AHashMap::new())),
+            pending_updates: Arc::new(RwLock::new(AHashMap::new())),
             is_alive_flush_lock: IsAliveLock::new(),
         }
     }
@@ -37,14 +38,14 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Panics if the index is out of bounds.
     pub fn set(&self, index: usize, value: bool) {
         assert!(index < self.len, "index {index} out of range: {}", self.len);
-        self.pending_updates.lock().insert(index, value);
+        self.pending_updates.write().insert(index, value);
     }
 
     pub fn get(&self, index: usize) -> Option<bool> {
         if index >= self.len {
             return None;
         }
-        if let Some(value) = self.pending_updates.lock().get(&index) {
+        if let Some(value) = self.pending_updates.read().get(&index) {
             Some(*value)
         } else {
             self.bitslice.read().get_bit(index)
@@ -62,17 +63,17 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
     fn reconcile_persisted_updates(
-        pending_updates: &Mutex<AHashMap<usize, bool>>,
+        pending_updates: &RwLock<AHashMap<usize, bool>>,
         persisted: AHashMap<usize, bool>,
     ) {
         pending_updates
-            .lock()
+            .write()
             .retain(|point_id, a| persisted.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
         let updates = {
-            let updates_guard = self.pending_updates.lock();
+            let updates_guard = self.pending_updates.read();
             if updates_guard.is_empty() {
                 return Box::new(|| Ok(()));
             }
@@ -89,10 +90,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
                 bitslice.upgrade(),
                 pending_updates_weak.upgrade(),
             ) else {
-                log::debug!(
-                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance"
-                );
-                return Ok(());
+                // Already dropped, skip flush
+                log::trace!("MmapBitsliceBuffered was dropped, cancelling flush");
+                return Err(OperationError::cancelled(
+                    "Aborted flushing on a dropped MmapBitSliceBufferedUpdateWrapper instance",
+                ));
             };
 
             let mut mmap_slice_write = bitslice.write();
@@ -101,10 +103,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
             }
             mmap_slice_write.flusher()()?;
 
-            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
-
-            // Keep the guard till the end of the flush to prevent concurrent drop/flushes
+            // Keep the guard till here to prevent concurrent drop/flushes
+            // We don't touch files from here on and can drop the alive guard
             drop(is_alive_flush_guard);
+
+            Self::reconcile_persisted_updates(&pending_updates_arc, updates);
 
             Ok(())
         })

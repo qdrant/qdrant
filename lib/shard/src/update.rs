@@ -4,8 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use itertools::iproduct;
-use parking_lot::{RwLock, RwLockWriteGuard};
+use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
@@ -13,19 +12,19 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    SeqNumberType, VectorNameBuf,
+    SeqNumberType, VectorNameBuf, WithPayload, WithVector,
 };
 
 use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
-    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted,
+    ConditionalInsertOperationInternal, PointOperations, PointStructPersisted, UpdateMode,
 };
 use crate::operations::vector_ops::{PointVectorsPersisted, UpdateVectorsOp, VectorOperations};
 use crate::segment_holder::SegmentHolder;
 
 pub fn process_point_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     point_operation: PointOperations,
     hw_counter: &HardwareCounterCell,
@@ -33,21 +32,19 @@ pub fn process_point_operation(
     match point_operation {
         PointOperations::UpsertPoints(operation) => {
             let points = operation.into_point_vec();
-            let res = upsert_points(&segments.read(), op_num, points.iter(), hw_counter)?;
+            let res = upsert_points(segments, op_num, points.iter(), hw_counter)?;
             Ok(res)
         }
         PointOperations::UpsertPointsConditional(operation) => {
-            conditional_upsert(&segments.read(), op_num, operation, hw_counter)
+            conditional_upsert(segments, op_num, operation, hw_counter)
         }
-        PointOperations::DeletePoints { ids } => {
-            delete_points(&segments.read(), op_num, &ids, hw_counter)
-        }
+        PointOperations::DeletePoints { ids } => delete_points(segments, op_num, &ids, hw_counter),
         PointOperations::DeletePointsByFilter(filter) => {
-            delete_points_by_filter(&segments.read(), op_num, &filter, hw_counter)
+            delete_points_by_filter(segments, op_num, &filter, hw_counter)
         }
         PointOperations::SyncPoints(operation) => {
             let (deleted, new, updated) = sync_points(
-                &segments.read(),
+                segments,
                 op_num,
                 operation.from_id,
                 operation.to_id,
@@ -56,43 +53,48 @@ pub fn process_point_operation(
             )?;
             Ok(deleted + new + updated)
         }
-        #[cfg(feature = "staging")]
-        PointOperations::TestDelay(operation) => {
-            operation.execute();
-
-            // This operation doesn't directly affect segment/point versions, so we bump it here
-            segments.read().bump_max_segment_version_overwrite(op_num);
-
-            Ok(0)
-        }
     }
 }
 
+#[cfg(feature = "staging")]
+pub fn process_staging_operation(
+    segments: &SegmentHolder,
+    op_num: SeqNumberType,
+    operation: crate::operations::staging::StagingOperations,
+) -> OperationResult<usize> {
+    match operation {
+        crate::operations::staging::StagingOperations::Delay(delay_op) => {
+            delay_op.execute();
+        }
+    }
+
+    // This operation doesn't directly affect segment/point versions, so we bump it here
+    segments.bump_max_segment_version_overwrite(op_num);
+
+    Ok(0)
+}
+
 pub fn process_vector_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     vector_operation: VectorOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match vector_operation {
         VectorOperations::UpdateVectors(update_vectors) => {
-            update_vectors_conditional(&segments.read(), op_num, update_vectors, hw_counter)
+            update_vectors_conditional(segments, op_num, update_vectors, hw_counter)
         }
-        VectorOperations::DeleteVectors(ids, vector_names) => delete_vectors(
-            &segments.read(),
-            op_num,
-            &ids.points,
-            &vector_names,
-            hw_counter,
-        ),
+        VectorOperations::DeleteVectors(ids, vector_names) => {
+            delete_vectors(segments, op_num, &ids.points, &vector_names, hw_counter)
+        }
         VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-            delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names, hw_counter)
+            delete_vectors_by_filter(segments, op_num, &filter, &vector_names, hw_counter)
         }
     }
 }
 
 pub fn process_payload_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     payload_operation: PayloadOps,
     hw_counter: &HardwareCounterCell,
@@ -101,23 +103,9 @@ pub fn process_payload_operation(
         PayloadOps::SetPayload(sp) => {
             let payload: Payload = sp.payload;
             if let Some(points) = sp.points {
-                set_payload(
-                    &segments.read(),
-                    op_num,
-                    &payload,
-                    &points,
-                    &sp.key,
-                    hw_counter,
-                )
+                set_payload(segments, op_num, &payload, &points, &sp.key, hw_counter)
             } else if let Some(filter) = sp.filter {
-                set_payload_by_filter(
-                    &segments.read(),
-                    op_num,
-                    &payload,
-                    &filter,
-                    &sp.key,
-                    hw_counter,
-                )
+                set_payload_by_filter(segments, op_num, &payload, &filter, &sp.key, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -127,9 +115,9 @@ pub fn process_payload_operation(
         }
         PayloadOps::DeletePayload(dp) => {
             if let Some(points) = dp.points {
-                delete_payload(&segments.read(), op_num, &points, &dp.keys, hw_counter)
+                delete_payload(segments, op_num, &points, &dp.keys, hw_counter)
             } else if let Some(filter) = dp.filter {
-                delete_payload_by_filter(&segments.read(), op_num, &filter, &dp.keys, hw_counter)
+                delete_payload_by_filter(segments, op_num, &filter, &dp.keys, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -138,17 +126,17 @@ pub fn process_payload_operation(
             }
         }
         PayloadOps::ClearPayload { ref points, .. } => {
-            clear_payload(&segments.read(), op_num, points, hw_counter)
+            clear_payload(segments, op_num, points, hw_counter)
         }
         PayloadOps::ClearPayloadByFilter(ref filter) => {
-            clear_payload_by_filter(&segments.read(), op_num, filter, hw_counter)
+            clear_payload_by_filter(segments, op_num, filter, hw_counter)
         }
         PayloadOps::OverwritePayload(sp) => {
             let payload: Payload = sp.payload;
             if let Some(points) = sp.points {
-                overwrite_payload(&segments.read(), op_num, &payload, &points, hw_counter)
+                overwrite_payload(segments, op_num, &payload, &points, hw_counter)
             } else if let Some(filter) = sp.filter {
-                overwrite_payload_by_filter(&segments.read(), op_num, &payload, &filter, hw_counter)
+                overwrite_payload_by_filter(segments, op_num, &payload, &filter, hw_counter)
             } else {
                 // TODO: BadRequest (prev) vs BadInput (current)!?
                 Err(OperationError::ValidationError {
@@ -160,21 +148,21 @@ pub fn process_payload_operation(
 }
 
 pub fn process_field_index_operation(
-    segments: &RwLock<SegmentHolder>,
+    segments: &SegmentHolder,
     op_num: SeqNumberType,
     field_index_operation: &FieldIndexOperations,
     hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     match field_index_operation {
         FieldIndexOperations::CreateIndex(index_data) => create_field_index(
-            &segments.read(),
+            segments,
             op_num,
             &index_data.field_name,
             index_data.field_schema.as_ref(),
             hw_counter,
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
-            delete_field_index(&segments.read(), op_num, field_name)
+            delete_field_index(segments, op_num, field_name)
         }
     }
 }
@@ -226,7 +214,6 @@ where
                     *old_payload = payload.clone();
                 }
             },
-            |_| false,
             hw_counter,
         )?;
 
@@ -277,14 +264,36 @@ pub fn conditional_upsert(
     let ConditionalInsertOperationInternal {
         mut points_op,
         condition,
+        update_mode,
     } = operation;
 
     let point_ids = points_op.point_ids();
+    let update_mode = update_mode.unwrap_or_default();
 
-    let points_to_exclude =
-        select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+    match update_mode {
+        UpdateMode::Upsert => {
+            // Default behavior: insert new points, update existing points that match the condition
+            let points_to_exclude =
+                select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+            points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
+        }
+        UpdateMode::InsertOnly => {
+            // Only insert new points, skip all existing points entirely
+            let existing_points = segments.select_existing_points(point_ids);
+            points_op.retain_point_ids(|idx| !existing_points.contains(idx));
+        }
+        UpdateMode::UpdateOnly => {
+            // Only update existing points that match the condition, don't insert new points
+            let points_to_exclude =
+                select_excluded_by_filter_ids(segments, point_ids.clone(), condition, hw_counter)?;
+            let existing_points = segments.select_existing_points(point_ids);
+            // Keep only points that exist AND are not excluded by the condition
+            points_op.retain_point_ids(|idx| {
+                existing_points.contains(idx) && !points_to_exclude.contains(idx)
+            });
+        }
+    }
 
-    points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
     let points = points_op.into_point_vec();
     let upserted_points = upsert_points(segments, op_num, points.iter(), hw_counter)?;
 
@@ -339,11 +348,9 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
-        let deleted_points = segments.apply_points(
-            batch,
-            |_| (),
-            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
-        )?;
+        let deleted_points = segments.apply_points(batch, |id, _idx, write_segment| {
+            write_segment.delete_point(op_num, id, hw_counter)
+        })?;
 
         total_deleted_points += deleted_points;
     }
@@ -365,7 +372,7 @@ pub fn delete_points_by_filter(
         .iter()
         .map(|(segment_id, segment)| {
             (
-                *segment_id,
+                segment_id,
                 segment.get().read().read_filtered(
                     None,
                     None,
@@ -446,31 +453,28 @@ pub fn sync_points(
     let mut points_to_update: Vec<_> = Vec::new();
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
-    let _num_updated =
-        segments.read_points(existing_point_ids.as_slice(), &is_stopped, |id, segment| {
-            let all_vectors = match segment.all_vectors(id, hw_counter) {
-                Ok(v) => v,
-                Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
-                Err(e) => return Err(e),
-            };
-            let payload = segment.payload(id, hw_counter)?;
-            let point = id_to_point.get(&id).unwrap();
-            if point.get_vectors() != all_vectors {
-                points_to_update.push(*point);
-                Ok(true)
-            } else {
-                let payload_match = match point.payload {
-                    Some(ref p) => p == &payload,
-                    None => Payload::default() == payload,
-                };
-                if !payload_match {
+    let _num_updated = segments.read_points(
+        existing_point_ids.as_slice(),
+        &is_stopped,
+        |ids, segment| {
+            let with_vector = WithVector::Bool(true);
+            let with_payload = WithPayload::from(true);
+            // Since we retrieve points, which we already know exist, we expect all of them to be found
+            let stored_records =
+                segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
+            let mut updated = 0;
+
+            for stored_record in stored_records {
+                let point = id_to_point.get(&stored_record.id).unwrap();
+                if !point.is_equal_to(&stored_record) {
                     points_to_update.push(*point);
-                    Ok(true)
-                } else {
-                    Ok(false)
+                    updated += 1;
                 }
             }
-        })?;
+
+            Ok(updated)
+        },
+    )?;
 
     // 4. Select new points
     let num_updated = points_to_update.len();
@@ -550,7 +554,6 @@ fn update_vectors(
                     owned_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
                 }
             },
-            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -586,7 +589,6 @@ pub fn delete_vectors(
                     owned_vectors.remove_ref(name);
                 }
             },
-            |_| false,
             hw_counter,
         )?;
         check_unprocessed_points(batch, &modified_points)?;
@@ -638,11 +640,6 @@ pub fn set_payload(
             |_, _, old_payload| match key {
                 Some(key) => old_payload.merge_by_key(payload, key),
                 None => old_payload.merge(payload),
-            },
-            |segment| {
-                segment.get_indexed_fields().keys().all(|indexed_path| {
-                    !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
-                })
             },
             hw_counter,
         )?;
@@ -699,13 +696,6 @@ pub fn delete_payload(
                     payload.remove(key);
                 }
             },
-            |segment| {
-                iproduct!(segment.get_indexed_fields().keys(), keys).all(
-                    |(indexed_path, path_to_delete)| {
-                        !indexed_path.is_affected_by_value_remove(path_to_delete)
-                    },
-                )
-            },
             hw_counter,
         )?;
 
@@ -749,7 +739,6 @@ pub fn clear_payload(
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
             |_, _, payload| payload.0.clear(),
-            |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -795,7 +784,6 @@ pub fn overwrite_payload(
             |_, _, old_payload| {
                 *old_payload = payload.clone();
             },
-            |segment| segment.get_indexed_fields().is_empty(),
             hw_counter,
         )?;
 

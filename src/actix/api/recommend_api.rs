@@ -16,12 +16,12 @@ use storage::content_manager::collection_verification::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::Auth;
 use tokio::time::Instant;
 
 use super::CollectionPath;
 use super::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::settings::ServiceConfig;
 
@@ -32,7 +32,7 @@ async fn recommend_points(
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let RecommendRequest {
         recommend_request,
@@ -44,7 +44,7 @@ async fn recommend_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -67,13 +67,13 @@ async fn recommend_points(
     let timing = Instant::now();
 
     let result = dispatcher
-        .toc(&access, &pass)
+        .toc(&auth, &pass)
         .recommend(
             &collection.name,
             recommend_request,
             params.consistency,
             shard_selection,
-            access,
+            auth,
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -93,7 +93,7 @@ async fn do_recommend_batch_points(
     collection_name: &str,
     request: RecommendRequestBatch,
     read_consistency: Option<ReadConsistency>,
-    access: Access,
+    auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
@@ -114,7 +114,7 @@ async fn do_recommend_batch_points(
         collection_name,
         requests,
         read_consistency,
-        access,
+        auth,
         timeout,
         hw_measurement_acc,
     )
@@ -128,14 +128,14 @@ async fn recommend_batch_points(
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.recommend_request),
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -152,11 +152,11 @@ async fn recommend_batch_points(
     let timing = Instant::now();
 
     let result = do_recommend_batch_points(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         request.into_inner(),
         params.consistency,
-        access,
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )
@@ -183,7 +183,7 @@ async fn recommend_point_groups(
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let RecommendGroupsRequest {
         recommend_group_request,
@@ -195,7 +195,7 @@ async fn recommend_point_groups(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -217,12 +217,12 @@ async fn recommend_point_groups(
     let timing = Instant::now();
 
     let result = crate::common::query::do_recommend_point_groups(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         recommend_group_request,
         params.consistency,
         shard_selection,
-        access,
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )

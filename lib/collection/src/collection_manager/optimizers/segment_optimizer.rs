@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
@@ -11,13 +12,12 @@ use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
-use parking_lot::lock_api::RwLockWriteGuard;
-use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::NonAppendableSegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -26,14 +26,15 @@ use segment::types::{
     HnswConfig, HnswGlobalConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 use shard::proxy_segment::{DeletedPoints, ProxyIndexChanges};
+use shard::segment_holder::locked::LockedSegmentHolder;
+use uuid::Uuid;
 
 use crate::collection_manager::holders::proxy_segment::{ProxyIndexChange, ProxySegment};
-use crate::collection_manager::holders::segment_holder::{
-    LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
-};
+use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::update_handler::Optimizer;
 
 const BYTES_IN_KB: usize = 1024;
 
@@ -54,7 +55,7 @@ pub struct OptimizerThresholds {
 /// of resulting segment are up to concrete implementations.
 pub trait SegmentOptimizer {
     /// Get name describing this optimizer
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Get the path of the segments directory
     fn segments_path(&self) -> &Path;
@@ -77,12 +78,44 @@ pub trait SegmentOptimizer {
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
 
-    /// Checks if segment optimization is required
-    fn check_condition(
-        &self,
-        segments: LockedSegmentHolder,
-        excluded_ids: &HashSet<SegmentId>,
-    ) -> Vec<SegmentId>;
+    /// Find segments that require optimization and write them into `planner`.
+    fn plan_optimizations(&self, planner: &mut OptimizationPlanner);
+
+    /// Wrapper around [`SegmentOptimizer::plan_optimizations`].
+    /// Simplified interface and extra checks.
+    #[cfg(test)]
+    fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
+        let segments = segments.read();
+
+        let mut planner = OptimizationPlanner::new(0, segments.iter_original());
+        self.plan_optimizations(&mut planner);
+        let result = planner.into_scheduled_for_test();
+
+        // Verify consistency: re-planning with remaining segments should match tail
+        let mut remaining: BTreeMap<_, _> = segments.iter_original().collect();
+        for (i, batch) in result.iter().enumerate() {
+            for &id in batch {
+                remaining.remove(&id);
+            }
+            let mut planner =
+                OptimizationPlanner::new(i + 1, remaining.iter().map(|(&id, &seg)| (id, seg)));
+            self.plan_optimizations(&mut planner);
+            let actual = planner.into_scheduled_for_test();
+            let expected = &result[i + 1..];
+            if self.name() == "merge"
+                && actual.is_empty()
+                && expected.len() == 1
+                && expected[0].len() == 2
+            {
+                // Special case for MergeOptimizer:
+                // `[A B] [C D]` is allowed, but `[C D]` is not. See its doc.
+                continue;
+            }
+            assert_eq!(actual, expected);
+        }
+
+        result
+    }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 
@@ -285,8 +318,16 @@ pub trait SegmentOptimizer {
 
                 match config_on_disk {
                     Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
-                    Some(false) => {} // on_disk=false wins, do nothing
-                    None => if threshold_is_on_disk { config.storage_type = VectorStorageType::Mmap }, // Mmap threshold wins
+                    Some(false) => {
+                        if common::flags::feature_flags().single_file_mmap_vector_storage  {
+                            config.storage_type = VectorStorageType::InRamMmap;
+                        }
+                    } // on_disk=false wins, do nothing
+                    None => if threshold_is_on_disk {
+                        config.storage_type = VectorStorageType::Mmap
+                    } else if common::flags::feature_flags().single_file_mmap_vector_storage  {
+                        config.storage_type = VectorStorageType::InRamMmap;
+                    }, // Mmap threshold wins
                 }
 
                 // If we explicitly configure on_disk, but the segment storage type uses something
@@ -330,7 +371,6 @@ pub trait SegmentOptimizer {
         };
 
         Ok(SegmentBuilder::new(
-            self.segments_path(),
             self.temp_path(),
             &optimized_config,
             self.hnsw_global_config(),
@@ -347,15 +387,12 @@ pub trait SegmentOptimizer {
     /// # Result
     ///
     /// Original segments are pushed into `segments`, proxies removed.
-    /// Returns IDs on restored segments
-    ///
     fn unwrap_proxy(
         &self,
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
-    ) -> Vec<SegmentId> {
+    ) -> CollectionResult<()> {
         let mut segments_lock = segments.write();
-        let mut restored_segment_ids = vec![];
         for &proxy_id in proxy_ids {
             if let Some(proxy_segment_ref) = segments_lock.get(proxy_id) {
                 let locked_proxy_segment = proxy_segment_ref.clone();
@@ -366,34 +403,11 @@ pub trait SegmentOptimizer {
                     }
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        let (restored_id, _proxies) =
-                            segments_lock.swap_new(wrapped_segment, &[proxy_id]);
-                        restored_segment_ids.push(restored_id);
+                        segments_lock.replace(proxy_id, wrapped_segment)?;
                     }
                 }
             }
         }
-        restored_segment_ids
-    }
-
-    /// Unwraps proxy, puts wrapped segment back into local shard
-    ///
-    /// # Arguments
-    ///
-    /// * `segments` - all registered segments of the collection
-    /// * `proxy_ids` - currently used proxies
-    ///
-    /// # Result
-    ///
-    /// Drops any optimized state, and rolls back the segments to before optimizing. All new
-    /// changes since optimizing remain available as they were written to other appendable
-    /// segments.
-    fn handle_cancellation(
-        &self,
-        segments: &LockedSegmentHolder,
-        proxy_ids: &[SegmentId],
-    ) -> OperationResult<()> {
-        self.unwrap_proxy(segments, proxy_ids);
         Ok(())
     }
 
@@ -401,20 +415,12 @@ pub trait SegmentOptimizer {
     /// Warn: this function might be _VERY_ CPU intensive,
     /// so it is necessary to avoid any locks inside this part of the code
     ///
-    /// # Arguments
-    ///
-    /// * `optimizing_segments` - Segments to optimize
-    /// * `proxy_deleted_points` - Holds a set of points, deleted while optimization was running
-    /// * `proxy_changed_indexes` - Holds a set of indexes changes, created or deleted while optimization was running
-    /// * `stopped` - flag to check if optimization was cancelled by external thread
-    ///
-    /// # Result
-    ///
-    /// Constructs optimized segment
+    /// Returns the newly constructed optimized segment.
     #[allow(clippy::too_many_arguments)]
     fn build_new_segment(
         &self,
-        optimizing_segments: &[LockedSegment],
+        input_segments: &[LockedSegment], // Segments to optimize/merge into one
+        output_segment_uuid: Uuid,        // The UUID of the resulting optimized segment
         proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
         resource_budget: ResourceBudget,
@@ -422,7 +428,7 @@ pub trait SegmentOptimizer {
         hw_counter: &HardwareCounterCell,
         progress: ProgressTracker,
     ) -> CollectionResult<Segment> {
-        let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
+        let mut segment_builder = self.optimized_segment_builder(input_segments)?;
 
         check_process_stopped(stopped)?;
 
@@ -430,7 +436,7 @@ pub trait SegmentOptimizer {
         let progress_populate_storages = progress.subtask("populate_vector_storages");
         let progress_wait_permit = progress.subtask("wait_cpu_permit");
 
-        let segments: Vec<_> = optimizing_segments
+        let segments: Vec<_> = input_segments
             .iter()
             .map(|i| match i {
                 LockedSegment::Original(o) => o.clone(),
@@ -540,8 +546,15 @@ pub trait SegmentOptimizer {
         drop(progress_wait_permit);
 
         let mut rng = rand::rng();
-        let mut optimized_segment: Segment =
-            segment_builder.build(indexing_permit, stopped, &mut rng, hw_counter, progress)?;
+        let mut optimized_segment = segment_builder.build(
+            self.segments_path(),
+            output_segment_uuid,
+            indexing_permit,
+            stopped,
+            &mut rng,
+            hw_counter,
+            progress,
+        )?;
 
         // Delete points
         let deleted_points_snapshot = self.proxy_deleted_points(proxies);
@@ -584,17 +597,27 @@ pub trait SegmentOptimizer {
         Ok(optimized_segment)
     }
 
-    /// Performs optimization of collections's segments
+    /// Test wrapper for [`SegmentOptimizer::optimize`].
+    #[cfg(test)]
+    fn optimize_for_test(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> usize {
+        let permit_cpu_count = segment::index::hnsw_index::num_rayon_threads(0);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        self.optimize(
+            segments,
+            ids,
+            Uuid::new_v4(),
+            budget.try_acquire(0, permit_cpu_count).unwrap(),
+            budget,
+            &AtomicBool::new(false),
+            ProgressTracker::new_for_test(),
+            Box::new(|| ()),
+        )
+        .unwrap()
+    }
+
+    /// Performs optimization of collections's segments.
     ///
-    /// Including:
-    /// * Segment rebuilding
-    /// * Segment joining
-    ///
-    /// # Arguments
-    ///
-    /// * `segments` - segments holder
-    /// * `ids` - list of segment ids to perform optimization on. All segments will be merged into single one
-    /// * `stopped` - flag for early stopping of the optimization. If appears to be `true` - optimization process should be cancelled, all segments unwrapped.
+    /// It will merge multiple segments into a single new segment.
     ///
     /// # Result
     ///
@@ -605,8 +628,9 @@ pub trait SegmentOptimizer {
     #[expect(clippy::too_many_arguments)]
     fn optimize(
         &self,
-        segments: LockedSegmentHolder,
-        ids: Vec<SegmentId>,
+        segment_holder: LockedSegmentHolder,
+        input_segment_ids: Vec<SegmentId>, // Segment ids to optimize/merge into one
+        output_segment_uuid: Uuid,         // The UUID of the resulting optimized segment
         permit: ResourcePermit,
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
@@ -620,34 +644,32 @@ pub trait SegmentOptimizer {
 
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
-        // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
+        // which is an expensive operation. So we can't unlock `segments` after the check and before the insert.
         //
         // On the other hand - we do not want to hold write lock during the segment creation.
-        // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
-        let segments_lock = segments.upgradable_read();
+        // Solution in the middle - is an upgradable lock. It ensures consistency after the check and allows to perform read operation.
+        let segment_holder_read = segment_holder.upgradable_read();
 
         // Find appendable segments other than optimized ones
         //
         // If there are such segments - we can avoid creating a temp segment
         // If there are none, we need to create a new empty segment to allow writes during optimization
-        let appendable_segments_ids = segments_lock.appendable_segments_ids();
-        let has_appendable_segments_except_optimized =
-            appendable_segments_ids.iter().any(|id| !ids.contains(id));
+        let appendable_segments_ids = segment_holder_read.appendable_segments_ids();
+        let has_appendable_segments_except_optimized = appendable_segments_ids
+            .iter()
+            .any(|id| !input_segment_ids.contains(id));
         let need_extra_cow_segment = !has_appendable_segments_except_optimized;
 
-        let optimizing_segments: Vec<_> = ids
+        let input_segments: Vec<_> = input_segment_ids
             .iter()
             .cloned()
-            .map(|id| segments_lock.get(id))
+            .map(|id| segment_holder_read.get(id))
             .filter_map(|x| x.cloned())
             .collect();
 
-        // Check that we have enough disk space for optimization
-        self.check_segments_size(&optimizing_segments)?;
-
         // Check if all segments are not under other optimization or some ids are missing
-        let all_segments_ok = optimizing_segments.len() == ids.len()
-            && optimizing_segments
+        let all_segments_ok = input_segments.len() == input_segment_ids.len()
+            && input_segments
                 .iter()
                 .all(|s| matches!(s, LockedSegment::Original(_)));
 
@@ -655,6 +677,9 @@ pub trait SegmentOptimizer {
             // Cancel the optimization
             return Ok(0);
         }
+
+        // Check that we have enough disk space for optimization
+        self.check_segments_size(&input_segments)?;
 
         check_process_stopped(stopped)?;
 
@@ -667,7 +692,7 @@ pub trait SegmentOptimizer {
             .transpose()?;
 
         let mut proxies = Vec::new();
-        for sg in optimizing_segments.iter() {
+        for sg in input_segments.iter() {
             let proxy = ProxySegment::new(sg.clone());
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
@@ -682,7 +707,7 @@ pub trait SegmentOptimizer {
         // If this ends up not being saved due to a crash, the segment will not be used
         match &extra_cow_segment_opt {
             Some(LockedSegment::Original(segment)) => {
-                let segment_path = &segment.read().current_path;
+                let segment_path = &segment.read().segment_path;
                 SegmentVersion::save(segment_path)?;
             }
             Some(LockedSegment::Proxy(_)) => unreachable!(),
@@ -691,11 +716,11 @@ pub trait SegmentOptimizer {
 
         let mut locked_proxies: Vec<LockedSegment> = Vec::with_capacity(proxies.len());
 
-        let (proxy_ids, cow_segment_id_opt): (Vec<_>, _) = {
+        let (proxy_ids, cow_segment_id_opt, counter_handler): (Vec<_>, _, _) = {
             // Exclusive lock for the segments operations.
-            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+            let mut segment_holder_write = RwLockUpgradableReadGuard::upgrade(segment_holder_read);
             let mut proxy_ids = Vec::new();
-            for (proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
+            for (proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
                 // During optimization, we expect that logical point data in the wrapped segment is
                 // not changed at all. But this would be possible if we wrap another proxy segment,
                 // because it can share state through it's write segment. To prevent this we assert
@@ -717,24 +742,26 @@ pub trait SegmentOptimizer {
                 }
 
                 let locked_proxy = LockedSegment::from(proxy);
-                proxy_ids.push(
-                    write_segments
-                        .swap_new_locked(locked_proxy.clone(), &[idx])
-                        .0,
-                );
+                segment_holder_write.replace(idx, locked_proxy.clone())?;
+
+                proxy_ids.push(idx);
                 locked_proxies.push(locked_proxy);
             }
 
             let cow_segment_id_opt = extra_cow_segment_opt
-                .map(|extra_cow_segment| write_segments.add_new_locked(extra_cow_segment));
+                .map(|extra_cow_segment| segment_holder_write.add_new_locked(extra_cow_segment));
 
-            (proxy_ids, cow_segment_id_opt)
+            // Increase optimization counter right after replacing segments with proxies.
+            // We'll decrease it after inserting the optimized segment.
+            let counter_handler = segment_holder_write.running_optimizations.inc();
+
+            (proxy_ids, cow_segment_id_opt, counter_handler)
         };
 
         // SLOW PART: create single optimized segment and propagate all new changes to it
         let result = self.optimize_segment_propagate_changes(
-            &segments,
-            &optimizing_segments,
+            input_segments,
+            output_segment_uuid,
             &locked_proxies,
             permit,
             resource_budget,
@@ -742,50 +769,42 @@ pub trait SegmentOptimizer {
             &hw_counter,
             progress,
         );
-        let (optimized_segment, mut write_segments_guard) = match result {
+
+        let (optimized_segment, deleted_points) = match result {
             Ok(segment) => segment,
             Err(err) => {
                 // Properly cancel optimization on all error kinds
                 // Unwrap proxies and add temp segment to holder
-                self.handle_cancellation(&segments, &proxy_ids)?;
+                self.unwrap_proxy(&segment_holder, &proxy_ids)?;
                 return Err(err);
             }
         };
 
-        // Replace proxy segments with new optimized segment
-        let point_count = optimized_segment.available_point_count();
-        let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
-        debug_assert_eq!(
-            proxies.len(),
-            proxy_ids.len(),
-            "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
-        );
+        // Fast part: blocks updates, propagates rest of the changes, swaps optimized segment
+        let points_count = match self.finish_optimization(
+            &segment_holder,
+            locked_proxies,
+            optimized_segment,
+            &deleted_points,
+            &proxy_ids,
+            cow_segment_id_opt,
+            stopped,
+            &hw_counter,
+        ) {
+            Ok(points_count) => points_count,
+            Err(err) => {
+                // Properly cancel optimization on all error kinds
+                // Unwrap proxies and add temp segment to holder
+                self.unwrap_proxy(&segment_holder, &proxy_ids)?;
+                return Err(err);
+            }
+        };
 
-        if let Some(cow_segment_id) = cow_segment_id_opt {
-            // Temp segment might be taken into another parallel optimization
-            // so it is not necessary exist by this time
-            write_segments_guard.remove_segment_if_not_needed(cow_segment_id)?;
-        }
-
-        // Release reference counter for each optimized segment
-        drop(optimizing_segments);
-
-        // Unlock collection for search and updates
-        // After the collection is unlocked - we can remove data as slow as we want
-        drop(write_segments_guard);
-
-        // Drop all pointers to proxies, so we can de-arc them
-        drop(locked_proxies);
-
-        // Only remove data after we ensure the consistency of the collection.
-        // If remove fails - we will still have operational collection with reported error.
-        for proxy in proxies {
-            proxy.drop_data()?;
-        }
+        drop(counter_handler);
 
         timer.set_success(true);
 
-        Ok(point_count)
+        Ok(points_count)
     }
 
     /// Accumulates approximate set of points deleted in a given set of proxies
@@ -850,26 +869,24 @@ pub trait SegmentOptimizer {
     ///
     /// This function is slow and must only be used on an optimization worker.
     #[allow(clippy::too_many_arguments)]
-    fn optimize_segment_propagate_changes<'a>(
+    fn optimize_segment_propagate_changes(
         &self,
-        segments: &'a LockedSegmentHolder,
-        optimizing_segments: &[LockedSegment],
+        optimizing_segments: Vec<LockedSegment>,
+        output_segment_uuid: Uuid,
         proxies: &[LockedSegment],
         permit: ResourcePermit, // IO resources for copying data
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
         progress: ProgressTracker,
-    ) -> CollectionResult<(
-        Segment,
-        RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
-    )> {
+    ) -> CollectionResult<(Segment, DeletedPoints)> {
         check_process_stopped(stopped)?;
 
         // ---- SLOW PART -----
 
-        let mut optimized_segment = self.build_new_segment(
-            optimizing_segments,
+        let optimized_segment = self.build_new_segment(
+            &optimizing_segments,
+            output_segment_uuid,
             proxies,
             permit,
             resource_budget,
@@ -893,10 +910,28 @@ pub trait SegmentOptimizer {
 
         check_process_stopped(stopped)?;
 
-        // This block locks all operations with collection. It should be fast
-        let write_segments_guard = segments.write();
+        Ok((optimized_segment, already_remove_points))
+    }
 
-        let proxy_index_changes = self.proxy_index_changes(proxies);
+    #[allow(clippy::too_many_arguments)]
+    fn finish_optimization(
+        &self,
+        segment_holder: &LockedSegmentHolder,
+        locked_proxies: Vec<LockedSegment>,
+        mut optimized_segment: Segment,
+        already_remove_points: &DeletedPoints,
+        proxy_ids: &[SegmentId],
+        cow_segment_id_opt: Option<SegmentId>,
+        stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
+    ) -> CollectionResult<usize> {
+        // This block locks all write operations with collection. It should be fast.
+        let upgradable_segment_holder = segment_holder.upgradable_read();
+
+        // This mutex prevents update operations, which could create inconsistency during transition.
+        let update_guard = segment_holder.acquire_updates_lock();
+
+        let proxy_index_changes = self.proxy_index_changes(&locked_proxies);
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
@@ -925,7 +960,7 @@ pub trait SegmentOptimizer {
             check_process_stopped(stopped)?;
         }
 
-        let deleted_points = self.proxy_deleted_points(proxies);
+        let deleted_points = self.proxy_deleted_points(&locked_proxies);
 
         let points_diff = deleted_points
             .iter()
@@ -947,6 +982,126 @@ pub trait SegmentOptimizer {
                 .unwrap();
         }
 
-        Ok((optimized_segment, write_segments_guard))
+        // Replace proxy segments with new optimized segment
+        let point_count = optimized_segment.available_point_count();
+
+        let mut writable_segment_holder =
+            RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
+
+        let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
+        debug_assert_eq!(
+            proxies.len(),
+            proxy_ids.len(),
+            "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
+        );
+
+        if let Some(cow_segment_id) = cow_segment_id_opt {
+            // Temp segment might be taken into another parallel optimization
+            // so it is not necessary exist by this time
+            writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
+        }
+
+        drop(writable_segment_holder);
+        // Allow updates again
+        drop(update_guard);
+
+        // Drop all pointers to proxies, so we can de-arc them
+        drop(locked_proxies);
+
+        // Only remove data after we ensure the consistency of the collection.
+        // If remove fails - we will still have operational collection with reported error.
+        for proxy in proxies {
+            proxy.drop_data()?;
+        }
+
+        Ok(point_count)
     }
+}
+
+pub struct OptimizationPlanner<'a> {
+    /// Segments that could be scheduled for optimization.
+    remaining: BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>>,
+
+    /// The resulting optimization plan.
+    ///
+    /// Each entry contains
+    /// - a batch of segments to be optimized/merged into a new segment,
+    /// - an optional optimizer so you can call [`SegmentOptimizer::optimize`]
+    ///   on it later.
+    scheduled: Vec<(Option<Arc<Optimizer>>, Vec<SegmentId>)>,
+
+    /// Amount of currently running optimizations. We'll assume that each of
+    /// them eventually produces one new segment.
+    running: usize,
+
+    /// This goes into [`Self::scheduled`].
+    /// Should be set before calling [`Self::plan`].
+    optimizer: Option<Arc<Optimizer>>,
+}
+
+impl<'a> OptimizationPlanner<'a> {
+    pub fn new<I>(running: usize, segments: I) -> Self
+    where
+        I: IntoIterator<Item = (SegmentId, &'a Arc<RwLock<Segment>>)>,
+    {
+        Self {
+            remaining: segments.into_iter().collect(),
+            scheduled: Vec::new(),
+            running,
+            optimizer: None,
+        }
+    }
+
+    pub fn remaining(&self) -> &BTreeMap<SegmentId, &'a Arc<RwLock<Segment>>> {
+        &self.remaining
+    }
+
+    /// Returns [`Self::scheduled`], but without `Option<Arc<Optimizer>>` part.
+    #[cfg(test)]
+    pub fn into_scheduled_for_test(self) -> Vec<Vec<SegmentId>> {
+        self.scheduled
+            .into_iter()
+            .map(|(_, segments)| segments)
+            .collect_vec()
+    }
+
+    /// The expected resulting number of segments after the optimization plan is
+    /// executed, and all currently running optimizations are finished.
+    pub fn expected_segments_number(&self) -> usize {
+        self.remaining.len() + self.scheduled.len() + self.running
+    }
+
+    /// Schedule this batch of segments to be optimized/merged into new segment.
+    pub fn plan(&mut self, segments: Vec<SegmentId>) {
+        debug_assert!(!segments.is_empty());
+        for segment_id in &segments {
+            let removed = self.remaining.remove(segment_id).is_some();
+            debug_assert!(removed);
+        }
+        self.scheduled.push((self.optimizer.clone(), segments));
+    }
+}
+
+/// Plans optimizations for the given segments and optimizers.
+///
+/// Returns a list of scheduled optimizations, each containing the
+/// corresponding optimizer and a batch of segment IDs to be optimized.
+pub fn plan_optimizations(
+    segments: &SegmentHolder,
+    optimizers: &[Arc<Optimizer>],
+) -> Vec<(Arc<Optimizer>, Vec<SegmentId>)> {
+    let mut planner = OptimizationPlanner::new(
+        segments.running_optimizations.count(),
+        segments.iter_original(),
+    );
+    for optimizer in optimizers {
+        planner.optimizer = Some(Arc::clone(optimizer));
+        optimizer.plan_optimizations(&mut planner);
+    }
+    planner
+        .scheduled
+        .into_iter()
+        .inspect(|(optimizer, _segments)| debug_assert!(optimizer.is_some()))
+        .filter_map(|(optimizer, segments)| Some((optimizer?, segments)))
+        .collect()
 }

@@ -4,10 +4,10 @@ import uuid
 
 from qdrant_edge import *
 
+DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
 def load_new_shard():
     print("---- Load shard ----")
-    DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
     # Clear and recreate data directory
     if os.path.exists(DATA_DIRECTORY):
@@ -16,26 +16,17 @@ def load_new_shard():
     os.makedirs(DATA_DIRECTORY)
 
     # Load Qdrant Edge shard
-    config = SegmentConfig(
-        vector_data={
-            "": VectorDataConfig(
-                size=4,
-                distance=Distance.Dot,
-                storage_type=VectorStorageType.ChunkedMmap,
-                index=PlainIndexConfig(),
-                quantization_config=None,
-                multivector_config=None,
-                datatype=None,
-            ),
-        },
-        sparse_vector_data={},
-        payload_storage_type=PayloadStorageType.InRamMmap,
+    config = EdgeConfig(
+        vector_data=VectorDataConfig(
+            size=4,
+            distance=Distance.Dot
+        )
     )
 
-    return Shard(DATA_DIRECTORY, config)
+    return EdgeShard(DATA_DIRECTORY, config)
 
 
-def fill_dummy_data(shard: Shard):
+def fill_dummy_data(shard: EdgeShard):
     shard.update(UpdateOperation.upsert_points([
         Point(1, [0.05, 0.61, 0.76, 0.74], {"color": "red", "city": ["Moscow", "Berlin"]}),
         Point(2, [0.19, 0.81, 0.75, 0.11], {"color": "red", "city": "Mexico"}),

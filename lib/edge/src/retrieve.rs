@@ -6,9 +6,9 @@ use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVec
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 
-use crate::{DEFAULT_EDGE_TIMEOUT, Shard};
+use crate::{DEFAULT_EDGE_TIMEOUT, EdgeShard};
 
-impl Shard {
+impl EdgeShard {
     pub fn retrieve(
         &self,
         point_ids: &[ExtendedPointId],
@@ -26,7 +26,7 @@ impl Shard {
             &with_vector,
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
-            HwMeasurementAcc::disposable(),
+            HwMeasurementAcc::disposable_edge(),
         )?;
 
         let points: Vec<_> = point_ids

@@ -11,7 +11,7 @@ use segment::types::*;
 use super::vector_data::*;
 use crate::repr::*;
 
-#[pyclass(name = "SparseVectorDataConfig")]
+#[pyclass(name = "SparseVectorDataConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySparseVectorDataConfig(pub SparseVectorDataConfig);
@@ -36,14 +36,11 @@ impl PySparseVectorDataConfig {
 #[pymethods]
 impl PySparseVectorDataConfig {
     #[new]
-    pub fn new(
-        index: PySparseIndexConfig,
-        storage_type: PySparseVectorStorageType,
-        modifier: Option<PyModifier>,
-    ) -> Self {
+    #[pyo3(signature = (index, modifier = None))]
+    pub fn new(index: PySparseIndexConfig, modifier: Option<PyModifier>) -> Self {
         Self(SparseVectorDataConfig {
             index: SparseIndexConfig::from(index),
-            storage_type: SparseVectorStorageType::from(storage_type),
+            storage_type: SparseVectorStorageType::Mmap,
             modifier: modifier.map(Modifier::from),
         })
     }
@@ -89,7 +86,7 @@ impl<'py> IntoPyObject<'py> for &PySparseVectorDataConfig {
     }
 }
 
-#[pyclass(name = "SparseIndexConfig")]
+#[pyclass(name = "SparseIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PySparseIndexConfig(SparseIndexConfig);
@@ -98,14 +95,14 @@ pub struct PySparseIndexConfig(SparseIndexConfig);
 #[pymethods]
 impl PySparseIndexConfig {
     #[new]
+    #[pyo3(signature = (full_scan_threshold = None, datatype = None))]
     pub fn new(
         full_scan_threshold: Option<usize>,
-        index_type: PySparseIndexType,
         datatype: Option<PyVectorStorageDatatype>,
     ) -> Self {
         Self(SparseIndexConfig {
+            index_type: SparseIndexType::MutableRam,
             full_scan_threshold,
-            index_type: SparseIndexType::from(index_type),
             datatype: datatype.map(VectorStorageDatatype::from),
         })
     }
@@ -141,7 +138,7 @@ impl PySparseIndexConfig {
     }
 }
 
-#[pyclass(name = "SparseIndexType")]
+#[pyclass(name = "SparseIndexType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySparseIndexType {
     MutableRam,
@@ -188,7 +185,7 @@ impl From<PySparseIndexType> for SparseIndexType {
     }
 }
 
-#[pyclass(name = "SparseVectorStorageType")]
+#[pyclass(name = "SparseVectorStorageType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySparseVectorStorageType {
     Mmap,
@@ -230,7 +227,7 @@ impl From<PySparseVectorStorageType> for SparseVectorStorageType {
     }
 }
 
-#[pyclass(name = "Modifier")]
+#[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {
     None,

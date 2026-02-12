@@ -16,6 +16,7 @@ use super::named_vectors::NamedVectors;
 use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
+use crate::data_types::segment_record::NamedVectorsOwned;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{
     ContextQuery, DiscoveryQuery, NaiveFeedbackQuery, RecoQuery, TransformInto,
@@ -576,6 +577,29 @@ impl From<NamedVectors<'_>> for VectorStructInternal {
             }
         } else {
             VectorStructInternal::Named(v.into_owned_map())
+        }
+    }
+}
+
+impl From<NamedVectorsOwned> for VectorStructInternal {
+    fn from(v: NamedVectorsOwned) -> Self {
+        if v.len() == 1 {
+            let (name, vector_internal) = v.into_iter().next().unwrap();
+            if name != DEFAULT_VECTOR_NAME {
+                return VectorStructInternal::Named(HashMap::from([(name, vector_internal)]));
+            }
+            match vector_internal {
+                VectorInternal::Dense(v) => VectorStructInternal::Single(v),
+                VectorInternal::Sparse(v) => {
+                    debug_assert!(false, "Sparse vector cannot be default");
+                    let mut map = HashMap::new();
+                    map.insert(DEFAULT_VECTOR_NAME.to_owned(), VectorInternal::Sparse(v));
+                    VectorStructInternal::Named(map)
+                }
+                VectorInternal::MultiDense(v) => VectorStructInternal::MultiDense(v),
+            }
+        } else {
+            VectorStructInternal::Named(v.into_iter().collect())
         }
     }
 }

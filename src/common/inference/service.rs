@@ -16,6 +16,7 @@ use storage::content_manager::errors::StorageError;
 
 pub use super::inference_input::InferenceInput;
 use super::local_model;
+use crate::common::inference::api_keys::{InferenceApiKeys, convert_to_reqwest_headers};
 use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::params::InferenceParams;
 
@@ -188,12 +189,13 @@ impl InferenceService {
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
-        let InferenceParams {
+        let InferenceParams { api_keys, timeout } = inference_params;
+        let InferenceApiKeys {
+            keys: ext_api_keys,
             token: inference_token,
-            timeout,
-        } = inference_params;
+        } = api_keys;
 
-        let token = inference_token.0.or_else(|| self.config.token.clone());
+        let token = inference_token.or_else(|| self.config.token.clone());
 
         let Some(url) = self.config.address.as_ref() else {
             return Err(StorageError::service_error(
@@ -208,14 +210,18 @@ impl InferenceService {
         };
 
         let request = self.client.post(url);
-
         let request = if let Some(timeout) = timeout {
             request.timeout(timeout)
         } else {
             request
         };
 
-        let response = request.json(&request_body).send().await;
+        let mut request = request.json(&request_body);
+        if !ext_api_keys.is_empty() {
+            request = request.headers(convert_to_reqwest_headers(&ext_api_keys));
+        }
+
+        let response = request.send().await;
 
         let (response_body, status, retry_after) = match response {
             Ok(response) => {
@@ -400,6 +406,7 @@ mod test {
     use serde_json::{Value, json};
 
     use super::*;
+    use crate::common::inference::api_keys::InferenceApiKeys;
     use crate::common::inference::bm25::Bm25;
     use crate::common::inference::inference_input::InferenceDataType;
 
@@ -561,7 +568,7 @@ mod test {
             .infer(
                 inference_inputs,
                 InferenceType::Update,
-                InferenceParams::new("key", None),
+                InferenceParams::new(InferenceApiKeys::new(Some("key".to_string())), None),
             )
             .await
             .expect("Failed to do inference");

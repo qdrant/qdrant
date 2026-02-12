@@ -3,15 +3,16 @@ use std::sync::Arc;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 use semver::Version;
+use shard::count::CountRequestInternal;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
+use crate::shards::shard_holder::SharedShardHolder;
+use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, TransferStage};
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
@@ -32,7 +33,7 @@ const STATE_ACTIVE_READ_MIN_VERSION: Version = Version::new(1, 16, 0);
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_stream_records(
     transfer_config: ShardTransfer,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
@@ -74,6 +75,7 @@ pub(super) async fn transfer_stream_records(
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
 
     // Proxify local shard and create payload indexes on remote shard
+    progress.lock().set_stage(TransferStage::Proxifying);
     {
         let shard_holder = shard_holder.read().await;
 
@@ -84,7 +86,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         replica_set
-            .proxify_local(remote_shard.clone(), None, filter)
+            .proxify_local(remote_shard.clone(), None, filter.clone())
             .await?;
 
         // Don't increment hardware usage for internal operations
@@ -92,7 +94,7 @@ pub(super) async fn transfer_stream_records(
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
-                    filter: None,
+                    filter,
                     exact: false,
                 }),
                 None, // no timeout
@@ -113,6 +115,7 @@ pub(super) async fn transfer_stream_records(
     }
 
     // Transfer contents batch by batch
+    progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transferring points to shard {shard_id} by streaming records");
 
     let mut offset = None;
@@ -128,12 +131,12 @@ pub(super) async fn transfer_stream_records(
             )));
         };
 
-        let (new_offset, count) = replica_set
+        let result = replica_set
             .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
             .await?;
 
-        offset = new_offset;
-        progress.lock().add(count);
+        offset = result.next_page_offset;
+        progress.lock().add(result.count);
 
         #[cfg(feature = "staging")]
         if let Some(delay) = staging_delay {
@@ -148,6 +151,7 @@ pub(super) async fn transfer_stream_records(
 
     // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
     if sync_intermediate_state {
+        progress.lock().set_stage(TransferStage::WaitingConsensus);
         log::trace!(
             "Shard {shard_id} recovered on {remote_peer_id} for stream records transfer, switching into next stage through consensus",
         );

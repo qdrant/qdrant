@@ -15,24 +15,30 @@ pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
 use crate::repr::*;
 
-#[pyclass(name = "SegmentConfig")]
+#[pyclass(name = "EdgeConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PySegmentConfig(SegmentConfig);
+pub struct PyEdgeConfig(SegmentConfig);
 
 #[pyclass_repr]
 #[pymethods]
-impl PySegmentConfig {
+impl PyEdgeConfig {
     #[new]
+    #[pyo3(signature = (vector_data, sparse_vector_data=None))]
     pub fn new(
+        #[pyo3(from_py_with = vector_data_config_helper)]
+        // `vector_data_config_helper` accepts either
+        // - a single default vector config: `VectorDataConfig(...)`
+        // - or a map of named vector configs: `{ "": VectorDataConfig(...), "named_vector": VectorDataConfig(...) }`
         vector_data: HashMap<String, PyVectorDataConfig>,
-        sparse_vector_data: HashMap<String, PySparseVectorDataConfig>,
-        payload_storage_type: PyPayloadStorageType,
+        sparse_vector_data: Option<HashMap<String, PySparseVectorDataConfig>>,
     ) -> Self {
         Self(SegmentConfig {
             vector_data: PyVectorDataConfig::peel_map(vector_data),
-            sparse_vector_data: PySparseVectorDataConfig::peel_map(sparse_vector_data),
-            payload_storage_type: PayloadStorageType::from(payload_storage_type),
+            sparse_vector_data: PySparseVectorDataConfig::peel_map(
+                sparse_vector_data.unwrap_or_default(),
+            ),
+            payload_storage_type: PayloadStorageType::Mmap,
         })
     }
 
@@ -56,7 +62,7 @@ impl PySegmentConfig {
     }
 }
 
-impl PySegmentConfig {
+impl PyEdgeConfig {
     fn _getters(self) {
         // Every field should have a getter method
         let SegmentConfig {
@@ -67,7 +73,7 @@ impl PySegmentConfig {
     }
 }
 
-#[pyclass(name = "PayloadStorageType")]
+#[pyclass(name = "PayloadStorageType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadStorageType {
     Mmap,
@@ -110,4 +116,26 @@ impl From<PyPayloadStorageType> for PayloadStorageType {
             PyPayloadStorageType::InRamMmap => PayloadStorageType::InRamMmap,
         }
     }
+}
+
+fn vector_data_config_helper(
+    config: &Bound<'_, PyAny>,
+) -> PyResult<HashMap<String, PyVectorDataConfig>> {
+    #[derive(FromPyObject)]
+    enum Helper {
+        Default(PyVectorDataConfig),
+        Explicit(HashMap<String, PyVectorDataConfig>),
+    }
+
+    let config = match config.extract()? {
+        Helper::Default(default) => {
+            let mut config = HashMap::new();
+            config.insert("".into(), default);
+            config
+        }
+
+        Helper::Explicit(config) => config,
+    };
+
+    Ok(config)
 }

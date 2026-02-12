@@ -10,6 +10,8 @@ use content_manager::errors::StorageError;
 use content_manager::toc::TableOfContent;
 use types::ClusterStatus;
 
+pub mod audit;
+mod common;
 pub mod content_manager;
 pub mod dispatcher;
 pub mod issues_subscribers;

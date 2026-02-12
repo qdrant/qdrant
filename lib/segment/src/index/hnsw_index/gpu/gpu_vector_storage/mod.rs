@@ -433,18 +433,6 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
             }
-            VectorStorageEnum::DenseAppendableInRam(vector_storage) => Self::new_dense_f32(
-                device,
-                vector_storage.as_ref(),
-                force_half_precision,
-                stopped,
-            ),
-            VectorStorageEnum::DenseAppendableInRamByte(vector_storage) => {
-                Self::new_dense(device, vector_storage.as_ref(), stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRamHalf(vector_storage) => {
-                Self::new_dense_f16(device, vector_storage.as_ref(), stopped)
-            }
             #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
@@ -494,18 +482,6 @@ impl GpuVectorStorage {
                 Self::new_multi(device, vector_storage.as_ref(), stopped)
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(vector_storage) => {
-                Self::new_multi_f16(device, vector_storage.as_ref(), stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRam(vector_storage) => Self::new_multi_f32(
-                device.clone(),
-                vector_storage.as_ref(),
-                force_half_precision,
-                stopped,
-            ),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(vector_storage) => {
-                Self::new_multi(device, vector_storage.as_ref(), stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(vector_storage) => {
                 Self::new_multi_f16(device, vector_storage.as_ref(), stopped)
             }
         }

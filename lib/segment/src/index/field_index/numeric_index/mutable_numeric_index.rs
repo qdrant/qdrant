@@ -186,7 +186,7 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         if let Some(values) = self.point_to_values.get_mut(idx as usize) {
             if !values.is_empty() {
-                self.points_count = self.points_count.checked_sub(1).unwrap_or_default();
+                self.points_count = self.points_count.saturating_sub(1);
             }
             for value in values.iter() {
                 let key = Point::new(*value, idx);

@@ -1,5 +1,7 @@
+use shard::scroll::ScrollRequestInternal;
+
 use crate::operations::generalizer::Generalizer;
-use crate::operations::types::{PointRequestInternal, ScrollRequestInternal};
+use crate::operations::types::PointRequestInternal;
 
 impl Generalizer for ScrollRequestInternal {
     fn remove_details(&self) -> Self {

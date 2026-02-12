@@ -54,7 +54,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CollectionWarning,
     CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RemoteShardInfo,
-    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    ShardTransferInfo, UpdateQueueInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
@@ -303,6 +303,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
             write_consistency_factor,
             read_fan_out_factor,
             on_disk_payload,
+            read_fan_out_delay_ms,
         } = value;
         Ok(Self {
             replication_factor: replication_factor
@@ -319,6 +320,7 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
                 })
                 .transpose()?,
             read_fan_out_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
         })
     }
@@ -338,6 +340,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             flush_interval_sec,
             deprecated_max_optimization_threads,
             max_optimization_threads,
+            prevent_unoptimized,
         } = value;
         Ok(Self {
             deleted_threshold,
@@ -354,6 +357,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
                 .or(max_optimization_threads
                     .map(TryFrom::try_from)
                     .transpose()?),
+            prevent_unoptimized,
         })
     }
 }
@@ -388,6 +392,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            update_queue,
         } = value;
 
         let CollectionConfig {
@@ -410,6 +415,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             indexing_threshold,
             flush_interval_sec,
             max_optimization_threads,
+            prevent_unoptimized,
         } = optimizer_config;
 
         let HnswConfig {
@@ -426,6 +432,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             vectors,
             shard_number,
             replication_factor,
+            read_fan_out_delay_ms,
             on_disk_payload,
             write_consistency_factor,
             read_fan_out_factor,
@@ -493,6 +500,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                                 .collect(),
                         }
                     }),
+                    read_fan_out_delay_ms,
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(m as u64),
@@ -513,6 +521,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     flush_interval_sec: Some(flush_interval_sec),
                     deprecated_max_optimization_threads: max_optimization_threads.map(|x| x as u64),
                     max_optimization_threads: Some(From::from(max_optimization_threads)),
+                    prevent_unoptimized,
                 }),
                 wal_config: wal_config.map(|wal_config| {
                     let WalConfig {
@@ -542,6 +551,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(api::grpc::qdrant::CollectionWarning::from)
                 .collect(),
+            update_queue: update_queue.map(api::grpc::qdrant::UpdateQueueInfo::from),
         }
     }
 }
@@ -557,6 +567,26 @@ impl From<api::grpc::qdrant::CollectionWarning> for CollectionWarning {
     fn from(value: api::grpc::qdrant::CollectionWarning) -> Self {
         let api::grpc::qdrant::CollectionWarning { message } = value;
         Self { message }
+    }
+}
+
+impl From<UpdateQueueInfo> for api::grpc::qdrant::UpdateQueueInfo {
+    fn from(value: UpdateQueueInfo) -> Self {
+        let UpdateQueueInfo { length, op_num } = value;
+        Self {
+            length: length as u64,
+            op_num: op_num.map(|x| x as u64),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::UpdateQueueInfo> for UpdateQueueInfo {
+    fn from(value: api::grpc::qdrant::UpdateQueueInfo) -> Self {
+        let api::grpc::qdrant::UpdateQueueInfo { length, op_num } = value;
+        Self {
+            length: length as usize,
+            op_num: op_num.map(|x| x as usize),
+        }
     }
 }
 
@@ -596,6 +626,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec,
             deprecated_max_optimization_threads,
             max_optimization_threads,
+            prevent_unoptimized,
         } = optimizer_config;
 
         let converted_max_optimization_threads: Option<usize> =
@@ -617,6 +648,7 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             indexing_threshold: indexing_threshold.map(|x| x as usize),
             flush_interval_sec: flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: converted_max_optimization_threads,
+            prevent_unoptimized,
         })
     }
 }
@@ -831,6 +863,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     config,
                     payload_schema,
                     warnings,
+                    update_queue,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -862,6 +895,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                         .try_collect()?,
                     warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
+                    update_queue: update_queue.map(UpdateQueueInfo::from),
                 })
             }
         }
@@ -953,6 +987,7 @@ impl From<UpdateStatus> for i32 {
         match status {
             UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
             UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+            UpdateStatus::WaitTimeout => api::grpc::qdrant::UpdateStatus::WaitTimeout as i32,
             UpdateStatus::ClockRejected => api::grpc::qdrant::UpdateStatus::ClockRejected as i32,
         }
     }
@@ -969,6 +1004,7 @@ impl TryFrom<i32> for UpdateStatus {
             api::grpc::qdrant::UpdateStatus::Acknowledged => Self::Acknowledged,
             api::grpc::qdrant::UpdateStatus::Completed => Self::Completed,
             api::grpc::qdrant::UpdateStatus::ClockRejected => Self::ClockRejected,
+            api::grpc::qdrant::UpdateStatus::WaitTimeout => Self::WaitTimeout,
 
             api::grpc::qdrant::UpdateStatus::UnknownUpdateStatus => {
                 return Err(Status::invalid_argument(
@@ -1114,6 +1150,7 @@ impl From<api::grpc::qdrant::ReplicaState> for ReplicaState {
             api::grpc::qdrant::ReplicaState::Resharding => Self::Resharding,
             api::grpc::qdrant::ReplicaState::ReshardingScaleDown => Self::ReshardingScaleDown,
             api::grpc::qdrant::ReplicaState::ActiveRead => Self::ActiveRead,
+            api::grpc::qdrant::ReplicaState::ManualRecovery => Self::ManualRecovery,
         }
     }
 }
@@ -1131,6 +1168,7 @@ impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
             ReplicaState::Resharding => Self::Resharding,
             ReplicaState::ReshardingScaleDown => Self::ReshardingScaleDown,
             ReplicaState::ActiveRead => Self::ActiveRead,
+            ReplicaState::ManualRecovery => Self::ManualRecovery,
         }
     }
 }
@@ -1416,6 +1454,7 @@ impl From<ReshardingInfo> for api::grpc::qdrant::ReshardingInfo {
             shard_id,
             peer_id,
             shard_key,
+            stage: _, // only communicated for ReshardingTelemetry (internal service)
         } = value;
         Self {
             shard_id,
@@ -1431,6 +1470,15 @@ impl From<ReshardingDirection> for api::grpc::qdrant::ReshardingDirection {
         match value {
             ReshardingDirection::Up => api::grpc::qdrant::ReshardingDirection::Up,
             ReshardingDirection::Down => api::grpc::qdrant::ReshardingDirection::Down,
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::ReshardingDirection> for ReshardingDirection {
+    fn from(value: api::grpc::qdrant::ReshardingDirection) -> Self {
+        match value {
+            api::grpc::qdrant::ReshardingDirection::Up => ReshardingDirection::Up,
+            api::grpc::qdrant::ReshardingDirection::Down => ReshardingDirection::Down,
         }
     }
 }
@@ -1572,6 +1620,21 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
             api::grpc::qdrant::ShardTransferMethod::WalDelta => ShardTransferMethod::WalDelta,
             api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords => {
                 ShardTransferMethod::ReshardingStreamRecords
+            }
+        }
+    }
+}
+
+impl From<ShardTransferMethod> for api::grpc::qdrant::ShardTransferMethod {
+    fn from(value: ShardTransferMethod) -> Self {
+        match value {
+            ShardTransferMethod::StreamRecords => {
+                api::grpc::qdrant::ShardTransferMethod::StreamRecords
+            }
+            ShardTransferMethod::Snapshot => api::grpc::qdrant::ShardTransferMethod::Snapshot,
+            ShardTransferMethod::WalDelta => api::grpc::qdrant::ShardTransferMethod::WalDelta,
+            ShardTransferMethod::ReshardingStreamRecords => {
+                api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords
             }
         }
     }
@@ -1780,6 +1843,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         read_fan_out_factor,
                         sharding_method,
                         sparse_vectors_config,
+                        read_fan_out_delay_ms,
                     } = params;
                     CollectionParams {
                         vectors: match vectors_config {
@@ -1836,6 +1900,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         sharding_method: sharding_method
                             .map(sharding_method_from_proto)
                             .transpose()?,
+                        read_fan_out_delay_ms,
                     }
                 }
             },

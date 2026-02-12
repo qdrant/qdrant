@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
+use uuid::Uuid;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
@@ -13,6 +14,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -24,11 +26,11 @@ use crate::types::{
     VectorNameBuf, WithPayload, WithVector,
 };
 
-/// Define all operations which can be performed with Segment or Segment-like entity.
+/// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SegmentEntry: SnapshotEntry {
+pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -64,68 +66,6 @@ pub trait SegmentEntry: SnapshotEntry {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
-    fn upsert_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_point(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn update_vectors(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_vector(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        vector_name: &VectorName,
-    ) -> OperationResult<bool>;
-
-    fn set_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        payload: &Payload,
-        key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn set_full_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        full_payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn delete_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
-    fn clear_payload(
-        &mut self,
-        op_num: SeqNumberType,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool>;
-
     fn vector(
         &self,
         vector_name: &VectorName,
@@ -138,6 +78,20 @@ pub trait SegmentEntry: SnapshotEntry {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<NamedVectors<'_>>;
+
+    /// Reads Records from the segment, according to specified selectors and a list of point ids.
+    ///
+    /// WARNING:
+    /// This function may return fewer records than requested, if some points are not found.
+    /// Order of returned records is not guaranteed to match order of requested point ids.
+    fn retrieve(
+        &self,
+        point_ids: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<SegmentRecord>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
@@ -243,12 +197,16 @@ pub trait SegmentEntry: SnapshotEntry {
 
     /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        self.vector_names()
-            .into_iter()
-            .map(|vector_name| self.available_vectors_size_in_bytes(&vector_name))
-            .collect::<OperationResult<Vec<_>>>()
-            .map(|sizes| sizes.into_iter().max().unwrap_or_default())
+        let mut max_size = 0;
+        for vector_name in self.vector_names() {
+            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
+            max_size = std::cmp::max(max_size, inner_size);
+        }
+        Ok(max_size)
     }
+
+    /// Get segment uuid
+    fn segment_uuid(&self) -> Uuid;
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
@@ -268,11 +226,6 @@ pub trait SegmentEntry: SnapshotEntry {
     /// Returns appendable state of outer most segment. If this is a proxy segment, this shadows
     /// the appendable state of the wrapped segment.
     fn is_appendable(&self) -> bool;
-
-    /// Get flush ordering affinity
-    /// When multiple segments are flushed together, it must follow this ordering to guarantee data
-    /// consistency.
-    fn flush_ordering(&self) -> SegmentFlushOrdering;
 
     /// Returns a function, which when called, will flush all pending changes to disk.
     /// If there are currently no changes to flush, returns None.
@@ -366,6 +319,13 @@ pub trait SegmentEntry: SnapshotEntry {
         self.apply_field_index(op_num, key.to_owned(), schema, indexes)
     }
 
+    fn delete_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
@@ -378,36 +338,63 @@ pub trait SegmentEntry: SnapshotEntry {
     fn fill_query_context(&self, query_context: &mut QueryContext);
 }
 
-/// Defines in what order multiple segments must be flushed.
+/// Define mutable operations which can be performed with Segment or Segment-like entity.
 ///
-/// To achieve data consistency with our point copy on write mechanism, we must flush segments in a
-/// strict order. Appendable segments must be flushed first, non-appendable segments last. Proxy
-/// segments fall in between.
-///
-/// When flush the segment holder, we effectively flush in four stages defined by the enum variants
-/// below.
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Ord, PartialOrd)]
-pub enum SegmentFlushOrdering {
-    // Must always be flushed first
-    // - Point-CoW moves points into this segment
-    Appendable,
-    // - Point-CoW may have moved points into this segment before proxying, might be pending flush
-    // - Point-CoW may have moved out and deleted points from this segment, these are not persisted
-    ProxyWithAppendable,
-    // - Point-CoW may have moved out and deleted points from here, these are not persisted
-    ProxyWithNonAppendable,
-    // Must always be flushed last
-    // - Point-CoW moves out and deletes points from this segment
-    NonAppendable,
-}
+/// Assume all operations are idempotent - which means that no matter how many times an operation
+/// is executed - the storage state will be the same.
+pub trait SegmentEntry: NonAppendableSegmentEntry {
+    fn upsert_point(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 
-impl SegmentFlushOrdering {
-    pub fn proxy(self) -> Self {
-        match self {
-            SegmentFlushOrdering::Appendable => SegmentFlushOrdering::ProxyWithAppendable,
-            SegmentFlushOrdering::NonAppendable => SegmentFlushOrdering::ProxyWithNonAppendable,
-            proxy @ SegmentFlushOrdering::ProxyWithAppendable => proxy,
-            proxy @ SegmentFlushOrdering::ProxyWithNonAppendable => proxy,
-        }
-    }
+    fn update_vectors(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn delete_vector(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        vector_name: &VectorName,
+    ) -> OperationResult<bool>;
+
+    fn set_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        payload: &Payload,
+        key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn set_full_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        full_payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn delete_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
+
+    fn clear_payload(
+        &mut self,
+        op_num: SeqNumberType,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<bool>;
 }

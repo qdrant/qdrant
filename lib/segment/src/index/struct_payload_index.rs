@@ -1144,17 +1144,6 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
-    #[cfg(feature = "rocksdb")]
-    fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
-        match &self.storage_type {
-            StorageType::RocksDbAppendable(db) | StorageType::RocksDbNonAppendable(db) => {
-                let db_guard = db.read();
-                crate::rocksdb_backup::create(&db_guard, path)
-            }
-            StorageType::GridstoreAppendable | StorageType::GridstoreNonAppendable => Ok(()),
-        }
-    }
-
     fn files(&self) -> Vec<PathBuf> {
         let mut files = self
             .field_indexes
@@ -1186,10 +1175,11 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use tempfile::Builder;
+    use uuid::Uuid;
 
     use super::*;
     use crate::data_types::vectors::only_default_vector;
-    use crate::entry::SegmentEntry;
+    use crate::entry::{NonAppendableSegmentEntry, SegmentEntry};
     use crate::index::payload_config::{IndexMutability, PayloadIndexType};
     use crate::segment_constructor::load_segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -1230,7 +1220,7 @@ mod tests {
                 )
                 .unwrap();
 
-            segment.current_path.clone()
+            segment.segment_path.clone()
         };
 
         let check_index_types = |index_types: &[FullPayloadIndexType]| -> bool {
@@ -1255,11 +1245,7 @@ mod tests {
         drop(payload_config);
 
         // Load once and drop.
-        {
-            load_segment(&full_segment_path, &AtomicBool::new(false))
-                .unwrap()
-                .unwrap();
-        }
+        load_segment(&full_segment_path, Uuid::nil(), &AtomicBool::new(false)).unwrap();
 
         // Check that index type has been written to disk again.
         // Proves we'll always persist the exact index type if it wasn't known yet at that time

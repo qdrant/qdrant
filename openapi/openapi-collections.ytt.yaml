@@ -261,8 +261,7 @@ paths:
       tags:
         - Collections
       summary: Get optimization progress
-      description:
-        Get progress of ongoing and completed optimizations for a collection
+      description: Get progress of ongoing and completed optimizations for a collection
       operationId: get_optimizations
       parameters:
         - name: collection_name
@@ -271,19 +270,19 @@ paths:
           required: true
           schema:
             type: string
-        - name: completed
+        - name: with
           in: query
-          description:
-            Also include completed operations in the response.
+          description: |-
+            Comma-separated list of optional fields to include in the response.
+            Possible values: queued, completed, idle_segments.
           required: false
           schema:
-            type: boolean
-            default: false
+            type: string
         - name: completed_limit
           in: query
-          description:
+          description: |-
             Maximum number of completed optimizations to return.
-            Ignored if completed is false.
+            Ignored if `completed` is not in the `with` parameter.
           required: false
           schema:
             type: integer

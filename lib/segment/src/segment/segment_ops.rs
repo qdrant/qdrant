@@ -4,6 +4,7 @@ use std::path::Path;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use io::file_operations::{atomic_save_json, read_json};
@@ -12,11 +13,10 @@ use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{
     OperationError, OperationResult, SegmentFailedState, get_service_error,
 };
-use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::NonAppendableSegmentEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
@@ -155,7 +155,7 @@ impl Segment {
             // ToDo: Recover previous segment state
             log::error!(
                 "Segment {:?} operation error: {error}",
-                self.current_path.as_path(),
+                self.segment_path.as_path(),
             );
             self.error_status = Some(SegmentFailedState {
                 version: op_num,
@@ -226,7 +226,7 @@ impl Segment {
                 // ToDo: Recover previous segment state
                 log::error!(
                     "Segment {:?} operation error: {error}",
-                    self.current_path.as_path(),
+                    self.segment_path.as_path(),
                 );
                 let point_id = op_point_offset
                     .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
@@ -358,17 +358,17 @@ impl Segment {
         }
     }
 
-    pub fn save_state(state: &SegmentState, current_path: &Path) -> OperationResult<()> {
-        let state_path = current_path.join(SEGMENT_STATE_FILE);
+    pub fn save_state(state: &SegmentState, segment_path: &Path) -> OperationResult<()> {
+        let state_path = segment_path.join(SEGMENT_STATE_FILE);
         Ok(atomic_save_json(&state_path, state)?)
     }
 
-    pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
-        let state_path = current_path.join(SEGMENT_STATE_FILE);
+    pub fn load_state(segment_path: &Path) -> OperationResult<SegmentState> {
+        let state_path = segment_path.join(SEGMENT_STATE_FILE);
         read_json(&state_path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to read segment state {} error: {}",
-                current_path.display(),
+                segment_path.display(),
                 err
             ))
         })
@@ -384,54 +384,60 @@ impl Segment {
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
+        let mut result = None;
+        self.vectors_by_offsets(
+            vector_name,
+            std::iter::once(point_offset),
+            hw_counter,
+            |_, vector_internal| {
+                result = Some(vector_internal);
+            },
+        )?;
+        Ok(result)
+    }
+
+    /// Retrieve multiple vectors by internal ID
+    pub(super) fn vectors_by_offsets(
+        &self,
+        vector_name: &VectorName,
+        point_offsets: impl IntoIterator<Item = PointOffsetType>,
+        hw_counter: &HardwareCounterCell,
+        mut callback: impl FnMut(PointOffsetType, VectorInternal),
+    ) -> OperationResult<()> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
         let vector_storage = vector_data.vector_storage.borrow();
-        let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
-        if !is_vector_deleted && !self.id_tracker.borrow().is_deleted_point(point_offset) {
-            if vector_storage.total_vector_count() <= point_offset as usize {
-                // Storage does not have vector with such offset.
-                // This is possible if the storage is inconsistent due to interrupted flush.
-                // Assume consistency will be restored with WAL replay.
+        let total_vectors = vector_storage.total_vector_count();
 
-                // Without this check, the service will panic on the `get_vector` call.
-                Err(OperationError::InconsistentStorage {
-                    description: format!(
-                        "Vector storage '{}' is inconsistent, total_vector_count: {}, point_offset: {}",
-                        vector_name,
-                        vector_storage.total_vector_count(),
-                        point_offset
-                    ),
-                })
-            } else {
-                let vector = vector_storage.get_vector::<Random>(point_offset);
-                if vector_storage.is_on_disk() {
-                    hw_counter
-                        .vector_io_read()
-                        .incr_delta(vector.estimate_size_in_bytes());
-                }
-                Ok(Some(vector.to_owned()))
+        let id_tracker = self.id_tracker.borrow();
+        let non_deleted_offsets = point_offsets.into_iter().filter(|&point_offset| {
+            if total_vectors <= point_offset as usize {
+                debug_assert!(
+                    false,
+                    "Vector storage is inconsistent, total_vector_count: {total_vectors}, point_offset: {point_offset}, external_id: {:?}",
+                    id_tracker.external_id(point_offset),
+                );
+                return false;
             }
-        } else {
-            Ok(None)
-        }
-    }
 
-    pub(super) fn all_vectors_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>> {
-        let mut vectors = NamedVectors::default();
-        for vector_name in self.vector_data.keys() {
-            if let Some(vector) = self.vector_by_offset(vector_name, point_offset, hw_counter)? {
-                vectors.insert(vector_name.clone(), vector);
+            let is_vector_deleted = vector_storage.is_deleted_vector(point_offset);
+            let is_point_deleted = id_tracker.is_deleted_point(point_offset);
+            !is_vector_deleted && !is_point_deleted
+        });
+
+        vector_storage.read_vectors::<Random>(non_deleted_offsets, |point_offset, cow_vector| {
+            if vector_storage.is_on_disk() {
+                hw_counter
+                    .vector_io_read()
+                    .incr_delta(cow_vector.estimate_size_in_bytes());
             }
-        }
-        Ok(vectors)
+            callback(point_offset, cow_vector.to_owned());
+        });
+
+        Ok(())
     }
 
     /// Retrieve payload by internal ID
@@ -447,7 +453,7 @@ impl Segment {
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
-        Self::save_state(&self.get_state(), &self.current_path)
+        Self::save_state(&self.get_state(), &self.segment_path)
     }
 
     /// Unpacks and restores the segment snapshot in-place. The original
@@ -469,7 +475,7 @@ impl Segment {
     /// Check consistency of the segment's data and repair it if possible.
     /// Removes partially persisted points.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
-        // Get rid of versionless points.
+        // Get rid of mappingless points.
         let ids_to_clean = self.fix_id_tracker_inconsistencies()?;
 
         // There are some leftovers to clean from segment.
@@ -479,7 +485,11 @@ impl Segment {
         // This is internal operation, no hw measurement needed
         let disposable_hw_counter = HardwareCounterCell::disposable();
         if !ids_to_clean.is_empty() {
-            log::debug!("cleaning up {} points without version", ids_to_clean.len());
+            log::debug!(
+                "Cleaning up {} points with version but no mapping in segment {:?}",
+                ids_to_clean.len(),
+                self.data_path()
+            );
 
             for internal_id in ids_to_clean {
                 self.delete_point_internal(internal_id, &disposable_hw_counter)?;
@@ -637,7 +647,7 @@ impl Segment {
     }
 
     /// Fixes inconsistencies in the ID tracker, if any.
-    /// Returns list of IDs, which should be removed from segment
+    /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
@@ -675,7 +685,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         unpack_snapshot(snapshot_path)?;
     } else {
         let segment_path = segments_dir.join(segment_id);
-        open_snapshot_archive_with_validation(snapshot_path)?.unpack(&segment_path)?;
+        tar_unpack_file(snapshot_path, &segment_path)?;
 
         let inner_path = segment_path.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {

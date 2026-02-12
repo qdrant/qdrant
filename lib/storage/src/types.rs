@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -13,6 +14,7 @@ use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
+use common::load_concurrency::LoadConcurrencyConfig;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
@@ -20,12 +22,12 @@ use segment::data_types::collection_defaults::CollectionConfigDefaults;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
 pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Validate)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
     #[serde(default)]
@@ -52,6 +54,8 @@ pub struct PerformanceConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,
+    #[serde(default, flatten)]
+    pub load_concurrency: LoadConcurrencyConfig,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
@@ -61,16 +65,16 @@ const fn default_io_shard_transfers_limit() -> Option<usize> {
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
 #[derive(Clone, Debug, Deserialize, Validate)]
 pub struct StorageConfig {
-    #[validate(length(min = 1))]
-    pub storage_path: String,
+    #[validate(custom(function = validate_path))]
+    pub storage_path: PathBuf,
     #[serde(default = "default_snapshots_path")]
-    #[validate(length(min = 1))]
-    pub snapshots_path: String,
+    #[validate(custom(function = validate_path))]
+    pub snapshots_path: PathBuf,
     #[serde(default)]
     pub snapshots_config: SnapshotsConfig,
-    #[validate(length(min = 1))]
+    #[validate(custom(function = validate_path))]
     #[serde(default)]
-    pub temp_path: Option<String>,
+    pub temp_path: Option<PathBuf>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     #[validate(nested)]
@@ -131,17 +135,25 @@ impl StorageConfig {
             self.snapshots_path.clone(),
             self.snapshots_config.clone(),
             self.hnsw_global_config.clone(),
+            self.performance.load_concurrency.clone(),
             common::defaults::search_thread_count(self.performance.max_search_threads),
         )
     }
 }
 
-fn default_snapshots_path() -> String {
-    DEFAULT_SNAPSHOTS_PATH.to_string()
+fn default_snapshots_path() -> PathBuf {
+    PathBuf::from(DEFAULT_SNAPSHOTS_PATH)
 }
 
 const fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
+}
+
+fn validate_path(path: &Path) -> Result<(), ValidationError> {
+    if path.as_os_str().is_empty() {
+        return Err(ValidationError::new("Path cannot be empty"));
+    }
+    Ok(())
 }
 
 /// Information of a peer in the cluster

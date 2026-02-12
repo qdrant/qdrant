@@ -17,10 +17,13 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
-use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
+use crate::vector_storage::dense::appendable_dense_vector_storage::{
+    open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
+    open_appendable_memmap_vector_storage_half,
+};
 use crate::vector_storage::{
-    AccessPattern, MultiVectorStorage, Random, Sequential, VectorStorage, VectorStorageEnum,
+    AccessPattern, MultiVectorStorage, Random, Sequential, VectorOffsetType, VectorStorage,
+    VectorStorageEnum,
 };
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -36,13 +39,9 @@ pub struct MultivectorMmapOffset {
 }
 
 #[derive(Debug)]
-pub struct AppendableMmapMultiDenseVectorStorage<
-    T: PrimitiveVectorElement,
-    S: ChunkedVectorStorage<T>,
-    O: ChunkedVectorStorage<MultivectorMmapOffset>,
-> {
-    vectors: S,
-    offsets: O,
+pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
+    vectors: ChunkedMmapVectors<T>,
+    offsets: ChunkedMmapVectors<MultivectorMmapOffset>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -54,12 +53,7 @@ pub struct AppendableMmapMultiDenseVectorStorage<
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<
-    T: PrimitiveVectorElement,
-    S: ChunkedVectorStorage<T>,
-    O: ChunkedVectorStorage<MultivectorMmapOffset>,
-> AppendableMmapMultiDenseVectorStorage<T, S, O>
-{
+impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
@@ -97,12 +91,7 @@ impl<
     }
 }
 
-impl<
-    T: PrimitiveVectorElement,
-    S: ChunkedVectorStorage<T> + Sync,
-    O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
-> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T, S, O>
-{
+impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }
@@ -163,12 +152,7 @@ impl<
     }
 }
 
-impl<
-    T: PrimitiveVectorElement,
-    S: ChunkedVectorStorage<T> + Sync,
-    O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
-> VectorStorage for AppendableMmapMultiDenseVectorStorage<T, S, O>
-{
+impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVectorStorage<T> {
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -316,12 +300,47 @@ impl<
     }
 }
 
+pub fn open_appendable_memmap_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    vector_storage_path: &Path,
+    size: usize,
+    distance: Distance,
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage_full(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
+        VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
+        VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
+            vector_storage_path,
+            size,
+            distance,
+            madvise,
+            populate,
+        ),
+    }
+}
+
 pub fn open_appendable_memmap_multi_vector_storage(
     storage_element_type: VectorStorageDatatype,
     path: &Path,
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_element_type {
         VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage_full(
@@ -329,18 +348,24 @@ pub fn open_appendable_memmap_multi_vector_storage(
             dim,
             distance,
             multi_vector_config,
+            madvise,
+            populate,
         ),
         VectorStorageDatatype::Uint8 => open_appendable_memmap_multi_vector_storage_byte(
             path,
             dim,
             distance,
             multi_vector_config,
+            madvise,
+            populate,
         ),
         VectorStorageDatatype::Float16 => open_appendable_memmap_multi_vector_storage_half(
             path,
             dim,
             distance,
             multi_vector_config,
+            madvise,
+            populate,
         ),
     }
 }
@@ -350,12 +375,16 @@ pub fn open_appendable_memmap_multi_vector_storage_full(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
         distance,
         multi_vector_config,
+        madvise,
+        populate,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
@@ -368,9 +397,17 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        madvise,
+        populate,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
         storage,
@@ -382,9 +419,17 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    madvise: AdviceSetting,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        madvise,
+        populate,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
         storage,
@@ -396,137 +441,17 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-) -> OperationResult<
-    AppendableMmapMultiDenseVectorStorage<
-        T,
-        ChunkedMmapVectors<T>,
-        ChunkedMmapVectors<MultivectorMmapOffset>,
-    >,
-> {
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<AppendableMmapMultiDenseVectorStorage<T>> {
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let populate = false;
-
-    let vectors =
-        ChunkedMmapVectors::open(&vectors_path, dim, AdviceSetting::Global, Some(populate))?;
-    let offsets =
-        ChunkedMmapVectors::open(&offsets_path, 1, AdviceSetting::Global, Some(populate))?;
-
-    let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
-    let deleted_count = deleted.count_trues();
-
-    Ok(AppendableMmapMultiDenseVectorStorage {
-        vectors,
-        offsets,
-        deleted,
-        distance,
-        multi_vector_config,
-        deleted_count,
-        _phantom: Default::default(),
-    })
-}
-
-pub fn open_appendable_in_ram_multi_vector_storage(
-    storage_element_type: VectorStorageDatatype,
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-) -> OperationResult<VectorStorageEnum> {
-    match storage_element_type {
-        VectorStorageDatatype::Float32 => open_appendable_in_ram_multi_vector_storage_full(
-            path,
-            dim,
-            distance,
-            multi_vector_config,
-        ),
-        VectorStorageDatatype::Float16 => open_appendable_in_ram_multi_vector_storage_half(
-            path,
-            dim,
-            distance,
-            multi_vector_config,
-        ),
-        VectorStorageDatatype::Uint8 => open_appendable_in_ram_multi_vector_storage_byte(
-            path,
-            dim,
-            distance,
-            multi_vector_config,
-        ),
-    }
-}
-
-pub fn open_appendable_in_ram_multi_vector_storage_full(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_in_ram_multi_vector_storage_impl::<VectorElementType>(
-        path,
-        dim,
-        distance,
-        multi_vector_config,
-    )?;
-
-    Ok(VectorStorageEnum::MultiDenseAppendableInRam(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_in_ram_multi_vector_storage_byte(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_in_ram_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
-
-    Ok(VectorStorageEnum::MultiDenseAppendableInRamByte(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_in_ram_multi_vector_storage_half(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_in_ram_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
-
-    Ok(VectorStorageEnum::MultiDenseAppendableInRamHalf(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-    multi_vector_config: MultiVectorConfig,
-) -> OperationResult<
-    AppendableMmapMultiDenseVectorStorage<
-        T,
-        InRamPersistedVectors<T>,
-        InRamPersistedVectors<MultivectorMmapOffset>,
-    >,
-> {
-    fs::create_dir_all(path)?;
-
-    let vectors_path = path.join(VECTORS_DIR_PATH);
-    let offsets_path = path.join(OFFSETS_DIR_PATH);
-    let deleted_path = path.join(DELETED_DIR_PATH);
-
-    let populate = true;
-
-    let vectors = InRamPersistedVectors::open(&vectors_path, dim)?;
-    let offsets = InRamPersistedVectors::open(&offsets_path, 1)?;
+    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, madvise, Some(populate))?;
+    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, madvise, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();
@@ -583,6 +508,8 @@ mod tests {
             DIM,
             Distance::Dot,
             mutli_vector_config,
+            AdviceSetting::Global,
+            false,
         )
         .unwrap();
 

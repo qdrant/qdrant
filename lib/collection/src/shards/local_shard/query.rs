@@ -298,7 +298,7 @@ impl LocalShard {
         match rescore {
             ScoringQuery::Fusion(fusion) => {
                 self.fusion_rescore(
-                    sources.into_iter(),
+                    sources,
                     fusion,
                     score_threshold.map(OrderedFloat::into_inner),
                     limit,
@@ -413,16 +413,20 @@ impl LocalShard {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn fusion_rescore(
         &self,
-        sources: impl Iterator<Item = Vec<ScoredPoint>>,
+        sources: Vec<Vec<ScoredPoint>>,
         fusion: FusionInternal,
         score_threshold: Option<f32>,
         limit: usize,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let fused = match fusion {
-            FusionInternal::RrfK(k) => rrf_scoring(sources, k),
+            FusionInternal::Rrf { k, ref weights } => {
+                let weights_slice = weights
+                    .as_ref()
+                    .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
+                rrf_scoring(sources, k, weights_slice.as_deref())?
+            }
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 

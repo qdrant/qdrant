@@ -306,6 +306,13 @@ message OptimizersConfigDiff {
   // If "auto" - have no limit and choose dynamically to saturate CPU.
   // If 0 - no optimization threads, optimizations will be disabled.
   optional MaxOptimizationThreads max_optimization_threads = 9;
+
+  // If this option is set, service will try to prevent creation of large unoptimized segments.
+  // When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
+  // Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+  // Using this option may lead to increased delay between submitting an update and its application.
+  // Default is disabled.
+  optional bool prevent_unoptimized = 10;
 }
 
 message ScalarQuantization {
@@ -543,6 +550,8 @@ message CollectionParams {
   optional ShardingMethod sharding_method = 9;
   // Configuration for sparse vectors
   optional SparseVectorConfig sparse_vectors_config = 10;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 11;
 }
 
 message CollectionParamsDiff {
@@ -554,6 +563,8 @@ message CollectionParamsDiff {
   optional bool on_disk_payload = 3;
   // Fan-out every read request to these many additional remote nodes (and return first available response)
   optional uint32 read_fan_out_factor = 4;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 5;
 }
 
 message CollectionConfig {
@@ -586,6 +597,10 @@ message KeywordIndexParams {
   optional bool is_tenant = 1;
   // If true - store index on disk.
   optional bool on_disk = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
 }
 
 message IntegerIndexParams {
@@ -599,6 +614,10 @@ message IntegerIndexParams {
   optional bool is_principal = 3;
   // If true - store index on disk. Default is false.
   optional bool on_disk = 4;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 5;
 }
 
 message FloatIndexParams {
@@ -607,11 +626,19 @@ message FloatIndexParams {
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
 }
 
 message GeoIndexParams {
   // If true - store index on disk.
   optional bool on_disk = 1;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 2;
 }
 
 message StopwordsSet {
@@ -641,6 +668,10 @@ message TextIndexParams {
   // If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao").
   // Default: false.
   optional bool ascii_folding = 9;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 10;
 }
 
 message StemmingAlgorithm {
@@ -658,6 +689,10 @@ message SnowballParams {
 message BoolIndexParams {
   // If true - store index on disk.
   optional bool on_disk = 1;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 2;
 }
 
 message DatetimeIndexParams {
@@ -666,6 +701,10 @@ message DatetimeIndexParams {
   // If true - use this key to organize storage of the collection data.
   // This option assumes that this key will be used in majority of filtered requests.
   optional bool is_principal = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
 }
 
 message UuidIndexParams {
@@ -673,6 +712,10 @@ message UuidIndexParams {
   optional bool is_tenant = 1;
   // If true - store index on disk.
   optional bool on_disk = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
 }
 
 message PayloadIndexParams {
@@ -705,6 +748,13 @@ message PayloadSchemaInfo {
   optional uint64 points = 3;
 }
 
+message UpdateQueueInfo {
+    // Number of elements in the queue
+    uint64 length = 1;
+    // last operation number processed
+    optional uint64 op_num = 2;
+}
+
 message CollectionInfo {
   // operating condition of the collection
   CollectionStatus status = 1;
@@ -728,6 +778,8 @@ message CollectionInfo {
   optional uint64 indexed_vectors_count = 10;
   // Warnings related to the collection
   repeated CollectionWarning warnings = 11;
+  // Update queue info
+  UpdateQueueInfo update_queue = 12;
 }
 
 message ChangeAliases {
@@ -814,6 +866,12 @@ enum ReplicaState {
   ReshardingScaleDown = 8;
   // Active for readers, Partial for writers
   ActiveRead = 9;
+  // State for manually creation/recovery of a shard.
+  // Usually when snapshot is uploaded.
+  // This state is equivalent to `Partial`, except:
+  // - it can't receive updates
+  // - it is not treated as broken on startup
+  ManualRecovery = 10;
 }
 
 message ShardKey {

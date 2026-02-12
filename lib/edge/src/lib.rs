@@ -1,7 +1,11 @@
+pub mod count;
+pub mod facet;
+pub mod info;
 pub mod query;
 pub mod retrieve;
 pub mod scroll;
 pub mod search;
+pub mod snapshots;
 pub mod update;
 
 use std::num::NonZero;
@@ -14,17 +18,18 @@ use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::entry::SegmentEntry;
-use segment::segment_constructor::load_segment;
+use segment::entry::NonAppendableSegmentEntry as _;
+use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
 use shard::operations::CollectionUpdateOperations;
-use shard::segment_holder::{LockedSegmentHolder, SegmentHolder};
+use shard::segment_holder::SegmentHolder;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 
 #[derive(Debug)]
-pub struct Shard {
-    _path: PathBuf,
+pub struct EdgeShard {
+    path: PathBuf,
     config: SegmentConfig,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
@@ -33,7 +38,7 @@ pub struct Shard {
 const WAL_PATH: &str = "wal";
 const SEGMENTS_PATH: &str = "segments";
 
-impl Shard {
+impl EdgeShard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
 
@@ -94,22 +99,17 @@ impl Shard {
                 continue;
             }
 
-            let segment = load_segment(&segment_path, &AtomicBool::new(false)).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to load segment {}: {err}",
-                    segment_path.display(),
-                ))
-            })?;
-
-            let Some(mut segment) = segment else {
-                fs::remove_dir_all(&segment_path).map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to remove leftover segment: {err}",
-                    ))
-                })?;
-
+            let Some((segment_path, segment_uuid)) = normalize_segment_dir(&segment_path)? else {
                 continue;
             };
+
+            let mut segment = load_segment(&segment_path, segment_uuid, &AtomicBool::new(false))
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to load segment {}: {err}",
+                        segment_path.display(),
+                    ))
+                })?;
 
             if let Some(config) = &config {
                 if !config.is_compatible(segment.config()) {
@@ -161,10 +161,10 @@ impl Shard {
         }
 
         let shard = Self {
-            _path: path.into(),
+            path: path.into(),
             config: config.expect("config was provided or at least one segment was loaded"),
             wal: parking_lot::Mutex::new(wal),
-            segments: Arc::new(parking_lot::RwLock::new(segments)),
+            segments: LockedSegmentHolder::new(segments),
         };
 
         Ok(shard)
@@ -172,6 +172,30 @@ impl Shard {
 
     pub fn config(&self) -> &SegmentConfig {
         &self.config
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn flush(&self) {
+        self.wal
+            .try_lock()
+            .expect("WAL lock acquired")
+            .flush()
+            .expect("WAL flushed");
+
+        self.segments
+            .try_read()
+            .expect("segment holder lock acquired")
+            .flush_all(true, true)
+            .expect("segments flushed");
+    }
+}
+
+impl Drop for EdgeShard {
+    fn drop(&mut self) {
+        self.flush();
     }
 }
 

@@ -8,7 +8,7 @@ use tokio::time::Instant;
 
 use super::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::common::query::do_count_points;
 use crate::settings::ServiceConfig;
@@ -20,7 +20,7 @@ async fn count_points(
     request: Json<CountRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let CountRequest {
         count_request,
@@ -32,7 +32,7 @@ async fn count_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -55,13 +55,13 @@ async fn count_points(
     let timing = Instant::now();
 
     let result = do_count_points(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         count_request,
         params.consistency,
         params.timeout(),
         shard_selector,
-        access,
+        auth,
         request_hw_counter.get_counter(),
     )
     .await;

@@ -678,6 +678,96 @@
         }
       }
     },
+    "/cluster/telemetry": {
+      "get": {
+        "tags": [
+          "Distributed"
+        ],
+        "summary": "Collect cluster telemetry data",
+        "description": "Get telemetry data, from the point of view of the cluster. This includes peers info, collections info, shard transfers, and resharding status",
+        "operationId": "cluster_telemetry",
+        "parameters": [
+          {
+            "name": "details_level",
+            "in": "query",
+            "description": "The level of detail to include in the response",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "Timeout for this request",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/Usage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/DistributedTelemetryData"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster/recover": {
       "post": {
         "tags": [
@@ -1834,19 +1924,18 @@
             }
           },
           {
-            "name": "completed",
+            "name": "with",
             "in": "query",
-            "description": "Also include completed operations in the response.",
+            "description": "Comma-separated list of optional fields to include in the response.\nPossible values: queued, completed, idle_segments.",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "string"
             }
           },
           {
             "name": "completed_limit",
             "in": "query",
-            "description": "Maximum number of completed optimizations to return. Ignored if completed is false.",
+            "description": "Maximum number of completed optimizations to return.\nIgnored if `completed` is not in the `with` parameter.",
             "required": false,
             "schema": {
               "type": "integer",
@@ -6818,6 +6907,17 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "update_queue": {
+            "description": "Update queue info",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateQueueInfo"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6972,6 +7072,13 @@
             "description": "Defines how many additional replicas should be processing read request at the same time. Default value is Auto, which means that fan-out will be determined automatically based on the busyness of the local replica. Having more than 0 might be useful to smooth latency spikes of individual nodes.",
             "type": "integer",
             "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
+          "read_fan_out_delay_ms": {
+            "description": "Define number of milliseconds to wait before attempting to read from another replica. This setting can help to reduce latency spikes in case of occasional slow replicas. Default is 0, which means delayed fan out request is disabled.",
+            "type": "integer",
+            "format": "uint64",
             "minimum": 0,
             "nullable": true
           },
@@ -7495,6 +7602,12 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "prevent_unoptimized": {
+            "description": "If this option is set, service will try to prevent creation of large unoptimized segments. When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold. Updates will be resumed when optimization is completed and segments are optimized below the threshold. Using this option may lead to increased delay between submitting an update and its application. Default is disabled.",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7797,6 +7910,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7834,6 +7952,11 @@
             "description": "If true, store the index on disk. Default: false. Default is false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7861,6 +7984,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7881,6 +8009,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -7959,6 +8092,11 @@
                 "nullable": true
               }
             ]
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8112,6 +8250,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8137,6 +8280,11 @@
           },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
           }
@@ -8166,6 +8314,11 @@
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "enable_hnsw": {
+            "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -8174,6 +8327,27 @@
         "enum": [
           "uuid"
         ]
+      },
+      "UpdateQueueInfo": {
+        "type": "object",
+        "required": [
+          "length"
+        ],
+        "properties": {
+          "length": {
+            "description": "Number of elements in the queue",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "op_num": {
+            "description": "last operation number processed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
       },
       "PointRequest": {
         "type": "object",
@@ -9467,11 +9641,12 @@
         }
       },
       "UpdateStatus": {
-        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual.",
+        "description": "`Acknowledged` - Request is saved to WAL and will be process in a queue. `Completed` - Request is completed, changes are actual. `WaitTimeout` - Request is waiting for timeout.",
         "type": "string",
         "enum": [
           "acknowledged",
-          "completed"
+          "completed",
+          "wait_timeout"
         ]
       },
       "RecommendRequest": {
@@ -10081,6 +10256,12 @@
                 "nullable": true
               }
             ]
+          },
+          "prevent_unoptimized": {
+            "description": "If this option is set, service will try to prevent creation of large unoptimized segments. When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold. Updates will be resumed when optimization is completed and segments are optimized below the threshold. Using this option may lead to increased delay between submitting an update and its application. Default is disabled.",
+            "default": null,
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -10454,6 +10635,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "read_fan_out_delay_ms": {
+            "description": "Delay in milliseconds before sending read requests to remote nodes",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
             "default": null,
@@ -10692,10 +10880,21 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
               },
               {
                 "nullable": true
@@ -10997,6 +11196,15 @@
           }
         }
       },
+      "UpdateMode": {
+        "description": "Defines the mode of the upsert operation\n\n* `upsert` - default mode, insert new points, update existing points * `insert_only` - only insert new points, do not update existing points * `update_only` - only update existing points, do not insert new points",
+        "type": "string",
+        "enum": [
+          "upsert",
+          "insert_only",
+          "update_only"
+        ]
+      },
       "PointsList": {
         "type": "object",
         "required": [
@@ -11020,10 +11228,21 @@
             ]
           },
           "update_filter": {
-            "description": "If specified, only points that match this filter will be updated, others will be inserted",
+            "description": "Filter to apply when updating existing points. Only points matching this filter will be updated. Points that don't match will keep their current state. New points will be inserted regardless of the filter.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "update_mode": {
+            "description": "Mode of the upsert operation: insert_only, upsert (default), update_only",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateMode"
               },
               {
                 "nullable": true
@@ -11616,7 +11835,8 @@
           "Recovery",
           "Resharding",
           "ReshardingScaleDown",
-          "ActiveRead"
+          "ActiveRead",
+          "ManualRecovery"
         ]
       },
       "RemoteShardInfo": {
@@ -11670,7 +11890,7 @@
             "minimum": 0
           },
           "to_shard_id": {
-            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardStreamRecords` transfer method.",
+            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardingStreamRecords` transfer method.",
             "type": "integer",
             "format": "uint32",
             "minimum": 0,
@@ -11763,7 +11983,6 @@
       "TelemetryData": {
         "type": "object",
         "required": [
-          "app",
           "collections",
           "id"
         ],
@@ -11772,7 +11991,14 @@
             "type": "string"
           },
           "app": {
-            "$ref": "#/components/schemas/AppBuildTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppBuildTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "collections": {
             "$ref": "#/components/schemas/CollectionsTelemetry"
@@ -11894,7 +12120,8 @@
           "gpu",
           "recovery_mode",
           "rocksdb",
-          "service_debug_feature"
+          "service_debug_feature",
+          "staging"
         ],
         "properties": {
           "debug": {
@@ -11910,6 +12137,9 @@
             "type": "boolean"
           },
           "rocksdb": {
+            "type": "boolean"
+          },
+          "staging": {
             "type": "boolean"
           }
         }
@@ -11965,6 +12195,11 @@
           "appendable_quantization": {
             "description": "Use appendable quantization in appendable plain segments.\n\nEnabled by default in Qdrant 1.16.0.",
             "default": true,
+            "type": "boolean"
+          },
+          "single_file_mmap_vector_storage": {
+            "description": "Use single-file mmap in-ram vector storage (InRamMmap)\n\nEnabled by default in Qdrant 1.17.1+",
+            "default": false,
             "type": "boolean"
           }
         }
@@ -12105,9 +12340,7 @@
       "CollectionTelemetry": {
         "type": "object",
         "required": [
-          "config",
-          "id",
-          "init_time_ms"
+          "id"
         ],
         "properties": {
           "id": {
@@ -12116,10 +12349,18 @@
           "init_time_ms": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfigTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionConfigTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "shards": {
             "type": "array",
@@ -12272,7 +12513,6 @@
       "LocalShardTelemetry": {
         "type": "object",
         "required": [
-          "optimizations",
           "total_optimized_points"
         ],
         "properties": {
@@ -12342,7 +12582,14 @@
             "nullable": true
           },
           "optimizations": {
-            "$ref": "#/components/schemas/OptimizerTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptimizerTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "async_scorer": {
             "type": "boolean",
@@ -12356,6 +12603,17 @@
               "minimum": 0
             },
             "nullable": true
+          },
+          "update_queue": {
+            "description": "Update queue status",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateQueueInfo"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12412,10 +12670,15 @@
           "payloads_size_bytes",
           "ram_usage_bytes",
           "segment_type",
+          "uuid",
           "vector_data",
           "vectors_size_bytes"
         ],
         "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
           "segment_type": {
             "$ref": "#/components/schemas/SegmentType"
           },
@@ -12625,6 +12888,13 @@
             "type": "string",
             "enum": [
               "InRamChunkedMmap"
+            ]
+          },
+          {
+            "description": "Storage in a single mmap file, not appendable Pre-fetched into RAM on load",
+            "type": "string",
+            "enum": [
+              "InRamMmap"
             ]
           }
         ]
@@ -13001,21 +13271,36 @@
         "required": [
           "name",
           "segment_ids",
+          "segment_uuids",
           "start_at",
-          "status"
+          "status",
+          "uuid"
         ],
         "properties": {
           "name": {
             "description": "Name of the optimizer",
             "type": "string"
           },
+          "uuid": {
+            "description": "UUID of the upcoming segment being created by the optimizer",
+            "type": "string",
+            "format": "uuid"
+          },
           "segment_ids": {
-            "description": "Segment IDs being optimized",
+            "description": "Internal segment IDs being optimized. These are local and in-memory, meaning that they can refer to different segments after a service restart.",
             "type": "array",
             "items": {
               "type": "integer",
               "format": "uint",
               "minimum": 0
+            }
+          },
+          "segment_uuids": {
+            "description": "Segment UUIDs being optimized. Refers to same segments as in `segment_ids`, but trackable across restarts, and reflect their directory name.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             }
           },
           "status": {
@@ -13073,9 +13358,8 @@
       "RemoteShardTelemetry": {
         "type": "object",
         "required": [
-          "searches",
-          "shard_id",
-          "updates"
+          "peer_id",
+          "shard_id"
         ],
         "properties": {
           "shard_id": {
@@ -13086,14 +13370,27 @@
           "peer_id": {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "nullable": true
+            "minimum": 0
           },
           "searches": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "updates": {
-            "$ref": "#/components/schemas/OperationDurationStatistics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationDurationStatistics"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -13276,6 +13573,10 @@
           "metadata": {
             "type": "object",
             "additionalProperties": true,
+            "nullable": true
+          },
+          "resharding_enabled": {
+            "type": "boolean",
             "nullable": true
           }
         }
@@ -15451,6 +15752,15 @@
             "format": "uint",
             "minimum": 1,
             "nullable": true
+          },
+          "weights": {
+            "description": "Weights for each prefetch source. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches.",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "nullable": true
           }
         }
       },
@@ -16285,23 +16595,132 @@
         "description": "Optimizations progress for the collection",
         "type": "object",
         "required": [
-          "ongoing"
+          "running",
+          "summary"
         ],
         "properties": {
-          "ongoing": {
-            "description": "Ongoing optimizations from newest to oldest.",
+          "summary": {
+            "$ref": "#/components/schemas/OptimizationsSummary"
+          },
+          "running": {
+            "description": "Currently running optimizations.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProgressTree"
+              "$ref": "#/components/schemas/Optimization"
             }
           },
-          "completed": {
-            "description": "Completed optimizations from newest to oldest.",
+          "queued": {
+            "description": "An estimated queue of pending optimizations. Requires `?with=queued`.",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProgressTree"
+              "$ref": "#/components/schemas/PendingOptimization"
             },
             "nullable": true
+          },
+          "completed": {
+            "description": "Completed optimizations. Requires `?with=completed`. Limited by `?completed_limit=N`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Optimization"
+            },
+            "nullable": true
+          },
+          "idle_segments": {
+            "description": "Segments that don't require optimization. Requires `?with=idle_segments`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "OptimizationsSummary": {
+        "type": "object",
+        "required": [
+          "idle_segments",
+          "queued_optimizations",
+          "queued_points",
+          "queued_segments"
+        ],
+        "properties": {
+          "queued_optimizations": {
+            "description": "Number of pending optimizations in the queue. Each optimization will take one or more unoptimized segments and produce one optimized segment.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "queued_segments": {
+            "description": "Number of unoptimized segments in the queue.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "queued_points": {
+            "description": "Number of points in unoptimized segments in the queue.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "idle_segments": {
+            "description": "Number of segments that don't require optimization.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "Optimization": {
+        "type": "object",
+        "required": [
+          "optimizer",
+          "progress",
+          "segments",
+          "status",
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "description": "Unique identifier of the optimization process.\n\nAfter the optimization is complete, a new segment will be created with this UUID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "optimizer": {
+            "description": "Name of the optimizer that performed this optimization.",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TrackerStatus"
+          },
+          "segments": {
+            "description": "Segments being optimized.\n\nAfter the optimization is complete, these segments will be replaced by the new optimized segment.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            }
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ProgressTree"
+          }
+        }
+      },
+      "OptimizationSegmentInfo": {
+        "type": "object",
+        "required": [
+          "points_count",
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "description": "Unique identifier of the segment.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "points_count": {
+            "description": "Number of non-deleted points in the segment.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
@@ -16354,6 +16773,320 @@
             "items": {
               "$ref": "#/components/schemas/ProgressTree"
             }
+          }
+        }
+      },
+      "PendingOptimization": {
+        "type": "object",
+        "required": [
+          "optimizer",
+          "segments"
+        ],
+        "properties": {
+          "optimizer": {
+            "description": "Name of the optimizer that scheduled this optimization.",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Segments that will be optimized.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationSegmentInfo"
+            }
+          }
+        }
+      },
+      "DistributedTelemetryData": {
+        "type": "object",
+        "required": [
+          "collections"
+        ],
+        "properties": {
+          "collections": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedCollectionTelemetry"
+            }
+          },
+          "cluster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedClusterTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedCollectionTelemetry": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "description": "Collection name",
+            "type": "string"
+          },
+          "shards": {
+            "description": "Shards topology",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistributedShardTelemetry"
+            },
+            "nullable": true
+          },
+          "reshardings": {
+            "description": "Ongoing resharding operations",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReshardingInfo"
+            },
+            "nullable": true
+          },
+          "shard_transfers": {
+            "description": "Ongoing shard transfers",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShardTransferInfo"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DistributedShardTelemetry": {
+        "type": "object",
+        "required": [
+          "id",
+          "replicas"
+        ],
+        "properties": {
+          "id": {
+            "description": "Shard ID",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "key": {
+            "description": "Optional shard key",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "replicas": {
+            "description": "Replica information",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistributedReplicaTelemetry"
+            }
+          }
+        }
+      },
+      "DistributedReplicaTelemetry": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "state"
+        ],
+        "properties": {
+          "peer_id": {
+            "description": "Peer ID hosting this replica",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReplicaState"
+          },
+          "status": {
+            "description": "Shard status",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardStatus"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "total_optimized_points": {
+            "description": "Total optimized points",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "vectors_size_bytes": {
+            "description": "Estimated vectors size in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "payloads_size_bytes": {
+            "description": "Estimated payloads size in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_points": {
+            "description": "Approximate number of points",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors": {
+            "description": "Approximate number of vectors",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors_by_name": {
+            "description": "Approximate number of vectors by name",
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "nullable": true
+          },
+          "shard_cleaning_status": {
+            "description": "Shard cleaning task status. After a resharding, a cleanup task is performed to remove outdated points from this shard.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "partial_snapshot": {
+            "description": "Partial snapshot telemetry",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartialSnapshotTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedClusterTelemetry": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "peers"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "number_of_peers": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "peers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DistributedPeerInfo"
+            }
+          }
+        }
+      },
+      "DistributedPeerInfo": {
+        "type": "object",
+        "required": [
+          "responsive",
+          "uri"
+        ],
+        "properties": {
+          "uri": {
+            "description": "URI of the peer",
+            "type": "string"
+          },
+          "responsive": {
+            "description": "Whether this peer responded for this request",
+            "type": "boolean"
+          },
+          "details": {
+            "description": "If responsive, these details should be available",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributedPeerDetails"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DistributedPeerDetails": {
+        "type": "object",
+        "required": [
+          "commit",
+          "consensus_thread_status",
+          "is_voter",
+          "num_pending_operations",
+          "term",
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "description": "Qdrant version",
+            "type": "string"
+          },
+          "role": {
+            "description": "Consensus role for the peer",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StateRole"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "is_voter": {
+            "description": "Whether it can participate in leader elections",
+            "type": "boolean"
+          },
+          "term": {
+            "description": "Election term",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "commit": {
+            "description": "Latest accepted commit",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "num_pending_operations": {
+            "description": "Number of operations pending for being applied",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "consensus_thread_status": {
+            "$ref": "#/components/schemas/ConsensusThreadStatus"
           }
         }
       }

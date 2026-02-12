@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use collection::collection::Collection;
 use collection::lookup::types::PseudoId;
 use collection::lookup::{WithLookup, lookup_ids};
@@ -17,7 +19,6 @@ use segment::data_types::vectors::VectorStructInternal;
 use segment::payload_json;
 use segment::types::PointIdType;
 use tempfile::Builder;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::common::simple_collection_fixture;
@@ -26,7 +27,7 @@ const SEED: u64 = 42;
 
 struct Resources {
     request: WithLookup,
-    collection: RwLock<Collection>,
+    collection: Arc<Collection>,
     read_consistency: Option<ReadConsistency>,
     shard_selection: Option<ShardId>,
 }
@@ -72,7 +73,13 @@ async fn setup() -> Resources {
     let hw_counter = HwMeasurementAcc::new();
 
     collection
-        .update_from_client_simple(upsert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            upsert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
         .await
         .unwrap();
 
@@ -82,7 +89,7 @@ async fn setup() -> Resources {
 
     Resources {
         request,
-        collection: RwLock::new(collection),
+        collection: Arc::new(collection),
         read_consistency,
         shard_selection,
     }
@@ -97,7 +104,7 @@ async fn happy_lookup_ids() {
         shard_selection,
     } = setup().await;
 
-    let collection = collection.read().await;
+    let collection = collection.clone();
 
     let collection_by_name = |_: String| async { Some(collection) };
 
@@ -200,7 +207,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         None => ShardSelectorInternal::All,
     };
 
-    let collection = collection.read().await;
+    let collection = collection.clone();
 
     let collection_by_name = |_: String| async { Some(collection) };
 

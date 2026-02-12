@@ -1,6 +1,6 @@
 [package]
 name = "qdrant-edge-py"
-version = "0.1.0"
+version = "0.5.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
 edition = "2024"
@@ -32,11 +32,12 @@ indexmap = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 ordered-float = { workspace = true }
+tempfile = { workspace = true }
 
 [dependencies.derive_more]
 version = "2.1"
 features = ["into"]
 
 [dependencies.pyo3]
-version = "0.27.2"
+version = "0.28.0"
 features = ["uuid"]

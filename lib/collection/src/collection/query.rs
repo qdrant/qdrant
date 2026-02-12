@@ -11,7 +11,6 @@ use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
-use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
 use super::Collection;
@@ -362,7 +361,12 @@ impl Collection {
             Some(ScoringQuery::Fusion(fusion)) => {
                 // If the root query is a Fusion, the returned results correspond to each the prefetches.
                 let mut fused = match fusion {
-                    FusionInternal::RrfK(k) => rrf_scoring(intermediates, *k),
+                    FusionInternal::Rrf { k, weights } => {
+                        let weights_slice = weights
+                            .as_ref()
+                            .map(|w| w.iter().map(|f| f.into_inner()).collect::<Vec<_>>());
+                        rrf_scoring(intermediates, *k, weights_slice.as_deref())?
+                    }
                     FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };
                 if let Some(&score_threshold) = score_threshold.as_ref() {
@@ -430,7 +434,7 @@ impl Collection {
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
-    pub async fn query_batch<'a, F, Fut>(
+    pub async fn query_batch<F, Fut>(
         &self,
         requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
         collection_by_name: F,
@@ -440,7 +444,7 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
-        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+        Fut: Future<Output = Option<Arc<Collection>>>,
     {
         let start = Instant::now();
 

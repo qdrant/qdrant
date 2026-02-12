@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use ahash::HashSet;
 use collection::operations::types::CollectionResult;
 use collection::telemetry::{
     CollectionSnapshotTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
@@ -16,7 +17,7 @@ use storage::rbac::Access;
 #[serde(untagged)]
 pub enum CollectionTelemetryEnum {
     Full(Box<CollectionTelemetry>),
-    Aggregated(CollectionsAggregatedTelemetry),
+    Aggregated(Box<CollectionsAggregatedTelemetry>),
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
@@ -36,6 +37,7 @@ impl CollectionsTelemetry {
     pub async fn collect(
         detail: TelemetryDetail,
         access: &Access,
+        only_collections: Option<HashSet<String>>,
         toc: &TableOfContent,
         timeout: Duration,
         is_stopped: &AtomicBool,
@@ -44,7 +46,7 @@ impl CollectionsTelemetry {
         let (collections, snapshots) = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = if detail.level >= DetailsLevel::Level2 {
                 let toc_telemetry = toc
-                    .get_telemetry_data(detail, access, timeout, is_stopped)
+                    .get_telemetry_data(detail, access, only_collections, timeout, is_stopped)
                     .await?;
 
                 let collections: Vec<_> = toc_telemetry
@@ -59,7 +61,7 @@ impl CollectionsTelemetry {
                     .get_aggregated_telemetry_data(access, timeout, is_stopped)
                     .await?
                     .into_iter()
-                    .map(CollectionTelemetryEnum::Aggregated)
+                    .map(|t| CollectionTelemetryEnum::Aggregated(Box::new(t)))
                     .collect();
                 (collections, vec![])
             };

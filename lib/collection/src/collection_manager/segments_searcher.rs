@@ -24,10 +24,10 @@ use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_blocking;
 use shard::search::CoreSearchRequestBatch;
 use shard::search_result_aggregator::BatchResultAggregator;
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::runtime::Handle;
 use tokio_util::task::AbortOnDropHandle;
 
-use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::config::CollectionConfigInternal;
@@ -219,12 +219,18 @@ impl SegmentsSearcher {
 
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
-            // Unfortunately, we have to do `segments.read()` twice, once in blocking task
-            // and once here, due to `Send` bounds :/
-            let Some(segments_lock) = segments.try_read_for(timeout) else {
-                return Err(CollectionError::timeout(timeout, "search"));
+            let segments: Vec<_> = {
+                // Unfortunately, we have to do `segments.read()` twice, once in blocking task
+                // and once here, due to `Send` bounds :/
+                let Some(segments_lock) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(timeout, "search"));
+                };
+
+                // Collect the segments first so we don't lock the segment holder during the operations.
+                segments_lock
+                    .non_appendable_then_appendable_segments()
+                    .collect()
             };
-            let segments = segments_lock.non_appendable_then_appendable_segments();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
@@ -234,10 +240,11 @@ impl SegmentsSearcher {
             // - more than 1 segment
             // - segments are not empty
             let use_sampling = sampling_enabled
-                && segments_lock.len() > 1
+                && segments.len() > 1
                 && query_context_arc.available_point_count() > 0;
 
             segments
+                .into_iter()
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
                     // update timeout
@@ -402,16 +409,29 @@ impl SegmentsSearcher {
         filter: Option<&Filter>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Option<Duration>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
-            let segments = segments.read();
+
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            let segments: Vec<_> = {
+                match timeout {
+                    None => Ok(segments.read()),
+                    Some(t) => segments
+                        .try_read_for(t)
+                        .ok_or_else(|| CollectionError::timeout(t, "read_filtered")),
+                }?
+                .non_appendable_then_appendable_segments()
+                .collect()
+            };
+
             let hw_counter = hw_measurement_acc.get_counter_cell();
             let all_points: BTreeSet<_> = segments
-                .non_appendable_then_appendable_segments()
+                .into_iter()
                 .flat_map(|segment| {
                     segment.get().read().read_filtered(
                         None,
@@ -435,13 +455,23 @@ impl SegmentsSearcher {
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let limit = arc_ctx.limit;
 
         let mut futures = {
-            let segments_guard = segments.read();
-            segments_guard
-                .non_appendable_then_appendable_segments()
+            let segments: Vec<_> = {
+                let Some(segments_guard) = segments.try_read_for(timeout) else {
+                    return Err(CollectionError::timeout(timeout, "rescore_with_formula"));
+                };
+                // Collect the segments first so we don't lock the segment holder during the operations.
+                segments_guard
+                    .non_appendable_then_appendable_segments()
+                    .collect()
+            };
+
+            segments
+                .into_iter()
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
@@ -710,7 +740,6 @@ mod tests {
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -789,7 +818,7 @@ mod tests {
 
         let hw_acc = HwMeasurementAcc::new();
         let result = SegmentsSearcher::search(
-            Arc::new(segment_holder),
+            segment_holder,
             Arc::new(batch_request),
             &Handle::current(),
             true,
@@ -822,7 +851,7 @@ mod tests {
         let _sid1 = holder.add_new(segment1);
         let _sid2 = holder.add_new(segment2);
 
-        let segment_holder = Arc::new(RwLock::new(holder));
+        let segment_holder = LockedSegmentHolder::new(holder);
 
         let mut rnd = rand::rng();
 
@@ -908,7 +937,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
         let records = retrieve_blocking(
-            Arc::new(segment_holder),
+            segment_holder,
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             &true.into(),
@@ -924,7 +953,6 @@ mod tests {
     fn test_retrieve_timeout() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let segment_holder = Arc::new(segment_holder);
         // keep write guard to prevent subsequent read
         let _segment_holder_write_guard = segment_holder.write();
         let records = retrieve_blocking(

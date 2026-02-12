@@ -17,7 +17,7 @@ pub struct LoggingMiddlewareLayer;
 
 impl LoggingMiddlewareLayer {
     pub fn new() -> Self {
-        Self {}
+        Self
     }
 }
 

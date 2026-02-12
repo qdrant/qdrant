@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::LazyLock;
 
 use collection::collection_state;
@@ -10,10 +9,10 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use fs_err::tokio as tokio_fs;
-use tempfile::Builder;
+use io::safe_delete::safe_delete_in_tmp;
 
-use super::TableOfContent;
+use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
+use crate::common::utils::try_unwrap_with_timeout_async;
 use crate::content_manager::collection_meta_ops::*;
 use crate::content_manager::collections_ops::Checker as _;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -208,9 +207,13 @@ impl TableOfContent {
             .await
             .remove_collection(collection_name)?;
 
-        if let Some(removed) = self.collections.write().await.remove(collection_name) {
-            let path = self.get_collection_path(collection_name);
+        let to_delete;
+        let result;
+        let collection_path = self.get_collection_path(collection_name);
+        let safe_delete_path = self.storage_config.storage_path.join(".deleted");
 
+        let removed_opt = self.collections.write().await.remove(collection_name);
+        if let Some(removed) = removed_opt {
             if let Some(state) = removed.resharding_state().await
                 && let Err(err) = removed.abort_resharding(state.key(), true).await
             {
@@ -220,56 +223,64 @@ impl TableOfContent {
                     state.key(),
                 );
             }
+
             removed.stop_gracefully().await;
 
-            // Move collection to ".deleted" folder to prevent accidental reuse
-            // the original collection path will be moved atomically within this
-            // directory.
-            let removed_collections_path =
-                Path::new(&self.storage_config.storage_path).join(".deleted");
-            tokio_fs::create_dir_all(&removed_collections_path).await?;
+            // If we try to wait for the collection to be freed, and fail if it is still busy after timeout
+            // it can risk stopping the consensus progress.
+            //
+            // Instead, we proceed with removal regardless, as it should be safe to remove files
+            // at least on Linux.
+            let removed_collection_res = try_unwrap_with_timeout_async(
+                removed,
+                COLLECTION_DELETE_SPIN_INTERVAL,
+                COLLECTION_DELETE_WAIT_TIMEOUT,
+            )
+            .await;
 
-            let deleted_path = Builder::new()
-                // Limit the file name to be on a lower side to avoid running into too-long
-                // file names.
-                // Even if the chosen randomness factor poses chances of collision, the library
-                // prevents creation of duplicate files within the chosen directory.
-                .rand_bytes(8)
-                .prefix("")
-                .tempdir_in(removed_collections_path)?;
+            match removed_collection_res {
+                Ok(collection) => drop(collection),
+                Err(busy_collection) => {
+                    debug_assert!(false, "Collection `{collection_name}` is busy");
+                    log::error!(
+                        "Collection `{collection_name}` is busy and cannot be removed in time."
+                    );
+                    drop(busy_collection);
+                }
+            };
 
-            tokio_fs::rename(path, &deleted_path).await?;
+            to_delete = Some(safe_delete_in_tmp(&collection_path, &safe_delete_path)?);
 
             // Solve all issues related to this collection
             issues::publish(CollectionDeletedEvent {
                 collection_id: collection_name.to_string(),
             });
 
-            // At this point collection is removed from memory and moved to ".deleted" folder.
-            // Next time we load service the collection will not appear in the list of collections.
-            // We can take our time to delete the collection from disk.
-            tokio::spawn(async move {
-                if let Err(error) = tokio_fs::remove_dir_all(&deleted_path).await {
-                    log::error!(
-                        "Can't delete collection {} from disk. Error: {}",
-                        deleted_path.as_ref().display(),
-                        error
-                    );
-                }
-            });
-            Ok(true)
+            result = true;
         } else {
             // we hold the collection_create lock to make sure no one is creating this collection
             // otherwise we would delete its content now
-            let path = self.get_collection_path(collection_name);
-            if path.exists() {
+            if collection_path.exists() {
                 log::warn!(
                     "Collection {collection_name} is not loaded, but its directory still exists. Deleting it."
                 );
-                tokio_fs::remove_dir_all(path).await?;
+                to_delete = Some(safe_delete_in_tmp(&collection_path, &safe_delete_path)?);
+            } else {
+                to_delete = None;
             }
-            Ok(false)
+
+            result = false;
         }
+
+        if let Some(to_delete) = to_delete {
+            tokio::task::spawn_blocking(move || {
+                if let Err(error) = to_delete.close() {
+                    log::error!("Can't delete collection from disk: {error}");
+                }
+            });
+        }
+
+        Ok(result)
     }
 
     /// performs several alias changes in an atomic fashion

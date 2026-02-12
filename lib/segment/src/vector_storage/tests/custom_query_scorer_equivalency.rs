@@ -6,6 +6,8 @@ use std::{error, result};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
+#[cfg(target_os = "linux")]
+use memory::madvise::AdviceSetting;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};
@@ -61,7 +63,15 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true).unwrap()
+    open_memmap_vector_storage_with_async_io(
+        dir,
+        DIMS,
+        DISTANCE,
+        true,
+        AdviceSetting::Global,
+        false,
+    )
+    .unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {

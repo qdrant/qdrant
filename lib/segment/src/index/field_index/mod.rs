@@ -122,3 +122,21 @@ impl CardinalityEstimation {
             })
     }
 }
+
+pub trait EstimationMerge: Iterator<Item = CardinalityEstimation> {
+    fn merge_independent(self) -> CardinalityEstimation
+    where
+        Self: Sized,
+    {
+        self.fold(CardinalityEstimation::exact(0), |acc, x| {
+            CardinalityEstimation {
+                primary_clauses: vec![],
+                min: acc.min + x.min,
+                exp: acc.exp + x.exp,
+                max: acc.max + x.max,
+            }
+        })
+    }
+}
+
+impl<I> EstimationMerge for I where I: Iterator<Item = CardinalityEstimation> {}

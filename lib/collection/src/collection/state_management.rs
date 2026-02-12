@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use futures::StreamExt as _;
+use futures::stream::FuturesUnordered;
 
 use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -251,5 +253,27 @@ impl Collection {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Truncate unapplied WAL records for all local shards in the collection.
+    /// Returns amount of removed records.
+    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
+        let shard_holder = self.shards_holder.clone().read_owned().await;
+
+        let results = self
+            .update_runtime
+            .spawn(async move {
+                let local_updates: FuturesUnordered<_> = shard_holder
+                    .all_shards()
+                    .map(|shard| shard.truncate_unapplied_wal())
+                    .collect();
+
+                let results: Vec<_> = local_updates.collect().await;
+
+                results
+            })
+            .await?;
+
+        results.into_iter().sum()
     }
 }

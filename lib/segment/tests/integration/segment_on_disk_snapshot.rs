@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::budget::ResourcePermit;
-use common::progress_tracker::ProgressTracker;
 use common::tar_ext;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::entry::snapshot_entry::SnapshotEntry as _;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::load_segment;
@@ -22,6 +20,7 @@ use segment::types::{
     SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
 };
 use tempfile::Builder;
+use uuid::Uuid;
 
 /// This test tests snapshotting and restoring a segment with all on-disk components.
 #[rstest]
@@ -82,6 +81,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     r#type: segment::data_types::index::KeywordIndexType::Keyword,
                     is_tenant: None,
                     on_disk: Some(true),
+                    enable_hnsw: None,
                 }),
             )),
             &hw_counter,
@@ -98,6 +98,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     range: Some(true),
                     is_principal: None,
                     on_disk: Some(true),
+                    enable_hnsw: None,
                 }),
             )),
             &hw_counter,
@@ -132,23 +133,13 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment_builder_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment_builder = SegmentBuilder::new(
-        segment_base_dir.path(),
         segment_builder_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
     )
     .unwrap();
     segment_builder.update(&[&segment], &false.into()).unwrap();
-    let mut rng = rand::rng();
-    let segment = segment_builder
-        .build(
-            ResourcePermit::dummy(num_rayon_threads(0) as u32),
-            &false.into(),
-            &mut rng,
-            &HardwareCounterCell::new(),
-            ProgressTracker::new_for_test(),
-        )
-        .unwrap();
+    let segment = segment_builder.build_for_test(segment_base_dir.path());
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
     // The segment snapshot is a part of a parent collection/shard snapshot.
@@ -158,7 +149,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         .tempfile()
         .unwrap();
     let segment_id = segment
-        .current_path
+        .segment_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();
@@ -172,9 +163,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     tar.blocking_finish().unwrap();
 
     let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
-    tar::Archive::new(File::open(parent_snapshot_tar.path()).unwrap())
-        .unpack(parent_snapshot_unpacked.path())
-        .unwrap();
+
+    tar_unpack_file(parent_snapshot_tar.path(), parent_snapshot_unpacked.path()).unwrap();
 
     // Should be exactly one entry in the snapshot.
     let mut entries = fs::read_dir(parent_snapshot_unpacked.path()).unwrap();
@@ -205,9 +195,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
-        .unwrap()
-        .unwrap();
+    let restored_segment =
+        load_segment(&entry.path(), Uuid::nil(), &AtomicBool::new(false)).unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

@@ -11,8 +11,10 @@ use common::is_alive_lock::IsAliveLock;
 use common::progress_tracker::ProgressTracker;
 use fs_err as fs;
 use fs_err::File;
+use io::safe_delete::{safe_delete_with_suffix, sync_parent_dir};
 use io::storage_version::StorageVersion;
 use log::info;
+use memory::madvise::{Advice, AdviceSetting};
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
@@ -54,17 +56,13 @@ use crate::types::{
     SegmentType, SeqNumberType, SparseVectorStorageType, VectorDataConfig, VectorName,
     VectorStorageDatatype, VectorStorageType,
 };
-use crate::vector_storage::dense::appendable_dense_vector_storage::{
-    open_appendable_in_ram_vector_storage, open_appendable_memmap_vector_storage,
-    open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_half,
-};
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
 };
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
-    open_appendable_in_ram_multi_vector_storage, open_appendable_memmap_multi_vector_storage,
+    open_appendable_memmap_multi_vector_storage, open_appendable_memmap_vector_storage,
 };
 #[cfg(feature = "rocksdb")]
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
@@ -99,6 +97,80 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
+fn open_mmap_vector_storage(
+    vector_storage_path: &Path,
+    vector_config: &VectorDataConfig,
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    let storage_element_type = vector_config.datatype.unwrap_or_default();
+    if let Some(multi_vec_config) = &vector_config.multivector_config {
+        // there are no mmap multi vector storages, appendable only
+        open_appendable_memmap_multi_vector_storage(
+            storage_element_type,
+            vector_storage_path,
+            vector_config.size,
+            vector_config.distance,
+            *multi_vec_config,
+            madvise,
+            populate,
+        )
+    } else {
+        match storage_element_type {
+            VectorStorageDatatype::Float32 => open_memmap_vector_storage(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                madvise,
+                populate,
+            ),
+            VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                madvise,
+                populate,
+            ),
+            VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                madvise,
+                populate,
+            ),
+        }
+    }
+}
+
+fn open_chunked_mmap_vector_storage(
+    vector_storage_path: &Path,
+    vector_config: &VectorDataConfig,
+    madvise: AdviceSetting,
+    populate: bool,
+) -> OperationResult<VectorStorageEnum> {
+    let storage_element_type = vector_config.datatype.unwrap_or_default();
+    if let Some(multi_vec_config) = &vector_config.multivector_config {
+        open_appendable_memmap_multi_vector_storage(
+            storage_element_type,
+            vector_storage_path,
+            vector_config.size,
+            vector_config.distance,
+            *multi_vec_config,
+            madvise,
+            populate,
+        )
+    } else {
+        open_appendable_memmap_vector_storage(
+            storage_element_type,
+            vector_storage_path,
+            vector_config.size,
+            vector_config.distance,
+            madvise,
+            populate,
+        )
+    }
+}
+
 pub(crate) fn open_vector_storage(
     #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
@@ -106,8 +178,6 @@ pub(crate) fn open_vector_storage(
     vector_storage_path: &Path,
     #[cfg(feature = "rocksdb")] vector_name: &VectorName,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage_element_type = vector_config.datatype.unwrap_or_default();
-
     match vector_config.storage_type {
         // In memory - RocksDB disabled
         #[cfg(not(feature = "rocksdb"))]
@@ -118,6 +188,7 @@ pub(crate) fn open_vector_storage(
         // In memory - RocksDB enabled
         #[cfg(feature = "rocksdb")]
         VectorStorageType::Memory => {
+            let storage_element_type = vector_config.datatype.unwrap_or_default();
             use crate::common::rocksdb_wrapper::DB_VECTOR_CF;
 
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
@@ -144,84 +215,31 @@ pub(crate) fn open_vector_storage(
             }
         }
         // Mmap on disk, not appendable
-        VectorStorageType::Mmap => {
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
-                // there are no mmap multi vector storages, appendable only
-                open_appendable_memmap_multi_vector_storage(
-                    storage_element_type,
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                    *multi_vec_config,
-                )
-            } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_memmap_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                }
-            }
-        }
+        VectorStorageType::Mmap => open_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::Global,
+            false,
+        ),
+        VectorStorageType::InRamMmap => open_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::from(Advice::Normal),
+            true,
+        ),
         // Chunked mmap on disk, appendable
-        VectorStorageType::ChunkedMmap => {
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
-                open_appendable_memmap_multi_vector_storage(
-                    storage_element_type,
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                    *multi_vec_config,
-                )
-            } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                }
-            }
-        }
-        VectorStorageType::InRamChunkedMmap => {
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
-                open_appendable_in_ram_multi_vector_storage(
-                    storage_element_type,
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                    *multi_vec_config,
-                )
-            } else {
-                open_appendable_in_ram_vector_storage(
-                    storage_element_type,
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                )
-            }
-        }
+        VectorStorageType::ChunkedMmap => open_chunked_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::Global,
+            false,
+        ),
+        VectorStorageType::InRamChunkedMmap => open_chunked_mmap_vector_storage(
+            vector_storage_path,
+            vector_config,
+            AdviceSetting::from(Advice::Normal),
+            true,
+        ),
     }
 }
 
@@ -441,6 +459,7 @@ fn create_segment(
     initial_version: Option<SeqNumberType>,
     version: Option<SeqNumberType>,
     segment_path: &Path,
+    uuid: Uuid,
     config: &SegmentConfig,
     stopped: &AtomicBool,
     create: bool,
@@ -611,11 +630,12 @@ fn create_segment(
     };
 
     Ok(Segment {
+        uuid,
         initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         is_alive_flush_lock: IsAliveLock::new(),
-        current_path: segment_path.to_owned(),
+        segment_path: segment_path.to_owned(),
         version_tracker: Default::default(),
         id_tracker,
         vector_data,
@@ -688,27 +708,76 @@ fn create_segment_id_tracker(
     )))
 }
 
-pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
+/// Normalize segment directory.
+///
+/// Might delete or rename the directory.
+/// Returns `None` if the segment directory was deleted.
+pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uuid)>> {
+    // 1. Delete dirs like `5345474d-454e-54f0-9f98-ba206e616d65.deleted`.
+    // These are leftovers from rename-then-delete approach.
     if path
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext == "deleted")
         .unwrap_or(false)
     {
-        log::warn!("Segment is marked as deleted, skipping: {}", path.display());
-        // Skip deleted segments
+        log::warn!("Deleting leftover segment: {}", path.display());
+        safe_delete_with_suffix(path).map_err(|err| {
+            OperationError::service_error(format!("failed to delete leftover segment: {err}"))
+        })?;
         return Ok(None);
     }
 
-    let Some(stored_version) = SegmentVersion::load(path)? else {
-        // Assume segment was not properly saved.
-        // Server might have crashed before saving the segment fully.
-        log::warn!(
-            "Segment version file not found, skipping: {}",
-            path.display()
-        );
+    // 2. Delete dirs without proper `version.info` file inside.
+    // These segments are not properly saved.
+    // Likely, the server crashed during saving.
+    if SegmentVersion::load(path)?.is_none() {
+        log::warn!("Deleting segment without version file: {}", path.display());
+        safe_delete_with_suffix(path).map_err(|err| {
+            OperationError::service_error(format!("failed to delete leftover segment: {err}"))
+        })?;
         return Ok(None);
-    };
+    }
+
+    // 3. Force directory name to be a valid UUID.
+    // Rename if necessary.
+    let file_name = path
+        .file_name()
+        .and_then(|fname| fname.to_str())
+        .ok_or_else(|| {
+            OperationError::service_error(format!(
+                "Failed to get segment folder name: {}",
+                path.display()
+            ))
+        })?;
+    match Uuid::try_parse(file_name) {
+        Ok(uuid) => Ok(Some((path.to_path_buf(), uuid))),
+        Err(_) => {
+            let segment_uuid = Uuid::new_v4();
+            let new_path = path.with_file_name(segment_uuid.to_string());
+            log::warn!(
+                "Segment name is not a valid UUID: {}. Renaming to {segment_uuid}",
+                path.display(),
+            );
+            fs::rename(path, &new_path)?;
+            sync_parent_dir(&new_path)?;
+            Ok(Some((new_path, segment_uuid)))
+        }
+    }
+}
+
+/// Load segment from given `path`.
+///
+/// Preferably, the `uuid` should match the last component of `path`.
+/// In production use [`normalize_segment_dir`] to obtain correct path and UUID.
+/// In tests it is acceptable to pass an arbitrary UUID, e.g., [`Uuid::nil()`].
+pub fn load_segment(path: &Path, uuid: Uuid, stopped: &AtomicBool) -> OperationResult<Segment> {
+    let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
+        OperationError::service_error(format!(
+            "Segment version file not found in segment: {}",
+            path.display()
+        ))
+    })?;
 
     let app_version = SegmentVersion::current();
 
@@ -747,6 +816,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         segment_state.initial_version,
         segment_state.version,
         path,
+        uuid,
         &segment_state.config,
         stopped,
         false,
@@ -764,11 +834,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         }
     }
 
-    Ok(Some(segment))
-}
-
-pub fn new_segment_path(segments_path: &Path) -> PathBuf {
-    segments_path.join(Uuid::new_v4().to_string())
+    Ok(segment)
 }
 
 /// Build segment instance using given configuration.
@@ -788,18 +854,12 @@ pub fn build_segment(
     config: &SegmentConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
-    let segment_path = new_segment_path(segments_path);
+    let uuid = Uuid::new_v4();
+    let segment_path = segments_path.join(uuid.to_string());
+    let stopped = AtomicBool::new(false);
 
     fs::create_dir_all(&segment_path)?;
-
-    let segment = create_segment(
-        None,
-        None,
-        &segment_path,
-        config,
-        &AtomicBool::new(false),
-        true,
-    )?;
+    let segment = create_segment(None, None, &segment_path, uuid, config, &stopped, true)?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
@@ -838,7 +898,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
         pub storage_type: StorageTypeV5,
         /// Defines payload storage type
         #[serde(default)]
-        pub payload_storage_type: PayloadStorageType,
+        pub payload_storage_type: Option<PayloadStorageType>,
     }
 
     let path = segment_path.join(SEGMENT_STATE_FILE);
@@ -858,6 +918,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 quantization_config: None,
                 on_disk: None,
             };
+
             let segment_config = SegmentConfigV5 {
                 vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_data)]),
                 index: state.config.index,
@@ -1070,11 +1131,13 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
         vector_storage_path: &Path,
     ) -> OperationResult<VectorStorageEnum> {
         // Construct mmap based dense vector storage
-        let mut new_storage = open_appendable_in_ram_vector_storage(
+        let mut new_storage = open_appendable_memmap_vector_storage(
             old_storage.datatype(),
             vector_storage_path,
             dim,
             old_storage.distance(),
+            AdviceSetting::Global,
+            true,
         )?;
         debug_assert_eq!(
             new_storage.total_vector_count(),
@@ -1160,12 +1223,14 @@ pub fn migrate_rocksdb_multi_dense_vector_storage_to_mmap(
         vector_storage_path: &Path,
     ) -> OperationResult<VectorStorageEnum> {
         // Construct mmap based multi dense vector storage
-        let mut new_storage = open_appendable_in_ram_multi_vector_storage(
+        let mut new_storage = open_appendable_memmap_multi_vector_storage(
             old_storage.datatype(),
             vector_storage_path,
             dim,
             old_storage.distance(),
             multi_vector_config,
+            AdviceSetting::Global,
+            true,
         )?;
         debug_assert_eq!(
             new_storage.total_vector_count(),

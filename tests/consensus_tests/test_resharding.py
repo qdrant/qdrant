@@ -324,6 +324,8 @@ def bootstrap_resharding(
     # Bootstrap cluster
     peer_uris, peer_ids = bootstrap_cluster(tmp_path, collection, **kwargs)
 
+    wait_for_all_peers_versions(peer_uris)
+
     # Select target peer
     peer_id = None
 

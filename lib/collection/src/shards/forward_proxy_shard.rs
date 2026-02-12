@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use async_trait::async_trait;
@@ -9,14 +9,16 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
-use segment::data_types::manifest::SnapshotManifest;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
+use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -28,8 +30,8 @@ use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
 };
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    OptimizersStatus, PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountResult, OptimizersStatus,
+    PointRequestInternal, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
@@ -40,6 +42,16 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+
+/// Result of a single batch transfer, including timing breakdown.
+pub struct TransferBatchResult {
+    pub next_page_offset: Option<PointIdType>,
+    pub count: usize,
+    /// Time spent reading points from local storage (scroll + retrieve).
+    pub read_duration: Duration,
+    /// Time spent sending points to the remote shard (gRPC upsert).
+    pub send_duration: Duration,
+}
 
 /// ForwardProxyShard
 ///
@@ -112,7 +124,7 @@ impl ForwardProxyShard {
             // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
-                    // TODO: Assign clock tag!? 🤔
+                    // Don't add clock tag, this transfers indices out of regular order
                     OperationWithClockTag::from(CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
                             field_name: index_key,
@@ -120,6 +132,7 @@ impl ForwardProxyShard {
                         }),
                     )),
                     false,
+                    None,
                     HwMeasurementAcc::disposable(), // Internal operation
                 )
                 .await?;
@@ -142,10 +155,11 @@ impl ForwardProxyShard {
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
-    ) -> CollectionResult<(Option<PointIdType>, usize)> {
+    ) -> CollectionResult<TransferBatchResult> {
         debug_assert!(batch_size > 0);
         let _update_lock = self.update_lock.lock().await;
 
+        let read_start = Instant::now();
         let (points, next_page_offset) = match hashring_filter {
             Some(hashring_filter) => {
                 self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
@@ -156,6 +170,7 @@ impl ForwardProxyShard {
                     .await?
             }
         };
+        let read_duration = read_start.elapsed();
 
         // Only wait on last batch
         let wait = next_page_offset.is_none();
@@ -176,15 +191,24 @@ impl ForwardProxyShard {
         };
         let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
+        let send_start = Instant::now();
         self.remote_shard
             .update(
+                // Don't add clock tag, this transfers points out of regular order (SyncPoints)
                 OperationWithClockTag::from(insert_points_operation),
                 wait,
+                None,
                 HwMeasurementAcc::disposable(), // Internal operation
-            ) // TODO: Assign clock tag!? 🤔
+            )
             .await?;
+        let send_duration = send_start.elapsed();
 
-        Ok((next_page_offset, count))
+        Ok(TransferBatchResult {
+            next_page_offset,
+            count,
+            read_duration,
+            send_duration,
+        })
     }
 
     /// Read a batch of points to transfer to the remote shard
@@ -395,6 +419,14 @@ impl ForwardProxyShard {
             .estimate_cardinality(filter, hw_measurement_acc)
             .await
     }
+
+    pub async fn set_extended_wal_retention(&self) {
+        self.wrapped_shard.set_extended_wal_retention().await;
+    }
+
+    pub async fn set_normal_wal_retention(&self) {
+        self.wrapped_shard.set_normal_wal_retention().await;
+    }
 }
 
 #[async_trait]
@@ -408,6 +440,7 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         operation: OperationWithClockTag,
         _wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -423,7 +456,7 @@ impl ShardOperation for ForwardProxyShard {
         // the transfer needs to have access to the latest version of points.
         let mut result = self
             .wrapped_shard
-            .update(operation.clone(), true, hw_measurement_acc.clone())
+            .update(operation.clone(), true, timeout, hw_measurement_acc.clone())
             .await?;
 
         let points_matching_filter_before = {
@@ -501,11 +534,11 @@ impl ShardOperation for ForwardProxyShard {
         // Strip the clock tag from the operation, because clock tags are incompatible between different shards.
         if self.shard_id != self.remote_shard.id {
             operation.clock_tag = None;
-        };
+        }
 
         let remote_result = self
             .remote_shard
-            .update(operation, false, hw_measurement_acc)
+            .update(operation, false, None, hw_measurement_acc)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 

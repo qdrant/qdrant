@@ -8,7 +8,9 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use shard::count::CountRequestInternal;
 use shard::retrieve::record_internal::RecordInternal;
+use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -18,9 +20,10 @@ use tokio::time::error::Elapsed;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::OperationWithClockTag;
 use crate::operations::generalizer::Generalizer;
+use crate::operations::shared_storage_config::DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CountRequestInternal, CountResult,
-    PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
+    CollectionError, CollectionInfo, CollectionResult, CountResult, PointRequestInternal,
+    UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
@@ -43,11 +46,11 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
-
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -67,6 +70,9 @@ impl ShardOperation for LocalShard {
         }
 
         let operation_id = {
+            let _update_lock = self.update_lock.read().await;
+            let pending_operations_count = self.update_queue_length();
+
             let update_sender = self.update_sender.load();
             let channel_permit = update_sender.reserve().await?;
 
@@ -88,30 +94,55 @@ impl ShardOperation for LocalShard {
                 Err(err) => return Err(err.into()),
             };
 
+            // If there are too many pending operations, don't keep operation data in RAM.
+            // Instead, read operation data from the WAL when processing the operation.
+            let keep_operation_in_ram = pending_operations_count < DEFAULT_UPDATE_QUEUE_RAM_BUFFER;
+            let operation = keep_operation_in_ram.then_some(Box::new(operation.operation));
+
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
-                operation: operation.operation,
+                operation,
                 sender: callback_sender,
-                wait,
                 hw_measurements: hw_measurement_acc.clone(),
             }));
 
             operation_id
         };
 
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Completed,
-                clock_tag: operation.clock_tag,
-            })
-        } else {
-            Ok(UpdateResult {
+        match (callback_receiver, timeout) {
+            // Wait indefinitely
+            (Some(receiver), None) => {
+                let _ = receiver.await??;
+                Ok(UpdateResult {
+                    operation_id: Some(operation_id),
+                    status: UpdateStatus::Completed,
+                    clock_tag: operation.clock_tag,
+                })
+            }
+            // Wait for timeout
+            (Some(receiver), Some(timeout)) => {
+                match tokio::time::timeout(timeout, receiver).await {
+                    Ok(res) => {
+                        res??;
+                        Ok(UpdateResult {
+                            operation_id: Some(operation_id),
+                            status: UpdateStatus::Completed,
+                            clock_tag: operation.clock_tag,
+                        })
+                    }
+                    Err(_) => Ok(UpdateResult {
+                        operation_id: Some(operation_id),
+                        status: UpdateStatus::WaitTimeout,
+                        clock_tag: operation.clock_tag,
+                    }),
+                }
+            }
+            // Don't wait at all
+            (None, _) => Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
                 clock_tag: operation.clock_tag,
-            })
+            }),
         }
     }
 
@@ -258,6 +289,7 @@ impl ShardOperation for LocalShard {
                     request.filter.as_ref(),
                     search_runtime_handle,
                     hw_measurement_acc,
+                    Some(timeout),
                 ),
             )
             .await
@@ -394,14 +426,28 @@ impl ShardOperation for LocalShard {
 
     /// Finishes ongoing update tasks
     async fn stop_gracefully(mut self) {
-        if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
-            log::warn!("Error sending stop signal to update handler: {err}");
+        {
+            // Send stop signals to workers
+            let mut update_handler = self.update_handler.lock().await;
+            update_handler.stop_flush_worker();
+            update_handler.stop_update_worker();
         }
 
-        self.stop_flush_worker().await;
-
-        if let Err(err) = self.wait_update_workers_stop().await {
-            log::warn!("Update workers failed with: {err}");
+        match self.wait_update_workers_stop().await {
+            Ok(pending_receiver) => {
+                if let Some(receiver) = pending_receiver {
+                    // Log number of pending operations that were not processed
+                    let pending_count = receiver.len();
+                    if pending_count > 0 {
+                        log::debug!(
+                            "Shard stopped with {pending_count} pending update operations in channel"
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                log::warn!("Update workers failed with: {err}");
+            }
         }
 
         self.is_gracefully_stopped = true;

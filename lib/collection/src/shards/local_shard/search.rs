@@ -130,8 +130,8 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start.elapsed());
 
         let search_request = SegmentsSearcher::search(
-            Arc::clone(&self.segments),
-            Arc::clone(&core_request),
+            self.segments.clone(),
+            core_request.clone(),
             search_runtime_handle,
             true,
             query_context,

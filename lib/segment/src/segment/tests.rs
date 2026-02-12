@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
+use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use rstest::rstest;
@@ -14,7 +15,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::SnapshotEntry as _;
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
@@ -199,7 +200,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         .tempfile()
         .unwrap();
     let segment_id = segment
-        .current_path
+        .segment_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();
@@ -215,9 +216,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     tar.blocking_finish().unwrap();
 
     let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
-    tar::Archive::new(File::open(parent_snapshot_tar.path()).unwrap())
-        .unpack(parent_snapshot_unpacked.path())
-        .unwrap();
+    tar_unpack_file(parent_snapshot_tar.path(), parent_snapshot_unpacked.path()).unwrap();
 
     // Should be exactly one entry in the snapshot.
     let mut entries = fs::read_dir(parent_snapshot_unpacked.path()).unwrap();
@@ -248,9 +247,8 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     assert!(entry.path().is_dir());
     assert_eq!(entry.file_name(), segment_id);
 
-    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
-        .unwrap()
-        .unwrap();
+    let restored_segment =
+        load_segment(&entry.path(), Uuid::nil(), &AtomicBool::new(false)).unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

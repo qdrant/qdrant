@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+import re
 import uuid
 from time import sleep
 
@@ -95,23 +96,95 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
     assert counts[0] == counts[1] == counts[2]
 
 
+# Test that transfer comment shows stage info via cluster API and distributed telemetry
+def test_shard_snapshot_transfer_shows_stage_in_comment(tmp_path: pathlib.Path):
+    assert_project_root()
+    peer_api_uris, _, _ = start_cluster(tmp_path, N_PEERS, 20000)
+
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
+    wait_collection_exists_and_active_on_all_peers(COLLECTION_NAME, peer_api_uris)
+    upsert_random_points(peer_api_uris[0], 5_000)
+
+    src = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    dst = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+    replicate_shard(peer_api_uris[0], COLLECTION_NAME, src['local_shards'][0]['shard_id'],
+                    src['peer_id'], dst['peer_id'], method="snapshot")
+
+    stage_re = re.compile(r"^(proxifying|creating snapshot|transferring|recovering|flushing queue|waiting consensus|finalizing) \(\d+\.\d+s\)")
+
+    def get_cluster_comments():
+        return [t.get("comment", "") for t in get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME).get("shard_transfers", [])]
+
+    def get_telemetry_comments():
+        r = requests.get(f"{peer_api_uris[2]}/cluster/telemetry", params={"details_level": 6})
+        return [t.get("comment", "") for t in r.json().get("result", {}).get("collections", {}).get(COLLECTION_NAME, {}).get("shard_transfers", [])] if r.ok else []
+
+    found_cluster, found_telemetry = False, False
+    for _ in range(200):
+        comments = get_cluster_comments()
+        if not comments:
+            break
+        found_cluster = found_cluster or any(stage_re.match(c) for c in comments)
+        found_telemetry = found_telemetry or any(stage_re.match(c) for c in get_telemetry_comments())
+        if found_cluster and found_telemetry:
+            break
+        sleep(0.1)
+
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    assert found_cluster, "Expected stage info in cluster API"
+    assert found_telemetry, "Expected stage info in /cluster/telemetry"
+
+
 # Transfer shards from one node to another with an API key is configured
 #
 # Simply does the most basic transfer: no concurrent updates during the
 # transfer.
 #
 # Test that data on the both sides is consistent
-def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
-    assert_project_root()
-
+def test_shard_snapshot_transfer_with_api_key_1(tmp_path: pathlib.Path):
     # Configure a random API key
     api_key = str(uuid.uuid4())
     env={
         "QDRANT__SERVICE__API_KEY": api_key,
     }
+
     headers={
         "api-key": api_key,
     }
+    shard_snapshot_transfer_with_api_key(tmp_path, env, headers)
+
+
+def test_shard_snapshot_transfer_with_api_key_2(tmp_path: pathlib.Path):
+    # Configure a random API key
+    api_key = str(uuid.uuid4())
+    alt_api_key = str(uuid.uuid4())
+    alt_env = {
+        "QDRANT__SERVICE__API_KEY": api_key,
+        "QDRANT__SERVICE__ALT_API_KEY": alt_api_key,
+    }
+
+    headers={
+        "api-key": api_key,
+    }
+
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers)
+
+def test_shard_snapshot_transfer_with_api_key_3(tmp_path: pathlib.Path):
+    # Configure a random API key
+    api_key = str(uuid.uuid4())
+    alt_api_key = str(uuid.uuid4())
+    alt_env = {
+        "QDRANT__SERVICE__API_KEY": api_key,
+        "QDRANT__SERVICE__ALT_API_KEY": alt_api_key,
+    }
+
+    headers_alt={
+        "api-key": alt_api_key,
+    }
+    shard_snapshot_transfer_with_api_key(tmp_path, alt_env, headers_alt)
+
+def shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path, env, headers):
+    assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000, extra_env=env, headers=headers)

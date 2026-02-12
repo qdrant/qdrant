@@ -27,6 +27,7 @@ use tokio::time::sleep;
 use tonic::transport::{ClientTlsConfig, Uri};
 
 use crate::common::helpers;
+use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::{ConsensusConfig, Settings};
 use crate::tonic::init_internal;
@@ -68,7 +69,8 @@ impl Consensus {
         settings: Settings,
         channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
-        telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+        telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+        tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
         reinit: bool,
@@ -156,6 +158,7 @@ impl Consensus {
                     toc,
                     state_ref,
                     telemetry_collector,
+                    tonic_telemetry_collector,
                     settings,
                     p2p_host,
                     p2p_port,
@@ -1433,7 +1436,6 @@ fn is_heartbeat(message: &RaftMessage) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::Arc;
     use std::thread;
 
@@ -1450,7 +1452,7 @@ mod tests {
     use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
-    use storage::rbac::Access;
+    use storage::rbac::{Access, Auth, AuthType};
     use tempfile::Builder;
 
     use super::Consensus;
@@ -1462,7 +1464,7 @@ mod tests {
         // Given
         let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
         let mut settings = crate::Settings::new(None).expect("Can't read config.");
-        settings.storage.storage_path = storage_dir.path().to_str().unwrap().to_string();
+        settings.storage.storage_path = storage_dir.path().to_path_buf();
         tracing_subscriber::fmt::init();
         let search_runtime =
             crate::create_search_runtime(settings.storage.performance.max_search_threads)
@@ -1483,7 +1485,7 @@ mod tests {
             update_runtime,
             general_runtime,
             ResourceBudget::default(),
-            ChannelService::new(settings.service.http_port, None),
+            ChannelService::new(settings.service.http_port, None, None),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
         );
@@ -1493,7 +1495,7 @@ mod tests {
             persistent_state,
             toc_arc.clone(),
             operation_sender,
-            Path::new(storage_path),
+            storage_path,
         )
         .expect("initialize consensus manager")
         .into();
@@ -1508,7 +1510,7 @@ mod tests {
             6335,
             ConsensusConfig::default(),
             None,
-            ChannelService::new(settings.service.http_port, None),
+            ChannelService::new(settings.service.http_port, None, None),
             handle.clone(),
             false,
         )
@@ -1564,7 +1566,7 @@ mod tests {
                         )
                         .unwrap(),
                     ),
-                    Access::full("For test"),
+                    Auth::new(Access::full("For test"), None, None, AuthType::Internal),
                     None,
                 ),
             )

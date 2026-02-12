@@ -12,7 +12,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
@@ -25,6 +25,7 @@ use segment::types::{
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
+use uuid::Uuid;
 
 use crate::fixtures::segment::{
     PAYLOAD_KEY, SPARSE_VECTOR_NAME, build_segment_1, build_segment_2, build_segment_sparse_1,
@@ -36,14 +37,12 @@ fn test_building_new_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
 
     let mut builder = SegmentBuilder::new(
-        dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
@@ -78,14 +77,7 @@ fn test_building_new_segment() {
 
     // Now we finalize building
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
-
-    let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let merged_segment: Segment = builder.build_for_test(dir.path());
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
@@ -112,7 +104,6 @@ fn test_building_new_defragmented_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
@@ -132,7 +123,6 @@ fn test_building_new_defragmented_segment() {
         .unwrap();
 
     let mut builder = SegmentBuilder::new(
-        dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
@@ -165,14 +155,7 @@ fn test_building_new_defragmented_segment() {
 
     // Now we finalize building
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
-
-    let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let merged_segment = builder.build_for_test(dir.path());
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
@@ -256,7 +239,6 @@ fn test_building_new_sparse_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let hw_counter = HardwareCounterCell::new();
@@ -265,7 +247,6 @@ fn test_building_new_sparse_segment() {
     let mut segment2 = build_segment_sparse_2(dir.path());
 
     let mut builder = SegmentBuilder::new(
-        dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
@@ -299,14 +280,7 @@ fn test_building_new_sparse_segment() {
 
     // Now we finalize building
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
-
-    let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let merged_segment = builder.build_for_test(dir.path());
 
     let new_segment_count = fs::read_dir(dir.path()).unwrap().count();
 
@@ -353,7 +327,6 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     };
 
     let mut builder = SegmentBuilder::new(
-        dir.path(),
         temp_dir.path(),
         &segment_config,
         &HnswGlobalConfig::default(),
@@ -381,7 +354,15 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     let hw_counter = HardwareCounterCell::new();
     let progress = ProgressTracker::new_for_test();
 
-    let res = builder.build(permit, &stopped, &mut rng, &hw_counter, progress);
+    let res = builder.build(
+        dir.path(),
+        Uuid::new_v4(),
+        permit,
+        &stopped,
+        &mut rng,
+        &hw_counter,
+        progress,
+    );
 
     let is_cancelled = match res {
         Ok(_) => false,
@@ -403,14 +384,12 @@ fn test_building_new_segment_bug_5614() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let mut segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
 
     let mut builder = SegmentBuilder::new(
-        dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
@@ -444,14 +423,9 @@ fn test_building_new_segment_bug_5614() {
 
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
 
-    let merged_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let merged_segment: Segment = builder.build_for_test(dir.path());
 
     // Assert correct point versions - must have latest
     assert_eq!(merged_segment.point_version(100.into()), Some(124));
@@ -547,9 +521,6 @@ fn test_building_new_segment_with_mmap_payload() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
-    let stopped = AtomicBool::new(false);
-
     let mut segment1 = build_simple_segment_with_payload_storage(
         segment_dir.path(),
         4,
@@ -576,7 +547,6 @@ fn test_building_new_segment_with_mmap_payload() {
         .unwrap();
 
     let builder = SegmentBuilder::new(
-        segment_dir.path(),
         temp_dir.path(),
         &segment1.segment_config,
         &HnswGlobalConfig::default(),
@@ -588,14 +558,7 @@ fn test_building_new_segment_with_mmap_payload() {
     assert_eq!(temp_segment_count, 1);
 
     // Now we finalize building
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-    let progress = ProgressTracker::new_for_test();
-
-    let new_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let new_segment = builder.build_for_test(segment_dir.path());
     assert_eq!(
         new_segment.segment_config.payload_storage_type,
         PayloadStorageType::Mmap

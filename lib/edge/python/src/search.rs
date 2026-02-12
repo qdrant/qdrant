@@ -1,7 +1,6 @@
-use bytemuck::{TransparentWrapper, TransparentWrapperAlloc as _};
+use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use ordered_float::OrderedFloat;
-use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequest;
@@ -9,7 +8,7 @@ use shard::search::CoreSearchRequest;
 use crate::repr::*;
 use crate::*;
 
-#[pyclass(name = "SearchRequest")]
+#[pyclass(name = "SearchRequest", from_py_object)]
 #[derive(Clone, Debug, Into)]
 pub struct PySearchRequest(CoreSearchRequest);
 
@@ -17,23 +16,33 @@ pub struct PySearchRequest(CoreSearchRequest);
 #[pymethods]
 impl PySearchRequest {
     #[new]
+    #[pyo3(signature = (
+        query,
+        limit,
+        offset = None,
+        filter = None,
+        params = None,
+        with_vector = None,
+        with_payload = None,
+        score_threshold = None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         query: PyQuery,
+        limit: usize,
+        offset: Option<usize>,
         filter: Option<PyFilter>,
         params: Option<PySearchParams>,
-        limit: usize,
-        offset: usize,
         with_vector: Option<PyWithVector>,
         with_payload: Option<PyWithPayload>,
         score_threshold: Option<f32>,
     ) -> Self {
         Self(CoreSearchRequest {
             query: QueryEnum::from(query),
+            limit,
+            offset: offset.unwrap_or(0),
             filter: filter.map(Filter::from),
             params: params.map(SearchParams::from),
-            limit,
-            offset,
             with_vector: with_vector.map(WithVector::from),
             with_payload: with_payload.map(WithPayloadInterface::from),
             score_threshold,
@@ -101,7 +110,7 @@ impl PySearchRequest {
     }
 }
 
-#[pyclass(name = "SearchParams")]
+#[pyclass(name = "SearchParams", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PySearchParams(pub SearchParams);
 
@@ -109,6 +118,13 @@ pub struct PySearchParams(pub SearchParams);
 #[pymethods]
 impl PySearchParams {
     #[new]
+    #[pyo3(signature = (
+        hnsw_ef = None,
+        exact = false,
+        quantization = None,
+        indexed_only = false,
+        acorn = None,
+    ))]
     pub fn new(
         hnsw_ef: Option<usize>,
         exact: bool,
@@ -168,7 +184,7 @@ impl PySearchParams {
     }
 }
 
-#[pyclass(name = "QuantizationSearchParams")]
+#[pyclass(name = "QuantizationSearchParams", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 
@@ -176,6 +192,7 @@ pub struct PyQuantizationSearchParams(QuantizationSearchParams);
 #[pymethods]
 impl PyQuantizationSearchParams {
     #[new]
+    #[pyo3(signature = (ignore = false, rescore = None, oversampling = None))]
     pub fn new(ignore: bool, rescore: Option<bool>, oversampling: Option<f64>) -> Self {
         Self(QuantizationSearchParams {
             ignore,
@@ -215,7 +232,7 @@ impl PyQuantizationSearchParams {
     }
 }
 
-#[pyclass(name = "AcornSearchParams")]
+#[pyclass(name = "AcornSearchParams", from_py_object)]
 #[derive(Copy, Clone, Debug, Into)]
 pub struct PyAcornSearchParams(AcornSearchParams);
 
@@ -223,6 +240,7 @@ pub struct PyAcornSearchParams(AcornSearchParams);
 #[pymethods]
 impl PyAcornSearchParams {
     #[new]
+    #[pyo3(signature = (enable = false, max_selectivity = None))]
     pub fn new(enable: bool, max_selectivity: Option<f64>) -> Self {
         Self(AcornSearchParams {
             enable,
@@ -254,223 +272,5 @@ impl PyAcornSearchParams {
             enable: _,
             max_selectivity: _,
         } = self.0;
-    }
-}
-
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyWithVector(pub WithVector);
-
-impl FromPyObject<'_, '_> for PyWithVector {
-    type Error = PyErr;
-
-    fn extract(with_vector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Bool(bool),
-            Selector(Vec<String>),
-        }
-
-        fn _variants(with_vector: WithVector) {
-            match with_vector {
-                WithVector::Bool(_) => {}
-                WithVector::Selector(_) => {}
-            }
-        }
-
-        let with_vector = match with_vector.extract()? {
-            Helper::Bool(bool) => WithVector::Bool(bool),
-            Helper::Selector(vectors) => WithVector::Selector(vectors),
-        };
-
-        Ok(Self(with_vector))
-    }
-}
-
-impl<'py> IntoPyObject<'py> for PyWithVector {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible?
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        IntoPyObject::into_pyobject(&self, py)
-    }
-}
-
-impl<'py> IntoPyObject<'py> for &PyWithVector {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible?
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        match &self.0 {
-            WithVector::Bool(bool) => bool.into_bound_py_any(py),
-            WithVector::Selector(vectors) => vectors.into_bound_py_any(py),
-        }
-    }
-}
-
-impl Repr for PyWithVector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.0 {
-            WithVector::Bool(bool) => bool.fmt(f),
-            WithVector::Selector(vectors) => vectors.fmt(f),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyWithPayload(WithPayloadInterface);
-
-impl FromPyObject<'_, '_> for PyWithPayload {
-    type Error = PyErr;
-
-    fn extract(with_payload: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Bool(bool),
-            Fields(Vec<PyJsonPath>),
-            Selector(PyPayloadSelector),
-        }
-
-        fn _variants(with_payload: WithPayloadInterface) {
-            match with_payload {
-                WithPayloadInterface::Bool(_) => {}
-                WithPayloadInterface::Fields(_) => {}
-                WithPayloadInterface::Selector(_) => {}
-            }
-        }
-
-        let with_payload = match with_payload.extract()? {
-            Helper::Bool(bool) => WithPayloadInterface::Bool(bool),
-            Helper::Fields(fields) => WithPayloadInterface::Fields(PyJsonPath::peel_vec(fields)),
-            Helper::Selector(selector) => {
-                WithPayloadInterface::Selector(PayloadSelector::from(selector))
-            }
-        };
-
-        Ok(Self(with_payload))
-    }
-}
-
-impl<'py> IntoPyObject<'py> for PyWithPayload {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible?
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        IntoPyObject::into_pyobject(&self, py)
-    }
-}
-
-impl<'py> IntoPyObject<'py> for &PyWithPayload {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible?
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        match &self.0 {
-            WithPayloadInterface::Bool(bool) => bool.into_bound_py_any(py),
-            WithPayloadInterface::Fields(fields) => {
-                PyJsonPath::wrap_slice(fields).into_bound_py_any(py)
-            }
-            WithPayloadInterface::Selector(selector) => PyPayloadSelector::wrap_ref(selector)
-                .clone()
-                .into_bound_py_any(py),
-        }
-    }
-}
-
-impl Repr for PyWithPayload {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.0 {
-            WithPayloadInterface::Bool(bool) => bool.fmt(f),
-            WithPayloadInterface::Fields(fields) => PyJsonPath::wrap_slice(fields).fmt(f),
-            WithPayloadInterface::Selector(selector) => {
-                PyPayloadSelector::wrap_ref(selector).fmt(f)
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyPayloadSelector(PayloadSelector);
-
-impl FromPyObject<'_, '_> for PyPayloadSelector {
-    type Error = PyErr;
-
-    fn extract(selector: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        let selector = match selector.extract()? {
-            PyPayloadSelectorInterface::Include { keys } => {
-                PayloadSelector::Include(PayloadSelectorInclude {
-                    include: PyJsonPath::peel_vec(keys),
-                })
-            }
-            PyPayloadSelectorInterface::Exclude { keys } => {
-                PayloadSelector::Exclude(PayloadSelectorExclude {
-                    exclude: PyJsonPath::peel_vec(keys),
-                })
-            }
-        };
-
-        Ok(Self(selector))
-    }
-}
-
-impl<'py> IntoPyObject<'py> for PyPayloadSelector {
-    type Target = PyPayloadSelectorInterface;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible?
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        let selector = match self.0 {
-            PayloadSelector::Include(PayloadSelectorInclude { include }) => {
-                PyPayloadSelectorInterface::Include {
-                    keys: PyJsonPath::wrap_vec(include),
-                }
-            }
-            PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
-                PyPayloadSelectorInterface::Exclude {
-                    keys: PyJsonPath::wrap_vec(exclude),
-                }
-            }
-        };
-
-        Bound::new(py, selector)
-    }
-}
-
-impl Repr for PyPayloadSelector {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let (repr, keys) = match &self.0 {
-            PayloadSelector::Include(PayloadSelectorInclude { include }) => {
-                ("Include", PyJsonPath::wrap_slice(include))
-            }
-            PayloadSelector::Exclude(PayloadSelectorExclude { exclude }) => {
-                ("Exclude", PyJsonPath::wrap_slice(exclude))
-            }
-        };
-
-        f.complex_enum::<PyPayloadSelectorInterface>(repr, &[("keys", &keys)])
-    }
-}
-
-#[pyclass(name = "PayloadSelector")]
-#[derive(Clone, Debug)]
-pub enum PyPayloadSelectorInterface {
-    Include { keys: Vec<PyJsonPath> },
-    Exclude { keys: Vec<PyJsonPath> },
-}
-
-impl Repr for PyPayloadSelectorInterface {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let (repr, keys) = match self {
-            PyPayloadSelectorInterface::Include { keys } => ("Include", keys),
-            PyPayloadSelectorInterface::Exclude { keys } => ("Exclude", keys),
-        };
-
-        f.complex_enum::<Self>(repr, &[("keys", keys)])
     }
 }

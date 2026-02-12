@@ -25,6 +25,7 @@ use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle;
 
 use self::partial_snapshot_meta::PartialSnapshotMeta;
@@ -44,6 +45,7 @@ use crate::operations::{CollectionUpdateOperations, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
+use crate::shards::local_shard::LocalShardOptimizations;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -262,8 +264,8 @@ impl ShardReplicaSet {
         if replica_state.read().this_peer_id != this_peer_id {
             replica_state
                 .write(|rs| {
-                    let this_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(this_peer_id);
+                    let old_peer_id = rs.this_peer_id;
+                    let local_state = rs.remove_peer_state(old_peer_id);
                     if let Some(state) = local_state {
                         rs.set_peer_state(this_peer_id, state);
                     }
@@ -694,6 +696,8 @@ impl ShardReplicaSet {
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
+        } else {
+            self.on_remote_state_updated(peer_id, state).await;
         }
 
         self.update_locally_disabled(peer_id);
@@ -764,6 +768,8 @@ impl ShardReplicaSet {
 
         if self.this_peer_id() == peer_id {
             self.on_local_state_updated(state).await?;
+        } else {
+            self.on_remote_state_updated(peer_id, state).await;
         }
 
         self.update_locally_disabled(peer_id);
@@ -783,9 +789,40 @@ impl ShardReplicaSet {
             } else {
                 local_shard.take_newest_clocks_snapshot().await?;
             }
+            // Reset WAL retention to normal whenever local shard changes state
+            local_shard.set_normal_wal_retention().await;
         }
 
         Ok(())
+    }
+
+    /// Called when a peer state is changed (except local peer).
+    ///
+    async fn on_remote_state_updated(&self, _peer_id: PeerId, _new_state: ReplicaState) {
+        let mut is_any_remote_dead = false;
+        let mut is_local_active = false;
+        let this_peer_id = self.this_peer_id();
+
+        for (peer_id, peer_state) in self.replica_state.read().peers().iter() {
+            if *peer_id == this_peer_id {
+                if peer_state.is_active() {
+                    is_local_active = true;
+                }
+            } else if peer_state.requires_recovery() {
+                is_any_remote_dead = true;
+            }
+        }
+
+        {
+            let local_opt = self.local.read().await;
+            if let Some(local_shard) = local_opt.as_ref() {
+                if is_local_active && is_any_remote_dead {
+                    local_shard.set_extended_wal_retention().await;
+                } else {
+                    local_shard.set_normal_wal_retention().await;
+                }
+            }
+        }
     }
 
     pub async fn remove_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
@@ -863,6 +900,7 @@ impl ShardReplicaSet {
 
                     ReplicaState::Dead
                     | ReplicaState::Partial
+                    | ReplicaState::ManualRecovery
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
                     | ReplicaState::Recovery
@@ -1062,7 +1100,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), true, hw_measurement_acc, force)
+            .update_local(op.into(), true, None, hw_measurement_acc, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(
@@ -1269,36 +1307,48 @@ impl ShardReplicaSet {
 
     /// Returns the estimated size of all local segments.
     /// Since this locks all segments you should cache this value in performance critical scenarios!
-    pub(crate) async fn calculate_local_shard_stats(&self) -> Option<CollectionSizeStats> {
-        self.local
-            .read()
-            .await
-            .as_ref()
-            .map(|i| match i {
-                Shard::Local(local) => {
-                    let mut total_vector_size = 0;
-                    let mut total_payload_size = 0;
-                    let mut total_points = 0;
+    pub(crate) async fn calculate_local_shard_stats(
+        &self,
+    ) -> CollectionResult<Option<CollectionSizeStats>> {
+        let Some(segments) = self.local.read().await.as_ref().and_then(|i| match i {
+            Shard::Local(local) => Some(
+                // Collect the segments first so we don't have the segment holder locked for the entire duration of the loop.
+                local
+                    .segments
+                    .read()
+                    .iter()
+                    .map(|i| i.1.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+                None
+            }
+        }) else {
+            return Ok(None);
+        };
 
-                    for segment in local.segments.read().iter() {
-                        let size_info = segment.1.get().read().size_info();
-                        total_vector_size += size_info.vectors_size_bytes;
-                        total_payload_size += size_info.payloads_size_bytes;
-                        total_points += size_info.num_points;
-                    }
+        let handle = spawn_blocking(move || {
+            let mut total_vector_size = 0;
+            let mut total_payload_size = 0;
+            let mut total_points = 0;
 
-                    Some(CollectionSizeStats {
-                        vector_storage_size: total_vector_size,
-                        payload_storage_size: total_payload_size,
-                        points_count: total_points,
-                    })
-                }
-                Shard::Proxy(_)
-                | Shard::ForwardProxy(_)
-                | Shard::QueueProxy(_)
-                | Shard::Dummy(_) => None,
-            })
-            .unwrap_or_default()
+            for segment in segments {
+                let size_info = segment.get().read().size_info();
+                total_vector_size += size_info.vectors_size_bytes;
+                total_payload_size += size_info.payloads_size_bytes;
+                total_points += size_info.num_points;
+            }
+
+            (total_vector_size, total_payload_size, total_points)
+        });
+        let (total_vector_size, total_payload_size, total_points) =
+            AbortOnDropHandle::new(handle).await?;
+
+        Ok(Some(CollectionSizeStats {
+            vector_storage_size: total_vector_size,
+            payload_storage_size: total_payload_size,
+            points_count: total_points,
+        }))
     }
 
     pub(crate) fn payload_index_schema(&self) -> Arc<SaveOnDisk<PayloadIndexSchema>> {
@@ -1308,6 +1358,32 @@ impl ShardReplicaSet {
     pub async fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
         let local = self.local.read().await;
         local.as_ref().and_then(|shard| shard.optimizers_log())
+    }
+
+    pub async fn optimizations(&self) -> Option<LocalShardOptimizations> {
+        let local = self.local.read().await;
+        local.as_ref().and_then(|shard| shard.optimizations())
+    }
+
+    /// Truncate unapplied WAL records for the local shard (if present).
+    /// Returns amount of removed records.
+    pub async fn truncate_unapplied_wal(&self) -> CollectionResult<usize> {
+        let local = self.local.read().await;
+        let Some(local) = local.as_ref() else {
+            // No local shard to drop WAL from.
+            return Ok(0);
+        };
+
+        let removed_records_count = local.truncate_unapplied_wal().await?;
+        if removed_records_count > 0 {
+            log::debug!(
+                "Dropped {} WAL records from shard {}:{}",
+                removed_records_count,
+                self.collection_id,
+                self.shard_id,
+            );
+        }
+        Ok(removed_records_count)
     }
 }
 

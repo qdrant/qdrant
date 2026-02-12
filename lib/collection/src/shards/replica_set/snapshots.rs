@@ -1,15 +1,15 @@
-use std::collections::HashSet;
-use std::io;
 use std::path::Path;
 
+use ::io::safe_delete::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
-use fs_err as fs;
-use fs_err::{File, tokio as tokio_fs};
-use segment::data_types::manifest::{SegmentManifest, SnapshotManifest};
+use fs_err::tokio as tokio_fs;
 use segment::types::SnapshotFormat;
+use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+use shard::snapshots::snapshot_utils::{SnapshotMergePlan, SnapshotUtils};
 
 use super::{REPLICA_STATE_FILE, ShardReplicaSet};
+use crate::common::file_utils::{move_dir, move_file};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
@@ -17,22 +17,6 @@ use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum RecoveryType {
-    Full,
-    Partial,
-}
-
-impl RecoveryType {
-    pub fn is_full(self) -> bool {
-        matches!(self, Self::Full)
-    }
-
-    pub fn is_partial(self) -> bool {
-        matches!(self, Self::Partial)
-    }
-}
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -120,83 +104,8 @@ impl ShardReplicaSet {
             return Ok(false);
         }
 
-        let segments_path = LocalShard::segments_path(replica_path);
-
-        let mut snapshot_segments = HashSet::new();
-        let mut snapshot_manifest = SnapshotManifest::default();
-
-        for segment_entry in fs::read_dir(segments_path)? {
-            let segment_path = segment_entry?.path();
-
-            if !segment_path.is_dir() {
-                log::warn!(
-                    "segment path {} in extracted snapshot {} is not a directory",
-                    segment_path.display(),
-                    replica_path.display(),
-                );
-
-                continue;
-            }
-
-            let segment_id = segment_path
-                .file_name()
-                .and_then(|segment_id| segment_id.to_str())
-                .expect("segment path ends with a valid segment id");
-
-            let added = snapshot_segments.insert(segment_id.to_string());
-            debug_assert!(added);
-
-            let manifest_path = segment_path.join("segment_manifest.json");
-
-            if recovery_type.is_full() {
-                if manifest_path.exists() {
-                    return Err(CollectionError::bad_request(format!(
-                        "invalid shard snapshot: \
-                         segment {segment_id} contains segment manifest; \
-                         ensure you are not recovering partial snapshot on shard snapshot endpoint",
-                    )));
-                }
-
-                continue;
-            }
-
-            if !manifest_path.exists() {
-                return Err(CollectionError::bad_request(format!(
-                    "invalid partial snapshot: \
-                     segment {segment_id} does not contain segment manifest; \
-                     ensure you are not recovering shard snapshot on partial snapshot endpoint",
-                )));
-            }
-
-            let manifest = File::open(&manifest_path).map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to open segment {segment_id} manifest: {err}",
-                ))
-            })?;
-
-            let manifest = io::BufReader::new(manifest);
-
-            let manifest: SegmentManifest = serde_json::from_reader(manifest).map_err(|err| {
-                CollectionError::bad_request(format!(
-                    "failed to deserialize segment {segment_id} manifest: {err}",
-                ))
-            })?;
-
-            if segment_id != manifest.segment_id {
-                return Err(CollectionError::bad_request(format!(
-                    "invalid partial snapshot: \
-                     segment {segment_id} contains segment manifest with segment ID {}",
-                    manifest.segment_id,
-                )));
-            }
-
-            let added = snapshot_manifest.add(manifest);
-            debug_assert!(added);
-        }
-
-        snapshot_manifest.validate().map_err(|err| {
-            CollectionError::bad_request(format!("invalid partial snapshot: {err}"))
-        })?;
+        let snapshot_manifest =
+            SnapshotManifest::load_from_snapshot(replica_path, Some(recovery_type))?;
 
         // TODO:
         //   Check that shard snapshot is compatible with the collection
@@ -217,6 +126,7 @@ impl ShardReplicaSet {
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
         let flag_file = tokio_fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
+        sync_parent_dir_async(&shard_flag).await?;
 
         // Check `cancel` token one last time before starting non-cancellable section
         if cancel.is_cancelled() {
@@ -230,8 +140,6 @@ impl ShardReplicaSet {
 
                 None
             }
-            None if snapshot_manifest.is_empty() => None,
-
             Some(shard) => {
                 let local_manifest = shard.snapshot_manifest().await;
 
@@ -267,130 +175,84 @@ impl ShardReplicaSet {
                     }
                 }
             }
-
-            None => {
-                return Err(CollectionError::bad_request(format!(
-                    "failed to restore partial shard snapshot for shard {}:{}: \
-                     local shard does not exist on peer {}",
-                    self.collection_id,
-                    self.shard_id,
-                    self.this_peer_id(),
-                )));
-            }
+            None => None,
         };
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if let Some(local_manifest) = local_manifest {
-                let segments_path = LocalShard::segments_path(&self.shard_path);
+                // ToDo: Replace with `partial_snapshot_merge_plan` when rocksdb is removed
+                let merge_plan = SnapshotUtils::partial_snapshot_merge_plan(
+                    &self.shard_path,
+                    &local_manifest,
+                    replica_path,
+                    &snapshot_manifest,
+                );
 
-                for (segment_id, local_manifest) in local_manifest.iter() {
-                    let segment_path = segments_path.join(segment_id);
+                let SnapshotMergePlan {
+                    move_files,
+                    replace_directories,
+                    merge_directories,
+                    delete_files,
+                    delete_directories,
+                } = merge_plan;
 
-                    log::debug!("Cleaning up segment {}", segment_path.display());
-
-                    // Delete local segment, if it's not present in partial snapshot
-                    let Some(snapshot_manifest) = snapshot_manifest.get(segment_id) else {
-                        log::debug!("Removing outdated segment {}", segment_path.display());
-
-                        tokio_fs::remove_dir_all(&segment_path)
-                            .await
-                            .map_err(|err| {
-                                CollectionError::service_error(format!(
-                                    "failed to remove outdated segment {}: {err}",
-                                    segment_path.display(),
-                                ))
-                            })?;
-
+                // Clean up files and directories according to merge plan
+                for path in delete_files {
+                    if !path.exists() {
                         continue;
-                    };
-
-                    for (file, local_version) in local_manifest.file_versions() {
-                        let snapshot_version = snapshot_manifest.file_version(file);
-
-                        let is_removed = snapshot_version.is_none();
-
-                        let is_outdated = snapshot_version.is_none_or(|snapshot_version| {
-                            let is_outdated = local_version < snapshot_version;
-                            let is_zero = local_version == 0 && snapshot_version == 0;
-                            is_outdated || is_zero
-                        });
-
-                        #[cfg(feature = "rocksdb")]
-                        let (is_rocksdb, is_payload_index_rocksdb) = (
-                            file == Path::new(segment::segment::snapshot::ROCKS_DB_VIRT_FILE),
-                            file == Path::new(
-                                segment::segment::snapshot::PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE,
-                            ),
-                        );
-
-                        if is_removed {
-                            // If `file` is a regular file, delete it from disk, if it was
-                            // *removed* from the snapshot
-
-                            #[cfg(feature = "rocksdb")]
-                            let delete_regular_file = !is_rocksdb && !is_payload_index_rocksdb;
-                            #[cfg(not(feature = "rocksdb"))]
-                            let delete_regular_file = true;
-
-                            if delete_regular_file {
-                                let path = segment_path.join(file);
-
-                                log::debug!("Removing outdated segment file {}", path.display());
-
-                                tokio_fs::remove_file(&path).await.map_err(|err| {
-                                    CollectionError::service_error(format!(
-                                        "failed to remove outdated segment file {}: {err}",
-                                        path.display(),
-                                    ))
-                                })?;
-                            }
-                        } else if is_outdated {
-                            // If `file` is a RocksDB "virtual" file, remove RocksDB from disk,
-                            // if it was *updated* in or *removed* from the snapshot
-                            #[cfg(feature = "rocksdb")]
-                            {
-                                use segment::segment::destroy_rocksdb;
-                                use segment::segment_constructor::PAYLOAD_INDEX_PATH;
-
-                                if is_rocksdb {
-                                    log::debug!(
-                                        "Destroying outdated RocksDB at {}",
-                                        segment_path.display(),
-                                    );
-
-                                    destroy_rocksdb(&segment_path)?;
-                                } else if is_payload_index_rocksdb {
-                                    log::debug!(
-                                        "Destroying outdated payload index RocksDB at {}/{}",
-                                        segment_path.display(),
-                                        PAYLOAD_INDEX_PATH,
-                                    );
-
-                                    destroy_rocksdb(&segment_path.join(PAYLOAD_INDEX_PATH))?;
-                                }
-                            }
-                        }
                     }
+                    log::debug!("Deleting file {}", path.display());
+                    tokio_fs::remove_file(&path).await?;
                 }
 
-                let wal_path = LocalShard::wal_path(&self.shard_path);
-                if wal_path.is_dir() {
-                    log::debug!("Removing WAL {}", wal_path.display());
+                for path in delete_directories {
+                    if !path.exists() {
+                        continue;
+                    }
+                    log::debug!("Deleting directory {}", path.display());
+                    tokio::task::spawn_blocking({
+                        let path = path.clone();
+                        move || safe_delete_with_suffix(&path)
+                    })
+                    .await??;
+                }
 
-                    tokio_fs::remove_dir_all(&wal_path).await.map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to remove WAL {}: {err}",
-                            wal_path.display(),
-                        ))
-                    })?;
+                // Execute merge plan
+                for (from, to) in move_files {
+                    log::debug!("Moving file from {} to {}", from.display(), to.display());
+                    move_file(&from, &to).await?;
+                }
+
+                for (from, to) in replace_directories {
+                    log::debug!(
+                        "Replacing directory {} with {}",
+                        to.display(),
+                        from.display()
+                    );
+                    if to.exists() {
+                        tokio::task::spawn_blocking({
+                            let to = to.clone();
+                            move || safe_delete_with_suffix(&to)
+                        })
+                        .await??;
+                    }
+                    move_dir(from, to).await?;
+                }
+
+                for (from, to) in merge_directories {
+                    log::debug!(
+                        "Merging directory from {} to {}",
+                        from.display(),
+                        to.display()
+                    );
+                    move_dir(from, to).await?;
                 }
             } else {
                 // Remove shard data but not configuration files
                 LocalShard::clear(&self.shard_path).await?;
+                LocalShard::move_data(replica_path, &self.shard_path).await?;
             }
-
-            LocalShard::move_data(replica_path, &self.shard_path).await?;
 
             LocalShard::load(
                 self.shard_id,
@@ -457,7 +319,7 @@ impl ShardReplicaSet {
             .await
             .as_ref()
             .ok_or_else(|| {
-                CollectionError::bad_request(format!(
+                CollectionError::not_found(format!(
                     "local shard {}:{} does not exist on peer {}",
                     self.collection_id,
                     self.shard_id,

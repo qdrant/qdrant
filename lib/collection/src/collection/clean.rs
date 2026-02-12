@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
@@ -15,7 +15,7 @@ use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::{SharedShardHolder, WeakShardHolder};
 use crate::telemetry::{
     ShardCleanStatusFailedTelemetry, ShardCleanStatusProgressTelemetry, ShardCleanStatusTelemetry,
 };
@@ -59,7 +59,7 @@ impl ShardCleanTasks {
     /// will not abort any ongoing task.
     async fn clean_and_await(
         &self,
-        shards_holder: &Arc<LockedShardHolder>,
+        shards_holder: &SharedShardHolder,
         shard_id: ShardId,
         wait: bool,
         timeout: Option<Duration>,
@@ -197,9 +197,9 @@ pub(super) struct ShardCleanTask {
 
 impl ShardCleanTask {
     /// Create a new shard clean task and immediately execute it
-    pub fn new(shards_holder: &Arc<LockedShardHolder>, shard_id: ShardId) -> Self {
+    pub fn new(shards_holder: &SharedShardHolder, shard_id: ShardId) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(ShardCleanStatus::Started);
-        let shard_holder = Arc::downgrade(shards_holder);
+        let shard_holder = shards_holder.downgrade();
         let cancel = CancellationToken::default();
 
         let task = tokio::task::spawn(Self::task(shard_holder, shard_id, sender, cancel.clone()));
@@ -225,7 +225,7 @@ impl ShardCleanTask {
     }
 
     async fn task(
-        shard_holder: Weak<LockedShardHolder>,
+        shard_holder: WeakShardHolder,
         shard_id: ShardId,
         sender: Sender<ShardCleanStatus>,
         cancel: CancellationToken,
@@ -254,7 +254,7 @@ impl ShardCleanTask {
 }
 
 async fn clean_task(
-    shard_holder: Weak<LockedShardHolder>,
+    shard_holder: WeakShardHolder,
     shard_id: ShardId,
     sender: Sender<ShardCleanStatus>,
 ) -> CollectionResult<()> {
@@ -336,6 +336,7 @@ async fn clean_task(
             .update_local(
                 delete_operation,
                 last_batch,
+                None,
                 HwMeasurementAcc::disposable(),
                 false,
             )

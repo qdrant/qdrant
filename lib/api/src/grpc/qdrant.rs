@@ -855,6 +855,13 @@ pub struct OptimizersConfigDiff {
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[prost(message, optional, tag = "9")]
     pub max_optimization_threads: ::core::option::Option<MaxOptimizationThreads>,
+    /// If this option is set, service will try to prevent creation of large unoptimized segments.
+    /// When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
+    /// Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+    /// Using this option may lead to increased delay between submitting an update and its application.
+    /// Default is disabled.
+    #[prost(bool, optional, tag = "10")]
+    pub prevent_unoptimized: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1304,6 +1311,9 @@ pub struct CollectionParams {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "10")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// Define number of milliseconds to wait before attempting to read from another replica.
+    #[prost(uint64, optional, tag = "11")]
+    pub read_fan_out_delay_ms: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1324,6 +1334,9 @@ pub struct CollectionParamsDiff {
     /// Fan-out every read request to these many additional remote nodes (and return first available response)
     #[prost(uint32, optional, tag = "4")]
     pub read_fan_out_factor: ::core::option::Option<u32>,
+    /// Define number of milliseconds to wait before attempting to read from another replica.
+    #[prost(uint64, optional, tag = "5")]
+    pub read_fan_out_delay_ms: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1361,6 +1374,11 @@ pub struct KeywordIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1380,6 +1398,11 @@ pub struct IntegerIndexParams {
     /// If true - store index on disk. Default is false.
     #[prost(bool, optional, tag = "4")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "5")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1392,6 +1415,11 @@ pub struct FloatIndexParams {
     /// This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1400,6 +1428,11 @@ pub struct GeoIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "2")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1444,6 +1477,11 @@ pub struct TextIndexParams {
     /// Default: false.
     #[prost(bool, optional, tag = "9")]
     pub ascii_folding: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "10")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1478,6 +1516,11 @@ pub struct BoolIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "2")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1490,6 +1533,11 @@ pub struct DatetimeIndexParams {
     /// This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1501,6 +1549,11 @@ pub struct UuidIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Enable HNSW graph building for this payload field.
+    /// If true, builds additional HNSW links (Need payload_m > 0).
+    /// Default: true.
+    #[prost(bool, optional, tag = "3")]
+    pub enable_hnsw: ::core::option::Option<bool>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1563,6 +1616,17 @@ pub struct PayloadSchemaInfo {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateQueueInfo {
+    /// Number of elements in the queue
+    #[prost(uint64, tag = "1")]
+    pub length: u64,
+    /// last operation number processed
+    #[prost(uint64, optional, tag = "2")]
+    pub op_num: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionInfo {
     /// operating condition of the collection
     #[prost(enumeration = "CollectionStatus", tag = "1")]
@@ -1591,6 +1655,9 @@ pub struct CollectionInfo {
     /// Warnings related to the collection
     #[prost(message, repeated, tag = "11")]
     pub warnings: ::prost::alloc::vec::Vec<CollectionWarning>,
+    /// Update queue info
+    #[prost(message, optional, tag = "12")]
+    pub update_queue: ::core::option::Option<UpdateQueueInfo>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -2445,6 +2512,13 @@ pub enum ReplicaState {
     ReshardingScaleDown = 8,
     /// Active for readers, Partial for writers
     ActiveRead = 9,
+    /// State for manually creation/recovery of a shard.
+    /// Usually when snapshot is uploaded.
+    /// This state is equivalent to `Partial`, except:
+    ///
+    /// * it can't receive updates
+    /// * it is not treated as broken on startup
+    ManualRecovery = 10,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2463,6 +2537,7 @@ impl ReplicaState {
             ReplicaState::Resharding => "Resharding",
             ReplicaState::ReshardingScaleDown => "ReshardingScaleDown",
             ReplicaState::ActiveRead => "ActiveRead",
+            ReplicaState::ManualRecovery => "ManualRecovery",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2478,6 +2553,7 @@ impl ReplicaState {
             "Resharding" => Some(Self::Resharding),
             "ReshardingScaleDown" => Some(Self::ReshardingScaleDown),
             "ActiveRead" => Some(Self::ActiveRead),
+            "ManualRecovery" => Some(Self::ManualRecovery),
             _ => None,
         }
     }
@@ -4891,13 +4967,17 @@ pub struct UpsertPoints {
     /// Option for custom sharding to specify used shard keys
     #[prost(message, optional, tag = "5")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub update_filter: ::core::option::Option<Filter>,
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[prost(enumeration = "UpdateMode", optional, tag = "8")]
+    pub update_mode: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6230,6 +6310,12 @@ pub struct Rrf {
     #[prost(uint32, optional, tag = "1")]
     #[validate(range(min = 1))]
     pub k: ::core::option::Option<u32>,
+    /// Weights for each prefetch source.
+    /// Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[prost(float, repeated, tag = "2")]
+    pub weights: ::prost::alloc::vec::Vec<f32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6648,9 +6734,13 @@ pub mod points_update_operation {
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "2")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
-        /// If specified, only points that match this filter will be updated, others will be inserted
+        /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+        /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
         #[prost(message, optional, tag = "3")]
         pub update_filter: ::core::option::Option<super::Filter>,
+        /// Mode of the upsert operation: insert_only, upsert (default), update_only
+        #[prost(enumeration = "super::UpdateMode", optional, tag = "4")]
+        pub update_mode: ::core::option::Option<i32>,
     }
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
@@ -7292,6 +7382,40 @@ impl WriteOrderingType {
         }
     }
 }
+/// Defines the mode of the upsert operation
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum UpdateMode {
+    /// Default mode - insert new points, update existing points
+    Upsert = 0,
+    /// Only insert new points, do not update existing points
+    InsertOnly = 1,
+    /// Only update existing points, do not insert new points
+    UpdateOnly = 2,
+}
+impl UpdateMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            UpdateMode::Upsert => "Upsert",
+            UpdateMode::InsertOnly => "InsertOnly",
+            UpdateMode::UpdateOnly => "UpdateOnly",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Upsert" => Some(Self::Upsert),
+            "InsertOnly" => Some(Self::InsertOnly),
+            "UpdateOnly" => Some(Self::UpdateOnly),
+            _ => None,
+        }
+    }
+}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -7504,6 +7628,8 @@ pub enum UpdateStatus {
     Completed = 2,
     /// Internal: update is rejected due to an outdated clock
     ClockRejected = 3,
+    /// Timeout of awaited operations
+    WaitTimeout = 4,
 }
 impl UpdateStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -7516,6 +7642,7 @@ impl UpdateStatus {
             UpdateStatus::Acknowledged => "Acknowledged",
             UpdateStatus::Completed => "Completed",
             UpdateStatus::ClockRejected => "ClockRejected",
+            UpdateStatus::WaitTimeout => "WaitTimeout",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -7525,6 +7652,7 @@ impl UpdateStatus {
             "Acknowledged" => Some(Self::Acknowledged),
             "Completed" => Some(Self::Completed),
             "ClockRejected" => Some(Self::ClockRejected),
+            "WaitTimeout" => Some(Self::WaitTimeout),
             _ => None,
         }
     }
@@ -12449,18 +12577,40 @@ pub mod points_internal_server {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryRequest {
-    /// The peer id to ask for telemetry
-    #[prost(uint64, tag = "1")]
-    pub peer_id: u64,
+pub struct GetTelemetryRequest {
     /// The level of detail needed
-    #[prost(uint32, tag = "2")]
+    #[prost(uint32, tag = "1")]
     pub details_level: u32,
+    /// If present, select these collections
+    #[prost(message, optional, tag = "2")]
+    pub collections_selector: ::core::option::Option<CollectionsSelector>,
+    /// Timeout in secs for the request
+    #[prost(uint64, tag = "3")]
+    pub timeout: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetPeerTelemetryResponse {
+pub struct CollectionsSelector {
+    #[prost(string, repeated, tag = "1")]
+    pub only_collections: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTelemetryResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<PeerTelemetry>,
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerTelemetry {
+    /// app
+    #[prost(message, optional, tag = "2")]
+    pub app: ::core::option::Option<AppTelemetry>,
     /// Mapping from collection name to its telemetry
     #[prost(map = "string, message", tag = "3")]
     pub collections: ::std::collections::HashMap<
@@ -12474,11 +12624,28 @@ pub struct GetPeerTelemetryResponse {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AppTelemetry {
+    /// Name of service
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    /// Qdrant version
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// Last startup timestamp in seconds
+    #[prost(int64, tag = "3")]
+    pub startup: i64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionTelemetry {
     /// Name of the collection
     #[prost(string, tag = "1")]
     pub id: ::prost::alloc::string::String,
-    /// Shard transfers in progress
+    /// Shards information
+    #[prost(message, repeated, tag = "4")]
+    pub shards: ::prost::alloc::vec::Vec<ReplicaSetTelemetry>,
+    /// Shard (replica) transfers in progress
     #[prost(message, repeated, tag = "5")]
     pub transfers: ::prost::alloc::vec::Vec<ShardTransferTelemetry>,
     /// Resharding(s) in progress
@@ -12496,7 +12663,7 @@ pub struct ShardTransferTelemetry {
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
     /// Target shard ID if different than source shard ID.
-    /// Used exclusively with `ReshardStreamRecords` transfer method.
+    /// Used exclusively with `ReshardingStreamRecords` transfer method.
     #[prost(uint32, optional, tag = "2")]
     pub to_shard_id: ::core::option::Option<u32>,
     /// From peer id
@@ -12510,8 +12677,8 @@ pub struct ShardTransferTelemetry {
     #[prost(bool, tag = "5")]
     pub sync: bool,
     /// Method of transferring points
-    #[prost(enumeration = "ShardTransferMethod", tag = "6")]
-    pub method: i32,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "6")]
+    pub method: ::core::option::Option<i32>,
     /// Freeform string. Typically reports progress
     #[prost(string, tag = "7")]
     pub comment: ::prost::alloc::string::String,
@@ -12590,9 +12757,91 @@ pub mod shard_clean_status_telemetry {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicaSetTelemetry {
+    /// Shard ID
+    #[prost(uint32, tag = "1")]
+    pub id: u32,
+    /// Optional shard key for custom sharding
+    #[prost(message, optional, tag = "2")]
+    pub key: ::core::option::Option<ShardKey>,
+    /// Local shard information
+    #[prost(message, optional, tag = "3")]
+    pub local: ::core::option::Option<LocalShardTelemetry>,
+    /// Remote shards
+    #[prost(message, repeated, tag = "4")]
+    pub remote: ::prost::alloc::vec::Vec<RemoteShardTelemetry>,
+    #[prost(map = "uint64, enumeration(ReplicaState)", tag = "5")]
+    pub replica_states: ::std::collections::HashMap<u64, i32>,
+    /// Snapshot operations telemetry
+    #[prost(message, optional, tag = "6")]
+    pub partial_snapshot: ::core::option::Option<PartialSnapshotTelemetry>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LocalShardTelemetry {
+    /// Optimization status
+    #[prost(enumeration = "ShardStatus", optional, tag = "3")]
+    pub status: ::core::option::Option<i32>,
+    /// Total optimized points
+    #[prost(uint64, tag = "4")]
+    pub total_optimized_points: u64,
+    /// Estimated vectors size in bytes
+    #[prost(uint64, optional, tag = "5")]
+    pub vectors_size_bytes: ::core::option::Option<u64>,
+    /// Estimated payloads size in bytes
+    #[prost(uint64, optional, tag = "6")]
+    pub payloads_size_bytes: ::core::option::Option<u64>,
+    /// Approximate number of points
+    #[prost(uint64, optional, tag = "7")]
+    pub num_points: ::core::option::Option<u64>,
+    /// Approximate number of vectors
+    #[prost(uint64, optional, tag = "8")]
+    pub num_vectors: ::core::option::Option<u64>,
+    /// Approximate number of vectors by vector name
+    #[prost(map = "string, uint64", tag = "9")]
+    pub num_vectors_by_name: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        u64,
+    >,
+    /// Number of vectors excluded from search if `indexed_only` is used
+    #[prost(map = "string, uint64", tag = "12")]
+    pub indexed_only_excluded_vectors: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        u64,
+    >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoteShardTelemetry {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PartialSnapshotTelemetry {
+    /// Number of ongoing snapshot creation requests
+    #[prost(uint64, tag = "1")]
+    pub ongoing_create_snapshot_requests: u64,
+    /// Whether the shard is recovering
+    #[prost(bool, tag = "2")]
+    pub is_recovering: bool,
+    /// Last successful recovery timestamp
+    #[prost(uint64, tag = "3")]
+    pub recovery_timestamp: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterTelemetry {
     #[prost(message, optional, tag = "1")]
     pub status: ::core::option::Option<ClusterStatusTelemetry>,
+    #[prost(map = "uint64, message", tag = "3")]
+    pub peers: ::std::collections::HashMap<u64, PeerInfo>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -12606,12 +12855,12 @@ pub struct ClusterStatusTelemetry {
     pub commit: u64,
     #[prost(uint64, tag = "4")]
     pub pending_operations: u64,
-    #[prost(enumeration = "StateRole", tag = "5")]
-    pub role: i32,
+    #[prost(enumeration = "StateRole", optional, tag = "5")]
+    pub role: ::core::option::Option<i32>,
     #[prost(bool, tag = "6")]
     pub is_voter: bool,
-    #[prost(uint64, tag = "7")]
-    pub peer_id: u64,
+    #[prost(uint64, optional, tag = "7")]
+    pub peer_id: ::core::option::Option<u64>,
     #[prost(message, optional, tag = "8")]
     pub consensus_thread_status: ::core::option::Option<ConsensusThreadStatus>,
 }
@@ -12657,6 +12906,13 @@ pub mod consensus_thread_status {
     }
 }
 #[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PeerInfo {
+    #[prost(string, tag = "1")]
+    pub uri: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ReshardingStage {
@@ -12682,6 +12938,45 @@ impl ReshardingStage {
             "MIGRATING_POINTS" => Some(Self::MigratingPoints),
             "READ_HASH_RING_COMMITTED" => Some(Self::ReadHashRingCommitted),
             "WRITE_HASH_RING_COMMITTED" => Some(Self::WriteHashRingCommitted),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ShardStatus {
+    /// Shard is completely ready for requests
+    Green = 0,
+    /// Shard is available, but some segments are under optimization
+    Yellow = 1,
+    /// Shard is available, but some segments are pending optimization
+    Grey = 2,
+    /// Something is not OK:
+    ///
+    /// * some operations failed and was not recovered
+    Red = 3,
+}
+impl ShardStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ShardStatus::Green => "GREEN",
+            ShardStatus::Yellow => "YELLOW",
+            ShardStatus::Grey => "GREY",
+            ShardStatus::Red => "RED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GREEN" => Some(Self::Green),
+            "YELLOW" => Some(Self::Yellow),
+            "GREY" => Some(Self::Grey),
+            "RED" => Some(Self::Red),
             _ => None,
         }
     }
@@ -12895,12 +13190,12 @@ pub mod qdrant_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Get telemetry from a peer
-        pub async fn get_peer_telemetry(
+        /// Get telemetry
+        pub async fn get_telemetry(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetPeerTelemetryRequest>,
+            request: impl tonic::IntoRequest<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         > {
             self.inner
@@ -12914,11 +13209,11 @@ pub mod qdrant_internal_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.QdrantInternal/GetPeerTelemetry",
+                "/qdrant.QdrantInternal/GetTelemetry",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetPeerTelemetry"));
+                .insert(GrpcMethod::new("qdrant.QdrantInternal", "GetTelemetry"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -12946,12 +13241,12 @@ pub mod qdrant_internal_server {
             tonic::Response<super::WaitOnConsensusCommitResponse>,
             tonic::Status,
         >;
-        /// Get telemetry from a peer
-        async fn get_peer_telemetry(
+        /// Get telemetry
+        async fn get_telemetry(
             &self,
-            request: tonic::Request<super::GetPeerTelemetryRequest>,
+            request: tonic::Request<super::GetTelemetryRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::GetPeerTelemetryResponse>,
+            tonic::Response<super::GetTelemetryResponse>,
             tonic::Status,
         >;
     }
@@ -13131,26 +13426,25 @@ pub mod qdrant_internal_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.QdrantInternal/GetPeerTelemetry" => {
+                "/qdrant.QdrantInternal/GetTelemetry" => {
                     #[allow(non_camel_case_types)]
-                    struct GetPeerTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
+                    struct GetTelemetrySvc<T: QdrantInternal>(pub Arc<T>);
                     impl<
                         T: QdrantInternal,
-                    > tonic::server::UnaryService<super::GetPeerTelemetryRequest>
-                    for GetPeerTelemetrySvc<T> {
-                        type Response = super::GetPeerTelemetryResponse;
+                    > tonic::server::UnaryService<super::GetTelemetryRequest>
+                    for GetTelemetrySvc<T> {
+                        type Response = super::GetTelemetryResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetPeerTelemetryRequest>,
+                            request: tonic::Request<super::GetTelemetryRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as QdrantInternal>::get_peer_telemetry(&inner, request)
-                                    .await
+                                <T as QdrantInternal>::get_telemetry(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -13162,7 +13456,7 @@ pub mod qdrant_internal_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = GetPeerTelemetrySvc(inner);
+                        let method = GetTelemetrySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

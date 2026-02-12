@@ -81,6 +81,7 @@ fn batch_search_bench(c: &mut Criterion) {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(2),
+            prevent_unoptimized: None,
         },
         wal_config,
         hnsw_config: Default::default(),
@@ -117,7 +118,7 @@ fn batch_search_bench(c: &mut Criterion) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), true, HwMeasurementAcc::new()))
+        .block_on(shard.update(rnd_batch.into(), true, None, HwMeasurementAcc::new()))
         .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");

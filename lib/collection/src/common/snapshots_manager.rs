@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
+use object_store::ObjectStoreExt;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -170,7 +171,7 @@ impl SnapshotStorageManager {
 
     pub fn get_full_snapshot_path(
         &self,
-        snapshots_path: &str,
+        snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
         match self {
@@ -316,11 +317,11 @@ impl SnapshotStorageLocalFS {
     ///
     /// This enforces the file to be inside the snapshots directory
     fn get_full_snapshot_path(
-        snapshots_path: &str,
+        snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
         let absolute_snapshot_dir = fs::canonicalize(snapshots_path).map_err(|_| {
-            CollectionError::not_found(format!("Snapshot directory: {snapshots_path}"))
+            CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
         })?;
 
         let absolute_snapshot_path = fs::canonicalize(absolute_snapshot_dir.join(snapshot_name))
@@ -427,8 +428,8 @@ impl SnapshotStorageCloud {
         absolute_snapshot_dir.join(snapshot_name)
     }
 
-    fn get_full_snapshot_path(snapshots_path: &str, snapshot_name: &str) -> PathBuf {
-        let absolute_snapshot_dir = PathBuf::from(snapshots_path);
+    fn get_full_snapshot_path(snapshots_path: &Path, snapshot_name: &str) -> PathBuf {
+        let absolute_snapshot_dir = snapshots_path;
         absolute_snapshot_dir.join(snapshot_name)
     }
 

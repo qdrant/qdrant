@@ -537,6 +537,12 @@ pub struct Rrf {
     #[validate(range(min = 1))]
     #[serde(default)]
     pub k: Option<usize>,
+
+    /// Weights for each prefetch source. Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -1351,6 +1357,23 @@ pub struct PointStruct {
     pub payload: Option<Payload>,
 }
 
+/// Defines the mode of the upsert operation
+///
+/// * `upsert` - default mode, insert new points, update existing points
+/// * `insert_only` - only insert new points, do not update existing points
+/// * `update_only` - only update existing points, do not insert new points
+#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateMode {
+    // Default mode - insert new points, update existing points
+    #[default]
+    Upsert,
+    // Only insert new points, do not update existing points
+    InsertOnly,
+    // Only update existing points, do not insert new points
+    UpdateOnly,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
 pub struct PointsBatch {
     #[validate(nested)]
@@ -1358,10 +1381,15 @@ pub struct PointsBatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
 
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,
+
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_mode: Option<UpdateMode>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -1392,10 +1420,14 @@ pub struct PointsList {
     pub points: Vec<PointStruct>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-    /// If specified, only points that match this filter will be updated, others will be inserted
+    /// Filter to apply when updating existing points. Only points matching this filter will be updated.
+    /// Points that don't match will keep their current state. New points will be inserted regardless of the filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub update_filter: Option<Filter>,
+    /// Mode of the upsert operation: insert_only, upsert (default), update_only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_mode: Option<UpdateMode>,
 }
 
 impl<'de> serde::Deserialize<'de> for PointInsertOperations {
@@ -1459,14 +1491,14 @@ impl PointInsertOperations {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, Default, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MaxOptimizationThreadsSetting {
     #[default]
     Auto,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(untagged)]
 pub enum MaxOptimizationThreads {
     Setting(MaxOptimizationThreadsSetting),

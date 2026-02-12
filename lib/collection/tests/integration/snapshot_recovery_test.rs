@@ -18,6 +18,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
+use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
 
 use crate::common::{
@@ -77,7 +78,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         Arc::new(storage_config),
         shard_distribution,
         None,
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
@@ -111,7 +112,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     ));
     let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            insert_points,
+            true,
+            None,
+            WriteOrdering::default(),
+            hw_counter,
+        )
         .await
         .unwrap();
 
@@ -122,12 +129,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .await
         .unwrap();
 
-    if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
-        recover_dir.path(),
-        0,
-        false,
-    ) {
+    let snapshot_data =
+        SnapshotData::new_packed_persistent(snapshots_path.path().join(snapshot_description.name));
+
+    if let Err(err) = Collection::restore_snapshot(snapshot_data, recover_dir.path(), 0, false) {
         panic!("Failed to restore snapshot: {err}")
     }
 
@@ -137,7 +142,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         recover_dir.path(),
         snapshots_path.path(),
         Default::default(),
-        ChannelService::new(REST_PORT, None),
+        ChannelService::new(REST_PORT, None, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),

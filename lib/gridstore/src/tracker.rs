@@ -3,10 +3,12 @@ use std::path::{Path, PathBuf};
 use ahash::{AHashMap, AHashSet};
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
+#[expect(deprecated, reason = "legacy code")]
 use memory::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
 use smallvec::SmallVec;
+use zerocopy::FromZeros;
 
 use crate::Result;
 use crate::error::GridstoreError;
@@ -17,7 +19,58 @@ pub type PageId = u32;
 
 const TRACKER_MEM_ADVICE: Advice = Advice::Random;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A type similar to [`std::option::Option`], but with stable layout. It is intended to be compatible with older
+/// gridstore files, but it is well-defined, unlike [`std::option::Option`].
+///
+/// Please note that it uses 32-bit tag and is intended to be used for `ValuePointer` without padding bytes.
+///
+/// If `T` is a POD type, then `Optional<T>` is a POD type.
+#[derive(Copy, Clone, zerocopy::FromBytes)]
+#[repr(C)]
+struct Optional<T> {
+    discriminant: u32,
+    value: T,
+}
+
+impl<T: FromZeros> From<Option<T>> for Optional<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => Self::some(value),
+            None => Self::none(),
+        }
+    }
+}
+
+impl<T: FromZeros> Optional<T> {
+    const OPTIONAL_NONE: u32 = 0;
+    const OPTIONAL_SOME: u32 = 1;
+
+    /// None value is all zeroes.
+    pub fn none() -> Self {
+        Self {
+            discriminant: Self::OPTIONAL_NONE,
+            value: FromZeros::new_zeroed(),
+        }
+    }
+
+    /// Some is 1 for the discriminant, and value is stored as is.
+    pub const fn some(value: T) -> Self {
+        Self {
+            discriminant: Self::OPTIONAL_SOME,
+            value,
+        }
+    }
+
+    pub fn is_some(&self) -> Option<&T> {
+        if self.discriminant == Self::OPTIONAL_NONE {
+            None
+        } else {
+            Some(&self.value)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, zerocopy::FromBytes)]
 #[repr(C)]
 pub struct ValuePointer {
     /// Which page the value is stored in
@@ -164,6 +217,7 @@ impl PointerUpdates {
 }
 
 #[derive(Debug, Default, Clone)]
+#[repr(C)]
 struct TrackerHeader {
     next_pointer_offset: u32,
 }
@@ -230,7 +284,10 @@ impl Tracker {
             )));
         }
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
-        let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
+        #[expect(deprecated, reason = "legacy code")]
+        let header: &TrackerHeader =
+            // TODO SAFETY
+            unsafe { transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]) };
         let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
@@ -251,10 +308,10 @@ impl Tracker {
     ///
     /// Returns the old pointers that were overwritten, so that they can be freed in the bitmask.
     #[must_use = "The old pointers need to be freed in the bitmask"]
-    pub fn write_pending_and_flush(
+    pub fn write_pending(
         &mut self,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
-    ) -> std::io::Result<Vec<ValuePointer>> {
+    ) -> Vec<ValuePointer> {
         let mut old_pointers = Vec::new();
 
         for (point_offset, updates) in pending_updates {
@@ -262,8 +319,8 @@ impl Tracker {
                 // Write to store a new pointer
                 Some(new_pointer) => {
                     // Mark any existing pointer for removal to free its blocks
-                    if let Some(&Some(old_pointer)) = self.get_raw(point_offset) {
-                        old_pointers.push(old_pointer);
+                    if let Some(Some(old_pointer)) = self.get_raw(point_offset) {
+                        old_pointers.push(*old_pointer);
                     }
 
                     self.persist_pointer(point_offset, Some(new_pointer));
@@ -291,18 +348,21 @@ impl Tracker {
         }
 
         // Increment header count if necessary
-        self.persist_pointer_count();
+        self.write_pointer_count();
 
-        // Flush the mmap
-        self.mmap.flush()?;
+        old_pointers
+    }
 
-        Ok(old_pointers)
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.mmap.flush()
     }
 
     #[cfg(test)]
     pub fn write_pending_and_flush_internal(&mut self) -> std::io::Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
-        self.write_pending_and_flush(pending_updates)
+        let res = self.write_pending(pending_updates);
+        self.flush()?;
+        Ok(res)
     }
 
     /// Return the size of the underlying mmapped file
@@ -317,7 +377,10 @@ impl Tracker {
 
     /// Write the current page header to the memory map
     fn write_header(&mut self) {
-        self.mmap[0..size_of::<TrackerHeader>()].copy_from_slice(transmute_to_u8(&self.header));
+        // Safety: TrackerHeader is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
+        let header_bytes = unsafe { transmute_to_u8(&self.header) };
+        self.mmap[0..header_bytes.len()].copy_from_slice(header_bytes);
     }
 
     /// Save the mapping at the given offset
@@ -329,8 +392,8 @@ impl Tracker {
 
         let point_offset = point_offset as usize;
         let start_offset =
-            size_of::<TrackerHeader>() + point_offset * size_of::<Option<ValuePointer>>();
-        let end_offset = start_offset + size_of::<Option<ValuePointer>>();
+            size_of::<TrackerHeader>() + point_offset * size_of::<Optional<ValuePointer>>();
+        let end_offset = start_offset + size_of::<Optional<ValuePointer>>();
 
         // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
@@ -341,7 +404,10 @@ impl Tracker {
                 .unwrap();
         }
 
-        self.mmap[start_offset..end_offset].copy_from_slice(transmute_to_u8(&pointer));
+        let pointer: Optional<_> = pointer.into();
+        // Safety: Optional<ValuePointer> is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
+        self.mmap[start_offset..end_offset].copy_from_slice(unsafe { transmute_to_u8(&pointer) });
     }
 
     #[cfg(test)]
@@ -360,20 +426,27 @@ impl Tracker {
     }
 
     /// Iterate over the pointers in the tracker
-    pub fn iter_pointers(&self) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
-        (0..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
+    /// Starts from the given point offset
+    pub fn iter_pointers(
+        &self,
+        from: PointOffset,
+    ) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
+        (from..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
     }
 
     /// Get the raw value at the given point offset
-    fn get_raw(&self, point_offset: PointOffset) -> Option<&Option<ValuePointer>> {
-        let start_offset =
-            size_of::<TrackerHeader>() + point_offset as usize * size_of::<Option<ValuePointer>>();
-        let end_offset = start_offset + size_of::<Option<ValuePointer>>();
+    fn get_raw(&self, point_offset: PointOffset) -> Option<Option<&ValuePointer>> {
+        let start_offset = size_of::<TrackerHeader>()
+            + point_offset as usize * size_of::<Optional<ValuePointer>>();
+        let end_offset = start_offset + size_of::<Optional<ValuePointer>>();
         if end_offset > self.mmap.len() {
             return None;
         }
-        let page_pointer = transmute_from_u8(&self.mmap[start_offset..end_offset]);
-        Some(page_pointer)
+        // Safety: Optional<ValuePointer> is a POD type.
+        #[expect(deprecated, reason = "legacy code")]
+        let page_pointer: &Optional<_> =
+            unsafe { transmute_from_u8(&self.mmap[start_offset..end_offset]) };
+        Some(page_pointer.is_some())
     }
 
     /// Get the page pointer at the given point offset
@@ -382,17 +455,17 @@ impl Tracker {
             // Pending update exists but is empty, should not happen, fall back to real data
             Some(pending) if pending.is_empty() => {
                 debug_assert!(false, "pending updates must not be empty");
-                self.get_raw(point_offset).copied().flatten()
+                self.get_raw(point_offset).flatten().cloned()
             }
             // Use set from pending updates
             Some(pending) => pending.current,
             // No pending update, use real data
-            None => self.get_raw(point_offset).copied().flatten(),
+            None => self.get_raw(point_offset).flatten().cloned(),
         }
     }
 
     /// Increment the header count if the given point offset is larger than the current count
-    fn persist_pointer_count(&mut self) {
+    fn write_pointer_count(&mut self) {
         self.header.next_pointer_offset = self.next_pointer_offset;
         self.write_header();
     }
@@ -432,10 +505,13 @@ impl Tracker {
 mod tests {
     use std::path::PathBuf;
 
+    #[expect(deprecated, reason = "legacy code")]
+    use memory::mmap_ops::transmute_from_u8;
     use rstest::rstest;
     use tempfile::Builder;
 
     use super::{PointerUpdates, Tracker, ValuePointer};
+    use crate::tracker::{BlockOffset, Optional, PageId};
 
     #[test]
     fn test_file_name() {
@@ -506,13 +582,13 @@ mod tests {
         assert_eq!(tracker.mapping_len(), 4);
         assert_eq!(tracker.pointer_count(), 11); // accounts for empty slots
 
-        assert_eq!(tracker.get_raw(0), Some(&Some(ValuePointer::new(1, 1, 1))));
-        assert_eq!(tracker.get_raw(1), Some(&Some(ValuePointer::new(2, 2, 2))));
-        assert_eq!(tracker.get_raw(2), Some(&Some(ValuePointer::new(3, 3, 3))));
-        assert_eq!(tracker.get_raw(3), Some(&None)); // intermediate empty slot
+        assert_eq!(tracker.get_raw(0), Some(Some(&ValuePointer::new(1, 1, 1))));
+        assert_eq!(tracker.get_raw(1), Some(Some(&ValuePointer::new(2, 2, 2))));
+        assert_eq!(tracker.get_raw(2), Some(Some(&ValuePointer::new(3, 3, 3))));
+        assert_eq!(tracker.get_raw(3), Some(None)); // intermediate empty slot
         assert_eq!(
             tracker.get_raw(10),
-            Some(&Some(ValuePointer::new(10, 10, 10)))
+            Some(Some(&ValuePointer::new(10, 10, 10)))
         );
         assert_eq!(tracker.get_raw(100_000), None); // out of bounds
 
@@ -521,7 +597,7 @@ mod tests {
         tracker.write_pending_and_flush_internal().unwrap();
 
         // the value has been cleared but the entry is still there
-        assert_eq!(tracker.get_raw(1), Some(&None));
+        assert_eq!(tracker.get_raw(1), Some(None));
         assert_eq!(tracker.get(1), None);
 
         assert_eq!(tracker.mapping_len(), 3);
@@ -732,5 +808,79 @@ mod tests {
             updates, expected,
             "must have one pending update to set block offset 2",
         );
+    }
+
+    #[test]
+    fn test_option_value_pointer_layout() {
+        #[repr(align(4))]
+        struct AlignedData([u8; size_of::<Optional<ValuePointer>>()]);
+
+        assert_eq!(
+            size_of::<Optional<ValuePointer>>(),
+            size_of::<Option<ValuePointer>>()
+        );
+
+        let none_data = AlignedData([0; _]);
+        #[expect(deprecated, reason = "legacy code")]
+        let none_val: &Optional<ValuePointer> = unsafe { transmute_from_u8(&none_data.0) };
+        assert!(none_val.is_some().is_none());
+
+        let some_data = AlignedData([
+            1, 0, 0, 0, // discriminant with padding
+            0x44, 0x33, 0x22, 0x11, // page_id
+            0x88, 0x77, 0x66, 0x55, // block_offset
+            0xDD, 0xCC, 0xBB, 0xAA, // length
+        ]);
+        #[expect(deprecated, reason = "legacy code")]
+        let some_val: &Optional<ValuePointer> = unsafe { transmute_from_u8(&some_data.0) };
+        // N.B. fails on a big-endian machine.
+        assert_eq!(
+            some_val.is_some(),
+            Some(&ValuePointer {
+                page_id: 0x11223344,
+                block_offset: 0x55667788,
+                length: 0xAABBCCDD,
+            })
+        );
+    }
+
+    #[test]
+    #[ignore = "contains undefined behavior"]
+    fn test_layout_compatibility() {
+        assert_eq!(
+            size_of::<Optional<ValuePointer>>(),
+            size_of::<Option<ValuePointer>>()
+        );
+
+        let old_none = Option::<ValuePointer>::None;
+        let new_none = Optional::<ValuePointer>::none();
+
+        // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
+        // But we don't have any better option.
+        unsafe { compare_layout(&old_none, &new_none) };
+
+        const PAGE_ID: PageId = 89;
+        const BLOCK_OFFSET: BlockOffset = 1000;
+        const LENGTH: u32 = 1234567;
+
+        let old_value = Some(ValuePointer {
+            page_id: PAGE_ID,
+            block_offset: BLOCK_OFFSET,
+            length: LENGTH,
+        });
+        let new_value = Optional::some(ValuePointer::new(PAGE_ID, BLOCK_OFFSET, LENGTH));
+
+        // KLUDGE: actually this is UNDEFINED BEHAVIOR because old_one type contains padding bytes.
+        // But we don't have any better option.
+        unsafe { compare_layout(&old_value, &new_value) };
+
+        unsafe fn compare_layout<A, B>(a: &A, b: &B) {
+            use std::slice::from_raw_parts;
+
+            let a_data = unsafe { from_raw_parts((a as *const A).cast::<u8>(), size_of::<A>()) };
+            let b_data = unsafe { from_raw_parts((b as *const B).cast::<u8>(), size_of::<B>()) };
+
+            assert_eq!(a_data, b_data);
+        }
     }
 }

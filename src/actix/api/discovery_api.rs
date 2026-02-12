@@ -11,7 +11,7 @@ use tokio::time::Instant;
 
 use crate::actix::api::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
-use crate::actix::auth::ActixAccess;
+use crate::actix::auth::ActixAuth;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::common::query::do_discover_batch_points;
 use crate::settings::ServiceConfig;
@@ -23,7 +23,7 @@ async fn discover_points(
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let DiscoverRequest {
         discover_request,
@@ -35,7 +35,7 @@ async fn discover_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -58,13 +58,13 @@ async fn discover_points(
     let timing = Instant::now();
 
     let result = dispatcher
-        .toc(&access, &pass)
+        .toc(&auth, &pass)
         .discover(
             &collection.name,
             discover_request,
             params.consistency,
             shard_selection,
-            access,
+            auth,
             params.timeout(),
             request_hw_counter.get_counter(),
         )
@@ -86,7 +86,7 @@ async fn discover_batch_points(
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
-    ActixAccess(access): ActixAccess,
+    ActixAuth(auth): ActixAuth,
 ) -> impl Responder {
     let request = request.into_inner();
 
@@ -95,7 +95,7 @@ async fn discover_batch_points(
         params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
-        &access,
+        &auth,
     )
     .await
     {
@@ -112,11 +112,11 @@ async fn discover_batch_points(
     let timing = Instant::now();
 
     let result = do_discover_batch_points(
-        dispatcher.toc(&access, &pass),
+        dispatcher.toc(&auth, &pass),
         &collection.name,
         request,
         params.consistency,
-        access,
+        auth,
         params.timeout(),
         request_hw_counter.get_counter(),
     )

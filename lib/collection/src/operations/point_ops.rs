@@ -79,8 +79,6 @@ impl SplitByShard for PointOperations {
                 #[cfg(not(debug_assertions))]
                 OperationToShard::by_shard(vec![])
             }
-            #[cfg(feature = "staging")]
-            test_delay @ PointOperations::TestDelay(_) => OperationToShard::to_all(test_delay),
         }
     }
 }
@@ -103,6 +101,7 @@ impl SplitByShard for ConditionalInsertOperationInternal {
         let ConditionalInsertOperationInternal {
             points_op,
             condition,
+            update_mode,
         } = self;
 
         let points_op = points_op.split_by_shard(ring);
@@ -116,6 +115,7 @@ impl SplitByShard for ConditionalInsertOperationInternal {
                             ConditionalInsertOperationInternal {
                                 points_op: upsert_operation,
                                 condition: condition.clone(),
+                                update_mode,
                             },
                         )
                     })
@@ -124,6 +124,7 @@ impl SplitByShard for ConditionalInsertOperationInternal {
             OperationToShard::ToAll(upsert_operation) => OperationToShard::ToAll(Self {
                 points_op: upsert_operation,
                 condition,
+                update_mode,
             }),
         }
     }
@@ -397,6 +398,7 @@ mod tests {
             },
             shard_key: None,
             update_filter: None,
+            update_mode: None,
         });
         assert!(batch.validate().is_err());
 
@@ -408,6 +410,7 @@ mod tests {
             },
             shard_key: None,
             update_filter: None,
+            update_mode: None,
         });
         assert!(batch.validate().is_ok());
 
@@ -419,6 +422,7 @@ mod tests {
             },
             shard_key: None,
             update_filter: None,
+            update_mode: None,
         });
         assert!(batch.validate().is_err());
     }

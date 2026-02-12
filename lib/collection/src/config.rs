@@ -118,6 +118,12 @@ pub struct CollectionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub read_fan_out_factor: Option<u32>,
+    /// Define number of milliseconds to wait before attempting to read from another replica.
+    /// This setting can help to reduce latency spikes in case of occasional slow replicas.
+    /// Default is 0, which means delayed fan out request is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
+    pub read_fan_out_delay_ms: Option<u64>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
@@ -159,6 +165,7 @@ impl CollectionParams {
             replication_factor: _, // May be changed
             write_consistency_factor: _, // May be changed
             read_fan_out_factor: _, // May be changed
+            read_fan_out_delay_ms: _, // May be changed,
             on_disk_payload: _, // May be changed
             sparse_vectors,  // Parameters may be changes, but not the structure
         } = other;
@@ -325,6 +332,7 @@ impl CollectionParams {
             replication_factor: default_replication_factor(),
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,
+            read_fan_out_delay_ms: None,
             on_disk_payload: default_on_disk_payload(),
             sparse_vectors: None,
         }
@@ -386,6 +394,23 @@ impl CollectionParams {
                     && let Some(_params) = sparse_vectors.get(vector_name)
                 {
                     return Ok(Distance::Dot);
+                }
+                Err(self.missing_vector_error(vector_name))
+            }
+        }
+    }
+
+    pub fn check_vector_exists(&self, vector_name: &VectorName) -> CollectionResult<()> {
+        match self.vectors.get_params(vector_name) {
+            Some(_params) => Ok(()),
+            None => {
+                if self
+                    .sparse_vectors
+                    .as_ref()
+                    .map(|sparse_vectors| sparse_vectors.contains_key(vector_name))
+                    .unwrap_or(false)
+                {
+                    return Ok(());
                 }
                 Err(self.missing_vector_error(vector_name))
             }

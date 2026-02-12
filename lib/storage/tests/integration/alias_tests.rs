@@ -6,6 +6,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
+use common::load_concurrency::LoadConcurrencyConfig;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -15,25 +16,20 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::{Access, AccessRequirements, Auth, AuthType};
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
 
-const FULL_ACCESS: Access = Access::full("For test");
+const FULL_ACCESS: Auth = Auth::new(Access::full("For test"), None, None, AuthType::Internal);
 
 #[test]
 fn test_alias_operation() {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let config = StorageConfig {
-        storage_path: storage_dir.path().to_str().unwrap().to_string(),
-        snapshots_path: storage_dir
-            .path()
-            .join("snapshots")
-            .to_str()
-            .unwrap()
-            .to_string(),
+        storage_path: storage_dir.path().to_path_buf(),
+        snapshots_path: storage_dir.path().join("snapshots"),
         snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
@@ -47,6 +43,7 @@ fn test_alias_operation() {
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
             max_optimization_threads: Some(2),
+            prevent_unoptimized: None,
         },
         optimizers_overwrite: None,
         wal: Default::default(),
@@ -60,6 +57,7 @@ fn test_alias_operation() {
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
             async_scorer: None,
+            load_concurrency: LoadConcurrencyConfig::default(),
         },
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),
@@ -91,7 +89,7 @@ fn test_alias_operation() {
         update_runtime,
         general_runtime,
         ResourceBudget::default(),
-        ChannelService::new(6333, None),
+        ChannelService::new(6333, None, None),
         0,
         Some(propose_operation_sender),
     ));
@@ -176,7 +174,7 @@ fn test_alias_operation() {
         .block_on(
             dispatcher.toc(&FULL_ACCESS, &pass).get_collection(
                 &FULL_ACCESS
-                    .check_collection_access("test_alias3", AccessRequirements::new())
+                    .check_collection_access("test_alias3", AccessRequirements::new(), "test")
                     .unwrap(),
             ),
         )

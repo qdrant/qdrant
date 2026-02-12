@@ -7,9 +7,10 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+use shard::segment_holder::SegmentId;
+use uuid::Uuid;
 
-use super::holders::segment_holder::SegmentId;
-
+use crate::operations::types::{Optimization, OptimizationSegmentInfo};
 pub mod config_mismatch_optimizer;
 pub mod indexing_optimizer;
 pub mod merge_optimizer;
@@ -25,12 +26,6 @@ const KEEP_LAST_TRACKERS: usize = 16;
 #[derive(Default, Clone, Debug)]
 pub struct TrackerLog {
     descriptions: VecDeque<Tracker>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct IndexingProgressViews {
-    pub ongoing: Vec<ProgressView>,
-    pub completed: Vec<ProgressView>,
 }
 
 impl TrackerLog {
@@ -75,20 +70,8 @@ impl TrackerLog {
             .collect()
     }
 
-    pub fn progress_views(&self) -> IndexingProgressViews {
-        let mut ongoing = Vec::new();
-        let mut completed = Vec::new();
-        for tracker in self.descriptions.iter().rev() {
-            let state = tracker.state.lock();
-            match state.status {
-                TrackerStatus::Optimizing => ongoing.push(tracker.progress_view.clone()),
-
-                TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
-                    completed.push(tracker.progress_view.clone());
-                }
-            }
-        }
-        IndexingProgressViews { ongoing, completed }
+    pub fn iter(&self) -> impl Iterator<Item = &Tracker> {
+        self.descriptions.iter()
     }
 }
 
@@ -96,13 +79,33 @@ impl TrackerLog {
 #[derive(Clone, Debug)]
 pub struct Tracker {
     /// Name of the optimizer
-    pub name: String,
-    /// Segment IDs being optimized
-    pub segment_ids: Vec<SegmentId>,
+    pub name: &'static str,
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
+    /// Segments being optimized
+    pub segments: Vec<TrackerSegmentInfo>,
     /// Start time of the optimizer
     pub state: Arc<Mutex<TrackerState>>,
     /// A read-only view to progress tracker
     pub progress_view: ProgressView,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct TrackerSegmentInfo {
+    pub id: SegmentId,
+    pub uuid: Uuid,
+    pub points_count: usize,
+}
+
+impl From<&TrackerSegmentInfo> for OptimizationSegmentInfo {
+    fn from(value: &TrackerSegmentInfo) -> Self {
+        let TrackerSegmentInfo {
+            id: _,
+            uuid,
+            points_count,
+        } = *value;
+        OptimizationSegmentInfo { uuid, points_count }
+    }
 }
 
 impl Tracker {
@@ -110,13 +113,15 @@ impl Tracker {
     ///
     /// Returns self (read-write) and a progress tracker (write-only).
     pub fn start(
-        name: impl Into<String>,
-        segment_ids: Vec<SegmentId>,
+        name: &'static str,
+        uuid: Uuid,
+        segments: Vec<TrackerSegmentInfo>,
     ) -> (Tracker, ProgressTracker) {
         let (progress_view, progress_tracker) = new_progress_tracker();
         let tracker = Self {
-            name: name.into(),
-            segment_ids,
+            name,
+            uuid,
+            segments,
             state: Default::default(),
             progress_view,
         };
@@ -132,11 +137,23 @@ impl Tracker {
     pub fn to_telemetry(&self) -> TrackerTelemetry {
         let state = self.state.lock();
         TrackerTelemetry {
-            name: self.name.clone(),
-            segment_ids: self.segment_ids.clone(),
+            name: self.name,
+            uuid: self.uuid,
+            segment_ids: self.segments.iter().map(|s| s.id).collect(),
+            segment_uuids: self.segments.iter().map(|s| s.uuid).collect(),
             status: state.status.clone(),
             start_at: self.progress_view.started_at(),
             end_at: state.end_at,
+        }
+    }
+
+    pub fn to_optimization(&self) -> Optimization {
+        Optimization {
+            optimizer: self.name,
+            uuid: self.uuid,
+            segments: self.segments.iter().map(|s| s.into()).collect(),
+            status: self.state.lock().status.clone(),
+            progress: self.progress_view.snapshot("Segment Optimizing"),
         }
     }
 }
@@ -146,9 +163,17 @@ impl Tracker {
 pub struct TrackerTelemetry {
     /// Name of the optimizer
     #[anonymize(false)]
-    pub name: String,
-    /// Segment IDs being optimized
+    pub name: &'static str,
+    /// UUID of the upcoming segment being created by the optimizer
+    pub uuid: Uuid,
+    /// Internal segment IDs being optimized.
+    /// These are local and in-memory, meaning that they can refer to different
+    /// segments after a service restart.
     pub segment_ids: Vec<SegmentId>,
+    /// Segment UUIDs being optimized.
+    /// Refers to same segments as in `segment_ids`, but trackable across
+    /// restarts, and reflect their directory name.
+    pub segment_uuids: Vec<Uuid>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer
@@ -185,14 +210,11 @@ pub struct TrackerState {
 impl TrackerState {
     /// Update the tracker state to the given `status`
     pub fn update(&mut self, status: TrackerStatus) {
-        match status {
-            TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
-                self.end_at.replace(Utc::now());
-            }
-            TrackerStatus::Optimizing => {
-                self.end_at.take();
-            }
-        }
+        self.end_at = if status.is_running() {
+            None
+        } else {
+            Some(Utc::now())
+        };
         self.status = status;
     }
 }
@@ -210,4 +232,13 @@ pub enum TrackerStatus {
     Cancelled(String),
     #[anonymize(false)]
     Error(String),
+}
+
+impl TrackerStatus {
+    pub fn is_running(&self) -> bool {
+        match self {
+            TrackerStatus::Optimizing => true,
+            TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => false,
+        }
+    }
 }

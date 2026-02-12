@@ -75,7 +75,7 @@ impl Repr for PyQuantizationConfig {
     }
 }
 
-#[pyclass(name = "ScalarQuantizationConfig")]
+#[pyclass(name = "ScalarQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyScalarQuantizationConfig(ScalarQuantizationConfig);
@@ -124,7 +124,7 @@ impl PyScalarQuantizationConfig {
     }
 }
 
-#[pyclass(name = "ScalarType")]
+#[pyclass(name = "ScalarType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyScalarType {
     Int8,
@@ -163,7 +163,7 @@ impl From<PyScalarType> for ScalarType {
     }
 }
 
-#[pyclass(name = "ProductQuantizationConfig")]
+#[pyclass(name = "ProductQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyProductQuantizationConfig(ProductQuantizationConfig);
@@ -205,7 +205,7 @@ impl PyProductQuantizationConfig {
     }
 }
 
-#[pyclass(name = "CompressionRatio")]
+#[pyclass(name = "CompressionRatio", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyCompressionRatio {
     X4,
@@ -260,7 +260,7 @@ impl From<PyCompressionRatio> for CompressionRatio {
     }
 }
 
-#[pyclass(name = "BinaryQuantizationConfig")]
+#[pyclass(name = "BinaryQuantizationConfig", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
 pub struct PyBinaryQuantizationConfig(BinaryQuantizationConfig);
@@ -315,7 +315,7 @@ impl PyBinaryQuantizationConfig {
     }
 }
 
-#[pyclass(name = "BinaryQuantizationEncoding")]
+#[pyclass(name = "BinaryQuantizationEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationEncoding {
     OneBit,
@@ -366,7 +366,7 @@ impl From<PyBinaryQuantizationEncoding> for BinaryQuantizationEncoding {
     }
 }
 
-#[pyclass(name = "BinaryQuantizationQueryEncoding")]
+#[pyclass(name = "BinaryQuantizationQueryEncoding", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyBinaryQuantizationQueryEncoding {
     Default,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -16,7 +16,7 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumn
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledUpdateWrapper {
     db: DatabaseColumnWrapper,
-    pending_operations: Arc<Mutex<PendingOperations>>, // in-flight operations persisted on flush
+    pending_operations: Arc<RwLock<PendingOperations>>, // in-flight operations persisted on flush
 }
 
 #[derive(Debug, Default, Clone)]
@@ -29,7 +29,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            pending_operations: Arc::new(Mutex::new(PendingOperations::default())),
+            pending_operations: Arc::new(RwLock::new(PendingOperations::default())),
         }
     }
 
@@ -38,7 +38,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
     {
-        let mut pending_guard = self.pending_operations.lock();
+        let mut pending_guard = self.pending_operations.write();
         pending_guard
             .inserted
             .insert(key.as_ref().to_vec(), value.as_ref().to_vec());
@@ -51,7 +51,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
     {
         let key = key.as_ref();
-        let mut pending_guard = self.pending_operations.lock();
+        let mut pending_guard = self.pending_operations.write();
         pending_guard.inserted.remove(key);
         pending_guard.deleted.insert(key.to_vec());
         Ok(())
@@ -61,9 +61,9 @@ impl DatabaseColumnScheduledUpdateWrapper {
     /// If values in `pending_updates` are changed, do not remove them.
     fn reconcile_persisted_updates(
         flushed: PendingOperations,
-        pending_operations: Arc<Mutex<PendingOperations>>,
+        pending_operations: Arc<RwLock<PendingOperations>>,
     ) {
-        let mut pending_guard = pending_operations.lock();
+        let mut pending_guard = pending_operations.write();
         for id in flushed.deleted {
             pending_guard.deleted.remove(&id);
         }
@@ -73,7 +73,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let PendingOperations { deleted, inserted } = self.pending_operations.lock().clone();
+        let PendingOperations { deleted, inserted } = self.pending_operations.read().clone();
 
         debug_assert!(
             inserted.keys().all(|key| !deleted.contains(key)),
@@ -108,7 +108,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     where
         K: AsRef<[u8]>,
     {
-        let pending_guard = self.pending_operations.lock();
+        let pending_guard = self.pending_operations.read();
         if let Some(value) = pending_guard.inserted.get(key.as_ref()) {
             return Ok(value.clone());
         }
@@ -124,7 +124,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     where
         K: AsRef<[u8]>,
     {
-        let pending_guard = self.pending_operations.lock();
+        let pending_guard = self.pending_operations.read();
         if let Some(value) = pending_guard.inserted.get(key.as_ref()) {
             return Ok(Some(value.clone()));
         }

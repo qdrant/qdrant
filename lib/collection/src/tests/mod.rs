@@ -20,11 +20,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
 use futures::future::join_all;
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use rand::Rng;
 use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
+use shard::segment_holder::locked::LockedSegmentHolder;
 use tempfile::Builder;
 use tokio::time::{Instant, sleep};
 
@@ -72,7 +73,7 @@ async fn test_optimization_process() {
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let total_optimized_points = Arc::new(AtomicUsize::new(0));
-    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
     let handles = UpdateWorkers::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
@@ -106,7 +107,7 @@ async fn test_optimization_process() {
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
         log.iter().for_each(|entry| {
-            assert!(["indexing", "merge"].contains(&entry.name.as_str()));
+            assert!(["indexing", "merge"].contains(&entry.name));
             assert_eq!(entry.status, TrackerStatus::Done);
         });
     }
@@ -172,7 +173,7 @@ async fn test_cancel_optimization() {
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
     let total_optimized_points = Arc::new(AtomicUsize::new(0));
-    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
     let handles = UpdateWorkers::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
@@ -254,7 +255,7 @@ async fn test_new_segment_when_all_over_capacity() {
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
 
-    let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
+    let segments = LockedSegmentHolder::new(holder);
 
     // Expect our 5 created segments now
     assert_eq!(segments.read().len(), 5);

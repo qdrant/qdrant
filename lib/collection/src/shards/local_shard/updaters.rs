@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Receiver};
 
 use crate::operations::types::CollectionResult;
 use crate::optimizers_builder::build_optimizers;
@@ -15,12 +15,17 @@ impl LocalShard {
         let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
+    /// Stops flush worker only.
+    /// This is useful for testing purposes to prevent background flushes.
+    #[cfg(feature = "testing")]
     pub async fn stop_flush_worker(&self) {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.stop_flush_worker()
     }
 
-    pub async fn wait_update_workers_stop(&self) -> CollectionResult<()> {
+    pub async fn wait_update_workers_stop(
+        &self,
+    ) -> CollectionResult<Option<Receiver<UpdateSignal>>> {
         let mut update_handler = self.update_handler.lock().await;
         update_handler.wait_workers_stops().await
     }
@@ -35,14 +40,31 @@ impl LocalShard {
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
 
-        let (update_sender, update_receiver) =
-            mpsc::channel(self.shared_storage_config.update_queue_size);
-        // makes sure that the Stop signal is the last one in this channel
-        let old_sender = self.update_sender.swap(Arc::new(update_sender));
-        old_sender.send(UpdateSignal::Stop).await?;
+        // Signal all workers to stop
         update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
 
-        update_handler.wait_workers_stops().await?;
+        // Wait for workers to finish and get pending operations from the old channel
+        let update_receiver = update_handler.wait_workers_stops().await?;
+
+        let update_receiver = match update_receiver {
+            Some(receiver) => receiver,
+            None => {
+                // Receiver is destroyed, create a new channel.
+                // It's not expected to happen in normal operation,
+                // Because it means that there were no update workers running.
+                // Just in case, we create a new channel to avoid panics in update handler.
+                debug_assert!(
+                    false,
+                    "Update receiver was None during optimizer config update"
+                );
+                let (update_sender, update_receiver) =
+                    mpsc::channel(self.shared_storage_config.update_queue_size);
+                let _old_sender = self.update_sender.swap(Arc::new(update_sender));
+                update_receiver
+            }
+        };
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
@@ -51,10 +73,12 @@ impl LocalShard {
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
-        update_handler.optimizers = new_optimizers;
+        update_handler.optimizers = new_optimizers.clone();
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
+
+        self.optimizers.store(new_optimizers);
 
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 

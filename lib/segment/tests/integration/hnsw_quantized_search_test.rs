@@ -12,10 +12,9 @@ use common::types::{ScoreType, ScoredPointOffset};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::payload_fixtures::{STR_KEY, random_vector};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -404,7 +403,6 @@ fn test_build_hnsw_using_quantization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let segment1 = build_segment_1(dir.path());
@@ -428,24 +426,12 @@ fn test_build_hnsw_using_quantization() {
         inline_storage: None,
     });
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
-    let hw_counter = HardwareCounterCell::new();
-
-    let mut builder = SegmentBuilder::new(
-        dir.path(),
-        temp_dir.path(),
-        &config,
-        &HnswGlobalConfig::default(),
-    )
-    .unwrap();
+    let mut builder =
+        SegmentBuilder::new(temp_dir.path(), &config, &HnswGlobalConfig::default()).unwrap();
 
     builder.update(&[&segment1], &stopped).unwrap();
 
-    let progress = ProgressTracker::new_for_test();
-    let built_segment: Segment = builder
-        .build(permit, &stopped, &mut rng, &hw_counter, progress)
-        .unwrap();
+    let built_segment = builder.build_for_test(dir.path());
 
     // check if built segment has quantization and index
     assert!(

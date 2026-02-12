@@ -11,13 +11,13 @@ use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
-use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
+use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod, TransferStage};
 use crate::common::stoppable_task_async::{CancellableAsyncTaskHandle, spawn_async_cancellable};
 use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
+use crate::shards::shard_holder::{ShardHolder, SharedShardHolder};
 use crate::shards::{CollectionId, await_consensus_sync};
 
 const RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -35,7 +35,7 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
     progress: Arc<Mutex<TransferTaskProgress>>,
-    shard_holder: Arc<LockedShardHolder>,
+    shard_holder: SharedShardHolder,
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     channel_service: ChannelService,
@@ -63,7 +63,7 @@ pub async fn transfer_shard(
             transfer_stream_records(
                 transfer_config,
                 shard_holder.clone(),
-                progress,
+                progress.clone(),
                 local_shard_id,
                 remote_shard,
                 &channel_service,
@@ -77,7 +77,7 @@ pub async fn transfer_shard(
         ShardTransferMethod::ReshardingStreamRecords => {
             transfer_resharding_stream_records(
                 shard_holder.clone(),
-                progress,
+                progress.clone(),
                 local_shard_id,
                 remote_shard,
                 &collection_id,
@@ -90,7 +90,7 @@ pub async fn transfer_shard(
             transfer_snapshot(
                 transfer_config,
                 shard_holder,
-                progress,
+                progress.clone(),
                 local_shard_id,
                 remote_shard,
                 &channel_service,
@@ -107,7 +107,7 @@ pub async fn transfer_shard(
             let result = transfer_wal_delta(
                 transfer_config.clone(),
                 shard_holder,
-                progress,
+                progress.clone(),
                 local_shard_id,
                 remote_shard,
                 consensus,
@@ -137,6 +137,7 @@ pub async fn transfer_shard(
     // Ensure all peers have reached a state where they'll start sending incoming updates to the
     // remote shard. A lagging peer must not still have the target shard in dead/recovery state.
     // Only then can we destruct the forward proxy.
+    progress.lock().set_stage(TransferStage::Finalizing);
     await_consensus_sync(consensus, &channel_service).await;
 
     Ok(true)
@@ -193,7 +194,7 @@ pub async fn revert_proxy_shard_to_local(
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_transfer_task<T, F>(
-    shards_holder: Arc<LockedShardHolder>,
+    shards_holder: SharedShardHolder,
     progress: Arc<Mutex<TransferTaskProgress>>,
     transfer: ShardTransfer,
     consensus: Box<dyn ShardTransferConsensus>,

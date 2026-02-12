@@ -2,7 +2,9 @@ pub mod actix_telemetry;
 pub mod api;
 mod auth;
 mod certificate_helpers;
+mod forwarded;
 pub mod helpers;
+pub mod metrics_service;
 pub mod web_ui;
 
 use std::io;
@@ -19,7 +21,7 @@ use api::facet_api::config_facet_api;
 use collection::operations::validation;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::{Access, Auth};
 
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
@@ -37,7 +39,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::auth::{Auth, WhitelistItem};
+use crate::actix::auth::{AuthTransform, WhitelistItem};
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
@@ -62,16 +64,10 @@ pub fn init(
     actix_web::rt::System::new().block_on(async {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
-        let auth_keys = AuthKeys::try_create(
-            &settings.service,
-            dispatcher
-                .toc(&Access::full("For JWT validation"), &pass)
-                .clone(),
-        );
-        let upload_dir = dispatcher
-            .toc(&Access::full("For upload dir"), &pass)
-            .upload_dir()
-            .unwrap();
+        let auth = Auth::new_internal(Access::full("Service initialization"));
+        let auth_keys =
+            AuthKeys::try_create(&settings.service, dispatcher.toc(&auth, &pass).clone());
+        let upload_dir = dispatcher.toc(&auth, &pass).upload_dir().unwrap();
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
             .lock()
@@ -114,7 +110,7 @@ pub fn init(
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
-                    |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
+                    |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
                 // Normalize path
                 .wrap(NormalizePath::trim())

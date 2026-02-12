@@ -55,7 +55,7 @@ async fn test_hw_metrics_cancellation() {
 
     let upsert_ops = make_random_points_upsert_op(10_000);
     shard
-        .update(upsert_ops.into(), true, HwMeasurementAcc::new())
+        .update(upsert_ops.into(), true, None, HwMeasurementAcc::new())
         .await
         .unwrap();
 
@@ -76,7 +76,7 @@ async fn test_hw_metrics_cancellation() {
         }],
     };
 
-    let outer_hw = HwSharedDrain::default();
+    let outer_hw = Arc::new(HwSharedDrain::default());
 
     {
         let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());

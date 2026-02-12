@@ -3,7 +3,7 @@ use std::collections::TryReserveError;
 use std::mem;
 
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
-use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]

@@ -63,6 +63,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(2),
+            prevent_unoptimized: None,
         },
         wal_config,
         hnsw_config: Default::default(),
@@ -99,7 +100,7 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), true, HwMeasurementAcc::new()))
+        .block_on(shard.update(rnd_batch.into(), true, None, HwMeasurementAcc::new()))
         .unwrap();
 
     (storage_dir, shard, runtime)
@@ -265,7 +266,10 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                                     score_threshold: None,
                                 },
                             ],
-                            query: Some(ScoringQuery::Fusion(FusionInternal::RrfK(DEFAULT_RRF_K))),
+                            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+                                k: DEFAULT_RRF_K,
+                                weights: None,
+                            })),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,

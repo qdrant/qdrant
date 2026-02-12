@@ -11,7 +11,6 @@ mod tonic;
 mod tracing;
 
 use std::io::Error;
-use std::path::Path;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -178,8 +177,13 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
-
     welcome(&settings);
+
+    // If audit logging is enabled, but failed to initialize,
+    // we should stop the service, as it may cause unlogged access to the data.
+    // The guard must be held alive until shutdown to flush remaining audit events.
+    let _audit_guard = common::audit::init_audit_logger(settings.audit.as_ref())
+        .expect("Audit logger must be initialized if audit logging is enabled");
 
     #[cfg(feature = "gpu")]
     if let Some(settings_gpu) = &settings.gpu {
@@ -231,21 +235,21 @@ fn main() -> anyhow::Result<()> {
                 Ok(true) => {
                     log::warn!(
                         "There is a potential issue with the filesystem for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = true;
                 }
                 Ok(false) => {
                     log::error!(
                         "Filesystem check failed for storage path {}. Details: {details}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = false;
                 }
                 Err(e) => {
                     log::error!(
                         "Unable to check mmap functionality for storage path {}. Details: {details}, error: {e}",
-                        settings.storage.storage_path,
+                        settings.storage.storage_path.display(),
                     );
                     mmaps_working = false;
                 }
@@ -254,7 +258,7 @@ fn main() -> anyhow::Result<()> {
         memory::checkfs::FsCheckResult::Bad(details) => {
             log::error!(
                 "Filesystem check failed for storage path {}. Details: {details}",
-                settings.storage.storage_path,
+                settings.storage.storage_path.display(),
             );
             mmaps_working = false;
         }
@@ -348,8 +352,11 @@ fn main() -> anyhow::Result<()> {
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service =
-        ChannelService::new(settings.service.http_port, settings.service.api_key.clone());
+    let mut channel_service = ChannelService::new(
+        settings.service.http_port,
+        settings.service.api_key.clone(),
+        settings.service.alt_api_key.clone(),
+    );
 
     if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.
@@ -401,12 +408,13 @@ fn main() -> anyhow::Result<()> {
     // It decides if query should go directly to the ToC or through the consensus.
     let mut dispatcher = Dispatcher::new(toc_arc.clone());
 
-    let (telemetry_collector, dispatcher_arc, health_checker) = if is_distributed_deployment {
+    let (telemetry_collector, tonic_telemetry_collector, dispatcher_arc, health_checker);
+    if is_distributed_deployment {
         let consensus_state: ConsensusStateRef = ConsensusManager::new(
             persistent_consensus_state,
             toc_arc.clone(),
             propose_operation_sender.unwrap(),
-            Path::new(storage_path),
+            storage_path,
         )
         .expect("initialize consensus manager")
         .into();
@@ -418,12 +426,14 @@ fn main() -> anyhow::Result<()> {
         let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
         toc_arc.with_toc_dispatcher(toc_dispatcher);
 
-        let dispatcher_arc = Arc::new(dispatcher);
+        dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector =
+        let telemetry =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+        tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+
+        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
 
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
@@ -431,13 +441,13 @@ fn main() -> anyhow::Result<()> {
 
         // Runs raft consensus in a separate thread.
         // Create a pipe `message_sender` to communicate with the consensus
-        let health_checker = Arc::new(common::health::HealthChecker::spawn(
+        health_checker = Some(Arc::new(common::health::HealthChecker::spawn(
             toc_arc.clone(),
             consensus_state.clone(),
             &runtime_handle,
             // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
             consensus_state.is_new_deployment() && bootstrap.is_some(),
-        ));
+        )));
 
         let handle = Consensus::run(
             &slog_logger,
@@ -447,7 +457,8 @@ fn main() -> anyhow::Result<()> {
             settings.clone(),
             channel_service,
             propose_receiver,
-            tonic_telemetry_collector,
+            telemetry_collector.clone(),
+            tonic_telemetry_collector.clone(),
             toc_arc.clone(),
             runtime_handle.clone(),
             args.reinit,
@@ -499,26 +510,22 @@ fn main() -> anyhow::Result<()> {
                 collections_to_recover_in_consensus,
             ));
         }
-
-        (telemetry_collector, dispatcher_arc, Some(health_checker))
     } else {
         log::info!("Distributed mode disabled");
-        let dispatcher_arc = Arc::new(dispatcher);
+        dispatcher_arc = Arc::new(dispatcher);
 
         // Monitoring and telemetry.
-        let telemetry_collector =
+        let telemetry =
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
-        (telemetry_collector, dispatcher_arc, None)
-    };
 
-    let tonic_telemetry_collector = telemetry_collector.tonic_telemetry_collector.clone();
+        tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
+        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
+        health_checker = None;
+    };
 
     //
     // Telemetry reporting
     //
-
-    let reporting_id = telemetry_collector.reporting_id();
-    let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
     if reporting_enabled {
         log::info!("Telemetry reporting enabled, id: {reporting_id}");
@@ -558,6 +565,7 @@ fn main() -> anyhow::Result<()> {
 
     {
         let dispatcher_arc = dispatcher_arc.clone();
+        let telemetry_collector = telemetry_collector.clone();
         let settings = settings.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
@@ -570,6 +578,29 @@ fn main() -> anyhow::Result<()> {
                         health_checker,
                         settings,
                         logger_handle,
+                    ),
+                )
+            })
+            .unwrap();
+        handles.push(handle);
+    }
+
+    //
+    // Extra `/metrics` server
+    //
+
+    if let Some(metrics_port) = settings.service.metrics_port {
+        let telemetry_collector = telemetry_collector.clone();
+        let settings = settings.clone();
+        let handle = thread::Builder::new()
+            .name("metrics".to_string())
+            .spawn(move || {
+                log_err_if_any(
+                    "Metrics",
+                    actix::metrics_service::init_metrics(
+                        metrics_port,
+                        telemetry_collector,
+                        settings,
                     ),
                 )
             })
