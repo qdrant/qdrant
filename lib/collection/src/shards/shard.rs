@@ -10,7 +10,7 @@ use common::types::TelemetryDetail;
 use futures::future::Either;
 use parking_lot::Mutex as ParkingMutex;
 use segment::index::field_index::CardinalityEstimation;
-use segment::types::{Filter, SizeStats, SnapshotFormat};
+use segment::types::{Filter, SeqNumberType, SizeStats, SnapshotFormat};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tokio::sync::oneshot;
 
@@ -402,7 +402,7 @@ impl Shard {
     pub async fn get_wal_entries(
         &self,
         count: u64,
-    ) -> CollectionResult<Vec<(u64, OperationWithClockTag)>> {
+    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
         let local = match self {
             Shard::Local(local) => local,
             Shard::Proxy(proxy) => &proxy.wrapped_shard,

@@ -21,7 +21,7 @@ use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex as ParkingMutex;
 use replica_set_state::{ReplicaSetState, ReplicaState};
-use segment::types::{ExtendedPointId, Filter, ShardKey};
+use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
@@ -1296,7 +1296,7 @@ impl ShardReplicaSet {
     pub(crate) async fn get_wal_entries(
         &self,
         count: u64,
-    ) -> CollectionResult<Vec<(u64, OperationWithClockTag)>> {
+    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
         let local = self.local.read().await;
 
         let Some(local) = local.as_ref() else {

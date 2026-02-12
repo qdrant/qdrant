@@ -1,6 +1,7 @@
 use actix_web::{Responder, get, patch, web};
 use collection::operations::verification;
 use collection::shards::shard::ShardId;
+use segment::types::SeqNumberType;
 use serde::{Deserialize, Serialize};
 use shard::operations::OperationWithClockTag;
 use storage::dispatcher::Dispatcher;
@@ -74,7 +75,7 @@ async fn get_shard_wal(
 
         #[derive(Serialize)]
         struct Entry {
-            id: u64,
+            id: SeqNumberType,
             #[serde(flatten)]
             operation: OperationWithClockTag,
         }

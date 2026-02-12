@@ -46,6 +46,7 @@ use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
+    SeqNumberType,
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
@@ -1162,7 +1163,7 @@ impl LocalShard {
     /// Get the last N entries from the WAL
     ///
     /// Returns a vector of (sequence_number, operation) tuples, newest first.
-    pub async fn get_wal_entries(&self, count: u64) -> Vec<(u64, OperationWithClockTag)> {
+    pub async fn get_wal_entries(&self, count: u64) -> Vec<(SeqNumberType, OperationWithClockTag)> {
         let wal = self.wal.wal.lock().await;
 
         if wal.len(true) == 0 {
