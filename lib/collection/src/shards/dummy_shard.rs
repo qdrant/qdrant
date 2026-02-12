@@ -1,15 +1,12 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
-    WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
