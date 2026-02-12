@@ -250,6 +250,7 @@ mod tests {
     #[test]
     fn test_transfer_stage_as_str() {
         assert_eq!(TransferStage::Proxifying.as_str(), "proxifying");
+        assert_eq!(TransferStage::Plunging.as_str(), "plunging");
         assert_eq!(
             TransferStage::CreatingSnapshot.as_str(),
             "creating snapshot"
@@ -316,6 +317,7 @@ mod tests {
 
         let stages = [
             TransferStage::Proxifying,
+            TransferStage::Plunging,
             TransferStage::CreatingSnapshot,
             TransferStage::Transferring,
             TransferStage::Recovering,
