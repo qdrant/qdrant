@@ -222,26 +222,13 @@ impl ShardReplicaSet {
         self.replica_state.read().peers().keys().max().cloned()
     }
 
-    pub async fn get_clock_with_timeout(
-        &self,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<ClockGuard> {
-        let start_time = std::time::Instant::now();
+    pub async fn get_clock(&self) -> ClockGuard {
         loop {
-            if let Some(clock) = self.clock_set.lock().await.get_clock() {
-                break Ok(clock);
+            match self.clock_set.lock().await.get_clock() {
+                Some(clock) => return clock,
+                // Prevent blocking async runtime with spinlock
+                None => yield_now().await,
             }
-            if let Some(timeout) = timeout
-                && start_time.elapsed() >= timeout
-            {
-                break Err(CollectionError::timeout(
-                    timeout,
-                    format!("Failed to acquire clock for update operation within {timeout:?}"),
-                ));
-            }
-
-            // Prevent blocking async runtime with spinlock
-            yield_now().await;
         }
     }
 
@@ -264,7 +251,15 @@ impl ShardReplicaSet {
         // - lock `remotes`, `local`, `clock` (in specified order!) on the *first* iteration of the loop
         // - then release and lock `remotes` and `local` *only* for all next iterations
         // - but keep initial `clock` for the whole duration of `update`
-        let mut clock = self.get_clock_with_timeout(timeout).await?;
+        let clock_timeout = timeout.unwrap_or(Duration::MAX);
+        let mut clock = tokio::time::timeout(clock_timeout, self.get_clock())
+            .await
+            .map_err(|_| {
+                CollectionError::timeout(
+                    clock_timeout,
+                    format!("Failed to acquire clock for update operation within {timeout:?}"),
+                )
+            })?;
 
         for attempt in 1..=UPDATE_MAX_CLOCK_REJECTED_RETRIES {
             let is_non_zero_tick = clock.current_tick().is_some();
