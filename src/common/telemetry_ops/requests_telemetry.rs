@@ -518,12 +518,7 @@ mod tests {
         let mut collector = ActixWorkerTelemetryCollector::new();
         let instant = std::time::Instant::now();
 
-        collector.add_response_with_collection(
-            "GET /collections/{name}",
-            instant,
-            200,
-            Some("c1"),
-        );
+        collector.add_response_with_collection("GET /collections/{name}", instant, 200, Some("c1"));
 
         let telemetry = collector.get_telemetry_data(TelemetryDetail::default());
 
