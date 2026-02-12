@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use shard::wal::{SerdeWal, WalSerializedRecord};
+use shard::wal::{SerdeWal, WalRawRecord};
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -64,7 +64,7 @@ impl RecoverableWal {
             }
         }
 
-        let record = WalSerializedRecord::new(operation)?;
+        let record = WalRawRecord::new(operation)?;
 
         // Write operation to WAL
         let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;

@@ -87,7 +87,7 @@ impl UpdateWorkers {
                     } else {
                         let wal_clone = wal.clone();
                         let record = match tokio::task::spawn_blocking(move || {
-                            wal_clone.blocking_lock().read_single_record(op_num)
+                            wal_clone.blocking_lock().read_raw_record(op_num)
                         })
                         .await
                         {
