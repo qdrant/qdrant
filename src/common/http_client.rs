@@ -87,6 +87,14 @@ fn https_client(
                     );
                 }
             }
+        } else if !verify_https_client_certificate {
+            // If ca_cert is not provided, and we are not verifying client certificate,
+            // there is no way to verify https connection.
+            //
+            // So we have to disable certificate verification in order to be able to connect to the server.
+            builder = builder
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true);
         }
 
         if verify_https_client_certificate {
