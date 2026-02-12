@@ -25,6 +25,8 @@ chrono = { workspace = true }
 delegate = { workspace = true }
 fs-err = { workspace = true }
 fs_extra = { workspace = true }
+itertools = { workspace = true }
+quick_cache = "0.6.18"
 log = { workspace = true }
 memmap2 = { workspace = true }
 nix = { workspace = true }
@@ -52,7 +54,6 @@ zerocopy = { workspace = true }
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
-itertools = { workspace = true }
 rstest = { workspace = true }
 self_cell = { workspace = true }
 serde_json = { workspace = true }
