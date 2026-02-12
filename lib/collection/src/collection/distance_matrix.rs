@@ -261,6 +261,7 @@ impl Collection {
                 read_consistency,
                 timeout,
                 hw_measurement_acc,
+                None,
             )
             .await?;
 

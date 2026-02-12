@@ -43,6 +43,7 @@ impl Collection {
                 shard_selection,
                 timeout,
                 hw_measurement_acc,
+                None,
             )
             .await?;
         Ok(results.into_iter().next().unwrap())
@@ -55,6 +56,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
@@ -77,7 +79,12 @@ impl Collection {
         let sum_offsets: usize = request.searches.iter().map(|s| s.offset).sum();
 
         // Number of records we need to retrieve to fill the search result.
-        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("shards_holder_read"));
+        let shards_holder_len = self.shards_holder.read().await.len();
+        drop(_await_guard);
+        let require_transfers = shards_holder_len * (sum_limits + sum_offsets);
         // Actually used number of records.
         let used_transfers = sum_limits;
 
@@ -103,6 +110,9 @@ impl Collection {
             let without_payload_batch = CoreSearchRequestBatch {
                 searches: without_payload_requests,
             };
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("do_core_search_batch_without_payload"));
             let without_payload_results = self
                 .do_core_search_batch(
                     without_payload_batch,
@@ -110,8 +120,10 @@ impl Collection {
                     &shard_selection,
                     timeout,
                     hw_measurement_acc.clone(),
+                    spike_handle.clone(),
                 )
                 .await?;
+            drop(_await_guard);
             // update timeout
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let filled_results = without_payload_results
@@ -128,8 +140,16 @@ impl Collection {
                         hw_measurement_acc.clone(),
                     )
                 });
-            future::try_join_all(filled_results).await
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("fill_payload_results"));
+            let result = future::try_join_all(filled_results).await;
+            drop(_await_guard);
+            result
         } else {
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("do_core_search_batch"));
             let result = self
                 .do_core_search_batch(
                     request,
@@ -137,8 +157,10 @@ impl Collection {
                     &shard_selection,
                     timeout,
                     hw_measurement_acc,
+                    spike_handle.clone(),
                 )
                 .await?;
+            drop(_await_guard);
             Ok(result)
         }
     }
@@ -150,6 +172,7 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
@@ -157,10 +180,19 @@ impl Collection {
 
         // query all shards concurrently
         let all_searches_res = {
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("shards_holder_read"));
             let shard_holder = self.shards_holder.read().await;
+            drop(_await_guard);
+            let _sync_guard = spike_handle
+                .as_ref()
+                .map(|h| h.sync_section("select_shards"));
             let target_shards = shard_holder.select_shards(shard_selection)?;
+            drop(_sync_guard);
             let all_searches = target_shards.into_iter().map(|(shard, shard_key)| {
                 let shard_key = shard_key.cloned();
+                let spike_handle = spike_handle.clone();
                 shard
                     .core_search(
                         request.clone(),
@@ -168,6 +200,7 @@ impl Collection {
                         shard_selection.is_shard_id(),
                         timeout,
                         hw_measurement_acc.clone(),
+                        spike_handle,
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
@@ -181,7 +214,12 @@ impl Collection {
                         Ok(records)
                     })
             });
-            future::try_join_all(all_searches).await?
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("shard_searches"));
+            let result = future::try_join_all(all_searches).await?;
+            drop(_await_guard);
+            result
         };
 
         let result = self
@@ -189,12 +227,17 @@ impl Collection {
                 all_searches_res,
                 request.clone(),
                 !shard_selection.is_shard_id(),
+                &spike_handle,
             )
             .await;
 
-        let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
-
-        self.post_process_if_slow_request(instant.elapsed(), filters_refs);
+        {
+            let _sync_guard = spike_handle
+                .as_ref()
+                .map(|h| h.sync_section("post_process_if_slow_request"));
+            let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
+            self.post_process_if_slow_request(instant.elapsed(), filters_refs);
+        }
 
         result
     }
@@ -264,10 +307,15 @@ impl Collection {
         mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
         request: Arc<CoreSearchRequestBatch>,
         is_client_request: bool,
+        spike_handle: &Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
         let collection_params = self.collection_config.read().await.params.clone();
+
+        let _sync_guard = spike_handle
+            .as_ref()
+            .map(|h| h.sync_section("merge_from_shards"));
 
         // Merge results from shards in order and deduplicate based on point ID
         let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);

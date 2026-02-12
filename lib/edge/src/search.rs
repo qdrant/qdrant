@@ -35,6 +35,7 @@ impl EdgeShard {
             self.segments.clone(),
             DEFAULT_EDGE_TIMEOUT,
             &is_stopped_guard.get_is_stopped(),
+            None,
         )?
         else {
             // No segments to search

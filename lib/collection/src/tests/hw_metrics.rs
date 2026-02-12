@@ -86,6 +86,7 @@ async fn test_hw_metrics_cancellation() {
                 &current_runtime,
                 Duration::from_millis(10), // Very short duration to hit timeout before the search finishes
                 hw_counter,
+                None,
             )
             .await;
 

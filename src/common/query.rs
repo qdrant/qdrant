@@ -27,7 +27,11 @@ pub async fn do_core_search_points(
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
+    let _await_guard = spike_handle
+        .as_ref()
+        .map(|h| h.await_section("do_core_search_batch_points"));
     let batch_res = do_core_search_batch_points(
         toc,
         collection_name,
@@ -39,8 +43,10 @@ pub async fn do_core_search_points(
         auth,
         timeout,
         hw_measurement_acc,
+        spike_handle.clone(),
     )
     .await?;
+    drop(_await_guard);
     batch_res
         .into_iter()
         .next()
@@ -55,7 +61,11 @@ pub async fn do_search_batch_points(
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    let _sync_guard = spike_handle
+        .as_ref()
+        .map(|h| h.sync_section("batch_requests"));
     let requests = batch_requests::<
         (CoreSearchRequest, ShardSelectorInternal),
         ShardSelectorInternal,
@@ -85,13 +95,19 @@ pub async fn do_search_batch_points(
                 auth.clone(),
                 timeout,
                 hw_measurement_acc.clone(),
+                spike_handle.clone(),
             );
             res.push(req);
             Ok(())
         },
     )?;
+    drop(_sync_guard);
 
+    let _await_guard = spike_handle
+        .as_ref()
+        .map(|h| h.await_section("try_join_search_batches"));
     let results = futures::future::try_join_all(requests).await?;
+    drop(_await_guard);
     let flatten_results: Vec<Vec<_>> = results.into_iter().flatten().collect();
     Ok(flatten_results)
 }
@@ -106,17 +122,25 @@ pub async fn do_core_search_batch_points(
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.core_search_batch(
-        collection_name,
-        request,
-        read_consistency,
-        shard_selection,
-        auth,
-        timeout,
-        hw_measurement_acc,
-    )
-    .await
+    let _await_guard = spike_handle
+        .as_ref()
+        .map(|h| h.await_section("toc_core_search_batch"));
+    let result = toc
+        .core_search_batch(
+            collection_name,
+            request,
+            read_consistency,
+            shard_selection,
+            auth,
+            timeout,
+            hw_measurement_acc,
+            spike_handle.clone(),
+        )
+        .await;
+    drop(_await_guard);
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -277,8 +301,11 @@ pub async fn do_query_points(
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
+    let (_child_guard, child_handle) =
+        common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
     let batch_res = toc
         .query_batch(
             collection_name,
@@ -287,8 +314,10 @@ pub async fn do_query_points(
             auth,
             timeout,
             hw_measurement_acc,
+            child_handle,
         )
         .await?;
+    drop(_child_guard);
     batch_res
         .into_iter()
         .next()
@@ -304,16 +333,23 @@ pub async fn do_query_batch_points(
     auth: Auth,
     timeout: Option<Duration>,
     hw_measurement_acc: HwMeasurementAcc,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.query_batch(
-        collection_name,
-        requests,
-        read_consistency,
-        auth,
-        timeout,
-        hw_measurement_acc,
-    )
-    .await
+    let (_child_guard, child_handle) =
+        common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
+    let result = toc
+        .query_batch(
+            collection_name,
+            requests,
+            read_consistency,
+            auth,
+            timeout,
+            hw_measurement_acc,
+            child_handle,
+        )
+        .await;
+    drop(_child_guard);
+    result
 }
 
 #[allow(clippy::too_many_arguments)]

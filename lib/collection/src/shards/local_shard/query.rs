@@ -62,6 +62,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
         let searches_f = self.do_search(
@@ -71,6 +72,7 @@ impl LocalShard {
             search_runtime_handle,
             timeout,
             hw_counter_acc.clone(),
+            spike_handle,
         );
 
         let scrolls_f = self.query_scroll_batch(
@@ -353,6 +355,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_counter_acc,
+                    None,
                 )
                 .await?
                 // One search request is sent. We expect only one result

@@ -176,6 +176,7 @@ impl SegmentsSearcher {
         search_runtime_handle: &Handle,
         is_stopped_guard: &StoppingGuard,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config
             .optimizer_config
@@ -200,7 +201,7 @@ impl SegmentsSearcher {
         let is_stopped = is_stopped_guard.get_is_stopped().clone();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
-            fill_query_context(query_context, segments, timeout, &is_stopped)
+            fill_query_context(query_context, segments, timeout, &is_stopped, spike_handle)
         }))
         .await??;
         Ok(task)
@@ -213,6 +214,7 @@ impl SegmentsSearcher {
         sampling_enabled: bool,
         query_context: QueryContext,
         timeout: Duration,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         let query_context_arc = Arc::new(query_context);
@@ -247,6 +249,7 @@ impl SegmentsSearcher {
                 .into_iter()
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
+                    let spike_handle = spike_handle.clone();
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
@@ -261,6 +264,7 @@ impl SegmentsSearcher {
                                 use_sampling,
                                 &segment_query_context,
                                 timeout,
+                                spike_handle,
                             )
                         }
                     });
@@ -304,6 +308,7 @@ impl SegmentsSearcher {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
                     let query_context_arc_segment = query_context_arc.clone();
+                    let spike_handle = spike_handle.clone();
                     let segment = locked_segments[*segment_id].clone();
                     let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
@@ -323,6 +328,7 @@ impl SegmentsSearcher {
                             false,
                             &segment_query_context,
                             timeout,
+                            spike_handle,
                         )
                     });
 
@@ -592,8 +598,11 @@ fn search_in_segment(
     use_sampling: bool,
     segment_query_context: &SegmentQueryContext,
     timeout: Duration,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
-    let _spike_guard = common::spike_profiler::start_spiked_scope("search_in_segment");
+    let _spike_guard = spike_handle
+        .as_ref()
+        .map(|h| h.sync_section("search_in_segment"));
 
     if segment_query_context.is_stopped() {
         return Err(CollectionError::cancelled(
@@ -837,6 +846,7 @@ mod tests {
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
             TEST_TIMEOUT,
+            None,
         )
         .await
         .unwrap()
@@ -907,6 +917,7 @@ mod tests {
                 false,
                 query_context,
                 TEST_TIMEOUT,
+                None,
             )
             .await
             .unwrap();
@@ -926,6 +937,7 @@ mod tests {
                 true,
                 query_context,
                 TEST_TIMEOUT,
+                None,
             )
             .await
             .unwrap();

@@ -1,7 +1,8 @@
-use actix_web::{Responder, get, web};
+use actix_web::{Responder, delete, get, web};
 use actix_web_validator::Query;
 use collection::profiling::interface::get_requests_profile_log;
 use collection::profiling::slow_requests_log::LogEntry;
+use common::spike_profiler::SpikeRecord;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use storage::rbac::AccessRequirements;
@@ -42,6 +43,37 @@ async fn get_slow_requests(ActixAuth(auth): ActixAuth, params: Query<LogParams>)
     .await
 }
 
+#[derive(Serialize, JsonSchema)]
+struct SearchSpikesResponse {
+    count: usize,
+    spikes: Vec<SpikeRecord>,
+}
+
+#[get("/profiler/search_spikes")]
+async fn get_search_spikes(ActixAuth(auth): ActixAuth) -> impl Responder {
+    crate::actix::helpers::time(async move {
+        auth.check_global_access(AccessRequirements::new().manage(), "get_search_spikes")?;
+        let spikes = common::spike_profiler::get_spike_records();
+        Ok(SearchSpikesResponse {
+            count: spikes.len(),
+            spikes,
+        })
+    })
+    .await
+}
+
+#[delete("/profiler/search_spikes")]
+async fn clear_search_spikes(ActixAuth(auth): ActixAuth) -> impl Responder {
+    crate::actix::helpers::time(async move {
+        auth.check_global_access(AccessRequirements::new().manage(), "clear_search_spikes")?;
+        common::spike_profiler::clear_spike_records();
+        Ok(true)
+    })
+    .await
+}
+
 pub fn config_profiler_api(cfg: &mut web::ServiceConfig) {
-    cfg.service(get_slow_requests);
+    cfg.service(get_slow_requests)
+        .service(get_search_spikes)
+        .service(clear_search_spikes);
 }

@@ -610,10 +610,17 @@ impl ShardOperation for ForwardProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(
+                request,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                spike_handle,
+            )
             .await
     }
 
@@ -658,10 +665,17 @@ impl ShardOperation for ForwardProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(
+                requests,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                spike_handle,
+            )
             .await
     }
 

@@ -57,6 +57,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
     async fn count(
@@ -83,6 +84,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;
 
     async fn facet(

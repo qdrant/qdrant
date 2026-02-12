@@ -33,6 +33,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
             return Ok(vec![]);
@@ -57,15 +58,21 @@ impl LocalShard {
         let is_stopped_guard = StoppingGuard::new();
 
         if skip_batching {
-            return self
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("do_search_impl"));
+            let result = self
                 .do_search_impl(
                     core_request,
                     search_runtime_handle,
                     timeout,
                     hw_counter_acc,
                     &is_stopped_guard,
+                    spike_handle.clone(),
                 )
                 .await;
+            drop(_await_guard);
+            return result;
         }
 
         // Batch if we have many searches, allows for more parallelism
@@ -83,15 +90,20 @@ impl LocalShard {
                     timeout,
                     hw_counter_acc.clone(),
                     &is_stopped_guard,
+                    spike_handle.clone(),
                 )
             })
             .collect::<Vec<_>>();
 
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("try_join_search_chunks"));
         let results = futures::future::try_join_all(chunk_futures)
             .await?
             .into_iter()
             .flatten()
             .collect();
+        drop(_await_guard);
 
         Ok(results)
     }
@@ -103,10 +115,19 @@ impl LocalShard {
         timeout: Duration,
         hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = std::time::Instant::now();
         let (query_context, collection_params) = {
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("collection_config_read"));
             let collection_config = self.collection_config.read().await;
+            drop(_await_guard);
+
+            let _await_guard = spike_handle
+                .as_ref()
+                .map(|h| h.await_section("prepare_query_context"));
             let query_context_opt = SegmentsSearcher::prepare_query_context(
                 self.segments.clone(),
                 &core_request,
@@ -115,8 +136,10 @@ impl LocalShard {
                 search_runtime_handle,
                 is_stopped_guard,
                 hw_counter_acc.clone(),
+                spike_handle.clone(),
             )
             .await?;
+            drop(_await_guard);
 
             let Some(query_context) = query_context_opt else {
                 // No segments to search
@@ -129,6 +152,10 @@ impl LocalShard {
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
 
+        let spike_handle_for_postprocess = spike_handle.clone();
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("segments_searcher_search"));
         let search_request = SegmentsSearcher::search(
             self.segments.clone(),
             core_request.clone(),
@@ -136,8 +163,8 @@ impl LocalShard {
             true,
             query_context,
             timeout,
+            spike_handle,
         );
-
         let res = tokio::time::timeout(timeout, search_request)
             .await
             .map_err(|_| {
@@ -145,7 +172,11 @@ impl LocalShard {
                 // StoppingGuard takes care of setting is_stopped to true
                 CollectionError::timeout(timeout, "Search")
             })??;
+        drop(_await_guard);
 
+        let _sync_guard = spike_handle_for_postprocess
+            .as_ref()
+            .map(|h| h.sync_section("post_process_results"));
         let top_results = res
             .into_iter()
             .zip(core_request.searches.iter())
@@ -178,6 +209,7 @@ impl LocalShard {
                 }
             })
             .collect();
+        drop(_sync_guard);
         Ok(top_results)
     }
 }

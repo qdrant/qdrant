@@ -131,27 +131,41 @@ impl TableOfContent {
         auth: Auth,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
-        for request in &mut request.searches {
-            collection_pass =
-                Some(auth.check_point_op(collection_name, request, "core_search_batch")?);
+        {
+            let _sync_guard = spike_handle.as_ref().map(|h| h.sync_section("auth_check"));
+            for request in &mut request.searches {
+                collection_pass =
+                    Some(auth.check_point_op(collection_name, request, "core_search_batch")?);
+            }
         }
         let Some(collection_pass) = collection_pass else {
             return Ok(vec![]);
         };
 
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("get_collection"));
         let collection = self.get_collection(&collection_pass).await?;
-        collection
+        drop(_await_guard);
+
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("collection_core_search_batch"));
+        let result = collection
             .core_search_batch(
                 request,
                 read_consistency,
                 shard_selection,
                 timeout,
                 hw_measurement_acc,
+                spike_handle.clone(),
             )
-            .await
-            .map_err(|err| err.into())
+            .await;
+        drop(_await_guard);
+        result.map_err(|err| err.into())
     }
 
     /// Count points in the collection.
@@ -354,6 +368,7 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn query_batch(
         &self,
         collection_name: &str,
@@ -362,6 +377,7 @@ impl TableOfContent {
         auth: Auth,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -372,18 +388,26 @@ impl TableOfContent {
             return Ok(vec![]);
         };
 
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("get_collection"));
         let collection = self.get_collection(&collection_pass).await?;
+        drop(_await_guard);
 
-        collection
+        let (_child_guard, child_handle) =
+            common::spike_profiler::child_spike_scope(&spike_handle, "collection_query_batch");
+        let result = collection
             .query_batch(
                 requests,
                 |name| self.get_collection_opt(name),
                 read_consistency,
                 timeout,
                 hw_measurement_acc,
+                child_handle,
             )
-            .await
-            .map_err(|err| err.into())
+            .await;
+        drop(_child_guard);
+        result.map_err(|err| err.into())
     }
 
     // Return unique values for a payload key, and a count of points for each value.

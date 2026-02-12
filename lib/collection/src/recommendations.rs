@@ -327,6 +327,7 @@ where
                 shard_selector,
                 timeout,
                 hw_measurement_acc.clone(),
+                None,
             ));
 
             Ok(())

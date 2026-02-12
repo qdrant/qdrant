@@ -254,14 +254,21 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
-            .await
+        self.do_search(
+            request,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+            spike_handle,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.
@@ -354,6 +361,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = Instant::now();
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
@@ -374,6 +382,7 @@ impl ShardOperation for LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                spike_handle,
             )
             .await;
 

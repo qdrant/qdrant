@@ -99,23 +99,37 @@ impl ShardReplicaSet {
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.execute_and_resolve_read_operation(
-            |shard| {
-                let request = Arc::clone(&request);
-                let search_runtime = self.search_runtime.clone();
-                let hw_measurement_acc_clone = hw_measurement_acc.clone();
-                async move {
-                    shard
-                        .core_search(request, &search_runtime, timeout, hw_measurement_acc_clone)
-                        .await
-                }
-                .boxed()
-            },
-            read_consistency,
-            local_only,
-        )
-        .await
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("execute_and_resolve_read_operation"));
+        let result = self
+            .execute_and_resolve_read_operation(
+                |shard| {
+                    let request = Arc::clone(&request);
+                    let search_runtime = self.search_runtime.clone();
+                    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                    let spike_handle = spike_handle.clone();
+                    async move {
+                        shard
+                            .core_search(
+                                request,
+                                &search_runtime,
+                                timeout,
+                                hw_measurement_acc_clone,
+                                spike_handle,
+                            )
+                            .await
+                    }
+                    .boxed()
+                },
+                read_consistency,
+                local_only,
+            )
+            .await;
+        drop(_await_guard);
+        result
     }
 
     pub async fn count(
@@ -223,15 +237,23 @@ impl ShardReplicaSet {
         local_only: bool,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let requests = Arc::clone(&requests);
                 let search_runtime = self.search_runtime.clone();
                 let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                let spike_handle = spike_handle.clone();
                 async move {
                     shard
-                        .query_batch(requests, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .query_batch(
+                            requests,
+                            &search_runtime,
+                            timeout,
+                            hw_measurement_acc_clone,
+                            spike_handle,
+                        )
                         .await
                 }
                 .boxed()

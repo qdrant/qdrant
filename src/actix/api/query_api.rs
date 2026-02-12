@@ -57,6 +57,7 @@ async fn query_points(
 
     let inference_params = InferenceParams::new(api_keys, params.timeout());
 
+    let (_spike_guard, spike_handle) = common::spike_profiler::start_spiked_scope("rest_query");
     let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =
             convert_query_request_from_rest(query_request, &inference_params).await?;
@@ -81,6 +82,7 @@ async fn query_points(
                 auth,
                 params.timeout(),
                 hw_measurement_acc,
+                Some(spike_handle),
             )
             .await?
             .pop()
@@ -129,6 +131,8 @@ async fn query_points_batch(
 
     let inference_params = InferenceParams::new(api_keys, params.timeout());
 
+    let (_spike_guard, spike_handle) =
+        common::spike_profiler::start_spiked_scope("rest_query_batch");
     let result = async {
         let mut batch = Vec::with_capacity(searches.len());
 
@@ -169,6 +173,7 @@ async fn query_points_batch(
                 auth,
                 params.timeout(),
                 hw_measurement_acc,
+                Some(spike_handle),
             )
             .await?
             .into_iter()

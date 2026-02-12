@@ -169,6 +169,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
+        _: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }
@@ -201,6 +202,7 @@ impl ShardOperation for DummyShard {
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
         _: HwMeasurementAcc,
+        _spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.dummy()
     }

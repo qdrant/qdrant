@@ -65,6 +65,7 @@ async fn search_points(
 
     let timing = Instant::now();
 
+    let (_spike_guard, spike_handle) = common::spike_profiler::start_spiked_scope("rest_search");
     let result = do_core_search_points(
         dispatcher.toc(&auth, &pass),
         &collection.name,
@@ -74,6 +75,7 @@ async fn search_points(
         auth,
         params.timeout(),
         request_hw_counter.get_counter(),
+        Some(spike_handle),
     )
     .await
     .map(|scored_points| {
@@ -136,6 +138,8 @@ async fn batch_search_points(
 
     let timing = Instant::now();
 
+    let (_spike_guard, spike_handle) =
+        common::spike_profiler::start_spiked_scope("rest_search_batch");
     let result = do_search_batch_points(
         dispatcher.toc(&auth, &pass),
         &collection.name,
@@ -144,6 +148,7 @@ async fn batch_search_points(
         auth,
         params.timeout(),
         request_hw_counter.get_counter(),
+        Some(spike_handle),
     )
     .await
     .map(|batch_scored_points| {

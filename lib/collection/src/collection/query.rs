@@ -60,6 +60,7 @@ impl Collection {
                 shard_selection,
                 timeout,
                 hw_measurement_acc,
+                None,
             )
             .await?;
         Ok(results.into_iter().next().unwrap())
@@ -150,6 +151,7 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
@@ -174,6 +176,7 @@ impl Collection {
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             let shard_key = shard_key.cloned();
             let request_clone = Arc::clone(&batch_request);
+            let spike_handle = spike_handle.clone();
             shard
                 .query_batch(
                     request_clone,
@@ -181,6 +184,7 @@ impl Collection {
                     shard_selection.is_shard_id(),
                     timeout,
                     hw_measurement_acc.clone(),
+                    spike_handle,
                 )
                 .and_then(move |mut shard_responses| async move {
                     if shard_key.is_none() {
@@ -206,6 +210,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
 
@@ -259,6 +264,7 @@ impl Collection {
                     &shard_selection,
                     timeout,
                     hw_measurement_acc.clone(),
+                    spike_handle.clone(),
                 )
                 .await?;
             // update timeout
@@ -285,6 +291,7 @@ impl Collection {
                 &shard_selection,
                 timeout,
                 hw_measurement_acc.clone(),
+                spike_handle,
             )
             .await
         }
@@ -298,11 +305,14 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
         let requests_batch = Arc::new(requests_batch);
 
+        let (_child_guard, child_handle) =
+            common::spike_profiler::child_spike_scope(&spike_handle, "query_shards_concurrently");
         let all_shards_results = self
             .batch_query_shards_concurrently(
                 requests_batch.clone(),
@@ -310,8 +320,10 @@ impl Collection {
                 shard_selection,
                 timeout,
                 hw_measurement_acc.clone(),
+                child_handle,
             )
             .await?;
+        drop(_child_guard);
 
         let results_f = transposed_iter(all_shards_results)
             .zip(requests_batch.iter())
@@ -450,6 +462,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
@@ -461,6 +474,9 @@ impl Collection {
         let resolver_requests = build_vector_resolver_queries(&requests_batch);
 
         // Build referenced vectors
+        let _await_guard = spike_handle
+            .as_ref()
+            .map(|h| h.await_section("resolve_referenced_vectors"));
         let ids_to_vectors = resolve_referenced_vectors_batch(
             &resolver_requests,
             self,
@@ -470,6 +486,7 @@ impl Collection {
             hw_measurement_acc.clone(),
         )
         .await?;
+        drop(_await_guard);
 
         // update timeout
         let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
@@ -486,6 +503,7 @@ impl Collection {
             }
         }
 
+        let spike_handle_clone = spike_handle.clone();
         let futures = batch_requests::<
             (CollectionQueryRequest, ShardSelectorInternal),
             ShardSelectorInternal,
@@ -511,6 +529,7 @@ impl Collection {
                     shard_selection,
                     timeout,
                     hw_measurement_acc.clone(),
+                    spike_handle_clone.clone(),
                 ));
 
                 Ok(())
@@ -548,6 +567,7 @@ impl Collection {
                 shard_selection,
                 timeout,
                 hw_measurement_acc,
+                None,
             )
             .await?;
 

@@ -40,8 +40,11 @@ pub fn fill_query_context(
     segments: LockedSegmentHolder,
     timeout: Duration,
     is_stopped: &AtomicBool,
+    spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> OperationResult<Option<QueryContext>> {
-    let _spike_guard = common::spike_profiler::start_spiked_scope("fill_query_context");
+    let _spike_guard = spike_handle
+        .as_ref()
+        .map(|h| h.sync_section("fill_query_context"));
     let start = std::time::Instant::now();
 
     let segments: Vec<_> = {

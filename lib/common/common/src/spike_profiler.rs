@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -8,6 +9,16 @@ use serde::Serialize;
 
 /// Maximum number of spike records to retain.
 const MAX_SPIKE_RECORDS: usize = 100;
+
+/// State of computation when the spike scope was active.
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpikeState {
+    /// Time spent waiting for async operations
+    Awaiting,
+    /// Time spent in synchronous computation
+    Processing,
+}
 
 /// A spike record representing a profiled scope. The tree structure mirrors the
 /// call stack: each node has a name, duration, and nested children.
@@ -22,6 +33,9 @@ pub struct SpikeRecord {
     pub name: &'static str,
     /// Duration this scope was active, in milliseconds
     pub duration_ms: f64,
+    /// State of computation (awaiting async vs synchronous processing)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<SpikeState>,
     /// Nested child scopes
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<SpikeRecord>,
@@ -57,6 +71,12 @@ fn sort_descending(records: &mut [SpikeRecord]) {
 /// If at capacity, the new record replaces the smallest stored spike
 /// only if it is larger.
 fn store_spike(record: SpikeRecord) {
+    log::debug!(
+        "Storing spike record: name={}, duration_ms={:.2}, children={}",
+        record.name,
+        record.duration_ms,
+        record.children.len(),
+    );
     let mut records = SPIKE_RECORDS.lock();
     if records.len() < MAX_SPIKE_RECORDS {
         records.push(record);
@@ -72,7 +92,7 @@ fn store_spike(record: SpikeRecord) {
 }
 
 // ---------------------------------------------------------------------------
-// Thread-local profiler state
+// Thread-local profiler state (used within sync sections)
 // ---------------------------------------------------------------------------
 
 /// A scope being built on the stack.
@@ -83,8 +103,6 @@ struct BuildingNode {
 }
 
 struct SpikeProfilerState {
-    scope_name: &'static str,
-    start: Instant,
     /// Stack of in-progress nested scopes.
     stack: Vec<BuildingNode>,
     /// Completed top-level children (depth-0 scopes that have finished).
@@ -96,7 +114,99 @@ thread_local! {
 }
 
 // ---------------------------------------------------------------------------
-// start_spiked_scope
+// SpikeProfilerHandle — thread-safe handle passed across async boundaries
+// ---------------------------------------------------------------------------
+
+struct HandleInner {
+    name: &'static str,
+    start: Instant,
+    children: Vec<SpikeRecord>,
+}
+
+/// Thread-safe handle for spike profiling across async boundaries.
+///
+/// Created by [`start_spiked_scope`]. Can be cloned and passed to other
+/// threads/tasks. Child records from sync sections and await sections are
+/// collected into this handle.
+#[derive(Clone)]
+pub struct SpikeProfilerHandle {
+    inner: Arc<Mutex<HandleInner>>,
+}
+
+impl SpikeProfilerHandle {
+    /// Start a synchronous processing section.
+    ///
+    /// Sets up thread-local profiling state so that [`spiked_scope`] calls
+    /// within this section build a nested tree. On drop, the collected tree
+    /// is added to this handle with `state = Processing`.
+    #[must_use]
+    pub fn sync_section(&self, name: &'static str) -> SyncSectionGuard {
+        PROFILER_STATE.with(|state| {
+            *state.borrow_mut() = Some(SpikeProfilerState {
+                stack: Vec::new(),
+                completed_children: Vec::new(),
+            });
+        });
+        SyncSectionGuard {
+            handle: self.clone(),
+            name,
+            start: Instant::now(),
+        }
+    }
+
+    /// Start an awaiting section. On drop, records the elapsed time with
+    /// `state = Awaiting`.
+    #[must_use]
+    pub fn await_section(&self, name: &'static str) -> AwaitSectionGuard {
+        AwaitSectionGuard {
+            handle: self.clone(),
+            name,
+            start: Instant::now(),
+        }
+    }
+
+    /// Create a child scope that nests under this handle.
+    ///
+    /// Returns a guard and a new child handle. Pass the child handle to callees
+    /// so their sections become nested children. When the guard drops, the
+    /// child's record (with all its collected children) is appended to this
+    /// handle's children list.
+    #[must_use]
+    pub fn child_scope(&self, name: &'static str) -> (ChildScopeGuard, SpikeProfilerHandle) {
+        let child_handle = SpikeProfilerHandle {
+            inner: Arc::new(Mutex::new(HandleInner {
+                name,
+                start: Instant::now(),
+                children: Vec::new(),
+            })),
+        };
+        let guard = ChildScopeGuard {
+            parent: self.clone(),
+            child_handle: Some(child_handle.clone()),
+        };
+        (guard, child_handle)
+    }
+}
+
+/// Helper to create a child scope from an `Option<SpikeProfilerHandle>`.
+///
+/// Returns `(Option<ChildScopeGuard>, Option<SpikeProfilerHandle>)`.
+/// When the input is `None`, both outputs are `None` (no-op).
+pub fn child_spike_scope(
+    handle: &Option<SpikeProfilerHandle>,
+    name: &'static str,
+) -> (Option<ChildScopeGuard>, Option<SpikeProfilerHandle>) {
+    match handle {
+        Some(h) => {
+            let (guard, child) = h.child_scope(name);
+            (Some(guard), Some(child))
+        }
+        None => (None, None),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// start_spiked_scope — top-level entry point
 // ---------------------------------------------------------------------------
 
 /// RAII guard for a top-level spiked scope.
@@ -105,56 +215,161 @@ thread_local! {
 /// only the N greatest spikes by duration.
 #[must_use]
 pub struct SpikedScopeGuard {
-    active: bool,
+    handle: Option<SpikeProfilerHandle>,
 }
 
-/// Start a top-level profiled scope. Call this inside `spawn_blocking` closures.
+/// Start a top-level profiled scope. Returns a guard and a handle.
 ///
-/// Returns a guard that, on drop, stores the collected flame graph tree into
-/// global storage (which keeps only the N greatest spikes by duration).
-///
-/// If another `start_spiked_scope` is already active on this thread, the returned
-/// guard is a no-op.
+/// The guard stores the completed spike record on drop. The handle can be
+/// cloned and passed across async boundaries to collect profiling data from
+/// sync sections and await sections.
 #[must_use]
-pub fn start_spiked_scope(name: &'static str) -> SpikedScopeGuard {
-    PROFILER_STATE.with(|state| {
-        let mut state = state.borrow_mut();
-        if state.is_some() {
-            return SpikedScopeGuard { active: false };
-        }
-        *state = Some(SpikeProfilerState {
-            scope_name: name,
+pub fn start_spiked_scope(name: &'static str) -> (SpikedScopeGuard, SpikeProfilerHandle) {
+    log::debug!("start_spiked_scope: name={}", name);
+    let handle = SpikeProfilerHandle {
+        inner: Arc::new(Mutex::new(HandleInner {
+            name,
             start: Instant::now(),
-            stack: Vec::new(),
-            completed_children: Vec::new(),
-        });
-        SpikedScopeGuard { active: true }
-    })
+            children: Vec::new(),
+        })),
+    };
+    let guard = SpikedScopeGuard {
+        handle: Some(handle.clone()),
+    };
+    (guard, handle)
 }
 
 impl Drop for SpikedScopeGuard {
     fn drop(&mut self) {
-        if !self.active {
-            return;
+        if let Some(handle) = self.handle.take() {
+            let arc_strong_count = Arc::strong_count(&handle.inner);
+            let mut inner = handle.inner.lock();
+            let children_count = inner.children.len();
+            log::debug!(
+                "SpikedScopeGuard::drop: name={}, arc_refs={}, children_count={}",
+                inner.name,
+                arc_strong_count,
+                children_count,
+            );
+            let record = SpikeRecord {
+                timestamp: Some(Utc::now()),
+                name: inner.name,
+                duration_ms: inner.start.elapsed().as_secs_f64() * 1000.0,
+                state: None,
+                children: std::mem::take(&mut inner.children),
+            };
+            drop(inner);
+            store_spike(record);
         }
-        PROFILER_STATE.with(|state| {
-            let profiler = state.borrow_mut().take();
-            if let Some(profiler) = profiler {
-                let elapsed = profiler.start.elapsed();
-                let record = SpikeRecord {
-                    timestamp: Some(Utc::now()),
-                    name: profiler.scope_name,
-                    duration_ms: elapsed.as_secs_f64() * 1000.0,
-                    children: profiler.completed_children,
-                };
-                store_spike(record);
-            }
-        });
     }
 }
 
 // ---------------------------------------------------------------------------
-// spiked_scope
+// SyncSectionGuard — collects thread-local profiling tree
+// ---------------------------------------------------------------------------
+
+/// Guard for a synchronous processing section within a spike-profiled scope.
+///
+/// On drop, collects the thread-local profiling tree built by [`spiked_scope`]
+/// and adds it to the parent handle as a child with `state = Processing`.
+#[must_use]
+pub struct SyncSectionGuard {
+    handle: SpikeProfilerHandle,
+    name: &'static str,
+    start: Instant,
+}
+
+impl Drop for SyncSectionGuard {
+    fn drop(&mut self) {
+        let children = PROFILER_STATE.with(|state| {
+            state
+                .borrow_mut()
+                .take()
+                .map(|p| p.completed_children)
+                .unwrap_or_default()
+        });
+
+        let duration_ms = self.start.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "SyncSectionGuard::drop: name={}, duration_ms={:.2}, nested_children={}",
+            self.name,
+            duration_ms,
+            children.len(),
+        );
+        let record = SpikeRecord {
+            timestamp: None,
+            name: self.name,
+            duration_ms,
+            state: Some(SpikeState::Processing),
+            children,
+        };
+        self.handle.inner.lock().children.push(record);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AwaitSectionGuard — records awaiting time
+// ---------------------------------------------------------------------------
+
+/// Guard for an awaiting section. On drop, records elapsed time with
+/// `state = Awaiting`.
+#[must_use]
+pub struct AwaitSectionGuard {
+    handle: SpikeProfilerHandle,
+    name: &'static str,
+    start: Instant,
+}
+
+impl Drop for AwaitSectionGuard {
+    fn drop(&mut self) {
+        let duration_ms = self.start.elapsed().as_secs_f64() * 1000.0;
+        log::debug!(
+            "AwaitSectionGuard::drop: name={}, duration_ms={:.2}",
+            self.name,
+            duration_ms,
+        );
+        let record = SpikeRecord {
+            timestamp: None,
+            name: self.name,
+            duration_ms,
+            state: Some(SpikeState::Awaiting),
+            children: Vec::new(),
+        };
+        self.handle.inner.lock().children.push(record);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChildScopeGuard — nests child handle's records under a parent
+// ---------------------------------------------------------------------------
+
+/// Guard for a child scope. On drop, collects the child handle's records and
+/// appends them as a single nested child of the parent handle.
+#[must_use]
+pub struct ChildScopeGuard {
+    parent: SpikeProfilerHandle,
+    child_handle: Option<SpikeProfilerHandle>,
+}
+
+impl Drop for ChildScopeGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.child_handle.take() {
+            let mut inner = child.inner.lock();
+            let record = SpikeRecord {
+                timestamp: None,
+                name: inner.name,
+                duration_ms: inner.start.elapsed().as_secs_f64() * 1000.0,
+                state: None,
+                children: std::mem::take(&mut inner.children),
+            };
+            drop(inner);
+            self.parent.inner.lock().children.push(record);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spiked_scope — nested scope within a sync section
 // ---------------------------------------------------------------------------
 
 /// RAII guard for a nested spiked scope. No-op when profiling is not active.
@@ -163,7 +378,7 @@ pub struct SpikedNestedGuard {
     active: bool,
 }
 
-/// Define a nested profiling scope. No-op if no `start_spiked_scope` is active
+/// Define a nested profiling scope. No-op if no sync section is active
 /// on this thread.
 ///
 /// On drop, the scope's duration and any children it accumulated are added to
@@ -200,6 +415,7 @@ impl Drop for SpikedNestedGuard {
                         timestamp: None,
                         name: node.name,
                         duration_ms: node.start.elapsed().as_secs_f64() * 1000.0,
+                        state: None,
                         children: node.children,
                     };
                     if let Some(parent) = profiler.stack.last_mut() {
@@ -227,7 +443,8 @@ mod tests {
         let _lock = TEST_MUTEX.lock();
         clear_spike_records();
         {
-            let _guard = start_spiked_scope("slow_op");
+            let (_guard, handle) = start_spiked_scope("slow_op");
+            let _sync = handle.sync_section("inner_sync");
             let _scope = spiked_scope("inner");
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -235,8 +452,10 @@ mod tests {
         assert_eq!(spikes.len(), 1);
         assert_eq!(spikes[0].name, "slow_op");
         assert_eq!(spikes[0].children.len(), 1);
-        assert_eq!(spikes[0].children[0].name, "inner");
-        assert!(spikes[0].children[0].children.is_empty());
+        assert_eq!(spikes[0].children[0].name, "inner_sync");
+        assert!(spikes[0].children[0].state.is_some());
+        assert_eq!(spikes[0].children[0].children.len(), 1);
+        assert_eq!(spikes[0].children[0].children[0].name, "inner");
     }
 
     #[test]
@@ -244,12 +463,15 @@ mod tests {
         let _lock = TEST_MUTEX.lock();
         clear_spike_records();
         {
-            let _guard = start_spiked_scope("root");
+            let (_guard, handle) = start_spiked_scope("root");
             {
-                let _a = spiked_scope("level_0");
+                let _sync = handle.sync_section("sync_section");
                 {
-                    let _b = spiked_scope("level_1");
-                    std::thread::sleep(Duration::from_millis(5));
+                    let _a = spiked_scope("level_0");
+                    {
+                        let _b = spiked_scope("level_1");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
                 }
             }
         }
@@ -260,7 +482,12 @@ mod tests {
         assert!(root.timestamp.is_some());
         assert_eq!(root.children.len(), 1);
 
-        let level_0 = &root.children[0];
+        let sync_section = &root.children[0];
+        assert_eq!(sync_section.name, "sync_section");
+        assert!(matches!(sync_section.state, Some(SpikeState::Processing)));
+        assert_eq!(sync_section.children.len(), 1);
+
+        let level_0 = &sync_section.children[0];
         assert_eq!(level_0.name, "level_0");
         assert!(level_0.timestamp.is_none());
         assert_eq!(level_0.children.len(), 1);
@@ -275,21 +502,25 @@ mod tests {
         let _lock = TEST_MUTEX.lock();
         clear_spike_records();
         {
-            let _guard = start_spiked_scope("root");
+            let (_guard, handle) = start_spiked_scope("root");
             {
-                let _a = spiked_scope("first");
-                std::thread::sleep(Duration::from_millis(3));
-            }
-            {
-                let _b = spiked_scope("second");
-                std::thread::sleep(Duration::from_millis(3));
+                let _sync = handle.sync_section("sync");
+                {
+                    let _a = spiked_scope("first");
+                    std::thread::sleep(Duration::from_millis(3));
+                }
+                {
+                    let _b = spiked_scope("second");
+                    std::thread::sleep(Duration::from_millis(3));
+                }
             }
         }
         let spikes = get_spike_records();
         let root = spikes.iter().find(|s| s.name == "root").unwrap();
-        assert_eq!(root.children.len(), 2);
-        assert_eq!(root.children[0].name, "first");
-        assert_eq!(root.children[1].name, "second");
+        let sync = &root.children[0];
+        assert_eq!(sync.children.len(), 2);
+        assert_eq!(sync.children[0].name, "first");
+        assert_eq!(sync.children[1].name, "second");
     }
 
     #[test]
@@ -304,7 +535,8 @@ mod tests {
         clear_spike_records();
 
         for i in 0..MAX_SPIKE_RECORDS + 10 {
-            let _guard = start_spiked_scope("op");
+            let (_guard, handle) = start_spiked_scope("op");
+            let _sync = handle.sync_section("work");
             std::thread::sleep(Duration::from_micros(i as u64 * 100));
         }
         let spikes = get_spike_records();
@@ -321,7 +553,8 @@ mod tests {
         clear_spike_records();
 
         for _ in 0..MAX_SPIKE_RECORDS {
-            let _guard = start_spiked_scope("big");
+            let (_guard, handle) = start_spiked_scope("big");
+            let _sync = handle.sync_section("work");
             std::thread::sleep(Duration::from_millis(2));
         }
         let before = get_spike_records();
@@ -329,7 +562,7 @@ mod tests {
         let min_before = before.last().unwrap().duration_ms;
 
         {
-            let _guard = start_spiked_scope("tiny");
+            let (_guard, _handle) = start_spiked_scope("tiny");
         }
         let after = get_spike_records();
         assert_eq!(after.len(), MAX_SPIKE_RECORDS);
@@ -342,17 +575,20 @@ mod tests {
             timestamp: Some(Utc::now()),
             name: "search_in_segment",
             duration_ms: 523.4,
+            state: None,
             children: vec![
                 SpikeRecord {
                     timestamp: None,
                     name: "segment_lock",
                     duration_ms: 510.2,
+                    state: Some(SpikeState::Processing),
                     children: vec![],
                 },
                 SpikeRecord {
                     timestamp: None,
                     name: "search_batch",
                     duration_ms: 12.1,
+                    state: Some(SpikeState::Awaiting),
                     children: vec![],
                 },
             ],
@@ -362,7 +598,136 @@ mod tests {
         let children = json.get("children").unwrap().as_array().unwrap();
         assert_eq!(children.len(), 2);
         assert_eq!(children[0]["name"], "segment_lock");
+        assert_eq!(children[0]["state"], "processing");
+        assert_eq!(children[1]["state"], "awaiting");
         assert!(children[0].get("children").is_none());
         assert!(children[0].get("timestamp").is_none());
+    }
+
+    #[test]
+    fn test_await_section() {
+        let _lock = TEST_MUTEX.lock();
+        clear_spike_records();
+        {
+            let (_guard, handle) = start_spiked_scope("root");
+            {
+                let _await = handle.await_section("waiting_for_shard");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            {
+                let _sync = handle.sync_section("processing");
+                std::thread::sleep(Duration::from_millis(3));
+            }
+        }
+        let spikes = get_spike_records();
+        let root = spikes.iter().find(|s| s.name == "root").unwrap();
+        assert_eq!(root.children.len(), 2);
+        assert_eq!(root.children[0].name, "waiting_for_shard");
+        assert!(matches!(root.children[0].state, Some(SpikeState::Awaiting)));
+        assert_eq!(root.children[1].name, "processing");
+        assert!(matches!(
+            root.children[1].state,
+            Some(SpikeState::Processing)
+        ));
+    }
+
+    #[test]
+    fn test_handle_across_threads() {
+        let _lock = TEST_MUTEX.lock();
+        clear_spike_records();
+        {
+            let (_guard, handle) = start_spiked_scope("root");
+            let h1 = handle.clone();
+            let h2 = handle.clone();
+            let t1 = std::thread::spawn(move || {
+                let _sync = h1.sync_section("thread_1");
+                let _scope = spiked_scope("work_1");
+                std::thread::sleep(Duration::from_millis(5));
+            });
+            let t2 = std::thread::spawn(move || {
+                let _sync = h2.sync_section("thread_2");
+                let _scope = spiked_scope("work_2");
+                std::thread::sleep(Duration::from_millis(5));
+            });
+            t1.join().unwrap();
+            t2.join().unwrap();
+        }
+        let spikes = get_spike_records();
+        let root = spikes.iter().find(|s| s.name == "root").unwrap();
+        assert_eq!(root.children.len(), 2);
+        let names: Vec<_> = root.children.iter().map(|c| c.name).collect();
+        assert!(names.contains(&"thread_1"));
+        assert!(names.contains(&"thread_2"));
+    }
+
+    #[test]
+    fn test_child_scope_nesting() {
+        let _lock = TEST_MUTEX.lock();
+        clear_spike_records();
+        {
+            let (_guard, handle) = start_spiked_scope("root");
+            // Create a child scope (simulates passing handle to a callee)
+            let (_child_guard, child_handle) = handle.child_scope("level_1");
+            {
+                let _await = child_handle.await_section("leaf_await");
+                std::thread::sleep(Duration::from_millis(3));
+            }
+            // Nested child scope
+            let (_grandchild_guard, grandchild_handle) = child_handle.child_scope("level_2");
+            {
+                let _await = grandchild_handle.await_section("deep_leaf");
+                std::thread::sleep(Duration::from_millis(3));
+            }
+            drop(_grandchild_guard);
+            drop(_child_guard);
+        }
+        let spikes = get_spike_records();
+        let root = spikes.iter().find(|s| s.name == "root").unwrap();
+        // root should have one child: level_1
+        assert_eq!(root.children.len(), 1);
+        let level_1 = &root.children[0];
+        assert_eq!(level_1.name, "level_1");
+        assert!(level_1.state.is_none()); // child scope, not await/sync
+        // level_1 should have two children: leaf_await and level_2
+        assert_eq!(level_1.children.len(), 2);
+        assert_eq!(level_1.children[0].name, "leaf_await");
+        assert!(matches!(
+            level_1.children[0].state,
+            Some(SpikeState::Awaiting)
+        ));
+        let level_2 = &level_1.children[1];
+        assert_eq!(level_2.name, "level_2");
+        assert_eq!(level_2.children.len(), 1);
+        assert_eq!(level_2.children[0].name, "deep_leaf");
+    }
+
+    #[test]
+    fn test_child_spike_scope_helper() {
+        let _lock = TEST_MUTEX.lock();
+        clear_spike_records();
+        // With None handle
+        let (guard, handle) = child_spike_scope(&None, "should_not_exist");
+        assert!(guard.is_none());
+        assert!(handle.is_none());
+
+        // With Some handle
+        {
+            let (_guard, handle) = start_spiked_scope("root");
+            let spike_handle = Some(handle);
+            let (_child_guard, child_handle) = child_spike_scope(&spike_handle, "child");
+            assert!(child_handle.is_some());
+            let ch = child_handle.unwrap();
+            {
+                let _a = ch.await_section("inner");
+                std::thread::sleep(Duration::from_millis(3));
+            }
+            drop(_child_guard);
+        }
+        let spikes = get_spike_records();
+        let root = spikes.iter().find(|s| s.name == "root").unwrap();
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].name, "child");
+        assert_eq!(root.children[0].children.len(), 1);
+        assert_eq!(root.children[0].children[0].name, "inner");
     }
 }

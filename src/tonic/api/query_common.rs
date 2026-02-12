@@ -118,6 +118,7 @@ pub async fn search(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
+    let (_spike_guard, spike_handle) = common::spike_profiler::start_spiked_scope("grpc_search");
     let scored_points = do_core_search_points(
         toc,
         &collection_name,
@@ -127,6 +128,7 @@ pub async fn search(
         auth,
         timeout.map(Duration::from_secs),
         hw_measurement_acc.get_counter(),
+        Some(spike_handle),
     )
     .await?;
 
@@ -164,7 +166,8 @@ pub async fn core_search_batch(
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
-
+    let (_spike_guard, spike_handle) =
+        common::spike_profiler::start_spiked_scope("grpc_search_batch");
     let scored_points = do_search_batch_points(
         toc,
         collection_name,
@@ -173,6 +176,7 @@ pub async fn core_search_batch(
         auth,
         timeout,
         request_hw_counter.get_counter(),
+        Some(spike_handle),
     )
     .await?;
 
@@ -233,6 +237,7 @@ pub async fn core_search_list(
             auth,
             timeout,
             request_hw_counter.get_counter(),
+            None,
         )
         .await?;
 
@@ -805,6 +810,7 @@ pub async fn query(
     let timeout = timeout.map(Duration::from_secs);
 
     let timing = Instant::now();
+    let (_spike_guard, spike_handle) = common::spike_profiler::start_spiked_scope("grpc_query");
     let scored_points = do_query_points(
         toc,
         &collection_name,
@@ -814,6 +820,7 @@ pub async fn query(
         auth,
         timeout,
         request_hw_counter.get_counter(),
+        Some(spike_handle),
     )
     .await?;
 
@@ -864,6 +871,8 @@ pub async fn query_batch(
         .await?;
 
     let timing = Instant::now();
+    let (_spike_guard, spike_handle) =
+        common::spike_profiler::start_spiked_scope("grpc_query_batch");
     let scored_points = do_query_batch_points(
         toc,
         collection_name,
@@ -872,6 +881,7 @@ pub async fn query_batch(
         auth,
         timeout,
         request_hw_counter.get_counter(),
+        Some(spike_handle),
     )
     .await?;
 

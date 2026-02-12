@@ -169,6 +169,7 @@ fn batch_search_bench(c: &mut Criterion) {
                                 search_runtime_handle,
                                 None,
                                 hw_acc,
+                                None,
                             )
                             .await
                             .unwrap();
@@ -201,7 +202,13 @@ fn batch_search_bench(c: &mut Criterion) {
                     let hw_acc = HwMeasurementAcc::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), search_runtime_handle, None, hw_acc)
+                        .core_search(
+                            Arc::new(search_query),
+                            search_runtime_handle,
+                            None,
+                            hw_acc,
+                            None,
+                        )
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
