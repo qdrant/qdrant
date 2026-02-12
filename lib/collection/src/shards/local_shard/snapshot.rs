@@ -114,7 +114,7 @@ impl LocalShard {
 
                     if delay_secs > 0.0 {
                         log::debug!("Staging: Delaying snapshotting WAL for {delay_secs}s");
-                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs));
                         log::debug!("Staging: Delay complete, snapshotting WAL");
                     }
                 }
