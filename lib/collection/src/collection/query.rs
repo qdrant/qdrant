@@ -311,7 +311,7 @@ impl Collection {
 
         let requests_batch = Arc::new(requests_batch);
 
-        let (_child_guard, child_handle) =
+        let child_scope =
             common::spike_profiler::child_spike_scope(&spike_handle, "query_shards_concurrently");
         let all_shards_results = self
             .batch_query_shards_concurrently(
@@ -320,10 +320,10 @@ impl Collection {
                 shard_selection,
                 timeout,
                 hw_measurement_acc.clone(),
-                child_handle,
+                child_scope.handle(),
             )
             .await?;
-        drop(_child_guard);
+        drop(child_scope);
 
         let results_f = transposed_iter(all_shards_results)
             .zip(requests_batch.iter())

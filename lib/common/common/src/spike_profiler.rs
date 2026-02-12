@@ -71,12 +71,6 @@ fn sort_descending(records: &mut [SpikeRecord]) {
 /// If at capacity, the new record replaces the smallest stored spike
 /// only if it is larger.
 fn store_spike(record: SpikeRecord) {
-    log::debug!(
-        "Storing spike record: name={}, duration_ms={:.2}, children={}",
-        record.name,
-        record.duration_ms,
-        record.children.len(),
-    );
     let mut records = SPIKE_RECORDS.lock();
     if records.len() < MAX_SPIKE_RECORDS {
         records.push(record);
@@ -188,20 +182,48 @@ impl SpikeProfilerHandle {
     }
 }
 
-/// Helper to create a child scope from an `Option<SpikeProfilerHandle>`.
+/// Combined guard + handle for a child spike scope.
 ///
-/// Returns `(Option<ChildScopeGuard>, Option<SpikeProfilerHandle>)`.
-/// When the input is `None`, both outputs are `None` (no-op).
+/// Acts as an RAII guard (records profiling data on drop) and provides
+/// the child handle for passing to nested functions via [`handle()`](Self::handle).
+///
+/// Created by [`child_spike_scope`]. When profiling is inactive (`None` input),
+/// this is a no-op wrapper.
+#[must_use]
+pub struct ChildSpikeScope {
+    _guard: Option<ChildScopeGuard>,
+    child_handle: Option<SpikeProfilerHandle>,
+}
+
+impl ChildSpikeScope {
+    /// Get the child handle for passing to nested functions.
+    ///
+    /// Returns `None` when profiling is inactive.
+    pub fn handle(&self) -> Option<SpikeProfilerHandle> {
+        self.child_handle.clone()
+    }
+}
+
+/// Create a child scope from an `Option<SpikeProfilerHandle>`.
+///
+/// Returns a [`ChildSpikeScope`] that acts as both a guard and a handle source.
+/// When the input is `None`, this is a no-op.
 pub fn child_spike_scope(
     handle: &Option<SpikeProfilerHandle>,
     name: &'static str,
-) -> (Option<ChildScopeGuard>, Option<SpikeProfilerHandle>) {
+) -> ChildSpikeScope {
     match handle {
         Some(h) => {
             let (guard, child) = h.child_scope(name);
-            (Some(guard), Some(child))
+            ChildSpikeScope {
+                _guard: Some(guard),
+                child_handle: Some(child),
+            }
         }
-        None => (None, None),
+        None => ChildSpikeScope {
+            _guard: None,
+            child_handle: None,
+        },
     }
 }
 
@@ -225,7 +247,6 @@ pub struct SpikedScopeGuard {
 /// sync sections and await sections.
 #[must_use]
 pub fn start_spiked_scope(name: &'static str) -> (SpikedScopeGuard, SpikeProfilerHandle) {
-    log::debug!("start_spiked_scope: name={}", name);
     let handle = SpikeProfilerHandle {
         inner: Arc::new(Mutex::new(HandleInner {
             name,
@@ -242,15 +263,7 @@ pub fn start_spiked_scope(name: &'static str) -> (SpikedScopeGuard, SpikeProfile
 impl Drop for SpikedScopeGuard {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
-            let arc_strong_count = Arc::strong_count(&handle.inner);
             let mut inner = handle.inner.lock();
-            let children_count = inner.children.len();
-            log::debug!(
-                "SpikedScopeGuard::drop: name={}, arc_refs={}, children_count={}",
-                inner.name,
-                arc_strong_count,
-                children_count,
-            );
             let record = SpikeRecord {
                 timestamp: Some(Utc::now()),
                 name: inner.name,
@@ -290,12 +303,6 @@ impl Drop for SyncSectionGuard {
         });
 
         let duration_ms = self.start.elapsed().as_secs_f64() * 1000.0;
-        log::debug!(
-            "SyncSectionGuard::drop: name={}, duration_ms={:.2}, nested_children={}",
-            self.name,
-            duration_ms,
-            children.len(),
-        );
         let record = SpikeRecord {
             timestamp: None,
             name: self.name,
@@ -323,11 +330,6 @@ pub struct AwaitSectionGuard {
 impl Drop for AwaitSectionGuard {
     fn drop(&mut self) {
         let duration_ms = self.start.elapsed().as_secs_f64() * 1000.0;
-        log::debug!(
-            "AwaitSectionGuard::drop: name={}, duration_ms={:.2}",
-            self.name,
-            duration_ms,
-        );
         let record = SpikeRecord {
             timestamp: None,
             name: self.name,
@@ -706,22 +708,20 @@ mod tests {
         let _lock = TEST_MUTEX.lock();
         clear_spike_records();
         // With None handle
-        let (guard, handle) = child_spike_scope(&None, "should_not_exist");
-        assert!(guard.is_none());
-        assert!(handle.is_none());
+        let scope = child_spike_scope(&None, "should_not_exist");
+        assert!(scope.handle().is_none());
 
         // With Some handle
         {
             let (_guard, handle) = start_spiked_scope("root");
             let spike_handle = Some(handle);
-            let (_child_guard, child_handle) = child_spike_scope(&spike_handle, "child");
-            assert!(child_handle.is_some());
-            let ch = child_handle.unwrap();
+            let child_scope = child_spike_scope(&spike_handle, "child");
+            let ch = child_scope.handle().unwrap();
             {
                 let _a = ch.await_section("inner");
                 std::thread::sleep(Duration::from_millis(3));
             }
-            drop(_child_guard);
+            drop(child_scope);
         }
         let spikes = get_spike_records();
         let root = spikes.iter().find(|s| s.name == "root").unwrap();

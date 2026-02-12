@@ -394,7 +394,7 @@ impl TableOfContent {
         let collection = self.get_collection(&collection_pass).await?;
         drop(_await_guard);
 
-        let (_child_guard, child_handle) =
+        let child_scope =
             common::spike_profiler::child_spike_scope(&spike_handle, "collection_query_batch");
         let result = collection
             .query_batch(
@@ -403,10 +403,10 @@ impl TableOfContent {
                 read_consistency,
                 timeout,
                 hw_measurement_acc,
-                child_handle,
+                child_scope.handle(),
             )
             .await;
-        drop(_child_guard);
+        drop(child_scope);
         result.map_err(|err| err.into())
     }
 

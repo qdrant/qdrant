@@ -304,8 +304,7 @@ pub async fn do_query_points(
     spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
-    let (_child_guard, child_handle) =
-        common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
+    let child_scope = common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
     let batch_res = toc
         .query_batch(
             collection_name,
@@ -314,10 +313,10 @@ pub async fn do_query_points(
             auth,
             timeout,
             hw_measurement_acc,
-            child_handle,
+            child_scope.handle(),
         )
         .await?;
-    drop(_child_guard);
+    drop(child_scope);
     batch_res
         .into_iter()
         .next()
@@ -335,8 +334,7 @@ pub async fn do_query_batch_points(
     hw_measurement_acc: HwMeasurementAcc,
     spike_handle: Option<common::spike_profiler::SpikeProfilerHandle>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    let (_child_guard, child_handle) =
-        common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
+    let child_scope = common::spike_profiler::child_spike_scope(&spike_handle, "toc_query_batch");
     let result = toc
         .query_batch(
             collection_name,
@@ -345,10 +343,10 @@ pub async fn do_query_batch_points(
             auth,
             timeout,
             hw_measurement_acc,
-            child_handle,
+            child_scope.handle(),
         )
         .await;
-    drop(_child_guard);
+    drop(child_scope);
     result
 }
 
