@@ -82,6 +82,10 @@ impl QueryContext {
         self.available_point_count += count;
     }
 
+    pub fn uses_idf(&self) -> bool {
+        !self.idf_stats.idf.is_empty() && !self.idf_stats.indexed_vectors.is_empty()
+    }
+
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
     pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {

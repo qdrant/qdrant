@@ -197,13 +197,17 @@ impl SegmentsSearcher {
                     .unwrap_or(false)
             },
         );
-        let is_stopped = is_stopped_guard.get_is_stopped().clone();
-        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
-            fill_query_context(query_context, segments, timeout, &is_stopped)
-        }))
-        .await??;
-        Ok(task)
+        if query_context.uses_idf() {
+            let is_stopped = is_stopped_guard.get_is_stopped().clone();
+            // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
+            let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
+                fill_query_context(query_context, segments, timeout, &is_stopped)
+            }))
+            .await??;
+            Ok(task)
+        } else {
+            Ok(Some(query_context))
+        }
     }
 
     pub async fn search(
