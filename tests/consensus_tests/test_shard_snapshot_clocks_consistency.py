@@ -13,7 +13,7 @@ def test_shard_snapshot_clocks_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
     # Start peer
-    peer_urls, _, _ = start_cluster(tmp_path, 1)
+    peer_urls, _, _ = start_cluster(tmp_path, 1, extra_env={ "QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY": "5" })
     peer_url = peer_urls[0]
 
     # Bootstrap collection

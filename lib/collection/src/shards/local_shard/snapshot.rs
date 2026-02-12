@@ -109,6 +109,23 @@ impl LocalShard {
             });
             AbortOnDropHandle::new(handle).await??;
 
+            // Staging delay
+            #[cfg(feature = "staging")]
+            {
+                let delay_secs: f64 = std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY")
+                    .ok()
+                    .and_then(|str| str.parse().ok())
+                    .unwrap_or(0.0);
+
+                if delay_secs > 0.0 {
+                    log::debug!(
+                        "Staging: Delaying snapshotting shard clocks for {delay_secs}s"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                    log::debug!("Staging: Delay complete, snapshotting shard clocks");
+                }
+            }
+
             LocalShardClocks::archive_data(&shard_path, &tar_c).await?;
 
             Ok(())
