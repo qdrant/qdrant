@@ -239,6 +239,8 @@ impl ShardReplicaSet {
                     format!("Failed to acquire clock for update operation within {timeout:?}"),
                 ));
             }
+
+            // Prevent blocking async runtime with spinlock
             yield_now().await;
         }
     }
