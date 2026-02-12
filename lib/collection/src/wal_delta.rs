@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use shard::wal::SerdeWal;
+use shard::wal::{SerdeWal, WalRawRecord};
 use thiserror::Error;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -64,17 +64,11 @@ impl RecoverableWal {
             }
         }
 
+        let record = WalRawRecord::new(operation)?;
+
         // Write operation to WAL
         let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;
-        wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
-    }
-
-    /// Read a single record from the WAL by its operation number.
-    pub async fn read_single_record(
-        &self,
-        op_num: u64,
-    ) -> shard::wal::Result<Option<OperationWithClockTag>> {
-        self.wal.lock().await.read_single_record(op_num)
+        wal_lock.write(&record).map(|op_num| (op_num, wal_lock))
     }
 
     /// Take clocks snapshot because we deactivated our replica

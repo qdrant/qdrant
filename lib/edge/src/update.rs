@@ -4,14 +4,17 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::operations::CollectionUpdateOperations;
 use shard::update::*;
+use shard::wal::WalRawRecord;
 
 use crate::EdgeShard;
 
 impl EdgeShard {
     pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
+        let record = WalRawRecord::new(&operation).map_err(service_error)?;
+
         let mut wal = self.wal.lock();
 
-        let operation_id = wal.write(&operation).map_err(service_error)?;
+        let operation_id = wal.write(&record).map_err(service_error)?;
         let hw_counter = HardwareCounterCell::disposable();
 
         let segments_guard = self.segments.read();
