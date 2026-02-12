@@ -4,6 +4,7 @@ use std::fmt;
 pub use edge_py_codegen::pyclass_repr;
 use pyo3::PyTypeInfo;
 
+/// Can be implemented using [macro pyclass_repr].
 pub trait Repr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result;
 
