@@ -87,7 +87,7 @@ impl UpdateWorkers {
                     } else {
                         let wal_clone = wal.clone();
                         let record = match tokio::task::spawn_blocking(move || {
-                            wal_clone.blocking_lock().read_single_record(op_num)
+                            wal_clone.blocking_lock().read_raw_record(op_num)
                         })
                         .await
                         {
@@ -100,8 +100,15 @@ impl UpdateWorkers {
                         };
 
                         match record {
-                            Ok(Some(op)) => op.operation,
-                            Ok(None) => {
+                            Some(serialized_record) => match serialized_record.deserialize() {
+                                Ok(deserialized) => deserialized.operation,
+                                Err(err) => {
+                                    log::error!("Can't read operation {op_num} from WAL - {err}");
+                                    send_feedback(sender, Err(CollectionError::from(err)), op_num);
+                                    continue;
+                                }
+                            },
+                            None => {
                                 send_feedback(
                                     sender,
                                     Err(CollectionError::service_error(format!(
@@ -109,11 +116,6 @@ impl UpdateWorkers {
                                     ))),
                                     op_num,
                                 );
-                                continue;
-                            }
-                            Err(err) => {
-                                log::error!("Can't read operation {op_num} from WAL - {err}");
-                                send_feedback(sender, Err(CollectionError::from(err)), op_num);
                                 continue;
                             }
                         }
