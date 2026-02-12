@@ -96,32 +96,31 @@ impl TryFrom<rest::VectorStructOutput> for grpc::VectorsOutput {
 }
 
 impl From<VectorInternal> for grpc::VectorOutput {
-    #[expect(deprecated)]
     fn from(vector: VectorInternal) -> Self {
-        match vector {
-            VectorInternal::Dense(vector) => Self {
-                data: vector,
-                indices: None,
-                vectors_count: None,
-                vector: None,
-            },
-            VectorInternal::Sparse(vector) => Self {
-                data: vector.values,
-                indices: Some(grpc::SparseIndices {
-                    data: vector.indices,
-                }),
-                vectors_count: None,
-                vector: None,
-            },
-            VectorInternal::MultiDense(vector) => {
-                let vector_count = vector.multi_vectors().count() as u32;
-                Self {
-                    data: vector.flattened_vectors,
-                    indices: None,
-                    vectors_count: Some(vector_count),
-                    vector: None,
-                }
+        let vector = match vector {
+            VectorInternal::Dense(vector) => {
+                grpc::vector_output::Vector::Dense(grpc::DenseVector { data: vector })
             }
+            VectorInternal::Sparse(SparseVector { indices, values }) => {
+                grpc::vector_output::Vector::Sparse(grpc::SparseVector { values, indices })
+            }
+            VectorInternal::MultiDense(multivector_internal) => {
+                grpc::vector_output::Vector::MultiDense(grpc::MultiDenseVector {
+                    vectors: multivector_internal
+                        .into_multi_vectors()
+                        .into_iter()
+                        .map(|v| grpc::DenseVector { data: v })
+                        .collect(),
+                })
+            }
+        };
+
+        #[expect(deprecated)]
+        Self {
+            data: vec![],
+            indices: None,
+            vectors_count: None,
+            vector: Some(vector),
         }
     }
 }
@@ -417,38 +416,30 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
 
 impl From<VectorInternal> for grpc::Vector {
     fn from(vector: VectorInternal) -> Self {
-        // ToDo(v1.17): before deprecating `data`, `indices`, and `vectors_count`, ensure
-        //             that `vector` field is generated here.
+        let vector = match vector {
+            VectorInternal::Dense(vector) => {
+                grpc::vector::Vector::Dense(grpc::DenseVector { data: vector })
+            }
+            VectorInternal::Sparse(SparseVector { indices, values }) => {
+                grpc::vector::Vector::Sparse(grpc::SparseVector { values, indices })
+            }
+            VectorInternal::MultiDense(multivector_internal) => {
+                grpc::vector::Vector::MultiDense(grpc::MultiDenseVector {
+                    vectors: multivector_internal
+                        .into_multi_vectors()
+                        .into_iter()
+                        .map(|v| grpc::DenseVector { data: v })
+                        .collect(),
+                })
+            }
+        };
+
         #[expect(deprecated)]
-        match vector {
-            VectorInternal::Dense(vector) => Self {
-                data: vector,
-                indices: None,
-                vectors_count: None,
-                vector: None,
-            },
-            VectorInternal::Sparse(vector) => {
-                let SparseVector { values, indices } = vector;
-                Self {
-                    data: values,
-                    indices: Some(grpc::SparseIndices { data: indices }),
-                    vectors_count: None,
-                    vector: None,
-                }
-            }
-            VectorInternal::MultiDense(vector) => {
-                let vector_count = vector.multi_vectors().count() as u32;
-                let MultiDenseVectorInternal {
-                    flattened_vectors,
-                    dim: _,
-                } = vector;
-                Self {
-                    data: flattened_vectors,
-                    indices: None,
-                    vectors_count: Some(vector_count),
-                    vector: None,
-                }
-            }
+        Self {
+            data: vec![],
+            indices: None,
+            vectors_count: None,
+            vector: Some(vector),
         }
     }
 }
