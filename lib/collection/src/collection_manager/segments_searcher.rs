@@ -608,6 +608,7 @@ fn search_in_segment(
     let mut vectors_batch: Vec<QueryVector> = vec![];
     let mut prev_params = BatchSearchParams::default();
 
+    let _scope = common::spike_profiler::spiked_scope("prepare_batches");
     for search_query in &request.searches {
         let with_payload_interface = search_query
             .with_payload
@@ -650,9 +651,11 @@ fn search_in_segment(
             prev_params = params;
         }
     }
+    drop(_scope);
 
     // run last batch if any
     if !vectors_batch.is_empty() {
+        let _scope = common::spike_profiler::spiked_scope("execute_final_batch");
         let (mut res, mut further) = execute_batch_search(
             &segment,
             &vectors_batch,
@@ -689,6 +692,7 @@ fn execute_batch_search(
     let segment_config = read_segment.config();
 
     let top = if use_sampling {
+        let _scope = common::spike_profiler::spiked_scope("calculate_sampling");
         let ef_limit = search_params
             .params
             .and_then(|p| p.hnsw_ef)
