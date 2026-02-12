@@ -6,12 +6,14 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
 use tokio::sync::oneshot;
+use tokio::task::yield_now;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::{ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::replica_set::clock_set::ClockGuard;
 use crate::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_trait::ShardOperation as _;
@@ -220,6 +222,16 @@ impl ShardReplicaSet {
         self.replica_state.read().peers().keys().max().cloned()
     }
 
+    pub async fn get_clock(&self) -> ClockGuard {
+        loop {
+            match self.clock_set.lock().await.get_clock() {
+                Some(clock) => return clock,
+                // Prevent blocking async runtime with spinlock
+                None => yield_now().await,
+            }
+        }
+    }
+
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
@@ -239,7 +251,15 @@ impl ShardReplicaSet {
         // - lock `remotes`, `local`, `clock` (in specified order!) on the *first* iteration of the loop
         // - then release and lock `remotes` and `local` *only* for all next iterations
         // - but keep initial `clock` for the whole duration of `update`
-        let mut clock = self.clock_set.lock().await.get_clock();
+        let clock_timeout = timeout.unwrap_or(Duration::MAX);
+        let mut clock = tokio::time::timeout(clock_timeout, self.get_clock())
+            .await
+            .map_err(|_| {
+                CollectionError::timeout(
+                    clock_timeout,
+                    format!("Failed to acquire clock for update operation within {timeout:?}"),
+                )
+            })?;
 
         for attempt in 1..=UPDATE_MAX_CLOCK_REJECTED_RETRIES {
             let is_non_zero_tick = clock.current_tick().is_some();
