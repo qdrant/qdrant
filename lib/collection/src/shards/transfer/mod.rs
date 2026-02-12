@@ -32,6 +32,8 @@ pub mod wal_delta;
 pub enum TransferStage {
     /// Setting up queue/forward proxy on source shard
     Proxifying,
+    /// Waiting for pending operations in the update queue to be processed
+    Plunging,
     /// Creating snapshot of the shard (snapshot method only)
     CreatingSnapshot,
     /// Transferring data to remote (snapshot file or record batches)
@@ -51,10 +53,11 @@ impl TransferStage {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Proxifying => "proxifying",
+            Self::Plunging => "applying queued updates",
             Self::CreatingSnapshot => "creating snapshot",
             Self::Transferring => "transferring",
             Self::Recovering => "recovering",
-            Self::FlushingQueue => "flushing queue",
+            Self::FlushingQueue => "syncing queued updates",
             Self::WaitingConsensus => "waiting consensus",
             Self::Finalizing => "finalizing",
         }

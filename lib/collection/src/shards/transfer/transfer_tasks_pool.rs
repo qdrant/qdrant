@@ -250,13 +250,17 @@ mod tests {
     #[test]
     fn test_transfer_stage_as_str() {
         assert_eq!(TransferStage::Proxifying.as_str(), "proxifying");
+        assert_eq!(TransferStage::Plunging.as_str(), "applying queued updates");
         assert_eq!(
             TransferStage::CreatingSnapshot.as_str(),
             "creating snapshot"
         );
         assert_eq!(TransferStage::Transferring.as_str(), "transferring");
         assert_eq!(TransferStage::Recovering.as_str(), "recovering");
-        assert_eq!(TransferStage::FlushingQueue.as_str(), "flushing queue");
+        assert_eq!(
+            TransferStage::FlushingQueue.as_str(),
+            "syncing queued updates"
+        );
         assert_eq!(
             TransferStage::WaitingConsensus.as_str(),
             "waiting consensus"
@@ -316,6 +320,7 @@ mod tests {
 
         let stages = [
             TransferStage::Proxifying,
+            TransferStage::Plunging,
             TransferStage::CreatingSnapshot,
             TransferStage::Transferring,
             TransferStage::Recovering,

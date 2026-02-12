@@ -72,6 +72,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         // Plunge all pending operations in update queue
         // Required to ensure all operations that were in flight before the transfer are included
         // in the transfer
+        progress.lock().set_stage(TransferStage::Plunging);
         let Some(plunger) = replica_set.plunge_local_async().await? else {
             return Err(CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be proxied because it does not exist"
