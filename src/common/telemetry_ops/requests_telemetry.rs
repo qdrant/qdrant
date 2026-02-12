@@ -206,16 +206,6 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
-    /// Records a REST API response without collection context.
-    pub fn add_response(
-        &mut self,
-        method: String,
-        status_code: HttpStatusCode,
-        instant: std::time::Instant,
-    ) {
-        self.add_response_with_collection(&method, instant, status_code, None);
-    }
-
     /// Records a REST API response with optional collection context.
     ///
     /// Updates both global metrics and per-collection metrics (if collection is provided).
