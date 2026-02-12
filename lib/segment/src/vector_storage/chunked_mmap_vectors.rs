@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
-use common::maybe_uninit::maybe_uninit_fill_from;
+use common::maybe_uninit::maybe_uninit_fill_from_with_drop;
 use common::mmap::chunked::{chunk_name, create_chunk, read_mmaps};
 use common::mmap::{
     Advice, AdviceSetting, MmapChunkView, MmapType, UniversalMmapChunk, create_and_ensure_length,
@@ -294,7 +294,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         // Fetching all vectors first then scoring them is more cache friendly
         // then fetching and scoring in a single loop.
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
-        let vectors = maybe_uninit_fill_from(
+        let vectors = maybe_uninit_fill_from_with_drop(
             &mut vectors_buffer,
             keys.iter().map(|&key| {
                 self.get_many_impl(key.offset(), 1, do_sequential_read)
@@ -306,6 +306,8 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         for (i, vec) in vectors.iter().enumerate() {
             f(i, vec.as_slice());
         }
+
+        drop(vectors);
     }
 
     pub fn flusher(&self) -> Flusher {
