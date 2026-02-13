@@ -197,7 +197,6 @@ mod tests {
     unsafe impl SeqLockSafe for Pair {}
 
     #[test]
-    #[ignore = "too slow for CI"]
     fn multi_threaded_readers_consistent() {
         // Create a seqlock-wrapped Pair.
         let (reader, mut writer) = SeqLock::new_reader_writer(Pair { a: 0, b: 0 });

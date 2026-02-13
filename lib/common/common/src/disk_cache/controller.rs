@@ -38,13 +38,8 @@ pub struct CacheController {
     /// Used to assign file ids on new files.
     pub(super) file_id_counter: Mutex<FileId>,
 
-    pub(super) cache: quick_cache::sync::Cache<
-        BlockId,
-        BlockOffset,
-        UnitWeighter,
-        ahash::RandomState,
-        BlocksLifecycle,
-    >,
+    pub(super) cache:
+        trififo::ShardedCache<BlockId, BlockOffset, BlocksLifecycle, ahash::RandomState>,
 
     /// Tracks the unused blocks in the cache file.
     ///
@@ -86,19 +81,27 @@ impl CacheController {
 
         let cache_capacity = size_blocks - CACHE_CAPACITY_SAFETY_MARGIN;
 
-        let cache = quick_cache::sync::Cache::with_options(
-            quick_cache::OptionsBuilder::new()
-                .weight_capacity(cache_capacity)
-                .estimated_items_capacity(cache_capacity as usize)
-                // TODO(luis): Depending on this number we can increase/decrease CACHE_CAPACITY_SAFETY_MARGIN.
-                //       The default number is num_detected_cores * 4.
-                //       We need to optimize unused_offsets so that it can also leverage sharding, otherwise it
-                //       might become a source of contention.
-                .shards(1)
-                .build()
-                .unwrap(),
-            UnitWeighter,
-            ahash::RandomState::default(),
+        // let cache = quick_cache::sync::Cache::with_options(
+        //     quick_cache::OptionsBuilder::new()
+        //         .weight_capacity(cache_capacity)
+        //         .estimated_items_capacity(cache_capacity as usize)
+        //         // TODO(luis): Depending on this number we can increase/decrease CACHE_CAPACITY_SAFETY_MARGIN.
+        //         //       The default number is num_detected_cores * 4.
+        //         //       We need to optimize unused_offsets so that it can also leverage sharding, otherwise it
+        //         //       might become a source of contention.
+        //         // .shards(1)
+        //         .build()
+        //         .unwrap(),
+        //     UnitWeighter,
+        //     ahash::RandomState::default(),
+        //     blocks_lifecycle.clone(),
+        // );
+
+        let cache = trififo::ShardedCache::with_config(
+            cache_capacity as usize,
+            8.try_into().unwrap(),
+            0.1,
+            0.9,
             blocks_lifecycle.clone(),
         );
 
@@ -156,11 +159,12 @@ impl CacheController {
     }
 
     pub(super) fn get_from_cache(&self, req: BlockRequest) -> io::Result<Cow<'_, [u8]>> {
+        use trififo::GetOrGuard;
         let BlockRequest { key, range } = req;
 
-        match self.cache.get_value_or_guard(&key, None) {
+        match self.cache.get_or_guard(&key) {
             // Cache hit.
-            GuardResult::Value(block_offset) => {
+            GetOrGuard::Found(block_offset) => {
                 // Read from hot mmap.
                 let range = block_offset.bytes() + range.start..block_offset.bytes() + range.end;
 
@@ -169,7 +173,7 @@ impl CacheController {
                 Ok(Cow::Borrowed(&self.cache_mmap[range]))
             }
             // Cache miss.
-            GuardResult::Guard(guard) => {
+            GetOrGuard::Guard(guard) => {
                 // 1. Read from cold storage.
                 // --------------------------
 
@@ -197,11 +201,10 @@ impl CacheController {
                 // ----------
 
                 // FIXME: unwrap panics when `key` deleted while guard is still alive.
-                guard.insert(allocated_offset).unwrap();
+                guard.insert(allocated_offset);
 
                 Ok(Cow::Owned(buf[range].to_vec()))
-            }
-            GuardResult::Timeout => unreachable!("We didn't set a timeout"),
+            } // GuardResult::Timeout => unreachable!("We didn't set a timeout"),
         }
     }
 }
@@ -280,6 +283,12 @@ impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
             None => (),
             Some((_, off)) => self.unused_blocks.lock().push(off),
         }
+    }
+}
+
+impl trififo::lifecycle::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
+    fn on_evict(&self, _key: BlockId, value: BlockOffset) {
+        self.unused_blocks.lock().push(value)
     }
 }
 

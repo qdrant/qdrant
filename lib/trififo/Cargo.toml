@@ -13,10 +13,20 @@ workspace = true
 bench_all = []
 
 [dependencies]
-ahash = {workspace = true}
+ahash = { workspace = true }
+
+# when bumping hashbrown, make sure this condition hasn't changed, since it may compromise concurrent readers
+# https://github.com/rust-lang/hashbrown/blob/9641fb3eea9a07933fb631da6e4f5070d2f7e1da/src/raw.rs#L2775
+hashbrown = "0.16.1"
+parking_lot = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+fs-err = { workspace = true }
 itertools = { workspace = true }
+memmap2 = { workspace = true }
+nix = { workspace = true }
 strum = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
@@ -30,6 +40,9 @@ quick_cache = "0.6"
 schnellru = "0.2"
 foyer = "0.22"
 
+# For ring buffer comparison test
+ringbuf = "0.4"
+
 # For memory measurement
 cap = "0.1"
 
@@ -38,4 +51,8 @@ tokio = { workspace = true }
 
 [[bench]]
 name = "cache_comparison"
+harness = false
+
+[[bench]]
+name = "cache_comparison_io"
 harness = false

@@ -46,6 +46,7 @@ tar = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+trififo = { path= "../../trififo" }
 validator = { workspace = true }
 walkdir = { workspace = true }
 zerocopy = { workspace = true }
