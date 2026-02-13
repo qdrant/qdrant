@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Read-only view of a root progress node.
 ///
@@ -39,33 +39,33 @@ pub struct ProgressView {
     started_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ProgressTree {
     /// Name of the operation.
     pub name: String,
 
     /// When the operation started.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<DateTime<Utc>>,
 
     /// When the operation finished.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
 
     /// For finished operations, how long they took, in seconds.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_sec: Option<f64>,
 
     /// Number of completed units of work, if applicable.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub done: Option<u64>,
 
     /// Total number of units of work, if applicable and known.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u64>,
 
     /// Child operations.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<ProgressTree>,
 }
 

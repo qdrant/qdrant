@@ -21,6 +21,9 @@ service CollectionsInternal {
   // Update shard cutoff point
   rpc UpdateShardCutoffPoint(UpdateShardCutoffPointRequest)
       returns (CollectionOperationResponse) {}
+  // Get shard optimizations info
+  rpc GetShardOptimizations(GetShardOptimizationsRequest)
+      returns (GetShardOptimizationsResponse) {}
 }
 
 message GetCollectionInfoRequestInternal {
@@ -78,4 +81,24 @@ message UpdateShardCutoffPointRequest {
   uint32 shard_id = 2;
   // Cutoff point of the shard
   RecoveryPoint cutoff = 3;
+}
+
+message GetShardOptimizationsRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Id of the shard
+  uint32 shard_id = 2;
+  // Whether to include queued optimizations
+  bool with_queued = 3;
+  // Limit for completed optimizations (0 means not included)
+  optional uint32 completed_limit = 4;
+  // Whether to include idle segments
+  bool with_idle_segments = 5;
+}
+
+message GetShardOptimizationsResponse {
+  // JSON-serialized OptimizationsResponse
+  bytes optimizations_json = 1;
+  // Time spent to process
+  double time = 2;
 }

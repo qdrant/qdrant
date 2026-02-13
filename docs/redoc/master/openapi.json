@@ -16792,7 +16792,6 @@
       "ProgressTree": {
         "type": "object",
         "required": [
-          "children",
           "name"
         ],
         "properties": {
