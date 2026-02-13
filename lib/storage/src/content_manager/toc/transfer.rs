@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use collection::collection::shard_transfer::NEW_UPDATE_ON_RESHARDING_VERSION;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
@@ -64,6 +65,23 @@ impl ShardTransferConsensus for TocDispatcher {
         transfer_config: ShardTransfer,
         collection_id: CollectionId,
     ) -> CollectionResult<()> {
+        // Check before proposing to consensus so we return an API error
+        // instead of failing during consensus apply.
+        if transfer_config.is_resharding() {
+            let Some(toc) = self.toc.upgrade() else {
+                return Err(CollectionError::service_error(
+                    "Can't check resharding version gate, table of contents is dropped",
+                ));
+            };
+            let channel_service = toc.get_channel_service();
+            if !channel_service.all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION) {
+                return Err(CollectionError::pre_condition_failed(format!(
+                    "Cannot start resharding transfer: not all peers support the required version {}",
+                    *NEW_UPDATE_ON_RESHARDING_VERSION,
+                )));
+            }
+        }
+
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,

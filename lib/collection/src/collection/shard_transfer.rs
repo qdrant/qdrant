@@ -89,7 +89,22 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let initial_state = match shard_transfer.method.unwrap_or_default() {
+            let transfer_method = shard_transfer.method.unwrap_or_default();
+
+            // Safety net: `StartResharding` API handler should have caught this already.
+            // A service_error here will cause a consensus panic so we notice it was bypassed.
+            if transfer_method.is_resharding()
+                && !self
+                    .channel_service
+                    .all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION)
+            {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot start resharding transfer: not all peers support the required version {}",
+                    *NEW_UPDATE_ON_RESHARDING_VERSION,
+                )));
+            }
+
+            let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
