@@ -1155,6 +1155,16 @@ impl ShardReplicaSet {
         is_readable && !self.is_locally_disabled(peer_id)
     }
 
+    fn peer_is_updatable(&self, peer_id: PeerId) -> bool {
+        let peer_state = self.peer_state(peer_id);
+        let is_updatable = match peer_state {
+            Some(state) => state.is_updatable(),
+            None => false,
+        };
+
+        is_updatable && !self.is_locally_disabled(peer_id)
+    }
+
     /// Check if this shard is active.
     /// By active, we mean, that at least one replica have `is_active` state.
     /// It is possible, that some replicas are not active, if they are created in a `Partial` state.
@@ -1391,6 +1401,7 @@ impl ShardReplicaSet {
             let remotes = self.remotes.read().await;
             let futures: Vec<_> = remotes
                 .iter()
+                .filter(|remote| self.peer_is_updatable(remote.peer_id))
                 .map(|remote| remote.optimizations(options))
                 .collect();
             futures::future::try_join_all(futures).await
@@ -1443,7 +1454,12 @@ impl ShardReplicaSet {
         let mut idle_segments_count = 0;
 
         let local = self.local.read().await;
-        if let Some(shard) = local.as_ref() {
+
+        let is_updatable = self.peer_is_updatable(self.this_peer_id());
+
+        if let Some(shard) = local.as_ref()
+            && is_updatable
+        {
             if let Some(log) = shard.optimizers_log() {
                 for tracker in log.lock().iter() {
                     if tracker.state.lock().status.is_running() {
