@@ -8,7 +8,7 @@ use segment::types::ShardKey;
 use serde::Serialize;
 
 use crate::collection_manager::optimizers::TrackerTelemetry;
-use crate::operations::types::{OptimizersStatus, ShardStatus, UpdateQueueInfo};
+use crate::operations::types::{OptimizersStatus, ShardStatus, ShardUpdateQueueInfo};
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 
@@ -74,7 +74,7 @@ pub struct LocalShardTelemetry {
     pub indexed_only_excluded_vectors: Option<HashMap<String, usize>>,
     /// Update queue status
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub update_queue: Option<UpdateQueueInfo>,
+    pub update_queue: Option<ShardUpdateQueueInfo>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize, Default)]
