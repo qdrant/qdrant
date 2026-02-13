@@ -3089,8 +3089,7 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 [[package]]
 name = "hyper"
 version = "0.14.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab302d72a6f11a3b910431ff93aae7e773078c769f0a3ef15fb9ec692ed147d4"
+source = "git+https://github.com/qdrant/hyper?branch=v0.14.26-qdrant#923b57d062119b6d223beff7f34f8955f9c3dded"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -7692,8 +7691,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76c4eb7a4e9ef9d4763600161f12f5070b92a578e1b634db88a6887844c91a13"
+source = "git+https://github.com/qdrant/tonic?branch=v0.11.0-qdrant#a8c90c80dafedcd5e6a6d2c3d7995422ef317437"
 dependencies = [
  "async-stream",
  "async-trait",

@@ -309,6 +309,10 @@ smallvec = { version = "1.15.1", features = ["write"] }
 dashmap = "6.1"
 walkdir = "2.5.0"
 
+[patch.crates-io]
+tonic = { git = "https://github.com/qdrant/tonic", branch = "v0.11.0-qdrant" }
+hyper = { git = "https://github.com/qdrant/hyper", branch = "v0.14.26-qdrant" }
+
 [[bin]]
 name = "schema_generator"
 path = "src/schema_generator.rs"
