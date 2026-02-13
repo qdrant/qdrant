@@ -385,11 +385,9 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
-        };
+        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
+            what: format!("Shard {shard_id}"),
+        })?;
 
         replica_set.wait_for_local_state(state, timeout).await
     }
@@ -539,11 +537,9 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
-        };
+        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
+            what: format!("Shard {shard_id}"),
+        })?;
 
         replica_set.shard_recovery_point().await
     }
@@ -556,11 +552,9 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
-        };
+        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
+            what: format!("Shard {shard_id}"),
+        })?;
 
         replica_set.update_shard_cutoff_point(cutoff).await
     }
@@ -592,11 +586,9 @@ impl Collection {
         let shard_holder_read = self.shards_holder.read().await;
 
         let shard = shard_holder_read.get_shard(shard_id);
-        let Some(replica_set) = shard else {
-            return Err(CollectionError::NotFound {
-                what: format!("Shard {shard_id}"),
-            });
-        };
+        let replica_set = shard.ok_or_else(|| CollectionError::NotFound {
+            what: format!("Shard {shard_id}"),
+        })?;
 
         replica_set.local_optimizations(options).await
     }

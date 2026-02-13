@@ -324,7 +324,7 @@ pub struct OptimizationsRequestOptions {
 }
 
 /// Optimizations progress for the collection
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Default)]
 pub struct OptimizationsResponse {
     pub summary: OptimizationsSummary,
     /// Currently running optimizations.
@@ -343,7 +343,7 @@ pub struct OptimizationsResponse {
     pub idle_segments: Option<Vec<OptimizationSegmentInfo>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Default)]
 pub struct OptimizationsSummary {
     /// Number of pending optimizations in the queue.
     /// Each optimization will take one or more unoptimized segments and produce

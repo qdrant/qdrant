@@ -443,12 +443,6 @@ impl Collection {
         &self,
         options: OptimizationsRequestOptions,
     ) -> CollectionResult<OptimizationsResponse> {
-        let OptimizationsRequestOptions {
-            queued: with_queued,
-            completed_limit,
-            idle_segments: with_idle_segments,
-        } = options;
-
         let shards_holder = self.shards_holder.read().await;
 
         let futures: Vec<_> = shards_holder
@@ -458,44 +452,24 @@ impl Collection {
 
         let shard_responses = future::try_join_all(futures).await?;
 
-        let mut merged: Option<OptimizationsResponse> = None;
+        let mut merged = OptimizationsResponse::default();
         for shard_response in shard_responses {
-            match &mut merged {
-                Some(merged) => {
-                    merged.merge(shard_response);
-                }
-                None => {
-                    merged = Some(shard_response);
-                }
-            }
+            merged.merge(shard_response);
         }
 
-        let mut response = merged.unwrap_or_else(|| OptimizationsResponse {
-            summary: OptimizationsSummary {
-                queued_optimizations: 0,
-                queued_segments: 0,
-                queued_points: 0,
-                idle_segments: 0,
-            },
-            running: Vec::new(),
-            queued: with_queued.then_some(Vec::new()),
-            completed: completed_limit.map(|_| Vec::new()),
-            idle_segments: with_idle_segments.then_some(Vec::new()),
-        });
-
         // Sort from newest to oldest
-        response
+        merged
             .running
             .sort_by_key(|v| cmp::Reverse(v.progress.started_at));
 
-        if let Some(completed) = &mut response.completed {
+        if let Some(completed) = &mut merged.completed {
             completed.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
-            if let Some(limit) = completed_limit {
+            if let Some(limit) = options.completed_limit {
                 completed.truncate(limit);
             }
         }
 
-        Ok(response)
+        Ok(merged)
     }
 
     pub async fn print_warnings(&self) {
