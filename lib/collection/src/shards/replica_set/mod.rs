@@ -29,8 +29,8 @@ use tokio_util::task::AbortOnDropHandle;
 
 use self::partial_snapshot_meta::PartialSnapshotMeta;
 use super::CollectionId;
-use super::local_shard::LocalShard;
 use super::local_shard::clock_map::RecoveryPoint;
+use super::local_shard::{LocalShard, LocalShardOptimizations};
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -1454,19 +1454,24 @@ impl ShardReplicaSet {
                 }
             }
             if let Some(shard_optimizations) = shard.optimizations() {
-                queued_optimizations += shard_optimizations.queued.len();
-                for queued_optimization in &shard_optimizations.queued {
+                let LocalShardOptimizations {
+                    queued: local_queued,
+                    idle_segments: local_idle_segments,
+                } = shard_optimizations;
+
+                queued_optimizations += local_queued.len();
+                for queued_optimization in &local_queued {
                     queued_segments += queued_optimization.segments.len();
                     for segment in &queued_optimization.segments {
                         queued_points += segment.points_count;
                     }
                 }
-                idle_segments_count += shard_optimizations.idle_segments.len();
+                idle_segments_count += local_idle_segments.len();
                 if let Some(queued) = &mut queued {
-                    queued.extend(shard_optimizations.queued);
+                    queued.extend(local_queued);
                 }
                 if let Some(idle_segments) = &mut idle_segments {
-                    idle_segments.extend(shard_optimizations.idle_segments);
+                    idle_segments.extend(local_idle_segments);
                 }
             }
         }
