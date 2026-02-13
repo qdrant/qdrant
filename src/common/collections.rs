@@ -672,26 +672,14 @@ pub async fn do_update_collection_cluster(
                 ));
             }
 
-            // Version gate: all peers must support the resharding transfer version
+            // Resharding now requires a new type of update operation,
+            // so all peers must be at the version that supports it.
             let toc = dispatcher.toc(&access, &pass);
             let channel_service = toc.get_channel_service();
             if !channel_service.all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION) {
                 return Err(StorageError::bad_request(format!(
-                    "Cannot start resharding: not all peers support the required version {}. \
-                     Peer versions: [{}], peer addresses: [{}]",
+                    "Cannot start resharding: not all peers support the required version {}",
                     *NEW_UPDATE_ON_RESHARDING_VERSION,
-                    channel_service
-                        .peers_versions()
-                        .into_iter()
-                        .map(|(peer_id, version)| format!("{peer_id}: {version}"))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    channel_service
-                        .peers_addresses()
-                        .into_iter()
-                        .map(|(peer_id, address)| format!("{peer_id}: {address}"))
-                        .collect::<Vec<String>>()
-                        .join(", "),
                 )));
             }
 

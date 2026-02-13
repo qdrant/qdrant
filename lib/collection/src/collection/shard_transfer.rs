@@ -89,36 +89,7 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let transfer_method = shard_transfer.method.unwrap_or_default();
-            let is_supported_version = self
-                .channel_service
-                .all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION);
-
-            // This is a safety net — the pre-flight check in
-            // `StartResharding` and `TocDispatcher::start_shard_transfer`
-            // should have already caught this before proposing to consensus.
-            // If we still hit this, returning a service_error will lead to a
-            // consensus panic so we notice the pre-flight was bypassed.
-            if transfer_method.is_resharding() && !is_supported_version {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot start resharding transfer: not all peers support the required version {} while they are at versions [{}] -> addresses [{}]",
-                    *NEW_UPDATE_ON_RESHARDING_VERSION,
-                    self.channel_service
-                        .peers_versions()
-                        .into_iter()
-                        .map(|(peer_id, version)| format!("{peer_id}: {version}"))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    self.channel_service
-                        .peers_addresses()
-                        .into_iter()
-                        .map(|(peer_id, address)| format!("{peer_id}: {address}"))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                )));
-            }
-
-            let initial_state = match transfer_method {
+            let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
