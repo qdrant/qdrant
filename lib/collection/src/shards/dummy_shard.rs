@@ -1,15 +1,12 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
-    WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::count::CountRequestInternal;
 use shard::operations::CollectionUpdateOperations;
@@ -38,17 +35,6 @@ impl DummyShard {
         Self {
             message: message.into(),
         }
-    }
-
-    pub fn create_snapshot(
-        &self,
-        _temp_path: &Path,
-        _tar: &tar_ext::BuilderExt,
-        _format: SnapshotFormat,
-        _manifest: Option<SnapshotManifest>,
-        _save_wal: bool,
-    ) -> CollectionError {
-        self.dummy_error()
     }
 
     pub fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -94,7 +80,7 @@ impl DummyShard {
         self.dummy()
     }
 
-    fn dummy_error(&self) -> CollectionError {
+    pub fn dummy_error(&self) -> CollectionError {
         CollectionError::service_error(self.message.clone())
     }
 

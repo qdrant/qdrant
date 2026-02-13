@@ -13,17 +13,19 @@ use segment::entry::NonAppendableSegmentEntry;
 use segment::types::{SegmentConfig, SnapshotFormat};
 use shard::files::{APPLIED_SEQ_FILE, SEGMENTS_PATH, WAL_PATH};
 use shard::locked_segment::LockedSegment;
+use shard::operations::OperationWithClockTag;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use shard::snapshots::snapshot_utils::SnapshotUtils;
+use shard::wal::SerdeWal;
+use tokio::sync::OwnedMutexGuard;
 use tokio_util::task::AbortOnDropHandle;
 use wal::{Wal, WalOptions};
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::{LocalShard, LocalShardClocks};
-use crate::wal_delta::LockedWal;
 
 impl LocalShard {
     pub async fn snapshot_manifest(&self) -> CollectionResult<SnapshotManifest> {
@@ -54,6 +56,9 @@ impl LocalShard {
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         let segments = self.segments.clone();
         let wal = self.wal.wal.clone();
+        let payload_index_schema = self.payload_index_schema.clone();
+
+        let shard_path = self.path.clone();
 
         let segments_path = Self::segments_path(&self.path);
         let segment_config = self
@@ -62,11 +67,10 @@ impl LocalShard {
             .await
             .to_base_segment_config()?;
 
-        let payload_index_schema = self.payload_index_schema.clone();
-        let temp_path = temp_path.to_owned();
         let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
-        let tar_c = tar.clone();
-        let shard_path = self.path.clone();
+
+        let tar = tar.clone();
+        let temp_path = temp_path.to_path_buf();
 
         let plunger_notify = if !save_wal {
             // If we are not saving WAL, we still need to make sure that all submitted by this point
@@ -82,34 +86,54 @@ impl LocalShard {
                 plunger_notify.await?;
             }
 
-            let tar_internal = tar_c.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 // Do not change segments while snapshotting
                 snapshot_all_segments(
                     segments.clone(),
                     &segments_path,
                     Some(segment_config),
-                    payload_index_schema.clone(),
+                    payload_index_schema,
                     &temp_path,
-                    &tar_internal.descend(Path::new(SEGMENTS_PATH))?,
+                    &tar.descend(Path::new(SEGMENTS_PATH))?,
                     format,
                     manifest.as_ref(),
                 )?;
 
+                let wal_guard = wal.blocking_lock_owned();
+
+                LocalShardClocks::archive_data(&shard_path, &tar)?;
+
+                // Staging delay
+                #[cfg(feature = "staging")]
+                {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!("Staging: Delaying snapshotting WAL for {delay_secs}s");
+                        std::thread::sleep(std::time::Duration::from_secs_f64(delay_secs));
+                        log::debug!("Staging: Delay complete, snapshotting WAL");
+                    }
+                }
+
                 if save_wal {
                     // snapshot all shard's WAL
-                    Self::snapshot_wal(wal, &tar_internal)?;
+                    Self::snapshot_wal(wal_guard, &tar)?;
                     // snapshot applied_seq, it is preferred to save applied_seq later,
                     // as higher applied_seq means more updates will be processed on restore,
                     // which is more safe than having applied_seq too old.
-                    Self::snapshot_applied_seq(applied_seq_path, &tar_internal)
+                    Self::snapshot_applied_seq(applied_seq_path, &tar)?;
                 } else {
-                    Self::snapshot_empty_wal(wal, &temp_path, &tar_internal)
+                    Self::snapshot_empty_wal(wal_guard, &temp_path, &tar)?;
                 }
-            });
-            AbortOnDropHandle::new(handle).await??;
 
-            LocalShardClocks::archive_data(&shard_path, &tar_c).await?;
+                CollectionResult::Ok(())
+            });
+
+            AbortOnDropHandle::new(handle).await??;
 
             Ok(())
         };
@@ -123,14 +147,15 @@ impl LocalShard {
     ///
     /// This function panics if called within an asynchronous execution context.
     fn snapshot_empty_wal(
-        wal: LockedWal,
+        wal_guard: OwnedMutexGuard<SerdeWal<OperationWithClockTag>>,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
     ) -> CollectionResult<()> {
-        let (segment_capacity, latest_op_num) = {
-            let wal_guard = wal.blocking_lock();
-            (wal_guard.segment_capacity(), wal_guard.last_index())
-        };
+        let wal_segment_capacity = wal_guard.segment_capacity();
+        let wal_last_index = wal_guard.last_index();
+
+        // Empty snapshot only need indexes to be correct
+        drop(wal_guard);
 
         let temp_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
             CollectionError::service_error(format!(
@@ -141,11 +166,11 @@ impl LocalShard {
         Wal::generate_empty_wal_starting_at_index(
             temp_dir.path(),
             &WalOptions {
-                segment_capacity,
+                segment_capacity: wal_segment_capacity,
                 segment_queue_len: 0,
                 retain_closed: NonZeroUsize::new(1).unwrap(),
             },
-            latest_op_num,
+            wal_last_index,
         )
         .map_err(|err| {
             CollectionError::service_error(format!("Error while create empty WAL: {err}"))
@@ -162,9 +187,10 @@ impl LocalShard {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    fn snapshot_wal(wal: LockedWal, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
-        // lock wal during snapshot
-        let mut wal_guard = wal.blocking_lock();
+    fn snapshot_wal(
+        mut wal_guard: OwnedMutexGuard<SerdeWal<OperationWithClockTag>>,
+        tar: &tar_ext::BuilderExt,
+    ) -> CollectionResult<()> {
         wal_guard.flush()?;
         let source_wal_path = wal_guard.path();
 

@@ -24,7 +24,7 @@ use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use io::storage_version::StorageVersion;
-use segment::types::ShardKey;
+use segment::types::{SeqNumberType, ShardKey};
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
@@ -37,6 +37,7 @@ use crate::common::collection_size_stats::{
 };
 use crate::common::is_ready::IsReady;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
+use crate::operations::OperationWithClockTag;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
@@ -559,6 +560,22 @@ impl Collection {
         };
 
         replica_set.update_shard_cutoff_point(cutoff).await
+    }
+
+    pub async fn get_shard_wal_entries(
+        &self,
+        shard_id: ShardId,
+        count: u64,
+    ) -> CollectionResult<Vec<(SeqNumberType, OperationWithClockTag)>> {
+        let shard_holder = self.shards_holder.read().await;
+
+        let Some(replica_set) = shard_holder.get_shard(shard_id) else {
+            return Err(CollectionError::NotFound {
+                what: format!("Shard {shard_id}"),
+            });
+        };
+
+        replica_set.get_wal_entries(count).await
     }
 
     pub async fn state(&self) -> State {

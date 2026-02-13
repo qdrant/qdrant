@@ -24,8 +24,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
@@ -46,6 +46,7 @@ use segment::index::field_index::{CardinalityEstimation, EstimationMerge};
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
+    SeqNumberType,
 };
 use shard::files::{NEWEST_CLOCKS_PATH, OLDEST_CLOCKS_PATH, ShardDataFiles};
 use shard::operations::CollectionUpdateOperations;
@@ -1159,6 +1160,24 @@ impl LocalShard {
         self.wal.update_cutoff(cutoff).await
     }
 
+    /// Get the last N entries from the WAL
+    ///
+    /// Returns a vector of (sequence_number, operation) tuples, newest first.
+    pub async fn get_wal_entries(&self, count: u64) -> Vec<(SeqNumberType, OperationWithClockTag)> {
+        let wal = self.wal.wal.lock().await;
+
+        if wal.len(true) == 0 {
+            return Vec::new();
+        }
+
+        let count = cmp::min(count, wal.len(true));
+
+        let end = wal.last_index();
+        let start = end.saturating_sub(count);
+
+        wal.read_range(start..end + 1).rev().collect()
+    }
+
     /// Check if the read rate limiter allows the operation to proceed
     /// - hw_measurement_acc: the current hardware measurement accumulator
     /// - context: the context of the operation to add on the error message
@@ -1298,18 +1317,16 @@ impl LocalShardClocks {
     }
 
     /// Put clock data from the disk into an archive.
-    pub async fn archive_data(from: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+    pub fn archive_data(from: &Path, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         let newest_clocks_from = Self::newest_clocks_path(from);
         let oldest_clocks_from = Self::oldest_clocks_path(from);
 
         if newest_clocks_from.exists() {
-            tar.append_file(&newest_clocks_from, Path::new(NEWEST_CLOCKS_PATH))
-                .await?;
+            tar.blocking_append_file(&newest_clocks_from, Path::new(NEWEST_CLOCKS_PATH))?;
         }
 
         if oldest_clocks_from.exists() {
-            tar.append_file(&oldest_clocks_from, Path::new(OLDEST_CLOCKS_PATH))
-                .await?;
+            tar.blocking_append_file(&oldest_clocks_from, Path::new(OLDEST_CLOCKS_PATH))?;
         }
 
         Ok(())
