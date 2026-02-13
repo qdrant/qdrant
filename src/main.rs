@@ -595,6 +595,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(metrics_port) = settings.service.metrics_port {
         let telemetry_collector = telemetry_collector.clone();
         let settings = settings.clone();
+        let actix_runtime = runtime_handle.clone();
         let handle = thread::Builder::new()
             .name("metrics".to_string())
             .spawn(move || {
@@ -604,6 +605,7 @@ fn main() -> anyhow::Result<()> {
                         metrics_port,
                         telemetry_collector,
                         settings,
+                        actix_runtime,
                     ),
                 )
             })

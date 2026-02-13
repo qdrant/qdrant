@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use actix_web::middleware::Compress;
 use actix_web::{App, HttpServer, web};
+use tokio::runtime::Handle;
 
 use crate::actix::api::service_api::config_metrics_api;
 use crate::actix::certificate_helpers;
@@ -13,8 +14,9 @@ pub fn init_metrics(
     port: u16,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     settings: Settings,
+    runtime: Handle,
 ) -> io::Result<()> {
-    actix_web::rt::System::new().block_on(async {
+    runtime.block_on(async {
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let service_config = web::Data::new(settings.service.clone());
 
