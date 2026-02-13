@@ -1,12 +1,11 @@
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults;
 use fs_err::tokio as tokio_fs;
 use parking_lot::Mutex;
-use semver::Version;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::Collection;
@@ -21,13 +20,6 @@ use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
 use crate::shards::{shard_initializing_flag_path, transfer};
-
-/// Version 1.16.4-dev introduces a new type of update operation, and requires all peers
-/// to support it during resharding transfers.
-///
-/// Cancel resharding transfers if some peers do not support it.
-pub static NEW_UPDATE_ON_RESHARDING_VERSION: LazyLock<Version> =
-    LazyLock::new(|| Version::parse("1.16.4-dev").expect("valid version string"));
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -90,17 +82,6 @@ impl Collection {
             let to_is_local = to_replica_set.is_local().await;
 
             let transfer_method = shard_transfer.method.unwrap_or_default();
-            let is_supported_version = self
-                .channel_service
-                .all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION);
-
-            if transfer_method.is_resharding() && !is_supported_version {
-                return Err(CollectionError::service_error(format!(
-                    "Cannot start resharding transfer: not all peers support the required version {}",
-                    *NEW_UPDATE_ON_RESHARDING_VERSION
-                )));
-            }
-
             let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
