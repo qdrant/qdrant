@@ -674,7 +674,7 @@ pub async fn do_update_collection_cluster(
 
             // Resharding now requires a new type of update operation,
             // so all peers must be at the version that supports it.
-            let toc = dispatcher.toc(&access, &pass);
+            let toc = dispatcher.toc(&auth, &pass);
             let channel_service = toc.get_channel_service();
             if !channel_service.all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION) {
                 return Err(StorageError::bad_request(format!(
