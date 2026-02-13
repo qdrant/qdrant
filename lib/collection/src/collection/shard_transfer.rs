@@ -96,11 +96,12 @@ impl Collection {
 
             // This is a safety net — the pre-flight check in
             // `TocDispatcher::start_shard_transfer` should have already caught this
-            // before proposing to consensus. If we still hit this, let it panic via
-            // service_error so we notice the pre-flight was bypassed.
+            // before proposing to consensus. If we still hit this, returning a
+            // service_error will lead to a consensus panic so we notice the
+            // pre-flight was bypassed.
             if transfer_method.is_resharding() && !is_supported_version {
                 return Err(CollectionError::service_error(format!(
-                    "Cannot start resharding transfer: not all peers support the required version {} while they are at versions {:?} -> {:?}",
+                    "Cannot start resharding transfer: not all peers support the required version {} while they are at versions [{}] -> addresses [{}]",
                     *NEW_UPDATE_ON_RESHARDING_VERSION,
                     self.channel_service
                         .peers_versions()

@@ -68,14 +68,17 @@ impl ShardTransferConsensus for TocDispatcher {
         // Pre-flight: version gate for resharding transfers
         // Check before proposing to consensus to return a normal API error
         // instead of failing during consensus apply (which could stop consensus).
-        if transfer_config.is_resharding()
-            && let Some(toc) = self.toc.upgrade()
-        {
+        if transfer_config.is_resharding() {
+            let Some(toc) = self.toc.upgrade() else {
+                return Err(CollectionError::service_error(
+                    "Can't check resharding version gate, table of contents is dropped",
+                ));
+            };
             let channel_service = toc.get_channel_service();
             if !channel_service.all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION) {
                 return Err(CollectionError::pre_condition_failed(format!(
                     "Cannot start resharding transfer: not all peers support the required \
-                     version {} while they are at versions {:?} -> {:?}",
+                     version {} while they are at versions [{}] -> addresses [{}]",
                     *NEW_UPDATE_ON_RESHARDING_VERSION,
                     channel_service
                         .peers_versions()
