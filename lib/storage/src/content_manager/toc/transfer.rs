@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use collection::collection::shard_transfer::NEW_UPDATE_ON_RESHARDING_VERSION;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
@@ -64,6 +65,34 @@ impl ShardTransferConsensus for TocDispatcher {
         transfer_config: ShardTransfer,
         collection_id: CollectionId,
     ) -> CollectionResult<()> {
+        // Pre-flight: version gate for resharding transfers
+        // Check before proposing to consensus to return a normal API error
+        // instead of failing during consensus apply (which could stop consensus).
+        if transfer_config.is_resharding() {
+            if let Some(toc) = self.toc.upgrade() {
+                let channel_service = toc.get_channel_service();
+                if !channel_service.all_peers_at_version(&NEW_UPDATE_ON_RESHARDING_VERSION) {
+                    return Err(CollectionError::pre_condition_failed(format!(
+                        "Cannot start resharding transfer: not all peers support the required \
+                         version {} while they are at versions {:?} -> {:?}",
+                        *NEW_UPDATE_ON_RESHARDING_VERSION,
+                        channel_service
+                            .peers_versions()
+                            .into_iter()
+                            .map(|(peer_id, version)| format!("{}: {}", peer_id, version))
+                            .collect::<Vec<String>>()
+                            .join(", "),
+                        channel_service
+                            .peers_addresses()
+                            .into_iter()
+                            .map(|(peer_id, address)| format!("{}: {}", peer_id, address))
+                            .collect::<Vec<String>>()
+                            .join(", "),
+                    )));
+                }
+            }
+        }
+
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,

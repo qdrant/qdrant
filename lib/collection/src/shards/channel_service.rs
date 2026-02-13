@@ -189,6 +189,20 @@ impl ChannelService {
             .all(|metadata| &metadata.version >= version)
     }
 
+    /// Get the versions of all peers
+    pub fn peers_versions(&self) -> HashMap<PeerId, Version> {
+        self.id_to_metadata
+            .read()
+            .iter()
+            .map(|(peer_id, metadata)| (*peer_id, metadata.version.clone()))
+            .collect()
+    }
+
+    /// Get peer addresses:
+    pub fn peers_addresses(&self) -> HashMap<PeerId, Uri> {
+        self.id_to_address.read().clone()
+    }
+
     /// Check whether the specified peer is running at least the given version
     ///
     /// If the version is not known for the peer, this returns `false`.

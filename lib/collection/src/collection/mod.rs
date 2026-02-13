@@ -8,7 +8,7 @@ mod point_ops;
 pub mod query;
 mod resharding;
 mod search;
-mod shard_transfer;
+pub mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
