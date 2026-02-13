@@ -105,13 +105,13 @@ impl Collection {
                     self.channel_service
                         .peers_versions()
                         .into_iter()
-                        .map(|(peer_id, version)| format!("{}: {}", peer_id, version))
+                        .map(|(peer_id, version)| format!("{peer_id}: {version}"))
                         .collect::<Vec<String>>()
                         .join(", "),
                     self.channel_service
                         .peers_addresses()
                         .into_iter()
-                        .map(|(peer_id, address)| format!("{}: {}", peer_id, address))
+                        .map(|(peer_id, address)| format!("{peer_id}: {address}"))
                         .collect::<Vec<String>>()
                         .join(", "),
                 )));
