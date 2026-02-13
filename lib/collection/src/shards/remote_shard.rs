@@ -11,11 +11,11 @@ use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     CountResponse, FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
-    GetPoints, GetPointsInternal, GetShardRecoveryPointRequest, HealthCheckRequest,
-    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryBatchResponseInternal,
-    QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints,
-    ScrollPointsInternal, SearchBatchResponse, ShardSnapshotLocation,
-    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    GetPoints, GetPointsInternal, GetShardOptimizationsRequest, GetShardRecoveryPointRequest,
+    HealthCheckRequest, InitiateShardTransferRequest, QueryBatchPointsInternal,
+    QueryBatchResponseInternal, QueryShardPoints, RecoverShardSnapshotRequest,
+    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, SearchBatchResponse,
+    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use api::grpc::update_operation::Update;
@@ -55,7 +55,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountResult,
-    PointRequestInternal, UpdateResult,
+    OptimizationsRequestOptions, OptimizationsResponse, PointRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
@@ -952,6 +952,36 @@ impl RemoteShard {
         })
         .await?;
         Ok(())
+    }
+
+    /// Get optimizations info from the remote shard via gRPC.
+    pub async fn optimizations(
+        &self,
+        options: OptimizationsRequestOptions,
+    ) -> CollectionResult<OptimizationsResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .get_shard_optimizations(GetShardOptimizationsRequest {
+                        collection_name: self.collection_id.clone(),
+                        shard_id: self.id,
+                        with_queued: options.queued,
+                        completed_limit: options.completed_limit.map(|l| l as u32),
+                        with_idle_segments: options.idle_segments,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let response: OptimizationsResponse = serde_json::from_slice(&res.optimizations_json)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to deserialize optimizations response from remote shard: {err}"
+                ))
+            })?;
+
+        Ok(response)
     }
 
     pub async fn health_check(&self) -> CollectionResult<()> {

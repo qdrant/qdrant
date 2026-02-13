@@ -4,9 +4,11 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
     CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
-    GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
-    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    GetShardOptimizationsRequest, GetShardOptimizationsResponse, GetShardRecoveryPointRequest,
+    GetShardRecoveryPointResponse, InitiateShardTransferRequest, UpdateShardCutoffPointRequest,
+    WaitForShardStateRequest,
 };
+use collection::operations::types::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::{Access, AccessRequirements, Auth, AuthType, CollectionPass};
 use tonic::{Request, Response, Status};
@@ -208,6 +210,57 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let response = CollectionOperationResponse {
             result: true,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn get_shard_optimizations(
+        &self,
+        request: Request<GetShardOptimizationsRequest>,
+    ) -> Result<Response<GetShardOptimizationsResponse>, Status> {
+        validate_and_log(request.get_ref());
+
+        let timing = Instant::now();
+        let GetShardOptimizationsRequest {
+            collection_name,
+            shard_id,
+            with_queued,
+            completed_limit,
+            with_idle_segments,
+        } = request.into_inner();
+
+        let options = OptimizationsRequestOptions {
+            queued: with_queued,
+            completed_limit: completed_limit.map(|l| l as usize),
+            idle_segments: with_idle_segments,
+        };
+
+        let collection_read = self
+            .toc
+            .get_collection(&full_access_pass(&collection_name)?)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        let optimizations_response = collection_read
+            .local_shard_optimizations(shard_id, options)
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to get optimizations for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let optimizations_json = serde_json::to_vec(&optimizations_response).map_err(|err| {
+            Status::internal(format!("Failed to serialize optimizations response: {err}"))
+        })?;
+
+        let response = GetShardOptimizationsResponse {
+            optimizations_json,
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))

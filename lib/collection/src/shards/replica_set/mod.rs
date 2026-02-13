@@ -19,7 +19,6 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
-use parking_lot::Mutex as ParkingMutex;
 use replica_set_state::{ReplicaSetState, ReplicaState};
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
 use serde::{Deserialize, Serialize};
@@ -30,22 +29,23 @@ use tokio_util::task::AbortOnDropHandle;
 
 use self::partial_snapshot_meta::PartialSnapshotMeta;
 use super::CollectionId;
-use super::local_shard::LocalShard;
 use super::local_shard::clock_map::RecoveryPoint;
+use super::local_shard::{LocalShard, LocalShardOptimizations};
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
+use crate::operations::types::{
+    CollectionError, CollectionResult, OptimizationsRequestOptions, OptimizationsResponse,
+    OptimizationsSummary, UpdateResult, UpdateStatus,
+};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
-use crate::shards::local_shard::LocalShardOptimizations;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
@@ -1155,6 +1155,16 @@ impl ShardReplicaSet {
         is_readable && !self.is_locally_disabled(peer_id)
     }
 
+    fn peer_is_updatable(&self, peer_id: PeerId) -> bool {
+        let peer_state = self.peer_state(peer_id);
+        let is_updatable = match peer_state {
+            Some(state) => state.is_updatable(),
+            None => false,
+        };
+
+        is_updatable && !self.is_locally_disabled(peer_id)
+    }
+
     /// Check if this shard is active.
     /// By active, we mean, that at least one replica have `is_active` state.
     /// It is possible, that some replicas are not active, if they are created in a `Partial` state.
@@ -1371,14 +1381,136 @@ impl ShardReplicaSet {
         self.payload_index_schema.clone()
     }
 
-    pub async fn optimizers_log(&self) -> Option<Arc<ParkingMutex<TrackerLog>>> {
-        let local = self.local.read().await;
-        local.as_ref().and_then(|shard| shard.optimizers_log())
+    /// Get optimizations info for this shard replica set.
+    ///
+    /// Collects data from local shard (optimizers log + planned optimizations)
+    /// and from remote shards via gRPC, then merges the results.
+    pub async fn optimizations(
+        &self,
+        options: OptimizationsRequestOptions,
+    ) -> CollectionResult<OptimizationsResponse> {
+        let OptimizationsRequestOptions {
+            queued: _,
+            completed_limit,
+            idle_segments: _,
+        } = options;
+
+        // Collect from local and remote shards concurrently
+        let local_future = self.local_optimizations(options);
+        let remote_futures = async {
+            let remotes = self.remotes.read().await;
+            let futures: Vec<_> = remotes
+                .iter()
+                .filter(|remote| self.peer_is_updatable(remote.peer_id))
+                .map(|remote| remote.optimizations(options))
+                .collect();
+            futures::future::try_join_all(futures).await
+        };
+
+        let (mut response, remote_responses) =
+            futures::future::try_join(local_future, remote_futures).await?;
+
+        for remote_response in remote_responses {
+            response.merge(remote_response);
+        }
+
+        // Sort from newest to oldest
+        response
+            .running
+            .sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+
+        if let Some(completed) = &mut response.completed {
+            completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+            if let Some(limit) = completed_limit {
+                completed.truncate(limit);
+            }
+        }
+
+        Ok(response)
     }
 
-    pub async fn optimizations(&self) -> Option<LocalShardOptimizations> {
+    /// Get optimizations info from only the local shard.
+    ///
+    /// This is used by the internal gRPC handler to return local data
+    /// without querying remote shards (which would cause recursion).
+    pub async fn local_optimizations(
+        &self,
+        options: OptimizationsRequestOptions,
+    ) -> CollectionResult<OptimizationsResponse> {
+        let OptimizationsRequestOptions {
+            queued: with_queued,
+            completed_limit,
+            idle_segments: with_idle_segments,
+        } = options;
+
+        let mut running = Vec::new();
+        let mut completed = Vec::new();
+        let mut idle_segments = with_idle_segments.then_some(Vec::new());
+        let mut queued = with_queued.then_some(Vec::new());
+
+        let mut queued_optimizations = 0;
+        let mut queued_segments = 0;
+        let mut queued_points = 0;
+        let mut idle_segments_count = 0;
+
         let local = self.local.read().await;
-        local.as_ref().and_then(|shard| shard.optimizations())
+
+        let is_updatable = self.peer_is_updatable(self.this_peer_id());
+
+        if let Some(shard) = local.as_ref()
+            && is_updatable
+        {
+            if let Some(log) = shard.optimizers_log() {
+                for tracker in log.lock().iter() {
+                    if tracker.state.lock().status.is_running() {
+                        running.push(tracker.to_optimization());
+                    } else if completed_limit.is_some() {
+                        completed.push(tracker.to_optimization());
+                    }
+                }
+            }
+            if let Some(shard_optimizations) = shard.optimizations() {
+                let LocalShardOptimizations {
+                    queued: local_queued,
+                    idle_segments: local_idle_segments,
+                } = shard_optimizations;
+
+                queued_optimizations += local_queued.len();
+                for queued_optimization in &local_queued {
+                    queued_segments += queued_optimization.segments.len();
+                    for segment in &queued_optimization.segments {
+                        queued_points += segment.points_count;
+                    }
+                }
+                idle_segments_count += local_idle_segments.len();
+                if let Some(queued) = &mut queued {
+                    queued.extend(local_queued);
+                }
+                if let Some(idle_segments) = &mut idle_segments {
+                    idle_segments.extend(local_idle_segments);
+                }
+            }
+        }
+
+        // Sort from newest to oldest
+        running.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+
+        Ok(OptimizationsResponse {
+            summary: OptimizationsSummary {
+                queued_optimizations,
+                queued_segments,
+                queued_points,
+                idle_segments: idle_segments_count,
+            },
+            running,
+            queued,
+            completed: completed_limit.map(|completed_limit| {
+                completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
+                completed.truncate(completed_limit);
+                completed
+            }),
+            idle_segments,
+        })
     }
 
     /// Truncate unapplied WAL records for the local shard (if present).

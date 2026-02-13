@@ -149,7 +149,7 @@ impl Tracker {
 
     pub fn to_optimization(&self) -> Optimization {
         Optimization {
-            optimizer: self.name,
+            optimizer: self.name.to_string(),
             uuid: self.uuid,
             segments: self.segments.iter().map(|s| s.into()).collect(),
             status: self.state.lock().status.clone(),
