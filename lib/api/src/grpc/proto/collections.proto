@@ -751,8 +751,6 @@ message PayloadSchemaInfo {
 message UpdateQueueInfo {
     // Number of elements in the queue
     uint64 length = 1;
-    // last operation number processed
-    optional uint64 op_num = 2;
 }
 
 message CollectionInfo {

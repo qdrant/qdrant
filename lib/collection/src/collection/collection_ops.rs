@@ -355,7 +355,6 @@ impl Collection {
             info.segments_count += segments_count;
             info.warnings.extend(warnings);
             if let Some(queue) = &mut info.update_queue {
-                // TODO remove field `op_num`, no sane way to aggregate across shards
                 queue.length += update_queue.map(|q| q.length).unwrap_or(0);
             } else {
                 info.update_queue = update_queue;

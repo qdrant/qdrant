@@ -8339,13 +8339,6 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
-          },
-          "op_num": {
-            "description": "last operation number processed",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
           }
         }
       },
@@ -12608,7 +12601,7 @@
             "description": "Update queue status",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/UpdateQueueInfo"
+                "$ref": "#/components/schemas/ShardUpdateQueueInfo"
               },
               {
                 "nullable": true
@@ -13354,6 +13347,27 @@
             "additionalProperties": false
           }
         ]
+      },
+      "ShardUpdateQueueInfo": {
+        "type": "object",
+        "required": [
+          "length"
+        ],
+        "properties": {
+          "length": {
+            "description": "Number of elements in the queue",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "op_num": {
+            "description": "last operation number processed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
       },
       "RemoteShardTelemetry": {
         "type": "object",
