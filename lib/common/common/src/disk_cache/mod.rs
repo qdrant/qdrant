@@ -9,14 +9,17 @@ use std::ops::Range;
 pub use cached_file::CachedFile;
 pub use cached_slice::{CachedSlice, unsafe_transmute_zerocopy_vec};
 pub use controller::CacheController;
+use trififo::array_lookup::AsIndex;
 
 /// We cache data in blocks of this size.
 /// Should be multiple of filesystem block size (usually 4 KiB).
 pub const BLOCK_SIZE: usize = 32 * 1024;
 
 /// Internal identifier of a cold file.
+///
+/// This is used as the starting [`BlockId`] of the cold file in the cache
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct FileId(u32);
+struct FileId(BlockId);
 
 /// Offset within a file, in blocks.
 ///
@@ -34,16 +37,28 @@ impl BlockOffset {
     }
 }
 
-/// This pair uniquely identifies a block in a cold file.
+/// This uniquely identifies a block in a cold file.
 /// Acts as a cache key.
 #[derive(Copy, Hash, PartialEq, Eq, Clone, Debug)]
-struct BlockId {
-    file_id: FileId,
-    offset: BlockOffset,
+struct BlockId(u64);
+
+impl BlockId {
+    /// The same offset but in bytes instead of blocks.
+    fn bytes(self) -> usize {
+        self.0 as usize * BLOCK_SIZE
+    }
 }
 
 /// A request for a range of bytes inside of a block
 struct BlockRequest {
     key: BlockId,
+    file_id: FileId,
     range: Range<usize>,
+}
+
+// todo: remove AsIndex trait
+impl AsIndex for BlockId {
+    fn as_index(&self) -> usize {
+        self.0 as usize
+    }
 }

@@ -1,3 +1,4 @@
+pub mod array_lookup;
 mod cache;
 mod entry;
 mod guard;

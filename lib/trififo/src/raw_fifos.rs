@@ -1,4 +1,3 @@
-use std::hash::{BuildHasher, Hash};
 use std::num::NonZeroUsize;
 
 use crate::entry::Entry;
@@ -106,50 +105,6 @@ impl<K, V> RawFifos<K, V> {
         }
     }
 
-    fn get_local_key(&self, local_offset: LocalOffset) -> Option<&K> {
-        match local_offset {
-            LocalOffset::Small(position) => Some(&self.small.get_absolute(position as usize)?.key),
-            LocalOffset::Main(position) => Some(&self.main.get_absolute(position as usize)?.key),
-            LocalOffset::Ghost(position) => self.ghost.get_absolute(position as usize),
-        }
-    }
-
-    /// Compare the key stored at a global offset with the provided `key`.
-    ///
-    /// This is a convenience used by hashtable lookup helpers to verify whether
-    /// an entry at `global_offset` corresponds to `key`. It resolves the global
-    /// offset into the appropriate queue (small/main/ghost) and compares the
-    /// stored key.
-    #[inline]
-    pub fn key_eq(&self, global_offset: GlobalOffset, key: &K) -> bool
-    where
-        K: PartialEq,
-    {
-        let local_offset = self.local_offset(global_offset);
-        let Some(stored_key) = self.get_local_key(local_offset) else {
-            return false;
-        };
-        stored_key == key
-    }
-
-    /// Compute the hash for the key stored at `global_offset` using the given
-    /// `hasher`. This function is used by a hashtable for insertion.
-    #[inline]
-    pub fn hash_key_at_offset<S>(&self, global_offset: GlobalOffset, hasher: &S) -> u64
-    where
-        S: BuildHasher,
-        K: Copy + Hash,
-    {
-        // Extract the key from the appropriate queue and hash it with the provided hasher.
-        let local_offset = self.local_offset(global_offset);
-        let key = self
-            .get_local_key(local_offset)
-            // Since we are the only writer, the offset is valid.
-            .expect("This is used for rehashing, which means we must be the only writer");
-
-        hasher.hash_one(key)
-    }
-
     pub fn small_overwriting_push(&mut self, entry: Entry<K, V>) -> GlobalOffset {
         let local_offset = self.small.overwriting_push(entry);
         self.global_offset(LocalOffset::Small(local_offset as u32))
@@ -252,8 +207,8 @@ mod tests {
         // Ghost entries return None for get_entry
         assert!(fifos.get_local_entry(local_offset).is_none());
 
-        // But the key is still there
-        assert_eq!(*fifos.get_local_key(local_offset).unwrap(), 42);
+        // But the key is still there in the ghost ring buffer
+        assert_eq!(*fifos.ghost.get_absolute(offset).unwrap(), 42);
     }
 
     #[test]

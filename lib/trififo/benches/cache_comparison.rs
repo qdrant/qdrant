@@ -34,6 +34,7 @@ use rayon::prelude::*;
 #[cfg(feature = "bench_all")]
 use schnellru::{ByLength, LruMap};
 use strum::{EnumIter, IntoEnumIterator};
+use trififo::array_lookup::AsIndex;
 use trififo::lifecycle::NoLifecycle;
 
 const FETCH_DURATION: Duration = Duration::from_nanos(1000);
@@ -80,6 +81,13 @@ impl Hash for Key {
     }
 }
 
+impl AsIndex for Key {
+    #[inline]
+    fn as_index(&self) -> usize {
+        // Use the combined u64 value as the index
+        ((self.fd as u64) << 32 | u64::from(self.page)) as usize
+    }
+}
 // =============================================================================
 // Memory Tracking Allocator
 // =============================================================================
@@ -602,10 +610,10 @@ fn bench_multi_thread_latency(c: &mut Criterion) {
 // =============================================================================
 
 fn bench_all(c: &mut Criterion) {
-    // test_memory_usage();
+    test_memory_usage();
     test_hit_ratio();
 
-    // bench_single_thread_latency(c);
+    bench_single_thread_latency(c);
     bench_multi_thread_latency(c);
 }
 

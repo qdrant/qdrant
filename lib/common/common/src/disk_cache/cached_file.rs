@@ -4,7 +4,8 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, FileId};
+use super::{BLOCK_SIZE, BlockId, BlockRequest, CacheController};
+use crate::disk_cache::FileId;
 
 /// Abstraction over a file, which provides an interface for requesting ranges of bytes.
 ///
@@ -14,7 +15,7 @@ use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, CacheController, Fil
 pub struct CachedFile {
     /// The id assigned by `cacher` for this file. This is combined with a block offset
     /// to create [`BlockRequest`]s
-    pub(super) file_id: FileId,
+    pub(super) starting_block_id: BlockId,
 
     /// Length of this file in bytes
     pub(super) len: usize,
@@ -30,7 +31,7 @@ impl CachedFile {
         debug_assert!(bytes_range.start <= bytes_range.end);
         debug_assert!(bytes_range.end <= self.len);
 
-        blocks_for_range_in(self.file_id, bytes_range)
+        blocks_for_range_in(FileId(self.starting_block_id), bytes_range)
     }
 
     /// Get a Cow reference to the range of bytes within the file.
@@ -85,10 +86,7 @@ fn blocks_for_range_in(
     let trailing_offset = bytes_range.end - (last_block * BLOCK_SIZE);
 
     (first_block..last_block + 1).map(move |block_offset| {
-        let block_id = BlockId {
-            file_id,
-            offset: BlockOffset(block_offset as u32),
-        };
+        let block_id = BlockId(file_id.0.0 + block_offset as u64);
 
         let range_start = if block_offset == first_block {
             leading_offset
@@ -103,6 +101,7 @@ fn blocks_for_range_in(
         };
 
         BlockRequest {
+            file_id,
             key: block_id,
             range: range_start..range_end,
         }
@@ -116,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_block_request_calculation() {
-        let file_id = FileId(0);
+        let file_id = BlockId(0);
 
         // 10 full blocks and 100 extra bytes in last block
         let file_len = BLOCK_SIZE * 10 + 100;
@@ -126,7 +125,7 @@ mod tests {
         //  < range >
         let blocks: Vec<_> = blocks_for_range_in(file_id, 0..100).collect();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].key.offset.0, 0);
+        assert_eq!(blocks[0].key.0, 0);
         assert_eq!(blocks[0].range, 0..100);
 
         //       block 0          block 1
@@ -135,9 +134,9 @@ mod tests {
         let blocks: Vec<_> =
             blocks_for_range_in(file_id, BLOCK_SIZE - 50..BLOCK_SIZE + 50).collect();
         assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].key.offset.0, 0);
+        assert_eq!(blocks[0].key.0, 0);
         assert_eq!(blocks[0].range, (BLOCK_SIZE - 50)..BLOCK_SIZE);
-        assert_eq!(blocks[1].key.offset.0, 1);
+        assert_eq!(blocks[1].key.0, 1);
         assert_eq!(blocks[1].range, 0..50);
 
         //     block 2      block 3
@@ -145,9 +144,9 @@ mod tests {
         // <          range           >
         let blocks: Vec<_> = blocks_for_range_in(file_id, BLOCK_SIZE * 2..BLOCK_SIZE * 4).collect();
         assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].key.offset.0, 2);
+        assert_eq!(blocks[0].key.0, 2);
         assert_eq!(blocks[0].range, 0..BLOCK_SIZE);
-        assert_eq!(blocks[1].key.offset.0, 3);
+        assert_eq!(blocks[1].key.0, 3);
         assert_eq!(blocks[1].range, 0..BLOCK_SIZE);
 
         //  block 9  (last full block)   block 10 (partial block with trailing data)
@@ -155,9 +154,9 @@ mod tests {
         //    <         range                   >
         let blocks: Vec<_> = blocks_for_range_in(file_id, BLOCK_SIZE * 9 + 50..file_len).collect();
         assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].key.offset.0, 9);
+        assert_eq!(blocks[0].key.0, 9);
         assert_eq!(blocks[0].range, 50..BLOCK_SIZE);
-        assert_eq!(blocks[1].key.offset.0, 10);
+        assert_eq!(blocks[1].key.0, 10);
         assert_eq!(blocks[1].range, 0..100);
     }
 }

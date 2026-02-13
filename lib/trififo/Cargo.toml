@@ -18,6 +18,7 @@ ahash = { workspace = true }
 # when bumping hashbrown, make sure this condition hasn't changed, since it may compromise concurrent readers
 # https://github.com/rust-lang/hashbrown/blob/9641fb3eea9a07933fb631da6e4f5070d2f7e1da/src/raw.rs#L2775
 hashbrown = "0.16.1"
+memmap2 = { workspace = true }
 parking_lot = { workspace = true }
 
 [dev-dependencies]

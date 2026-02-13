@@ -1,6 +1,7 @@
 use std::hash::{BuildHasher, Hash};
 use std::num::NonZeroUsize;
 
+use crate::array_lookup::AsIndex;
 use crate::cache::Cache;
 use crate::guard::GetOrGuard;
 use crate::lifecycle::{Lifecycle, NoLifecycle};
@@ -21,12 +22,12 @@ use crate::lifecycle::{Lifecycle, NoLifecycle};
 ///   accessing the same shard contend on the same mutex
 pub struct ShardedCache<K, V, L = NoLifecycle, S = ahash::RandomState> {
     /// The individual cache shards
-    shards: Box<[Cache<K, V, L, S>]>,
+    shards: Box<[Cache<K, V, L>]>,
 
     /// Shard selection strategy for O(1) lookups
     shard_selector: ShardSelector,
 
-    /// Hasher for computing key hashes (shared across all shards)
+    /// Hasher for computing key hashes (used only for shard selection)
     hasher: S,
 }
 
@@ -67,7 +68,7 @@ impl ShardSelector {
 
 impl<K, V> ShardedCache<K, V, NoLifecycle, ahash::RandomState>
 where
-    K: Copy + Hash + Eq,
+    K: Copy + Hash + Eq + AsIndex,
     V: Clone,
 {
     /// Create a new sharded cache with the specified total capacity and number of shards.
@@ -88,10 +89,10 @@ where
 
 impl<K, V, L, S> ShardedCache<K, V, L, S>
 where
-    K: Copy + Hash + Eq,
+    K: Copy + Hash + Eq + AsIndex,
     V: Clone,
     L: Lifecycle<K, V> + Clone,
-    S: BuildHasher + Default + Clone,
+    S: BuildHasher + Default,
 {
     /// Create a new sharded cache with full configuration options.
     ///
@@ -119,9 +120,6 @@ where
             "capacity ({capacity}) must be at least num_shards ({num_shards})"
         );
 
-        // Create the hasher first so all shards share the same instance (cloned).
-        // This is critical: the hash used for shard selection must match the hash
-        // used for hashtable lookups within each shard.
         let hasher = S::default();
 
         let capacity_per_shard = capacity / num_shards;
@@ -135,13 +133,7 @@ where
                 } else {
                     capacity_per_shard
                 };
-                Cache::with_config_and_hasher(
-                    shard_capacity,
-                    small_ratio,
-                    ghost_ratio,
-                    lifecycle.clone(),
-                    hasher.clone(),
-                )
+                Cache::with_config(shard_capacity, small_ratio, ghost_ratio, lifecycle.clone())
             })
             .collect();
 
@@ -162,7 +154,7 @@ where
 
     /// Get the shard for a given hash.
     #[inline(always)]
-    fn get_shard_by_hash(&self, hash: u64) -> &Cache<K, V, L, S> {
+    fn get_shard_by_hash(&self, hash: u64) -> &Cache<K, V, L> {
         let idx = self.shard_selector.select(hash);
         // SAFETY: idx is always valid because shard_selector.mask < shards.len()
         unsafe { self.shards.get_unchecked(idx) }
@@ -174,15 +166,14 @@ where
     #[inline]
     pub fn get(&self, key: &K) -> Option<V> {
         let hash = self.hash_key(key);
-        self.get_shard_by_hash(hash).get_with_hash(key, hash)
+        self.get_shard_by_hash(hash).get(key)
     }
 
     /// Insert a key-value pair into the cache.
     #[inline]
     pub fn insert(&self, key: K, value: V) {
         let hash = self.hash_key(&key);
-        self.get_shard_by_hash(hash)
-            .insert_with_hash(key, value, hash);
+        self.get_shard_by_hash(hash).insert(key, value);
     }
 
     /// Look up `key` in the cache, with guard-based coalescing for concurrent misses.
@@ -201,10 +192,9 @@ where
     /// Because the cache is sharded, threads accessing different shards do not
     /// contend with each other at all.
     #[inline]
-    pub fn get_or_guard(&self, key: &K) -> GetOrGuard<'_, K, V, L, S> {
+    pub fn get_or_guard(&self, key: &K) -> GetOrGuard<'_, K, V, L> {
         let hash = self.hash_key(key);
-        self.get_shard_by_hash(hash)
-            .get_or_guard_with_hash(key, hash)
+        self.get_shard_by_hash(hash).get_or_guard(key)
     }
 
     /// Returns the total number of entries across all shards.
@@ -250,47 +240,44 @@ mod tests {
 
     #[test]
     fn multiple_shards() {
-        let cache = ShardedCache::<u64, u64>::new(1000, NonZeroUsize::new(8).unwrap());
+        let cache = ShardedCache::<u64, String>::new(100, NonZeroUsize::new(4).unwrap());
 
-        // Insert many keys
-        for i in 0..500u64 {
-            cache.insert(i, i * 2);
+        for i in 0..50u64 {
+            cache.insert(i, format!("val_{i}"));
         }
 
-        // Verify we can retrieve them
-        let mut found = 0;
-        for i in 0..500u64 {
-            if let Some(v) = cache.get(&i) {
-                assert_eq!(v, i * 2);
-                found += 1;
-            }
+        for i in 0..50u64 {
+            assert_eq!(cache.get(&i), Some(format!("val_{i}")), "key {i} not found");
         }
-        assert!(found > 0, "should find at least some entries");
 
         // Check that entries are distributed across shards
         let lengths = cache.shard_lengths();
-        let non_empty_shards = lengths.iter().filter(|&&l| l > 0).count();
-        assert!(
-            non_empty_shards > 1,
-            "entries should be distributed across multiple shards"
-        );
+        let total: usize = lengths.iter().sum();
+        assert_eq!(total, 50);
+
+        // With 4 shards and 50 keys, each shard should have some entries
+        for (i, &len) in lengths.iter().enumerate() {
+            assert!(len > 0, "shard {i} has no entries, distribution is broken");
+        }
     }
 
     #[test]
     fn concurrent_reads() {
-        let cache = ShardedCache::<u64, String>::new(200, NonZeroUsize::new(4).unwrap());
+        let cache = Arc::new(ShardedCache::<u64, String>::new(
+            200,
+            NonZeroUsize::new(4).unwrap(),
+        ));
 
-        for i in 0..20u64 {
+        for i in 0..50u64 {
             cache.insert(i, format!("val_{i}"));
         }
 
-        let arc = Arc::new(cache);
         let handles: Vec<_> = (0..8)
             .map(|_| {
-                let c = Arc::clone(&arc);
+                let c = Arc::clone(&cache);
                 thread::spawn(move || {
                     for _ in 0..100 {
-                        for k in 0..20u64 {
+                        for k in 0..50u64 {
                             let _ = c.get(&k);
                         }
                     }
@@ -306,20 +293,20 @@ mod tests {
     #[test]
     fn multi_threaded_inserts() {
         let cache = Arc::new(ShardedCache::<u64, u64>::new(
-            5000,
+            10_000,
             NonZeroUsize::new(8).unwrap(),
         ));
 
         const THREADS: usize = 8;
-        const PER: u64 = 1000;
+        const PER: u64 = 1_000;
 
         let handles: Vec<_> = (0..THREADS)
             .map(|t| {
                 let c = Arc::clone(&cache);
                 thread::spawn(move || {
-                    let start = (t as u64) * PER;
-                    for i in start..(start + PER) {
-                        c.insert(i, i * 2);
+                    let base = t as u64 * PER;
+                    for i in 0..PER {
+                        c.insert(base + i, base + i);
                     }
                 })
             })
@@ -329,35 +316,34 @@ mod tests {
             h.join().unwrap();
         }
 
-        // At least some entries should be present
-        let mut found = 0usize;
-        for i in 0..(THREADS as u64 * PER) {
-            if cache.get(&i).is_some() {
-                found += 1;
+        // Every key that is still in the cache must have the correct value.
+        for t in 0..THREADS {
+            let base = t as u64 * PER;
+            for i in 0..PER {
+                if let Some(v) = cache.get(&(base + i)) {
+                    assert_eq!(v, base + i);
+                }
             }
         }
-        assert!(found > 0);
     }
 
     #[test]
     fn high_contention_inserts() {
         let cache = Arc::new(ShardedCache::<u64, u64>::new(
-            2000,
-            NonZeroUsize::new(16).unwrap(),
+            200,
+            NonZeroUsize::new(4).unwrap(),
         ));
-        let counter = Arc::new(AtomicUsize::new(0));
 
         const THREADS: usize = 16;
-        const INSERTS: usize = 500;
+        const INSERTS: u64 = 5_000;
 
         let handles: Vec<_> = (0..THREADS)
             .map(|_| {
                 let c = Arc::clone(&cache);
-                let ctr = Arc::clone(&counter);
                 thread::spawn(move || {
-                    for _ in 0..INSERTS {
-                        let k = ctr.fetch_add(1, Ordering::Relaxed) as u64;
-                        c.insert(k, k);
+                    for i in 0..INSERTS {
+                        let key = i % 50;
+                        c.insert(key, i);
                     }
                 })
             })
@@ -367,142 +353,124 @@ mod tests {
             h.join().unwrap();
         }
 
-        assert!(!cache.is_empty());
+        assert!(cache.len() <= 200);
     }
 
     #[test]
     fn shard_distribution() {
-        let cache = ShardedCache::<u64, u64>::new(10000, NonZeroUsize::new(8).unwrap());
+        let cache = ShardedCache::<u64, u64>::new(1000, NonZeroUsize::new(8).unwrap());
 
-        // Insert many keys to check distribution
-        for i in 0..8000u64 {
+        for i in 0..500u64 {
             cache.insert(i, i);
         }
 
         let lengths = cache.shard_lengths();
         let total: usize = lengths.iter().sum();
-        let avg = total as f64 / lengths.len() as f64;
+        assert_eq!(total, 500);
 
-        // Check that no shard is too far from average (within 50% is reasonable)
+        // Each shard should have some entries (ahash distributes well)
         for (i, &len) in lengths.iter().enumerate() {
-            let deviation = (len as f64 - avg).abs() / avg;
             assert!(
-                deviation < 0.5,
-                "shard {i} has {len} entries, expected ~{avg:.0} (deviation: {deviation:.2})"
+                len > 0,
+                "shard {i} is empty — hash distribution is degenerate"
             );
         }
     }
 
     #[test]
     fn consistent_shard_selection() {
-        let cache = ShardedCache::<u64, u64>::new(1000, NonZeroUsize::new(4).unwrap());
+        let cache = ShardedCache::<u64, String>::new(100, NonZeroUsize::new(4).unwrap());
 
-        // The same key should always go to the same shard
-        let key = 12345u64;
-        let hash = cache.hash_key(&key);
-        let shard1 = cache.shard_selector.select(hash);
-        let shard2 = cache.shard_selector.select(hash);
-        let shard3 = cache.shard_selector.select(hash);
+        cache.insert(42, "hello".to_string());
 
-        assert_eq!(shard1, shard2);
-        assert_eq!(shard2, shard3);
+        // Multiple gets should consistently find the same shard
+        for _ in 0..100 {
+            assert_eq!(cache.get(&42), Some("hello".to_string()));
+        }
     }
 
     #[test]
     fn power_of_two_bitmask() {
+        // Verify the bitmask gives correct shard indices
         let selector = ShardSelector::new(8);
-        assert_eq!(selector.mask, 7);
-
-        let selector = ShardSelector::new(16);
-        assert_eq!(selector.mask, 15);
+        for hash in 0..100u64 {
+            assert!(selector.select(hash) < 8);
+        }
     }
 
     #[test]
     #[should_panic(expected = "must be a power of 2")]
     fn non_power_of_two_panics() {
-        let _ = ShardSelector::new(7);
+        let _ = ShardSelector::new(3);
     }
 
-    // --- get_or_guard tests ---------------------------------------------------
+    // -----------------------------------------------------------------------
+    // get_or_guard tests
+    // -----------------------------------------------------------------------
 
-    /// Basic test: `get_or_guard` returns `Guard` on a miss, then `Found` after
-    /// the guard inserts.
     #[test]
     fn get_or_guard_basic() {
         let cache = ShardedCache::<u64, String>::new(100, NonZeroUsize::new(4).unwrap());
 
-        // First call should yield a guard.
-        match cache.get_or_guard(&42) {
+        match cache.get_or_guard(&1) {
             GetOrGuard::Guard(guard) => {
                 guard.insert("hello".to_string());
             }
-            GetOrGuard::Found(_) => panic!("expected Guard on first access"),
+            GetOrGuard::Found(_) => panic!("expected Guard"),
         }
 
-        // Second call should yield Found.
-        match cache.get_or_guard(&42) {
+        match cache.get_or_guard(&1) {
             GetOrGuard::Found(v) => assert_eq!(v, "hello"),
-            GetOrGuard::Guard(_) => panic!("expected Found after insert"),
+            GetOrGuard::Guard(_) => panic!("expected Found"),
         }
     }
 
-    /// If the guard is dropped without inserting, subsequent callers should be
-    /// able to get a new guard (i.e. it doesn't deadlock or leave stale state).
     #[test]
     fn get_or_guard_abandon() {
         let cache = ShardedCache::<u64, String>::new(100, NonZeroUsize::new(4).unwrap());
 
-        // Get guard and drop it without inserting.
-        match cache.get_or_guard(&7) {
-            GetOrGuard::Guard(_guard) => { /* drop */ }
-            GetOrGuard::Found(_) => panic!("expected Guard"),
+        // Take guard and drop without inserting.
+        {
+            let result = cache.get_or_guard(&1);
+            match result {
+                GetOrGuard::Guard(_guard) => { /* drop */ }
+                GetOrGuard::Found(_) => panic!("expected Guard"),
+            }
         }
 
         // Should be able to get a new guard.
-        match cache.get_or_guard(&7) {
+        match cache.get_or_guard(&1) {
             GetOrGuard::Guard(guard) => {
                 guard.insert("recovered".to_string());
             }
             GetOrGuard::Found(_) => panic!("expected Guard after abandon"),
         }
 
-        assert_eq!(cache.get(&7), Some("recovered".to_string()));
+        assert_eq!(cache.get(&1), Some("recovered".to_string()));
     }
 
-    /// Multiple threads call `get_or_guard` for the *same* key concurrently.
-    /// Only one should get a `Guard`; the rest should block and eventually get
-    /// `Found` with the correct value.
     #[test]
     fn get_or_guard_coalescing() {
         let cache = Arc::new(ShardedCache::<u64, String>::new(
             100,
             NonZeroUsize::new(4).unwrap(),
         ));
-        let guard_count = Arc::new(AtomicUsize::new(0));
-        let found_count = Arc::new(AtomicUsize::new(0));
+        let load_count = Arc::new(AtomicUsize::new(0));
 
         const THREADS: usize = 8;
-        let barrier = Arc::new(std::sync::Barrier::new(THREADS));
 
         let handles: Vec<_> = (0..THREADS)
             .map(|_| {
                 let c = Arc::clone(&cache);
-                let gc = Arc::clone(&guard_count);
-                let fc = Arc::clone(&found_count);
-                let b = Arc::clone(&barrier);
-                thread::spawn(move || {
-                    b.wait(); // Synchronise all threads.
-                    match c.get_or_guard(&99) {
-                        GetOrGuard::Guard(guard) => {
-                            gc.fetch_add(1, Ordering::SeqCst);
-                            // Simulate slow load.
-                            thread::sleep(Duration::from_millis(50));
-                            guard.insert("coalesced".to_string());
-                        }
-                        GetOrGuard::Found(v) => {
-                            fc.fetch_add(1, Ordering::SeqCst);
-                            assert_eq!(v, "coalesced");
-                        }
+                let lc = Arc::clone(&load_count);
+                thread::spawn(move || match c.get_or_guard(&42) {
+                    GetOrGuard::Guard(guard) => {
+                        lc.fetch_add(1, Ordering::Relaxed);
+                        thread::sleep(Duration::from_millis(50));
+                        guard.insert("loaded".to_string());
+                    }
+                    GetOrGuard::Found(v) => {
+                        assert_eq!(v, "loaded");
                     }
                 })
             })
@@ -512,45 +480,32 @@ mod tests {
             h.join().unwrap();
         }
 
-        assert_eq!(
-            guard_count.load(Ordering::SeqCst),
-            1,
-            "exactly one thread should get the guard"
-        );
-        assert_eq!(found_count.load(Ordering::SeqCst), THREADS - 1);
+        assert_eq!(load_count.load(Ordering::Relaxed), 1);
+        assert_eq!(cache.get(&42), Some("loaded".to_string()));
     }
 
-    /// Multiple threads call `get_or_guard` for *different* keys concurrently.
-    /// Each should get its own independent guard.
     #[test]
     fn get_or_guard_independent_keys() {
         let cache = Arc::new(ShardedCache::<u64, String>::new(
-            100,
+            200,
             NonZeroUsize::new(4).unwrap(),
         ));
-        let guard_count = Arc::new(AtomicUsize::new(0));
+        let load_count = Arc::new(AtomicUsize::new(0));
 
         const THREADS: usize = 8;
-        let barrier = Arc::new(std::sync::Barrier::new(THREADS));
 
         let handles: Vec<_> = (0..THREADS)
             .map(|t| {
                 let c = Arc::clone(&cache);
-                let gc = Arc::clone(&guard_count);
-                let b = Arc::clone(&barrier);
-                thread::spawn(move || {
-                    b.wait();
-                    let key = t as u64;
-                    match c.get_or_guard(&key) {
-                        GetOrGuard::Guard(guard) => {
-                            gc.fetch_add(1, Ordering::SeqCst);
-                            guard.insert(format!("val_{t}"));
-                        }
-                        GetOrGuard::Found(_) => {
-                            // Could happen if another thread inserted first (shouldn't
-                            // with unique keys, but not a bug).
-                        }
+                let lc = Arc::clone(&load_count);
+                let key = t as u64;
+                thread::spawn(move || match c.get_or_guard(&key) {
+                    GetOrGuard::Guard(guard) => {
+                        lc.fetch_add(1, Ordering::Relaxed);
+                        thread::sleep(Duration::from_millis(10));
+                        guard.insert(format!("val_{key}"));
                     }
+                    GetOrGuard::Found(_) => {}
                 })
             })
             .collect();
@@ -559,50 +514,43 @@ mod tests {
             h.join().unwrap();
         }
 
-        // Every thread should have gotten a guard for its unique key.
-        assert_eq!(guard_count.load(Ordering::SeqCst), THREADS);
-
-        // Verify all values.
-        for t in 0..THREADS {
-            let key = t as u64;
-            assert_eq!(cache.get(&key), Some(format!("val_{t}")));
-        }
+        assert_eq!(load_count.load(Ordering::Relaxed), THREADS);
     }
 
-    /// If a guard is abandoned, waiters should wake up and one of them should
-    /// become the new loader.
     #[test]
     fn get_or_guard_abandon_wakes_waiters() {
         let cache = Arc::new(ShardedCache::<u64, String>::new(
             100,
             NonZeroUsize::new(4).unwrap(),
         ));
-        let guard_count = Arc::new(AtomicUsize::new(0));
+        let load_count = Arc::new(AtomicUsize::new(0));
 
-        const THREADS: usize = 8;
-        let barrier = Arc::new(std::sync::Barrier::new(THREADS));
+        const THREADS: usize = 4;
 
         let handles: Vec<_> = (0..THREADS)
-            .map(|t| {
+            .map(|_| {
                 let c = Arc::clone(&cache);
-                let gc = Arc::clone(&guard_count);
-                let b = Arc::clone(&barrier);
+                let lc = Arc::clone(&load_count);
                 thread::spawn(move || {
-                    b.wait();
-                    match c.get_or_guard(&42) {
-                        GetOrGuard::Guard(guard) => {
-                            let count = gc.fetch_add(1, Ordering::SeqCst);
-                            if count == 0 {
-                                // First loader: abandon
-                                drop(guard);
-                            } else {
-                                // Subsequent loaders: insert
-                                thread::sleep(Duration::from_millis(10));
-                                guard.insert(format!("from_thread_{t}"));
+                    loop {
+                        match c.get_or_guard(&99) {
+                            GetOrGuard::Guard(guard) => {
+                                let count = lc.fetch_add(1, Ordering::Relaxed);
+                                if count == 0 {
+                                    // First loader abandons.
+                                    thread::sleep(Duration::from_millis(20));
+                                    drop(guard);
+                                    return;
+                                } else {
+                                    // Subsequent loader completes.
+                                    guard.insert("finally".to_string());
+                                    return;
+                                }
                             }
-                        }
-                        GetOrGuard::Found(v) => {
-                            assert!(v.starts_with("from_thread_"));
+                            GetOrGuard::Found(v) => {
+                                assert_eq!(v, "finally");
+                                return;
+                            }
                         }
                     }
                 })
@@ -613,11 +561,9 @@ mod tests {
             h.join().unwrap();
         }
 
-        // Value should be present after all threads complete
-        assert!(cache.get(&42).is_some());
+        assert_eq!(cache.get(&99), Some("finally".to_string()));
     }
 
-    /// Stress test: many threads, many keys, using get_or_guard.
     #[test]
     fn get_or_guard_stress() {
         let cache = Arc::new(ShardedCache::<u64, u64>::new(

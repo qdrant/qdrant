@@ -1,9 +1,10 @@
-use std::hash::{BuildHasher, Hash};
+use std::hash::Hash;
 use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};
 
 use crate::Cache;
+use crate::array_lookup::AsIndex;
 use crate::lifecycle::Lifecycle;
 
 pub enum WaiterState<V> {
@@ -58,14 +59,14 @@ impl<V: Clone> Waiter<V> {
 /// Either the value was already present in the cache ([`GetOrGuard::Found`]),
 /// or the caller is responsible for loading it and must complete the returned
 /// [`CacheGuard`] ([`GetOrGuard::Guard`]).
-pub enum GetOrGuard<'a, K: Copy + Hash + Eq, V, L, S> {
+pub enum GetOrGuard<'a, K: Copy + Hash + Eq, V, L> {
     /// The value was found in the cache (or was completed by another thread's
     /// guard while we were waiting).
     Found(V),
     /// No value is cached and no other thread is currently loading it.
     /// The caller **must** either call [`CacheGuard::insert`] to provide the
     /// value, or drop the guard to let other waiters retry.
-    Guard(CacheGuard<'a, K, V, L, S>),
+    Guard(CacheGuard<'a, K, V, L>),
 }
 
 /// A guard that indicates the current thread is responsible for loading the
@@ -73,19 +74,18 @@ pub enum GetOrGuard<'a, K: Copy + Hash + Eq, V, L, S> {
 ///
 /// Dropping the guard **without** calling [`insert`](CacheGuard::insert) will
 /// mark the load as abandoned and wake any waiting threads so they can retry.
-pub struct CacheGuard<'a, K: Copy + Hash + Eq, V, L, S> {
-    pub(crate) cache: &'a Cache<K, V, L, S>,
+pub struct CacheGuard<'a, K: Copy + Hash + Eq, V, L> {
+    pub(crate) cache: &'a Cache<K, V, L>,
     pub(crate) key: K,
     pub(crate) waiter: Arc<Waiter<V>>,
     pub(crate) completed: bool,
 }
 
-impl<'a, K, V, L, S> CacheGuard<'a, K, V, L, S>
+impl<'a, K, V, L> CacheGuard<'a, K, V, L>
 where
-    K: Copy + Hash + Eq,
+    K: Copy + Hash + Eq + AsIndex,
     V: Clone,
     L: Lifecycle<K, V>,
-    S: BuildHasher + Default,
 {
     /// Insert the loaded value into the cache and wake all waiting threads.
     ///
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<K, V, L, S> Drop for CacheGuard<'_, K, V, L, S>
+impl<K, V, L> Drop for CacheGuard<'_, K, V, L>
 where
     K: Copy + Hash + Eq,
 {

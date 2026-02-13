@@ -36,7 +36,7 @@ pub struct CacheController {
     pub(super) files: RwLock<HashMap<FileId, fs::File>>,
 
     /// Used to assign file ids on new files.
-    pub(super) file_id_counter: Mutex<FileId>,
+    pub(super) block_id_counter: Mutex<BlockId>,
 
     pub(super) cache:
         trififo::ShardedCache<BlockId, BlockOffset, BlocksLifecycle, ahash::RandomState>,
@@ -107,7 +107,7 @@ impl CacheController {
 
         Ok(Arc::new(CacheController {
             files: RwLock::new(HashMap::new()),
-            file_id_counter: Mutex::new(FileId(0)),
+            block_id_counter: Mutex::new(BlockId(0)),
             cache,
             blocks_lifecycle,
             cache_file,
@@ -134,25 +134,29 @@ impl CacheController {
 
         let len = f.metadata()?.len() as usize;
 
-        let file_id = {
-            let mut file_id_counter = self.file_id_counter.lock();
-            *file_id_counter = FileId(file_id_counter.0.checked_add(1).unwrap_or_else(|| {
-                // TODO: drain the entire cache so that we don't corrupt stuff
-                //
-                // (luis) actually, it won't be enough to drain. Already "open" files
-                // can still try to access their cached data, and we don't have a mechanism to prevent this.
-                // I think we need to return an error
-                //
-                // (xzfc) Maybe this draining should block on items that `is_pinned`.
-                // Anyway, it's rare case and we can decide it later.
-                unimplemented!("What to do when we have > 4.29 billion files?")
-            }));
+        let num_blocks = (len as u64 + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64;
+
+        let starting_block_id = {
+            let mut file_id_counter = self.block_id_counter.lock();
+            *file_id_counter = BlockId(file_id_counter.0.checked_add(num_blocks).unwrap_or_else(
+                || {
+                    // TODO: drain the entire cache so that we don't corrupt stuff
+                    //
+                    // (luis) actually, it won't be enough to drain. Already "open" files
+                    // can still try to access their cached data, and we don't have a mechanism to prevent this.
+                    // I think we need to return an error
+                    //
+                    // (xzfc) Maybe this draining should block on items that `is_pinned`.
+                    // Anyway, it's rare case and we can decide it later.
+                    unimplemented!("What to do when we have > 4.29 billion files?")
+                },
+            ));
             *file_id_counter
         };
 
-        self.files.write().insert(file_id, f);
+        self.files.write().insert(FileId(starting_block_id), f);
         Ok(CachedFile {
-            file_id,
+            starting_block_id,
             len,
             controller: Arc::clone(self),
         })
@@ -160,7 +164,11 @@ impl CacheController {
 
     pub(super) fn get_from_cache(&self, req: BlockRequest) -> io::Result<Cow<'_, [u8]>> {
         use trififo::GetOrGuard;
-        let BlockRequest { key, range } = req;
+        let BlockRequest {
+            key,
+            range,
+            file_id,
+        } = req;
 
         match self.cache.get_or_guard(&key) {
             // Cache hit.
@@ -181,12 +189,14 @@ impl CacheController {
 
                 let files = self.files.read();
                 let file = files
-                    .get(&key.file_id)
+                    .get(&file_id)
                     .expect("cached file descriptor is not open");
+
+                let offset = (key.0 - file_id.0.0) * BLOCK_SIZE as u64;
                 if range.len() == BLOCK_SIZE {
-                    file.read_exact_at(&mut buf, key.offset.bytes() as u64)?;
+                    file.read_exact_at(&mut buf, offset)?;
                 } else {
-                    file.read_at(&mut buf, key.offset.bytes() as u64)?;
+                    file.read_at(&mut buf, offset)?;
                 }
 
                 // 2. Write to hot storage.
