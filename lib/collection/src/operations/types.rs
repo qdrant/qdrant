@@ -331,15 +331,15 @@ pub struct OptimizationsResponse {
     pub running: Vec<Optimization>,
     /// An estimated queue of pending optimizations.
     /// Requires `?with=queued`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queued: Option<Vec<PendingOptimization>>,
     /// Completed optimizations.
     /// Requires `?with=completed`. Limited by `?completed_limit=N`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed: Option<Vec<Optimization>>,
     /// Segments that don't require optimization.
     /// Requires `?with=idle_segments`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_segments: Option<Vec<OptimizationSegmentInfo>>,
 }
 
