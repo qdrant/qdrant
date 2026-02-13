@@ -73,7 +73,7 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionResult, OptimizationSegmentInfo, OptimizersStatus,
-    PendingOptimization, ShardInfoInternal, ShardStatus, UpdateQueueInfo,
+    PendingOptimization, ShardInfoInternal, ShardStatus, ShardUpdateQueueInfo,
     check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
@@ -940,8 +940,8 @@ impl LocalShard {
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
     }
 
-    pub fn local_update_queue_info(&self) -> UpdateQueueInfo {
-        UpdateQueueInfo {
+    pub fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
+        ShardUpdateQueueInfo {
             length: self.update_queue_length(),
             op_num: self.applied_seq_handler.op_num().map(|s| s as usize),
         }

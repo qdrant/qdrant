@@ -1620,9 +1620,6 @@ pub struct UpdateQueueInfo {
     /// Number of elements in the queue
     #[prost(uint64, tag = "1")]
     pub length: u64,
-    /// last operation number processed
-    #[prost(uint64, optional, tag = "2")]
-    pub op_num: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

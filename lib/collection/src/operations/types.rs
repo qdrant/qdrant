@@ -137,13 +137,20 @@ pub struct CollectionWarning {
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
-pub struct UpdateQueueInfo {
+pub struct ShardUpdateQueueInfo {
     /// Number of elements in the queue
     #[anonymize(false)]
     pub length: usize,
     /// last operation number processed
     #[anonymize(false)]
     pub op_num: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema, Default, Anonymize)]
+pub struct UpdateQueueInfo {
+    /// Number of elements in the queue
+    #[anonymize(false)]
+    pub length: usize,
 }
 
 // Version of the collection config we can present to the user
@@ -264,8 +271,16 @@ impl From<ShardInfoInternal> for CollectionInfo {
             segments_count,
             config: CollectionConfig::from(config),
             payload_schema,
-            update_queue: Some(update_queue),
+            update_queue: Some(UpdateQueueInfo::from(update_queue)),
         }
+    }
+}
+
+impl From<ShardUpdateQueueInfo> for UpdateQueueInfo {
+    fn from(value: ShardUpdateQueueInfo) -> Self {
+        // ignore field `op_num`, no sane way to aggregate across shards
+        let ShardUpdateQueueInfo { length, op_num: _ } = value;
+        UpdateQueueInfo { length }
     }
 }
 
@@ -291,7 +306,7 @@ pub struct ShardInfoInternal {
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     /// Update queue state
-    pub update_queue: UpdateQueueInfo,
+    pub update_queue: ShardUpdateQueueInfo,
 }
 
 /// Current clustering distribution for the collection
