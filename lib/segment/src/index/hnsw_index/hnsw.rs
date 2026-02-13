@@ -580,9 +580,9 @@ impl HNSWIndex {
                 // $1/m$ points left.
                 // So blocks larger than $1/m$ are not needed.
                 // We add multiplier for the extra safety.
-                let percolation_multiplier = 4;
+                const PERCOLATION_MULTIPLIER: usize = 4;
                 let max_block_size = if config.m > 0 {
-                    total_vector_count / average_links_per_0_level_int * percolation_multiplier
+                    total_vector_count / average_links_per_0_level_int * PERCOLATION_MULTIPLIER
                 } else {
                     usize::MAX
                 };
@@ -603,6 +603,18 @@ impl HNSWIndex {
                         &vector_storage_ref,
                         stopped,
                     );
+
+                    // This is a heuristic to skip building graph for mostly deleted blocks.
+                    // It might be, that majority of points do not actually have vectors
+                    // (vectors marked as deleted), so we can avoid building graph for such blocks.
+                    //
+                    // FYI: query heuristic does account
+                    // for deleted vectors via [`adjust_to_available_vectors`]
+                    const DELETED_POINTS_FACTOR: usize = 4; // allow block to have up to 75% of deleted points and still be indexed
+
+                    if points_to_index.len() <= full_scan_threshold / DELETED_POINTS_FACTOR {
+                        continue;
+                    }
 
                     if !is_tenant
                         && index_pos > 0
