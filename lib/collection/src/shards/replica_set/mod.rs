@@ -1378,26 +1378,29 @@ impl ShardReplicaSet {
     pub async fn optimizations(
         &self,
         options: OptimizationsRequestOptions,
-    ) -> OptimizationsResponse {
-        let mut response = self.local_optimizations(options).await;
+    ) -> CollectionResult<OptimizationsResponse> {
+        let OptimizationsRequestOptions {
+            queued: _,
+            completed_limit,
+            idle_segments: _,
+        } = options;
 
-        // Collect from remote shards
-        {
+        // Collect from local and remote shards concurrently
+        let local_future = self.local_optimizations(options);
+        let remote_futures = async {
             let remotes = self.remotes.read().await;
-            for remote in remotes.iter() {
-                match remote.optimizations(options).await {
-                    Ok(remote_response) => {
-                        response.merge(remote_response);
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to get optimizations from remote shard {} on peer {}: {err}",
-                            self.shard_id,
-                            remote.peer_id,
-                        );
-                    }
-                }
-            }
+            let futures: Vec<_> = remotes
+                .iter()
+                .map(|remote| remote.optimizations(options))
+                .collect();
+            futures::future::try_join_all(futures).await
+        };
+
+        let (mut response, remote_responses) =
+            futures::future::try_join(local_future, remote_futures).await?;
+
+        for remote_response in remote_responses {
+            response.merge(remote_response);
         }
 
         // Sort from newest to oldest
@@ -1407,12 +1410,12 @@ impl ShardReplicaSet {
 
         if let Some(completed) = &mut response.completed {
             completed.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
-            if let Some(limit) = options.completed_limit {
+            if let Some(limit) = completed_limit {
                 completed.truncate(limit);
             }
         }
 
-        response
+        Ok(response)
     }
 
     /// Get optimizations info from only the local shard.
@@ -1422,7 +1425,7 @@ impl ShardReplicaSet {
     pub async fn local_optimizations(
         &self,
         options: OptimizationsRequestOptions,
-    ) -> OptimizationsResponse {
+    ) -> CollectionResult<OptimizationsResponse> {
         let OptimizationsRequestOptions {
             queued: with_queued,
             completed_limit,
@@ -1471,7 +1474,7 @@ impl ShardReplicaSet {
         // Sort from newest to oldest
         running.sort_by_key(|v| std::cmp::Reverse(v.progress.started_at));
 
-        OptimizationsResponse {
+        Ok(OptimizationsResponse {
             summary: OptimizationsSummary {
                 queued_optimizations,
                 queued_segments,
@@ -1486,7 +1489,7 @@ impl ShardReplicaSet {
                 completed
             }),
             idle_segments,
-        }
+        })
     }
 
     /// Truncate unapplied WAL records for the local shard (if present).

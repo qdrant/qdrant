@@ -443,12 +443,23 @@ impl Collection {
         &self,
         options: OptimizationsRequestOptions,
     ) -> CollectionResult<OptimizationsResponse> {
+        let OptimizationsRequestOptions {
+            queued: with_queued,
+            completed_limit,
+            idle_segments: with_idle_segments,
+        } = options;
+
         let shards_holder = self.shards_holder.read().await;
 
-        let mut merged: Option<OptimizationsResponse> = None;
+        let futures: Vec<_> = shards_holder
+            .all_shards()
+            .map(|shard| shard.optimizations(options))
+            .collect();
 
-        for shard in shards_holder.all_shards() {
-            let shard_response = shard.optimizations(options).await;
+        let shard_responses = future::try_join_all(futures).await?;
+
+        let mut merged: Option<OptimizationsResponse> = None;
+        for shard_response in shard_responses {
             match &mut merged {
                 Some(merged) => {
                     merged.merge(shard_response);
@@ -467,9 +478,9 @@ impl Collection {
                 idle_segments: 0,
             },
             running: Vec::new(),
-            queued: options.queued.then_some(Vec::new()),
-            completed: options.completed_limit.map(|_| Vec::new()),
-            idle_segments: options.idle_segments.then_some(Vec::new()),
+            queued: with_queued.then_some(Vec::new()),
+            completed: completed_limit.map(|_| Vec::new()),
+            idle_segments: with_idle_segments.then_some(Vec::new()),
         });
 
         // Sort from newest to oldest
@@ -479,7 +490,7 @@ impl Collection {
 
         if let Some(completed) = &mut response.completed {
             completed.sort_by_key(|v| cmp::Reverse(v.progress.started_at));
-            if let Some(limit) = options.completed_limit {
+            if let Some(limit) = completed_limit {
                 completed.truncate(limit);
             }
         }

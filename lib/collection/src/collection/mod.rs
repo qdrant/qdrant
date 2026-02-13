@@ -598,7 +598,7 @@ impl Collection {
             });
         };
 
-        Ok(replica_set.local_optimizations(options).await)
+        replica_set.local_optimizations(options).await
     }
 
     pub async fn state(&self) -> State {

@@ -386,26 +386,37 @@ pub struct PendingOptimization {
 impl OptimizationsResponse {
     /// Merge another `OptimizationsResponse` into this one.
     pub fn merge(&mut self, other: OptimizationsResponse) {
-        self.running.extend(other.running);
-        self.summary.queued_optimizations += other.summary.queued_optimizations;
-        self.summary.queued_segments += other.summary.queued_segments;
-        self.summary.queued_points += other.summary.queued_points;
-        self.summary.idle_segments += other.summary.idle_segments;
-        if let Some(completed) = &mut self.completed
-            && let Some(other_completed) = other.completed
-        {
-            completed.extend(other_completed);
-        }
-        if let Some(queued) = &mut self.queued
-            && let Some(other_queued) = other.queued
-        {
-            queued.extend(other_queued);
-        }
-        if let Some(idle) = &mut self.idle_segments
-            && let Some(other_idle) = other.idle_segments
-        {
-            idle.extend(other_idle);
-        }
+        let OptimizationsResponse {
+            summary:
+                OptimizationsSummary {
+                    queued_optimizations,
+                    queued_segments,
+                    queued_points,
+                    idle_segments: idle_segments_count,
+                },
+            running,
+            queued,
+            completed,
+            idle_segments,
+        } = other;
+
+        self.running.extend(running);
+        self.summary.queued_optimizations += queued_optimizations;
+        self.summary.queued_segments += queued_segments;
+        self.summary.queued_points += queued_points;
+        self.summary.idle_segments += idle_segments_count;
+        merge_optional_vec(&mut self.completed, completed);
+        merge_optional_vec(&mut self.queued, queued);
+        merge_optional_vec(&mut self.idle_segments, idle_segments);
+    }
+}
+
+/// Merge two `Option<Vec<T>>` values: if either side has data, the result has data.
+fn merge_optional_vec<T>(target: &mut Option<Vec<T>>, source: Option<Vec<T>>) {
+    match (target.as_mut(), source) {
+        (Some(target), Some(source)) => target.extend(source),
+        (None, source @ Some(_)) => *target = source,
+        (Some(_) | None, None) => {}
     }
 }
 
