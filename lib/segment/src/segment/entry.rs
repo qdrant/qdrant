@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -248,11 +249,13 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType>> {
-        // Sorry for that, but I didn't find any way easier.
-        // If you try simply return iterator - it won't work because AtomicRef should exist
-        // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
-        // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        unsafe { self.id_tracker.as_ptr().as_ref().unwrap().iter_external() }
+        let id_tracker = self.id_tracker.borrow();
+        let mut points = Vec::with_capacity(id_tracker.available_point_count());
+        id_tracker.for_each_external(&mut |external_id| {
+            points.push(external_id);
+            ControlFlow::Continue(())
+        });
+        Box::new(points.into_iter())
     }
 
     fn read_filtered<'a>(
@@ -328,11 +331,17 @@ impl NonAppendableSegmentEntry for Segment {
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let id_tracker = self.id_tracker.borrow();
-        let iterator = id_tracker.iter_from(from).map(|x| x.0);
-        match to {
-            None => iterator.collect(),
-            Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),
-        }
+        let mut result = Vec::new();
+        id_tracker.for_each_from(from, &mut |external_id, _internal_id| {
+            if let Some(to_id) = to {
+                if external_id >= to_id {
+                    return ControlFlow::Break(());
+                }
+            }
+            result.push(external_id);
+            ControlFlow::Continue(())
+        });
+        result
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {

@@ -451,12 +451,23 @@ mod tests {
         id_tracker.set_link(177.into(), 8).unwrap();
         id_tracker.set_link(118.into(), 9).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+        let mut first_four = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, int| {
+            first_four.push((ext, int));
+            if first_four.len() >= 4 {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
 
         assert_eq!(first_four.len(), 4);
         assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        let mut last = Vec::new();
+        id_tracker.for_each_from(Some(first_four[3].0), &mut |ext, int| {
+            last.push((ext, int));
+            ControlFlow::Continue(())
+        });
         assert_eq!(last.len(), 7);
     }
 
@@ -487,7 +498,11 @@ mod tests {
             id_tracker.set_link(*value, id as PointOffsetType).unwrap();
         }
 
-        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        let mut sorted_from_tracker = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, _int| {
+            sorted_from_tracker.push(ext);
+            ControlFlow::Continue(())
+        });
         values.sort();
 
         assert_eq!(sorted_from_tracker, values);

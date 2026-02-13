@@ -360,6 +360,7 @@ fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
 #[cfg(test)]
 mod tests {
     use std::mem::transmute;
+    use std::ops::ControlFlow;
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
@@ -461,7 +462,11 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 5);
 
-        let stored_ids: Vec<PointOffsetType> = borrowed_id_tracker.iter_internal().collect();
+        let mut stored_ids: Vec<PointOffsetType> = Vec::new();
+        borrowed_id_tracker.for_each_internal(&mut |id| {
+            stored_ids.push(id);
+            ControlFlow::Continue(())
+        });
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 

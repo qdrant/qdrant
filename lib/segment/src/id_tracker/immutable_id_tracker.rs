@@ -548,7 +548,6 @@ impl IdTracker for ImmutableIdTracker {
 pub(super) mod test {
     use std::collections::{HashMap, HashSet};
 
-    use itertools::Itertools;
     #[cfg(feature = "rocksdb")]
     use rand::Rng;
     use rand::prelude::*;
@@ -581,12 +580,23 @@ pub(super) mod test {
         let id_tracker =
             ImmutableIdTracker::from_in_memory_tracker(id_tracker, dir.path()).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+        let mut first_four = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, int| {
+            first_four.push((ext, int));
+            if first_four.len() >= 4 {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
 
         assert_eq!(first_four.len(), 4);
         assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        let mut last = Vec::new();
+        id_tracker.for_each_from(Some(first_four[3].0), &mut |ext, int| {
+            last.push((ext, int));
+            ControlFlow::Continue(())
+        });
         assert_eq!(last.len(), 7);
     }
 
@@ -611,7 +621,11 @@ pub(super) mod test {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
 
-        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        let mut sorted_from_tracker = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, _int| {
+            sorted_from_tracker.push(ext);
+            ControlFlow::Continue(())
+        });
 
         let mut values = TEST_POINTS.to_vec();
         values.sort();
@@ -722,9 +736,10 @@ pub(super) mod test {
     fn test_all_points_have_version() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
-        for i in id_tracker.iter_internal() {
+        id_tracker.for_each_internal(&mut |i| {
             assert!(id_tracker.internal_version(i).is_some());
-        }
+            ControlFlow::Continue(())
+        });
     }
 
     #[test]
@@ -736,15 +751,39 @@ pub(super) mod test {
 
         let point_to_delete = PointIdType::NumId(100);
 
-        assert!(id_tracker.iter_external().contains(&point_to_delete));
+        let mut found_in_external = false;
+        id_tracker.for_each_external(&mut |ext| {
+            if ext == point_to_delete {
+                found_in_external = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
+        assert!(found_in_external);
 
         assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
 
         id_tracker.drop(point_to_delete).unwrap();
 
+        let mut found_in_external_after = false;
+        id_tracker.for_each_external(&mut |ext| {
+            if ext == point_to_delete {
+                found_in_external_after = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
+        let mut found_in_from = false;
+        id_tracker.for_each_from(None, &mut |ext, _int| {
+            if ext == point_to_delete {
+                found_in_from = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
         let point_exists = id_tracker.internal_id(point_to_delete).is_some()
-            && id_tracker.iter_external().contains(&point_to_delete)
-            && id_tracker.iter_from(None).any(|i| i.0 == point_to_delete);
+            && found_in_external_after
+            && found_in_from;
 
         assert!(!point_exists);
 
@@ -977,7 +1016,7 @@ pub(super) mod test {
 
         let immutable_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
 
-        for (external_id, internal_id) in simple_id_tracker.iter_from(None) {
+        simple_id_tracker.for_each_from(None, &mut |external_id, internal_id| {
             assert_eq!(
                 simple_id_tracker.internal_version(internal_id).unwrap(),
                 immutable_id_tracker.internal_version(internal_id).unwrap()
@@ -994,9 +1033,10 @@ pub(super) mod test {
                 simple_id_tracker.external_id(internal_id).unwrap(),
                 immutable_id_tracker.external_id(internal_id).unwrap()
             );
-        }
+            ControlFlow::Continue(())
+        });
 
-        for (external_id, internal_id) in immutable_id_tracker.iter_from(None) {
+        immutable_id_tracker.for_each_from(None, &mut |external_id, internal_id| {
             assert_eq!(
                 simple_id_tracker.internal_version(internal_id).unwrap(),
                 immutable_id_tracker.internal_version(internal_id).unwrap()
@@ -1013,6 +1053,7 @@ pub(super) mod test {
                 simple_id_tracker.external_id(internal_id).unwrap(),
                 immutable_id_tracker.external_id(internal_id).unwrap()
             );
-        }
+            ControlFlow::Continue(())
+        });
     }
 }

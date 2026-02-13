@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -205,8 +206,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let mut ram_index_builder = InvertedIndexBuilder::new();
         let mut indices_tracker = IndicesTracker::default();
-        for id in borrowed_id_tracker.iter_internal_excluding(deleted_bitslice) {
-            check_process_stopped(stopped)?;
+        let mut build_error: Option<OperationError> = None;
+        borrowed_id_tracker.for_each_internal_excluding(deleted_bitslice, &mut |id| {
+            if let Err(e) = check_process_stopped(stopped) {
+                build_error = Some(e.into());
+                return ControlFlow::Break(());
+            }
             // It is possible that the vector is not present in the storage in case of crash.
             // Because:
             // - the `id_tracker` is flushed before the `vector_storage`
@@ -221,17 +226,28 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     )
                 }
                 Some(vector) => {
-                    let vector: &SparseVector = vector.as_vec_ref().try_into()?;
-                    // do not index empty vectors
-                    if vector.is_empty() {
-                        continue;
+                    let try_into_result: Result<&SparseVector, _> = vector.as_vec_ref().try_into();
+                    match try_into_result {
+                        Err(e) => {
+                            build_error = Some(e.into());
+                            return ControlFlow::Break(());
+                        }
+                        Ok(vector) => {
+                            // do not index empty vectors
+                            if !vector.is_empty() {
+                                indices_tracker.register_indices(vector);
+                                let vector = indices_tracker.remap_vector(vector.to_owned());
+                                ram_index_builder.add(id, vector);
+                            }
+                        }
                     }
-                    indices_tracker.register_indices(vector);
-                    let vector = indices_tracker.remap_vector(vector.to_owned());
-                    ram_index_builder.add(id, vector);
                 }
             }
             tick_progress();
+            ControlFlow::Continue(())
+        });
+        if let Some(e) = build_error {
+            return Err(e);
         }
         Ok((
             TInvertedIndex::from_ram_index(Cow::Owned(ram_index_builder.build()), path)?,

@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -301,8 +302,16 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None => panic!("No close vector found!"),
     };
 
-    let all_ids1: Vec<_> = borrowed_id_tracker.iter_internal().collect();
-    let all_ids2: Vec<_> = borrowed_id_tracker.iter_internal().collect();
+    let mut all_ids1: Vec<PointOffsetType> = Vec::new();
+    borrowed_id_tracker.for_each_internal(&mut |id| {
+        all_ids1.push(id);
+        ControlFlow::Continue(())
+    });
+    let mut all_ids2: Vec<PointOffsetType> = Vec::new();
+    borrowed_id_tracker.for_each_internal(&mut |id| {
+        all_ids2.push(id);
+        ControlFlow::Continue(())
+    });
 
     assert_eq!(all_ids1, all_ids2);
 

@@ -83,10 +83,14 @@ pub trait IdTracker: fmt::Debug {
         &'a self,
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        Box::new(
-            self.iter_internal()
-                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
+        let mut result = Vec::new();
+        self.for_each_internal(&mut |point| {
+            if !exclude_bitslice.get_bit(point as usize).unwrap_or(false) {
+                result.push(point);
+            }
+            ControlFlow::Continue(())
+        });
+        Box::new(result.into_iter())
     }
 
     /// Iterate starting from a given ID
@@ -224,7 +228,7 @@ pub trait IdTracker: fmt::Debug {
             }
         }
 
-        for internal_id in self.iter_internal() {
+        self.for_each_internal(&mut |internal_id| {
             if self.internal_version(internal_id).is_none() {
                 if let Some(external_id) = self.external_id(internal_id) {
                     to_remove.push(external_id);
@@ -233,7 +237,8 @@ pub trait IdTracker: fmt::Debug {
                     debug_assert!(false, "internal id {internal_id} has no external id");
                 }
             }
-        }
+            ControlFlow::Continue(())
+        });
         for external_id in to_remove {
             self.drop(external_id)?;
             #[cfg(debug_assertions)]

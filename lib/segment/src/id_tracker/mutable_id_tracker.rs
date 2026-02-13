@@ -967,7 +967,6 @@ pub(super) mod tests {
     use std::io::Cursor;
 
     use fs_err as fs;
-    use itertools::Itertools;
     #[cfg(feature = "rocksdb")]
     use rand::Rng;
     use rand::prelude::*;
@@ -1000,12 +999,23 @@ pub(super) mod tests {
         id_tracker.set_link(177.into(), 8).unwrap();
         id_tracker.set_link(118.into(), 9).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+        let mut first_four = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, int| {
+            first_four.push((ext, int));
+            if first_four.len() >= 4 {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
 
         assert_eq!(first_four.len(), 4);
         assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        let mut last = Vec::new();
+        id_tracker.for_each_from(Some(first_four[3].0), &mut |ext, int| {
+            last.push((ext, int));
+            ControlFlow::Continue(())
+        });
         assert_eq!(last.len(), 7);
     }
 
@@ -1030,7 +1040,11 @@ pub(super) mod tests {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
 
-        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+        let mut sorted_from_tracker = Vec::new();
+        id_tracker.for_each_from(None, &mut |ext, _int| {
+            sorted_from_tracker.push(ext);
+            ControlFlow::Continue(())
+        });
 
         let mut values = TEST_POINTS.to_vec();
         values.sort();
@@ -1139,9 +1153,10 @@ pub(super) mod tests {
     fn test_all_points_have_version() {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
-        for i in id_tracker.iter_internal() {
+        id_tracker.for_each_internal(&mut |i| {
             assert!(id_tracker.internal_version(i).is_some());
-        }
+            ControlFlow::Continue(())
+        });
     }
 
     #[test]
@@ -1153,15 +1168,39 @@ pub(super) mod tests {
 
         let point_to_delete = PointIdType::NumId(100);
 
-        assert!(id_tracker.iter_external().contains(&point_to_delete));
+        let mut found_in_external = false;
+        id_tracker.for_each_external(&mut |ext| {
+            if ext == point_to_delete {
+                found_in_external = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
+        assert!(found_in_external);
 
         assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
 
         id_tracker.drop(point_to_delete).unwrap();
 
+        let mut found_in_external_after = false;
+        id_tracker.for_each_external(&mut |ext| {
+            if ext == point_to_delete {
+                found_in_external_after = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
+        let mut found_in_from = false;
+        id_tracker.for_each_from(None, &mut |ext, _int| {
+            if ext == point_to_delete {
+                found_in_from = true;
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
         let point_exists = id_tracker.internal_id(point_to_delete).is_some()
-            && id_tracker.iter_external().contains(&point_to_delete)
-            && id_tracker.iter_from(None).any(|i| i.0 == point_to_delete);
+            && found_in_external_after
+            && found_in_from;
 
         assert!(!point_exists);
 
@@ -1516,7 +1555,7 @@ pub(super) mod tests {
         }
 
         fn check_trackers(a: &SimpleIdTracker, b: &MutableIdTracker) {
-            for (external_id, internal_id) in a.iter_from(None) {
+            a.for_each_from(None, &mut |external_id, internal_id| {
                 assert_eq!(
                     a.internal_version(internal_id).unwrap(),
                     b.internal_version(internal_id).unwrap()
@@ -1527,9 +1566,10 @@ pub(super) mod tests {
                     a.external_id(internal_id).unwrap(),
                     b.external_id(internal_id).unwrap()
                 );
-            }
+                ControlFlow::Continue(())
+            });
 
-            for (external_id, internal_id) in b.iter_from(None) {
+            b.for_each_from(None, &mut |external_id, internal_id| {
                 assert_eq!(
                     a.internal_version(internal_id).unwrap(),
                     b.internal_version(internal_id).unwrap()
@@ -1540,7 +1580,8 @@ pub(super) mod tests {
                     a.external_id(internal_id).unwrap(),
                     b.external_id(internal_id).unwrap()
                 );
-            }
+                ControlFlow::Continue(())
+            });
         }
 
         check_trackers(&simple_id_tracker, &mutable_id_tracker);

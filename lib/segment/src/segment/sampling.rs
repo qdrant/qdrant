@@ -1,7 +1,7 @@
-use std::sync::atomic::AtomicBool;
+use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use super::Segment;
@@ -46,22 +46,35 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition, hw_counter);
+        let mut result = Vec::new();
         self.id_tracker
             .borrow()
-            .iter_random()
-            .stop_if(is_stopped)
-            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-            .map(|(external_id, _)| external_id)
-            .take(limit)
-            .collect()
+            .for_each_random(&mut |external_id, internal_id| {
+                if is_stopped.load(Ordering::Relaxed) {
+                    return ControlFlow::Break(());
+                }
+                if filter_context.check(internal_id) {
+                    result.push(external_id);
+                    if result.len() >= limit {
+                        return ControlFlow::Break(());
+                    }
+                }
+                ControlFlow::Continue(())
+            });
+        result
     }
 
     pub(super) fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
+        let mut result = Vec::new();
         self.id_tracker
             .borrow()
-            .iter_random()
-            .map(|x| x.0)
-            .take(limit)
-            .collect()
+            .for_each_random(&mut |external_id, _internal_id| {
+                result.push(external_id);
+                if result.len() >= limit {
+                    return ControlFlow::Break(());
+                }
+                ControlFlow::Continue(())
+            });
+        result
     }
 }

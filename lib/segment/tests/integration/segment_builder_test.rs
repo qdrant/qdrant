@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -197,38 +198,46 @@ fn check_points_defragmented(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for internal_id in id_tracker.iter_internal() {
+    let mut check_error: Option<&'static str> = None;
+    id_tracker.for_each_internal(&mut |internal_id| {
         let external_id = id_tracker.external_id(internal_id).unwrap();
         let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
 
         if values.is_empty() {
             if !seen_values.is_empty() {
-                return Err(
+                check_error = Some(
                     "In a defragmented segment, points without a payload value should come first!",
                 );
+                return ControlFlow::Break(());
             }
 
-            continue;
+            return ControlFlow::Continue(());
         }
 
         let value = values[0].clone();
 
         let Some(prev) = previous_value.as_ref() else {
             previous_value = Some(value);
-            continue;
+            return ControlFlow::Continue(());
         };
 
         if *prev == value {
-            continue;
+            return ControlFlow::Continue(());
         }
 
         if seen_values.contains(&value) {
-            return Err("Segment not defragmented");
+            check_error = Some("Segment not defragmented");
+            return ControlFlow::Break(());
         }
 
         seen_values.push(value.clone());
         previous_value = Some(value);
+        ControlFlow::Continue(())
+    });
+
+    if let Some(e) = check_error {
+        return Err(e);
     }
 
     Ok(())

@@ -1,7 +1,7 @@
-use std::sync::atomic::AtomicBool;
+use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 
 use super::Segment;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
@@ -68,14 +68,23 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition, hw_counter);
+        let take = limit.unwrap_or(usize::MAX);
+        let mut result = Vec::new();
         self.id_tracker
             .borrow()
-            .iter_from(offset)
-            .stop_if(is_stopped)
-            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
-            .map(|(external_id, _)| external_id)
-            .take(limit.unwrap_or(usize::MAX))
-            .collect()
+            .for_each_from(offset, &mut |external_id, internal_id| {
+                if is_stopped.load(Ordering::Relaxed) {
+                    return ControlFlow::Break(());
+                }
+                if filter_context.check(internal_id) {
+                    result.push(external_id);
+                    if result.len() >= take {
+                        return ControlFlow::Break(());
+                    }
+                }
+                ControlFlow::Continue(())
+            });
+        result
     }
 
     pub(super) fn read_by_id_stream(
@@ -83,12 +92,18 @@ impl Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
     ) -> Vec<PointIdType> {
+        let take = limit.unwrap_or(usize::MAX);
+        let mut result = Vec::new();
         self.id_tracker
             .borrow()
-            .iter_from(offset)
-            .map(|x| x.0)
-            .take(limit.unwrap_or(usize::MAX))
-            .collect()
+            .for_each_from(offset, &mut |external_id, _internal_id| {
+                result.push(external_id);
+                if result.len() >= take {
+                    return ControlFlow::Break(());
+                }
+                ControlFlow::Continue(())
+            });
+        result
     }
 
     pub fn filtered_read_by_index(

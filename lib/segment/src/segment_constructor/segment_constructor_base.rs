@@ -984,6 +984,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         old_id_tracker: &SimpleIdTracker,
         segment_path: &Path,
     ) -> OperationResult<MutableIdTracker> {
+        use std::ops::ControlFlow;
         // Construct mutable ID tracker
         let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
         debug_assert_eq!(
@@ -993,8 +994,16 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         );
 
         // Set external ID to internal ID mapping
-        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
-            new_id_tracker.set_link(external_id, internal_id)?;
+        let mut link_error: Option<OperationError> = None;
+        old_id_tracker.for_each_from(None, &mut |external_id, internal_id| {
+            if let Err(e) = new_id_tracker.set_link(external_id, internal_id) {
+                link_error = Some(e);
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        });
+        if let Some(e) = link_error {
+            return Err(e);
         }
 
         // Copy all point versions and set known mappings

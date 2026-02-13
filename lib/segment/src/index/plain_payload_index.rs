@@ -1,11 +1,11 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::_serde_json::Value;
@@ -169,11 +169,17 @@ impl PayloadIndex for PlainPayloadIndex {
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
-        let all_points_iter = id_tracker.iter_internal();
-        all_points_iter
-            .stop_if(is_stopped)
-            .filter(|id| filter_context.check(*id))
-            .collect()
+        let mut result = Vec::new();
+        id_tracker.for_each_internal(&mut |id| {
+            if is_stopped.load(Ordering::Relaxed) {
+                return ControlFlow::Break(());
+            }
+            if filter_context.check(id) {
+                result.push(id);
+            }
+            ControlFlow::Continue(())
+        });
+        result
     }
 
     fn indexed_points(&self, _field: PayloadKeyTypeRef) -> usize {

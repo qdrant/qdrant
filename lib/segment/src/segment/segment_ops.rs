@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::path::Path;
 
 use bitvec::prelude::BitVec;
@@ -566,34 +567,37 @@ impl Segment {
 
         // dangling internal ids
         let mut has_dangling_internal_ids = false;
-        for internal_id in id_tracker.iter_internal() {
+        id_tracker.for_each_internal(&mut |internal_id| {
             if id_tracker.external_id(internal_id).is_none() {
                 log::error!("Internal id {internal_id} without external id");
                 has_dangling_internal_ids = true
             }
-        }
+            ControlFlow::Continue(())
+        });
 
         // dangling external ids
         let mut has_dangling_external_ids = false;
-        for external_id in id_tracker.iter_external() {
+        id_tracker.for_each_external(&mut |external_id| {
             if id_tracker.internal_id(external_id).is_none() {
                 log::error!("External id {external_id} without internal id");
                 has_dangling_external_ids = true;
             }
-        }
+            ControlFlow::Continue(())
+        });
 
         // checking internal id without version
         let mut has_internal_ids_without_version = false;
-        for internal_id in id_tracker.iter_internal() {
+        id_tracker.for_each_internal(&mut |internal_id| {
             if id_tracker.internal_version(internal_id).is_none() {
                 log::error!("Internal id {internal_id} without version");
                 has_internal_ids_without_version = true;
             }
-        }
+            ControlFlow::Continue(())
+        });
 
         // check that non deleted points exist in vector storage
         let mut has_internal_ids_without_vector = false;
-        for internal_id in id_tracker.iter_internal() {
+        id_tracker.for_each_internal(&mut |internal_id| {
             for (vector_name, vector_data) in &self.vector_data {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
@@ -615,7 +619,8 @@ impl Segment {
                     }
                 }
             }
-        }
+            ControlFlow::Continue(())
+        });
 
         let is_inconsistent = has_dangling_internal_ids
             || has_dangling_external_ids

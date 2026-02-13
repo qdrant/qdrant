@@ -178,6 +178,7 @@ impl SegmentOptimizer for VacuumOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::ops::ControlFlow;
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
@@ -486,12 +487,15 @@ mod tests {
                 let vector1_data = segment.vector_data.get_mut(VECTOR1_NAME).unwrap();
                 let mut vector1_storage = vector1_data.vector_storage.borrow_mut();
 
-                let vector1_vecs_to_delete = id_tracker
-                    .borrow()
-                    .iter_external()
-                    .enumerate()
-                    .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
-                    .collect_vec();
+                let mut vector1_vecs_to_delete = Vec::new();
+                let mut idx = 0usize;
+                id_tracker.borrow().for_each_external(&mut |point_id| {
+                    if idx % 4 == 0 {
+                        vector1_vecs_to_delete.push(point_id);
+                    }
+                    idx += 1;
+                    ControlFlow::Continue(())
+                });
                 for &point_id in &vector1_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
                     vector1_storage.delete_vector(id).unwrap();
@@ -504,12 +508,15 @@ mod tests {
                 let vector2_data = segment.vector_data.get_mut(VECTOR2_NAME).unwrap();
                 let mut vector2_storage = vector2_data.vector_storage.borrow_mut();
 
-                let vector2_vecs_to_delete = id_tracker
-                    .borrow()
-                    .iter_external()
-                    .enumerate()
-                    .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))
-                    .collect_vec();
+                let mut vector2_vecs_to_delete = Vec::new();
+                let mut idx = 0usize;
+                id_tracker.borrow().for_each_external(&mut |point_id| {
+                    if idx % 10 == 7 {
+                        vector2_vecs_to_delete.push(point_id);
+                    }
+                    idx += 1;
+                    ControlFlow::Continue(())
+                });
                 for &point_id in &vector2_vecs_to_delete {
                     let id = id_tracker.borrow().internal_id(point_id).unwrap();
                     vector2_storage.delete_vector(id).unwrap();

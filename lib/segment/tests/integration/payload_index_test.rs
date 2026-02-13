@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -742,14 +743,17 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
 
     let payload_index = test_segments.struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter, &hw_counter);
-    let exact = test_segments
+    let mut exact = 0;
+    test_segments
         .struct_segment
         .id_tracker
         .borrow()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+        .for_each_internal(&mut |x| {
+            if filter_context.check(x) {
+                exact += 1;
+            }
+            ControlFlow::Continue(())
+        });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -804,13 +808,16 @@ fn test_root_nested_array_filter_cardinality_estimation() {
 
     let payload_index = struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter, &hw_counter);
-    let exact = struct_segment
+    let mut exact = 0;
+    struct_segment
         .id_tracker
         .borrow()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+        .for_each_internal(&mut |x| {
+            if filter_context.check(x) {
+                exact += 1;
+            }
+            ControlFlow::Continue(())
+        });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -871,13 +878,16 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 
     let payload_index = struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter, &hw_counter);
-    let exact = struct_segment
+    let mut exact = 0;
+    struct_segment
         .id_tracker
         .borrow()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+        .for_each_internal(&mut |x| {
+            if filter_context.check(x) {
+                exact += 1;
+            }
+            ControlFlow::Continue(())
+        });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
@@ -1270,14 +1280,17 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
 
     let payload_index = test_segments.struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter, &hw_counter);
-    let exact = test_segments
+    let mut exact = 0;
+    test_segments
         .struct_segment
         .id_tracker
         .borrow()
-        .iter_internal()
-        .filter(|x| filter_context.check(*x))
-        .collect_vec()
-        .len();
+        .for_each_internal(&mut |x| {
+            if filter_context.check(x) {
+                exact += 1;
+            }
+            ControlFlow::Continue(())
+        });
 
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");

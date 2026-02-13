@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -184,11 +185,15 @@ impl StructPayloadIndex {
                 })
             }
             Condition::CustomIdChecker(cond) => {
-                let segment_ids: AHashSet<_> = id_tracker
-                    .iter_external()
-                    .filter(|&point_id| cond.0.check(point_id))
-                    .filter_map(|external_id| id_tracker.internal_id(external_id))
-                    .collect();
+                let mut segment_ids = AHashSet::new();
+                id_tracker.for_each_external(&mut |point_id| {
+                    if cond.0.check(point_id) {
+                        if let Some(internal_id) = id_tracker.internal_id(point_id) {
+                            segment_ids.insert(internal_id);
+                        }
+                    }
+                    ControlFlow::Continue(())
+                });
 
                 Box::new(move |internal_id| segment_ids.contains(&internal_id))
             }
