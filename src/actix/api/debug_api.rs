@@ -37,8 +37,8 @@ async fn update_debugger_config(
 }
 
 #[derive(Deserialize)]
+#[serde(default)]
 struct GetShardWalQuery {
-    #[serde(default)]
     entries: u64,
 }
 
@@ -62,7 +62,7 @@ async fn get_shard_wal(
         let pass = verification::new_unchecked_verification_pass();
         let collection_pass = auth.check_collection_access(
             &collection,
-            AccessRequirements::new().extras(),
+            AccessRequirements::new().write().manage().extras(),
             "get_shard_wal",
         )?;
 
@@ -102,7 +102,7 @@ async fn get_shard_recovery_point(
         let pass = verification::new_unchecked_verification_pass();
         let collection_pass = auth.check_collection_access(
             &collection,
-            AccessRequirements::new().extras(),
+            AccessRequirements::new().write().manage().extras(),
             "get_shard_recovery_point",
         )?;
 
