@@ -568,6 +568,7 @@ fn main() -> anyhow::Result<()> {
         let dispatcher_arc = dispatcher_arc.clone();
         let telemetry_collector = telemetry_collector.clone();
         let settings = settings.clone();
+        let actix_runtime = runtime_handle.clone();
         let handle = thread::Builder::new()
             .name("web".to_string())
             .spawn(move || {
@@ -579,6 +580,7 @@ fn main() -> anyhow::Result<()> {
                         health_checker,
                         settings,
                         logger_handle,
+                        actix_runtime,
                     ),
                 )
             })
@@ -615,6 +617,7 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(grpc_port) = settings.service.grpc_port {
         let settings = settings.clone();
+        let grpc_runtime = runtime_handle.clone();
         let handle = thread::Builder::new()
             .name("grpc".to_string())
             .spawn(move || {
@@ -625,7 +628,7 @@ fn main() -> anyhow::Result<()> {
                         tonic_telemetry_collector,
                         settings,
                         grpc_port,
-                        runtime_handle,
+                        grpc_runtime,
                     ),
                 )
             })

@@ -22,6 +22,7 @@ use collection::operations::validation;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
+use tokio::runtime::Handle;
 
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
@@ -60,8 +61,9 @@ pub fn init(
     health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
     logger_handle: LoggerHandle,
+    runtime: Handle,
 ) -> io::Result<()> {
-    actix_web::rt::System::new().block_on(async {
+    runtime.block_on(async {
         // Nothing to verify here.
         let pass = new_unchecked_verification_pass();
         let auth = Auth::new_internal(Access::full("Service initialization"));
