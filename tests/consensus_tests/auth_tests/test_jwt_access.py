@@ -1405,6 +1405,15 @@ def test_download_shard_snapshot(shard_snapshot_name: str):
         },
     )
 
+def test_stream_shard_snapshot():
+    check_access(
+        "stream_shard_snapshot",
+        path_params={
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
+        },
+    )
+
 
 def test_list_full_snapshots():
     check_access("list_full_snapshots")
