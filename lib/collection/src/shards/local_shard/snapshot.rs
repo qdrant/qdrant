@@ -316,6 +316,10 @@ pub fn proxy_all_segments_and_apply<F>(
 where
     F: FnMut(&RwLock<dyn NonAppendableSegmentEntry>) -> OperationResult<()>,
 {
+
+    // Prevents update operations to accidentally lock on wrapped segments.
+    let update_lock = segments.acquire_updates_lock();
+
     let segments_lock = segments.upgradable_read();
 
     // Proxy all segments
@@ -327,6 +331,8 @@ where
         segment_config,
         payload_index_schema,
     )?;
+
+    drop(update_lock);
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore
     segments_lock.flush_all(true, true)?;
@@ -342,8 +348,8 @@ where
         // Get segment to snapshot
         let op_result = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => {
-                let guard = proxy_segment.read();
-                let segment = guard.wrapped_segment.get();
+                let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                let segment = wrapped_segment.get();
                 // Call provided function on wrapped segment while holding guard to parent segment
                 operation(segment)
             }
