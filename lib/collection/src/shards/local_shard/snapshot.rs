@@ -316,7 +316,6 @@ pub fn proxy_all_segments_and_apply<F>(
 where
     F: FnMut(&RwLock<dyn NonAppendableSegmentEntry>) -> OperationResult<()>,
 {
-
     // Prevents update operations to accidentally lock on wrapped segments.
     let update_lock = segments.acquire_updates_lock();
 
