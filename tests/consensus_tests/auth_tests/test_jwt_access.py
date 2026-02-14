@@ -358,6 +358,12 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     ),
+    "stream_shard_snapshot": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/shards/{shard_id}/snapshot",
+    ),
     ### Full Snapshots ###
     "list_full_snapshots": EndpointAccess(
         True,
