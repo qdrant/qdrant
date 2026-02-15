@@ -666,6 +666,32 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
         builder.build(prefix, "rest", metrics);
+
+        // Per-collection REST metrics
+        let mut collection_builder = OperationDurationMetricsBuilder::default();
+        for (endpoint, collections) in &self.collection_responses {
+            let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                continue;
+            };
+            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                continue;
+            }
+            for (collection, status_codes) in collections {
+                for (status, stats) in status_codes {
+                    collection_builder.add(
+                        stats,
+                        &[
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                            ("collection", collection),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
+            }
+        }
+        collection_builder.build(prefix, "rest_collection", metrics);
     }
 }
 
