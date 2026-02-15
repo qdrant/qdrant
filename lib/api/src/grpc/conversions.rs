@@ -1800,6 +1800,11 @@ impl From<segment::types::FieldCondition> for FieldCondition {
 
         let (range, datetime_range) = match range {
             Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
+            Some(segment::types::RangeInterface::Integer(range)) => {
+                // Convert integer range to float range for gRPC (proto uses f64)
+                let float_range = range.map(|i| ordered_float::OrderedFloat(i as f64));
+                (Some(Range::from(float_range)), None)
+            }
             Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
             None => (None, None),
         };
