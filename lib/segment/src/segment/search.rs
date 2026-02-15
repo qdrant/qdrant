@@ -12,6 +12,7 @@ use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::QueryVector;
 use crate::data_types::vectors::VectorStructInternal;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
+use crate::id_tracker::IdTracker;
 #[cfg(feature = "testing")]
 use crate::types::VectorName;
 #[cfg(feature = "testing")]

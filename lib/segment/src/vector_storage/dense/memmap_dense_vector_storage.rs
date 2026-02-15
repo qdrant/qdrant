@@ -371,7 +371,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::{DenseVector, QueryVector};
-    use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+    use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
     use crate::id_tracker::id_tracker_base::IdTracker;
     use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
@@ -392,7 +392,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
@@ -511,7 +511,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
@@ -641,7 +641,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
@@ -718,7 +718,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();

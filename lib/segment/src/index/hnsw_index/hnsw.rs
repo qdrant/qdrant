@@ -37,7 +37,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -87,7 +87,7 @@ const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
 
 #[derive(Debug)]
 pub struct HNSWIndex {
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
@@ -125,7 +125,7 @@ impl HNSWSearchesTelemetry {
 
 pub struct HnswIndexOpenArgs<'a> {
     pub path: &'a Path,
-    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
@@ -731,7 +731,7 @@ impl HNSWIndex {
     /// Get list of points for indexing, associated with payload block filtering condition
     fn condition_points(
         condition: FieldCondition,
-        id_tracker: &IdTrackerSS,
+        id_tracker: &IdTrackerEnum,
         payload_index: &StructPayloadIndex,
         vector_storage: &VectorStorageEnum,
         stopped: &AtomicBool,
@@ -761,7 +761,7 @@ impl HNSWIndex {
     #[allow(unused_variables)]
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn build_filtered_graph(
-        id_tracker: &IdTrackerSS,
+        id_tracker: &IdTrackerEnum,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         #[allow(unused_variables)] gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
@@ -849,7 +849,7 @@ impl HNSWIndex {
     #[cfg(feature = "gpu")]
     #[allow(clippy::too_many_arguments)]
     fn build_main_graph_on_gpu(
-        id_tracker: &IdTrackerSS,
+        id_tracker: &IdTrackerEnum,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         gpu_vectors: Option<&GpuVectorStorage>,
@@ -896,7 +896,7 @@ impl HNSWIndex {
     #[cfg(feature = "gpu")]
     #[allow(clippy::too_many_arguments)]
     fn build_filtered_graph_on_gpu(
-        id_tracker: &IdTrackerSS,
+        id_tracker: &IdTrackerEnum,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         gpu_insert_context: Option<&mut GpuInsertContext<'_>>,
@@ -1277,7 +1277,7 @@ impl HNSWIndex {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points = payload_index.iter_filtered_points(
             filter,
-            &*id_tracker,
+            &id_tracker,
             &query_cardinality,
             hw_counter,
             is_stopped,
@@ -1613,7 +1613,7 @@ impl<'a> OldIndexCandidate<'a> {
         hnsw_global_config: &HnswGlobalConfig,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
-        id_tracker: &IdTrackerSS,
+        id_tracker: &IdTrackerEnum,
     ) -> Option<Self> {
         if !feature_flags.incremental_hnsw_building {
             return None;
