@@ -224,7 +224,7 @@ impl ShardReplicaSet {
 
     pub async fn get_clock(&self) -> ClockGuard {
         loop {
-            match self.clock_set.lock().await.get_clock() {
+            match self.clock_set.get_clock() {
                 Some(clock) => return clock,
                 // Prevent blocking async runtime with spinlock
                 None => yield_now().await,

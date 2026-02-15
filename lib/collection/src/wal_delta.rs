@@ -358,7 +358,7 @@ mod tests {
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock set for peer A, start first clock from 1
-        let mut a_clock_set = ClockSet::new();
+        let a_clock_set = ClockSet::new();
         a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create operation on peer A
@@ -456,7 +456,7 @@ mod tests {
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock set for peer A, start first clock from 1
-        let mut a_clock_set = ClockSet::new();
+        let a_clock_set = ClockSet::new();
         a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create N operations on peer A
@@ -561,7 +561,7 @@ mod tests {
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock set for peer A, start first clock from 1
-        let mut a_clock_set = ClockSet::new();
+        let a_clock_set = ClockSet::new();
         a_clock_set.get_clock().unwrap().advance_to(0);
 
         // Create N operations on peer A
@@ -658,8 +658,8 @@ mod tests {
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock sets for peer A and B
-        let mut a_clock_set = ClockSet::new();
-        let mut b_clock_set = ClockSet::new();
+        let a_clock_set = ClockSet::new();
+        let b_clock_set = ClockSet::new();
 
         // Create N operations on peer A
         for i in 0..N {
@@ -760,8 +760,8 @@ mod tests {
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock sets for peer A and B, start first clocks from 1
-        let mut a_clock_set = ClockSet::new();
-        let mut b_clock_set = ClockSet::new();
+        let a_clock_set = ClockSet::new();
+        let b_clock_set = ClockSet::new();
         a_clock_set.get_clock().unwrap().advance_to(0);
         b_clock_set.get_clock().unwrap().advance_to(0);
 
@@ -961,8 +961,8 @@ mod tests {
 
         let (e_wal, _e_wal_dir) = fixture_empty_wal();
 
-        let mut c_clock_set = ClockSet::new();
-        let mut d_clock_set = ClockSet::new();
+        let c_clock_set = ClockSet::new();
+        let d_clock_set = ClockSet::new();
 
         let node_c_peer_id = 1;
         let node_d_peer_id = 2;
@@ -1297,7 +1297,7 @@ mod tests {
         let mut wals = std::iter::repeat_with(fixture_empty_wal)
             .take(node_count)
             .collect::<Vec<_>>();
-        let mut clock_sets = std::iter::repeat_with(|| ClockSet::with_max_clocks(256))
+        let clock_sets = std::iter::repeat_with(|| ClockSet::with_max_clocks(256))
             .take(node_count)
             .collect::<Vec<_>>();
 

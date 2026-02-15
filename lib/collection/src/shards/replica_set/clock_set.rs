@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 /// We want to have limited amount of clocks, because all the clocks we create during
 /// qdrant operations are preserved for the entire live-span of the cluster.
@@ -9,10 +9,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// for all reasonable use cases.
 const DEFAULT_MAX_CLOCKS: usize = 64;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ClockSet {
+    /// Pre-allocated clock slots. All slots up to `len` are active.
     clocks: Vec<Arc<Clock>>,
-    max_clocks: usize,
+    /// Number of active clocks.
+    len: AtomicUsize,
 }
 
 impl Default for ClockSet {
@@ -27,30 +29,62 @@ impl ClockSet {
     }
 
     pub fn with_max_clocks(max_clocks: usize) -> Self {
+        let clocks = (0..max_clocks)
+            .map(|_| Arc::new(Clock::new_locked()))
+            .collect();
+
         Self {
-            clocks: Vec::new(),
-            max_clocks,
+            clocks,
+            len: AtomicUsize::new(0),
         }
     }
 
     /// Get the first available clock from the set, or create a new one.
-    pub fn get_clock(&mut self) -> Option<ClockGuard> {
-        for (id, clock) in self.clocks.iter().enumerate() {
+    pub fn get_clock(&self) -> Option<ClockGuard> {
+        let len = self.len.load(Ordering::Acquire);
+
+        // Try existing active clocks
+        for (id, clock) in self.clocks[..len].iter().enumerate() {
             if clock.try_lock() {
                 return Some(ClockGuard::new(id as u32, clock.clone()));
             }
         }
 
-        let id = self.clocks.len();
-        if id >= self.max_clocks {
-            return None;
+        // All active clocks are busy, try to activate a new one via CAS
+        let mut current_len = len;
+        loop {
+            // cannot grow, limit reached
+            if current_len >= self.clocks.len() {
+                return None;
+            }
+
+            // Try to claim the next slot at `current_len`. If we succeed, the pre-allocated clock at
+            // `current_len` is already in locked state, so we can just return it.
+            // If fail, it means that another thread grew the set, so we can try the newly activated
+            match self.len.compare_exchange_weak(
+                current_len,
+                current_len + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    // Successfully claimed slot at `current_len`.
+                    return Some(ClockGuard::new(
+                        current_len as u32,
+                        self.clocks[current_len].clone(),
+                    ));
+                }
+                Err(actual_len) => {
+                    // Another thread grew the set. Try the newly activated slots.
+                    for id in current_len..actual_len {
+                        if self.clocks[id].try_lock() {
+                            return Some(ClockGuard::new(id as u32, self.clocks[id].clone()));
+                        }
+                    }
+                    current_len = actual_len;
+                }
+            }
         }
-
-        let clock = Arc::new(Clock::new_locked());
-
-        self.clocks.push(clock.clone());
-
-        Some(ClockGuard::new(id as u32, clock))
     }
 }
 
@@ -170,7 +204,7 @@ mod tests {
     /// Tick a single clock, it should increment after we advance it from 0 (or higher).
     #[test]
     fn test_clock_set_single_tick() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // Don't tick from 0 unless we explicitly advance
         assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
@@ -189,7 +223,7 @@ mod tests {
     /// Test a single clock, but tick it multiple times on the same guard.
     #[test]
     fn test_clock_set_single_tick_twice() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // Don't tick from 0 unless we explicitly advance
         {
@@ -212,7 +246,7 @@ mod tests {
     /// Advance a clock to a higher number, which should increase it.
     #[test]
     fn test_clock_set_single_advance_high() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // Bring the clock up to 4
         assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
@@ -230,7 +264,7 @@ mod tests {
     /// Advance a clock to a lower number, which should not do anything.
     #[test]
     fn test_clock_set_single_advance_low() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // Bring the clock up to 4
         assert_eq!(clock_set.get_clock().unwrap().tick_once(), 0);
@@ -251,7 +285,7 @@ mod tests {
     /// Test multiple clocks in various configurations.
     #[test]
     fn test_clock_multi_tick() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // 2 parallel operations, that fails and doesn't advance
         {
@@ -354,7 +388,7 @@ mod tests {
     /// unordered.
     #[test]
     fn test_clock_set_long_running_unordered() {
-        let mut clock_set = ClockSet::new();
+        let clock_set = ClockSet::new();
 
         // Clock 1 runs for a long while
         let mut clock1 = clock_set.get_clock().unwrap();
@@ -420,7 +454,7 @@ mod tests {
     fn test_clock_set_many() {
         const N: usize = 5000;
 
-        let mut clock_set = ClockSet::with_max_clocks(N);
+        let clock_set = ClockSet::with_max_clocks(N);
 
         // Tick all clocks past 0
         {
@@ -497,7 +531,7 @@ mod tests {
     fn test_clock_set_many_staggered_stuck() {
         const N: usize = 500;
 
-        let mut clock_set = ClockSet::with_max_clocks(N);
+        let clock_set = ClockSet::with_max_clocks(N);
 
         let mut stuck_clocks = Vec::new();
 

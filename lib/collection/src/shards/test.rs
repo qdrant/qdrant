@@ -72,7 +72,7 @@ fn clock_set_clock_map_workflow() {
     helper.tick_clock().assert(101);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Helper {
     clock_set: ClockSet,
     clock_map: ClockMap,
