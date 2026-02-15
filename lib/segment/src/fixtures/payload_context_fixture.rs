@@ -16,7 +16,8 @@ use crate::common::operation_error::OperationResult;
 use crate::fixtures::payload_fixtures::{
     FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY, generate_diverse_payload,
 };
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::PayloadIndex;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -189,6 +190,18 @@ impl IdTracker for FixtureIdTracker {
     }
 }
 
+/// Creates a simple `IdTrackerEnum` for testing with sequential point IDs (0..num_points).
+pub fn create_id_tracker_fixture(num_points: usize) -> IdTrackerEnum {
+    let mut id_tracker = InMemoryIdTracker::new();
+    for i in 0..num_points {
+        let external_id = PointIdType::NumId(i as u64);
+        let internal_id = i as PointOffsetType;
+        id_tracker.set_link(external_id, internal_id).unwrap();
+        id_tracker.set_internal_version(internal_id, 0).unwrap();
+    }
+    IdTrackerEnum::InMemoryIdTracker(id_tracker)
+}
+
 /// Creates in-memory payload storage and fills it with random points
 ///
 /// # Arguments
@@ -228,7 +241,7 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
 ///
 pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> PlainPayloadIndex {
     let payload_storage = create_payload_storage_fixture(num_points, seed);
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num_points)));
 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         Arc::new(AtomicRefCell::new(payload_storage.into())),
@@ -259,7 +272,7 @@ pub fn create_struct_payload_index(
     let payload_storage = Arc::new(AtomicRefCell::new(
         create_payload_storage_fixture(num_points, seed).into(),
     ));
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num_points)));
 
     let mut index = StructPayloadIndex::open(
         payload_storage,

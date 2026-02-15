@@ -12,7 +12,7 @@ use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use sparse::index::inverted_index::InvertedIndex;
 
 use crate::common::operation_error::OperationResult;
-use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::index::VectorIndex;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::{
@@ -38,7 +38,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
     let storage_dir = &data_dir.join("storage");
 
     // setup
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(vectors.len())));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(vectors.len())));
     let payload_storage = InMemoryPayloadStorage::default();
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let payload_index = StructPayloadIndex::open(

@@ -5,6 +5,7 @@ use common::iterator_ext::IteratorExt;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use super::Segment;
+use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
 use crate::types::{Filter, PointIdType};
 
