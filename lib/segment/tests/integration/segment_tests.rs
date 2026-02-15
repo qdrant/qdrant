@@ -65,8 +65,8 @@ fn test_point_exclusion() {
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
-    let point_ids1: Vec<_> = segment.iter_points().collect();
-    let point_ids2: Vec<_> = segment.iter_points().collect();
+    let point_ids1: Vec<_> = segment.iter_points().iter().collect();
+    let point_ids2: Vec<_> = segment.iter_points().iter().collect();
 
     assert!(!point_ids1.is_empty());
     assert!(!point_ids2.is_empty());
@@ -123,8 +123,8 @@ fn test_named_vector_search() {
     let best_match = res.first().expect("Non-empty result");
     assert_ne!(best_match.id, 3.into());
 
-    let point_ids1: Vec<_> = segment.iter_points().collect();
-    let point_ids2: Vec<_> = segment.iter_points().collect();
+    let point_ids1: Vec<_> = segment.iter_points().iter().collect();
+    let point_ids2: Vec<_> = segment.iter_points().iter().collect();
 
     assert!(!point_ids1.is_empty());
     assert!(!point_ids2.is_empty());

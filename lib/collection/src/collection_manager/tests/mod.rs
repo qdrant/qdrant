@@ -168,7 +168,7 @@ fn test_move_points_to_copy_on_write() {
 
     let cow_segment_read = cow_segment.get().read();
 
-    let cow_points: HashSet<_> = cow_segment_read.iter_points().collect();
+    let cow_points: HashSet<_> = cow_segment_read.iter_points().iter().collect();
 
     assert!(
         cow_points.contains(&1.into()),

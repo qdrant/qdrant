@@ -169,7 +169,7 @@ impl PayloadIndex for PlainPayloadIndex {
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
-        let all_points_iter = id_tracker.iter_internal();
+        let all_points_iter = id_tracker.point_mappings().iter_internal();
         all_points_iter
             .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))

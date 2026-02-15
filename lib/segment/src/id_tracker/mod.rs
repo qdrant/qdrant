@@ -39,9 +39,8 @@ pub fn for_each_unique_point<'a>(
     let mut iter = id_trackers
         .enumerate()
         .map(|(segment_index, id_tracker)| {
-            id_tracker
-                .iter_from(None)
-                .filter_map(move |(external_id, internal_id)| {
+            id_tracker.point_mappings().iter_from(None).filter_map(
+                move |(external_id, internal_id)| {
                     let version = id_tracker.internal_version(internal_id);
                     // a point without a version had an interrupted flush sequence and should be discarded
                     version.map(|version| MergedPointId {
@@ -50,7 +49,8 @@ pub fn for_each_unique_point<'a>(
                         internal_id,
                         version,
                     })
-                })
+                },
+            )
         })
         .kmerge_by(|a, b| a.external_id < b.external_id);
 
@@ -104,7 +104,7 @@ mod tests {
         // Naive HashMap-based implementation of for_each_unique_point.
         let mut expected = HashMap::<ExtendedPointId, MergedPointId>::new();
         for (tracker_index, id_tracker) in id_trackers.iter().enumerate() {
-            for (external_id, internal_id) in id_tracker.iter_from(None) {
+            for (external_id, internal_id) in id_tracker.point_mappings().iter_from(None) {
                 let version = id_tracker.internal_version(internal_id).unwrap();
                 let merged_point_id = MergedPointId {
                     external_id,

@@ -747,6 +747,7 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .id_tracker
         .borrow()
+        .point_mappings()
         .iter_internal()
         .filter(|x| filter_context.check(*x))
         .collect_vec()
@@ -808,6 +809,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
     let exact = struct_segment
         .id_tracker
         .borrow()
+        .point_mappings()
         .iter_internal()
         .filter(|x| filter_context.check(*x))
         .collect_vec()
@@ -875,6 +877,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
     let exact = struct_segment
         .id_tracker
         .borrow()
+        .point_mappings()
         .iter_internal()
         .filter(|x| filter_context.check(*x))
         .collect_vec()
@@ -1275,6 +1278,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
         .struct_segment
         .id_tracker
         .borrow()
+        .point_mappings()
         .iter_internal()
         .filter(|x| filter_context.check(*x))
         .collect_vec()

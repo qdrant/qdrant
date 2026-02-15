@@ -53,7 +53,7 @@ impl Segment {
                 let iter = payload_index
                     .iter_filtered_points(
                         filter,
-                        &*id_tracker,
+                        &id_tracker,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
@@ -133,7 +133,7 @@ impl Segment {
             payload_index
                 .iter_filtered_points(
                     filter,
-                    &*id_tracker,
+                    &id_tracker,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,

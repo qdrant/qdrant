@@ -301,8 +301,14 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None => panic!("No close vector found!"),
     };
 
-    let all_ids1: Vec<_> = borrowed_id_tracker.iter_internal().collect();
-    let all_ids2: Vec<_> = borrowed_id_tracker.iter_internal().collect();
+    let all_ids1: Vec<_> = borrowed_id_tracker
+        .point_mappings()
+        .iter_internal()
+        .collect();
+    let all_ids2: Vec<_> = borrowed_id_tracker
+        .point_mappings()
+        .iter_internal()
+        .collect();
 
     assert_eq!(all_ids1, all_ids2);
 

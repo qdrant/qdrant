@@ -24,7 +24,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, PointExternalIterator};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
@@ -248,12 +248,13 @@ impl NonAppendableSegmentEntry for Segment {
         Ok(records.into_values().collect())
     }
 
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType>> {
+    fn iter_points(&self) -> PointExternalIterator<'_> {
         // Sorry for that, but I didn't find any way easier.
         // If you try simply return iterator - it won't work because AtomicRef should exist
         // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
         // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        unsafe { self.id_tracker.as_ptr().as_ref().unwrap().iter_external() }
+        let mappings = unsafe { self.id_tracker.as_ptr().as_ref().unwrap().point_mappings() };
+        PointExternalIterator::new(mappings)
     }
 
     fn read_filtered<'a>(
@@ -329,7 +330,7 @@ impl NonAppendableSegmentEntry for Segment {
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let id_tracker = self.id_tracker.borrow();
-        let iterator = id_tracker.iter_from(from).map(|x| x.0);
+        let iterator = id_tracker.point_mappings().iter_from(from).map(|x| x.0);
         match to {
             None => iterator.collect(),
             Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),

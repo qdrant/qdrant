@@ -913,9 +913,13 @@ impl SegmentHolder {
             .iter()
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
-        let mut iterators = locked_segments
+        let point_iterators = locked_segments
             .iter()
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points()))
+            .collect::<BTreeMap<_, _>>();
+        let mut iterators = point_iterators
+            .iter()
+            .map(|(segment_id, point_iter)| (*segment_id, point_iter.iter()))
             .collect::<BTreeMap<_, _>>();
 
         // heap contains the current iterable point id from each segment

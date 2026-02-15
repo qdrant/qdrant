@@ -16,6 +16,7 @@ use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQu
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::id_tracker::PointExternalIterator;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -231,7 +232,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     /// Not implemented for proxy
-    fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
+    fn iter_points(&self) -> PointExternalIterator<'_> {
         // iter_points is not available for Proxy implementation
         // Due to internal locks it is almost impossible to return iterator with proper owning, lifetimes, e.t.c.
         unimplemented!("call to iter_points is not implemented for Proxy segment")

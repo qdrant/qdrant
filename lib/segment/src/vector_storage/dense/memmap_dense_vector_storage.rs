@@ -461,7 +461,10 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 5);
 
-        let stored_ids: Vec<PointOffsetType> = borrowed_id_tracker.iter_internal().collect();
+        let stored_ids: Vec<PointOffsetType> = borrowed_id_tracker
+            .point_mappings()
+            .iter_internal()
+            .collect();
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 

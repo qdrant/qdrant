@@ -186,6 +186,7 @@ impl StructPayloadIndex {
             }
             Condition::CustomIdChecker(cond) => {
                 let segment_ids: AHashSet<_> = id_tracker
+                    .point_mappings()
                     .iter_external()
                     .filter(|&point_id| cond.0.check(point_id))
                     .filter_map(|external_id| id_tracker.internal_id(external_id))

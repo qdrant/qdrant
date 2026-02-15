@@ -41,7 +41,7 @@ impl Segment {
         let values_ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
-                &*id_tracker,
+                &id_tracker,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

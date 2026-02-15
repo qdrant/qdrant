@@ -377,7 +377,10 @@ impl HNSWIndex {
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
         let mut indexed_vectors = 0;
-        for vector_id in id_tracker_ref.iter_internal_excluding(deleted_bitslice) {
+        for vector_id in id_tracker_ref
+            .point_mappings()
+            .iter_internal_excluding(deleted_bitslice)
+        {
             check_process_stopped(stopped)?;
             indexed_vectors += 1;
 
@@ -425,7 +428,9 @@ impl HNSWIndex {
             let mut ids = Vec::with_capacity(total_vector_count);
             let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
-            let mut ids_iter = id_tracker_ref.iter_internal_excluding(deleted_bitslice);
+            let mut ids_iter = id_tracker_ref
+                .point_mappings()
+                .iter_internal_excluding(deleted_bitslice);
             if let Some(old_index) = old_index {
                 progress_migrate.start();
 
@@ -511,6 +516,7 @@ impl HNSWIndex {
 
             // Estimate connectivity of the main graph
             let all_points = id_tracker_ref
+                .point_mappings()
                 .iter_internal_excluding(deleted_bitslice)
                 .collect::<Vec<_>>();
 
@@ -1244,7 +1250,7 @@ impl HNSWIndex {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let id_tracker = self.id_tracker.borrow();
-        let ids_iterator = id_tracker.iter_internal();
+        let ids_iterator = id_tracker.point_mappings().iter_internal();
         self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 
@@ -1652,8 +1658,8 @@ impl<'a> OldIndexCandidate<'a> {
         // If we have `in both` case, we need to fill the `old_to_new` mapping.
         // Otherwise, we are interested in counts of "missing" points - which absence in the new
         for item in itertools::merge_join_by(
-            id_tracker.iter_from(None),
-            old_id_tracker.iter_from(None),
+            id_tracker.point_mappings().iter_from(None),
+            old_id_tracker.point_mappings().iter_from(None),
             |(new_external_id, _), (old_external_id, _)| new_external_id.cmp(old_external_id),
         ) {
             let (new_offset, old_offset): (Option<PointOffsetType>, Option<PointOffsetType>) =
