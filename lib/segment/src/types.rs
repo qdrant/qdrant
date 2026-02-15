@@ -2615,6 +2615,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<OrderedFloat<FloatPayloadType>>),
+    Integer(Range<IntPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
 
@@ -2622,6 +2623,13 @@ impl Hash for RangeInterface {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         match self {
             RangeInterface::Float(range) => {
+                let Range { lt, gt, gte, lte } = range;
+                lt.hash(state);
+                gt.hash(state);
+                gte.hash(state);
+                lte.hash(state);
+            }
+            RangeInterface::Integer(range) => {
                 let Range { lt, gt, gte, lte } = range;
                 lt.hash(state);
                 gt.hash(state);
@@ -2642,6 +2650,7 @@ impl Hash for RangeInterface {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum RangeInterfaceUntagged {
+    Integer(Range<IntPayloadType>),
     Float(Range<OrderedFloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
@@ -2656,6 +2665,7 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
     {
         if !deserializer.is_human_readable() {
             return RangeInterfaceUntagged::deserialize(deserializer).map(|parsed| match parsed {
+                RangeInterfaceUntagged::Integer(r) => RangeInterface::Integer(r),
                 RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
                 RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
             });
@@ -2677,11 +2687,27 @@ impl<'de> serde::Deserialize<'de> for RangeInterface {
             }
         }
 
+        // If all numeric bounds are integers (no fractional part), parse as integer range
+        // to preserve precision for large i64 values that cannot be represented exactly as f64
+        if let Some(obj) = value.as_object() {
+            let keys = ["lt", "gt", "lte", "gte"];
+            let numeric_bounds: Vec<&serde_json::Value> =
+                keys.iter().filter_map(|k| obj.get(*k)).collect();
+
+            if !numeric_bounds.is_empty() && numeric_bounds.iter().all(|v| v.is_i64() || v.is_u64())
+            {
+                return serde_json::from_value::<Range<IntPayloadType>>(value)
+                    .map(RangeInterface::Integer)
+                    .map_err(serde::de::Error::custom);
+            }
+        }
+
         // Fallback to existing untagged behavior
         let parsed = serde_json::from_value::<RangeInterfaceUntagged>(value)
             .map_err(serde::de::Error::custom)?;
 
         Ok(match parsed {
+            RangeInterfaceUntagged::Integer(r) => RangeInterface::Integer(r),
             RangeInterfaceUntagged::Float(r) => RangeInterface::Float(r),
             RangeInterfaceUntagged::DateTime(r) => RangeInterface::DateTime(r),
         })
@@ -2692,7 +2718,7 @@ type OrderedFloatPayloadType = OrderedFloat<FloatPayloadType>;
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< OrderedFloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive_args(< OrderedFloatPayloadType > => "Range", < IntPayloadType > => "IntegerRange", < DateTimePayloadType > => "DatetimeRange")]
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
@@ -4114,6 +4140,123 @@ mod tests {
         let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
 
         assert_eq!(range, restored);
+    }
+
+    /// Regression test: Large i64 values in range filters should not lose precision.
+    /// When range bounds are integers, they should be parsed as i64 directly,
+    /// not converted through f64 which loses precision for values > 2^53.
+    /// See: https://github.com/qdrant/qdrant/issues/7955
+    #[test]
+    fn test_integer_range_preserves_large_i64_precision() {
+        // This value loses precision when converted to f64:
+        // 1768907725507217522_i64 as f64 == 1768907725507217408.0
+        let json = r#"{
+            "key": "created_at_ns",
+            "range": {
+                "gt": 1768907725507217522
+            }
+        }"#;
+
+        let condition: FieldCondition = serde_json::from_str(json).unwrap();
+        let range = condition.range.unwrap();
+
+        match range {
+            RangeInterface::Integer(r) => {
+                assert_eq!(r.gt, Some(1768907725507217522_i64));
+            }
+            other => panic!("Expected Integer range, got: {other:?}"),
+        }
+    }
+
+    /// Test that float range values (with decimal points) are still parsed as Float variant.
+    #[test]
+    fn test_float_range_still_works() {
+        let json = r#"{
+            "key": "score",
+            "range": {
+                "gte": 0.5,
+                "lte": 1.0
+            }
+        }"#;
+
+        let condition: FieldCondition = serde_json::from_str(json).unwrap();
+        let range = condition.range.unwrap();
+
+        assert!(matches!(range, RangeInterface::Float(_)));
+    }
+
+    /// Test that small integer range values that fit in f64 exactly are parsed as Integer variant.
+    #[test]
+    fn test_small_integer_range_parsed_as_integer() {
+        let json = r#"{
+            "key": "count",
+            "range": {
+                "gt": 10,
+                "lt": 100
+            }
+        }"#;
+
+        let condition: FieldCondition = serde_json::from_str(json).unwrap();
+        let range = condition.range.unwrap();
+
+        match range {
+            RangeInterface::Integer(r) => {
+                assert_eq!(r.gt, Some(10));
+                assert_eq!(r.lt, Some(100));
+            }
+            other => panic!("Expected Integer range, got: {other:?}"),
+        }
+    }
+
+    /// Regression test: Integer RangeInterface binary (msgpack) roundtrip.
+    #[test]
+    fn test_range_interface_integer_binary_roundtrip() {
+        let range = RangeInterface::Integer(Range {
+            lt: None,
+            gt: Some(1768907725507217522_i64),
+            gte: None,
+            lte: None,
+        });
+
+        let binary = rmp_serde::to_vec(&range).expect("serialize");
+        let restored: RangeInterface = rmp_serde::from_slice(&binary).expect("deserialize");
+
+        match restored {
+            RangeInterface::Integer(r) => {
+                assert_eq!(r.gt, Some(1768907725507217522_i64));
+            }
+            other => panic!("Expected Integer range after roundtrip, got: {other:?}"),
+        }
+    }
+
+    /// Test that integer Range check_range works correctly for large i64 values.
+    #[test]
+    fn test_integer_range_check_range_large_values() {
+        let range = Range::<IntPayloadType> {
+            gt: Some(1768907725507217522),
+            lt: None,
+            gte: None,
+            lte: None,
+        };
+
+        // This value equals the boundary - should NOT pass gt check
+        assert!(!range.check_range(1768907725507217522));
+
+        // This value is greater - should pass
+        assert!(range.check_range(1768907725507217523));
+
+        // This value is less - should NOT pass
+        assert!(!range.check_range(1768907725507217521));
+
+        // Demonstrate the precision loss: when converting to f64 and back to i64,
+        // the boundary value changes, which is the root cause of the index bug.
+        let original: i64 = 1768907725507217522;
+        let through_f64: i64 = original as f64 as i64;
+        // The value is truncated by f64 roundtrip
+        assert_ne!(original, through_f64);
+        assert_eq!(through_f64, 1768907725507217408);
+        // With integer range, the boundary is preserved exactly
+        assert!(!range.check_range(original));
     }
 
     /// Regression test: Non-FieldCondition JSON deserialization uses ConditionUntagged fallback.

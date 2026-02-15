@@ -327,6 +327,7 @@ where
 
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::Integer(int_range) => int_range.map(|i| T::from_i64(i)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
@@ -924,6 +925,7 @@ where
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::Integer(int_range) => int_range.map(|i| T::from_i64(i)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
@@ -1218,6 +1220,7 @@ where
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(|float| T::from_f64(float.0)),
+            RangeInterface::Integer(int_range) => int_range.map(|i| T::from_i64(i)),
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }

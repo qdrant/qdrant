@@ -336,6 +336,7 @@ pub fn get_range_checkers(
 ) -> Option<ConditionCheckerFn<'_>> {
     match range {
         RangeInterface::Float(range) => get_float_range_checkers(index, range, hw_acc),
+        RangeInterface::Integer(range) => get_integer_range_checkers(index, range, hw_acc),
         RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range, hw_acc),
     }
 }
@@ -360,6 +361,38 @@ pub fn get_float_range_checkers(
                 &hw_counter,
             )
         })),
+        FieldIndex::BoolIndex(_)
+        | FieldIndex::DatetimeIndex(_)
+        | FieldIndex::FullTextIndex(_)
+        | FieldIndex::GeoIndex(_)
+        | FieldIndex::IntMapIndex(_)
+        | FieldIndex::KeywordIndex(_)
+        | FieldIndex::UuidIndex(_)
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
+    }
+}
+
+pub fn get_integer_range_checkers(
+    index: &FieldIndex,
+    range: Range<IntPayloadType>,
+    hw_acc: HwMeasurementAcc,
+) -> Option<ConditionCheckerFn<'_>> {
+    let hw_counter = hw_acc.get_counter_cell();
+    match index {
+        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
+        })),
+        FieldIndex::FloatIndex(num_index) => {
+            let range = range.map(|i| OrderedFloat(i as FloatPayloadType));
+            Some(Box::new(move |point_id: PointOffsetType| {
+                num_index.check_values_any(
+                    point_id,
+                    |value| range.check_range(OrderedFloat(*value)),
+                    &hw_counter,
+                )
+            }))
+        }
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FullTextIndex(_)

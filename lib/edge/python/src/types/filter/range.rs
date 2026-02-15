@@ -27,6 +27,12 @@ impl From<RangeInterface> for PyRange {
     fn from(range: RangeInterface) -> Self {
         match range {
             RangeInterface::Float(float) => PyRange::Float(PyRangeFloat(float)),
+            RangeInterface::Integer(int_range) => {
+                // Convert integer range to float range for Python edge bindings
+                PyRange::Float(PyRangeFloat(
+                    int_range.map(|i| ordered_float::OrderedFloat(i as f64)),
+                ))
+            }
             RangeInterface::DateTime(date_time) => PyRange::DateTime(PyRangeDateTime(date_time)),
         }
     }
