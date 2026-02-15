@@ -195,7 +195,11 @@ pub fn init(
             server.bind(bind_addr)?
         };
 
+        // checking actually bound port is needed when port 0 is requested
+        // server has successfully bound to bind_addr above, unwrap is safe
+        let port = server.addrs().first().unwrap().port();
         log::info!("Qdrant HTTP listening on {port}");
+
         server.run().await
     })
 }

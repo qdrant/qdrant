@@ -32,6 +32,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, Auth};
 use tokio::runtime::Handle;
 use tokio::signal;
+use tokio_stream::wrappers::TcpListenerStream;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
@@ -126,7 +127,10 @@ pub fn init(
             .build()
             .unwrap();
 
-        log::info!("Qdrant gRPC listening on {grpc_port}");
+        // checking actually bound port is needed when port 0 is requested
+        let listener = tokio::net::TcpListener::bind(socket).await?;
+        let bound_port = listener.local_addr()?.port();
+        log::info!("Qdrant gRPC listening on {bound_port}");
 
         let mut server = Server::builder();
 
@@ -194,7 +198,7 @@ pub fn init(
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
             )
-            .serve_with_shutdown(socket, async {
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
                 wait_stop_signal("gRPC service").await;
             })
             .await
@@ -237,7 +241,10 @@ pub fn init_internal(
             let raft_service =
                 RaftService::new(to_consensus, consensus_state, tls_config.is_some());
 
-            log::debug!("Qdrant internal gRPC listening on {internal_grpc_port}");
+            // checking actually bound port is needed when port 0 is requested
+            let listener = tokio::net::TcpListener::bind(socket).await?;
+            let bound_port = listener.local_addr()?.port();
+            log::debug!("Qdrant internal gRPC listening on {bound_port}");
 
             let mut server = Server::builder()
                 // Internally use a high limit for pending accept streams.
@@ -252,7 +259,9 @@ pub fn init_internal(
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");
 
-                server = server.tls_config(config)?;
+                server = server
+                    .tls_config(config)
+                    .map_err(helpers::tonic_error_to_io_error)?;
             } else {
                 log::info!("TLS disabled for internal gRPC API");
             };
@@ -303,10 +312,11 @@ pub fn init_internal(
                         .accept_compressed(CompressionEncoding::Gzip)
                         .max_decoding_message_size(usize::MAX),
                 )
-                .serve_with_shutdown(socket, async {
+                .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async {
                     wait_stop_signal("internal gRPC").await;
                 })
                 .await
+                .map_err(helpers::tonic_error_to_io_error)
         })
         .unwrap();
     Ok(())
