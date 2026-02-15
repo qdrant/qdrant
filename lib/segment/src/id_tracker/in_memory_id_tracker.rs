@@ -10,7 +10,7 @@ use rand::rngs::StdRng;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
+use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
@@ -105,23 +105,8 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        self.mappings.iter_external()
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.mappings.iter_internal()
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_from(external_id)
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_random()
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Plain(&self.mappings)
     }
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.

@@ -51,10 +51,12 @@ impl Segment {
             let iter = if use_iterative_approach {
                 // go over the filtered points and aggregate the values
                 // aka. read from other indexes
+                let point_mappings = id_tracker.point_mappings();
                 let iter = payload_index
                     .iter_filtered_points(
                         filter,
                         &id_tracker,
+                        &point_mappings,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
@@ -145,11 +147,13 @@ impl Segment {
         let values = if let Some(filter) = filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
+            let point_mappings = id_tracker.point_mappings();
 
             payload_index
                 .iter_filtered_points(
                     filter,
                     &id_tracker,
+                    &point_mappings,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,

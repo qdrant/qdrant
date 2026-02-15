@@ -109,6 +109,7 @@ mod tests {
             .get()
             .read()
             .iter_points()
+            .iter()
             .enumerate()
             .filter_map(|(i, point_id)| (i % 2 == 0).then_some(point_id))
             .collect_vec();
@@ -125,6 +126,7 @@ mod tests {
             .get()
             .read()
             .iter_points()
+            .iter()
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
@@ -133,6 +135,7 @@ mod tests {
             .get()
             .read()
             .iter_points()
+            .iter()
             .enumerate()
             .filter_map(|(i, point_id)| (i % 20 == 0).then_some(point_id))
             .collect_vec();
@@ -365,6 +368,7 @@ mod tests {
             // Delete 10% of points
             let segment_points_to_delete = segment
                 .iter_points()
+                .iter()
                 .enumerate()
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
@@ -380,6 +384,7 @@ mod tests {
 
                 let vector1_vecs_to_delete = id_tracker
                     .borrow()
+                    .point_mappings()
                     .iter_external()
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 4 == 0).then_some(point_id))
@@ -398,6 +403,7 @@ mod tests {
 
                 let vector2_vecs_to_delete = id_tracker
                     .borrow()
+                    .point_mappings()
                     .iter_external()
                     .enumerate()
                     .filter_map(|(i, point_id)| (i % 10 == 7).then_some(point_id))

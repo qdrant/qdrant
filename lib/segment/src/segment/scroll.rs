@@ -75,6 +75,7 @@ impl Segment {
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_from_visible(offset, effective_deferred_id)
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
@@ -93,6 +94,7 @@ impl Segment {
 
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_from_visible(offset, effective_deferred_id)
             .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
@@ -113,11 +115,13 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
+        let point_mappings = id_tracker.point_mappings();
 
         let ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
