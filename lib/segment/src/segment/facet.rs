@@ -9,6 +9,7 @@ use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetParams, FacetValue};
 use crate::entry::entry_point::NonAppendableSegmentEntry;
+use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
@@ -52,7 +53,7 @@ impl Segment {
                 let iter = payload_index
                     .iter_filtered_points(
                         filter,
-                        &*id_tracker,
+                        &id_tracker,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
@@ -132,7 +133,7 @@ impl Segment {
             payload_index
                 .iter_filtered_points(
                     filter,
-                    &*id_tracker,
+                    &id_tracker,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,

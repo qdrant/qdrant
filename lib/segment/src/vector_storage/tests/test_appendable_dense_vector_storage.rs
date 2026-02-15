@@ -11,8 +11,8 @@ use tempfile::Builder;
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
-use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::id_tracker::IdTrackerSS;
+use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage_full;
@@ -35,8 +35,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 0.0, 0.0, 0.0],
     ];
     let delete_mask = [false, false, true, true, false];
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let id_tracker: Arc<AtomicRefCell<IdTrackerEnum>> =
+        Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
@@ -144,8 +144,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     ];
     let delete_mask = [false, false, true, true, false];
 
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let id_tracker: Arc<AtomicRefCell<IdTrackerEnum>> =
+        Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
     let hw_counter = HardwareCounterCell::new();
@@ -215,8 +215,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 1.0, 0.0, 1.0],
         vec![1.0, 0.0, 0.0, 0.0],
     ];
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let id_tracker: Arc<AtomicRefCell<IdTrackerEnum>> =
+        Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
     let mut borrowed_id_tracker = id_tracker.borrow_mut();
 
     let hw_counter = HardwareCounterCell::new();

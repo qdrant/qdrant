@@ -14,7 +14,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
@@ -27,7 +27,7 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
 pub struct PlainVectorIndex {
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
@@ -37,7 +37,7 @@ pub struct PlainVectorIndex {
 
 impl PlainVectorIndex {
     pub fn new(
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,

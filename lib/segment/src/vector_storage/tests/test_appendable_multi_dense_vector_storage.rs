@@ -12,8 +12,8 @@ use tempfile::Builder;
 use crate::data_types::vectors::{
     MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
-use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::id_tracker::IdTrackerSS;
+use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
@@ -53,8 +53,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
 
     let delete_mask = [false, false, true, true, false];
 
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let id_tracker: Arc<AtomicRefCell<IdTrackerEnum>> =
+        Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
@@ -212,8 +212,8 @@ fn do_test_update_from_delete_points(
 
     let delete_mask = [false, false, true, true, false];
 
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let id_tracker: Arc<AtomicRefCell<IdTrackerEnum>> =
+        Arc::new(AtomicRefCell::new(create_id_tracker_fixture(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
     let hw_counter = HardwareCounterCell::new();

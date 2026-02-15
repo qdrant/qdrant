@@ -32,7 +32,7 @@ use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 #[cfg(feature = "rocksdb")]
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
-use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::VectorIndexEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
@@ -291,7 +291,7 @@ pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
 
 pub(crate) struct VectorIndexOpenArgs<'a> {
     pub path: &'a Path,
-    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
