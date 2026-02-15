@@ -205,7 +205,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let mut ram_index_builder = InvertedIndexBuilder::new();
         let mut indices_tracker = IndicesTracker::default();
-        for id in borrowed_id_tracker.iter_internal_excluding(deleted_bitslice) {
+        for id in borrowed_id_tracker
+            .point_mappings()
+            .iter_internal_excluding(deleted_bitslice)
+        {
             check_process_stopped(stopped)?;
             // It is possible that the vector is not present in the storage in case of crash.
             // Because:

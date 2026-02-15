@@ -85,14 +85,15 @@ fn test_building_new_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
+        merged_segment.iter_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
             .iter_points()
-            .chain(segment2.iter_points())
+            .iter()
+            .chain(segment2.iter_points().iter())
             .unique()
             .count(),
     );
@@ -163,14 +164,15 @@ fn test_building_new_defragmented_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
+        merged_segment.iter_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
             .iter_points()
-            .chain(segment2.iter_points())
+            .iter()
+            .chain(segment2.iter_points().iter())
             .unique()
             .count(),
     );
@@ -198,7 +200,7 @@ fn check_points_defragmented(
 
     let hw_counter = HardwareCounterCell::new();
 
-    for internal_id in id_tracker.iter_internal() {
+    for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
         let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
@@ -288,14 +290,15 @@ fn test_building_new_sparse_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().count(),
+        merged_segment.iter_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
             .iter_points()
-            .chain(segment2.iter_points())
+            .iter()
+            .chain(segment2.iter_points().iter())
             .unique()
             .count(),
     );

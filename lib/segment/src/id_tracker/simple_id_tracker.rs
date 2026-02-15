@@ -14,8 +14,8 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VERSIONS_CF, DatabaseColumnWrapper};
-use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::{IdTracker, PointMappingsRefEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 /// Point Id type used for storing ids internally
@@ -240,23 +240,8 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
-    fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        self.mappings.iter_external()
-    }
-
-    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.mappings.iter_internal()
-    }
-
-    fn iter_from(
-        &self,
-        external_id: Option<PointIdType>,
-    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_from(external_id)
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        self.mappings.iter_random()
+    fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
+        PointMappingsRefEnum::Plain(&self.mappings)
     }
 
     fn total_point_count(&self) -> usize {

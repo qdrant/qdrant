@@ -265,7 +265,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         restored_segment.deleted_point_count(),
     );
 
-    for id in segment.iter_points() {
+    for id in segment.iter_points().iter() {
         let vectors = segment.all_vectors(id, &hw_counter).unwrap();
         let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);

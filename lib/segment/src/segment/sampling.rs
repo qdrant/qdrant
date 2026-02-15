@@ -49,6 +49,7 @@ impl Segment {
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_random()
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
@@ -60,6 +61,7 @@ impl Segment {
     pub(super) fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
         self.id_tracker
             .borrow()
+            .point_mappings()
             .iter_random()
             .map(|x| x.0)
             .take(limit)
