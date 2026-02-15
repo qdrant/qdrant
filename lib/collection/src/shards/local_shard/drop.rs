@@ -39,6 +39,11 @@ impl Drop for LocalShard {
         let handle_res = thread::Builder::new()
             .name("drop-shard".to_string())
             .spawn(move || {
+                #[cfg(target_os = "linux")]
+                if let Err(err) = common::cpu::linux_low_thread_priority() {
+                    log::debug!("Failed to set low thread priority for shard drop: {err}");
+                }
+
                 let mut update_handler = update_handler.blocking_lock();
                 if update_handler.is_stopped() {
                     return true;

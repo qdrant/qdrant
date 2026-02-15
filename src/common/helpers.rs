@@ -36,6 +36,15 @@ pub fn create_update_runtime(max_optimization_threads: usize) -> io::Result<Runt
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let update_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("update-{update_id}")
+        })
+        .on_thread_start(|| {
+            // On Linux, use lower thread priority so we interfere less with serving traffic
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_low_thread_priority() {
+                log::debug!(
+                    "Failed to set low thread priority for update runtime, ignoring: {err}"
+                );
+            }
         });
 
     if max_optimization_threads > 0 {
@@ -54,6 +63,14 @@ pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let general_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("general-{general_id}")
+        })
+        .on_thread_start(|| {
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_low_thread_priority() {
+                log::debug!(
+                    "Failed to set low thread priority for general purpose runtime, ignoring: {err}"
+                );
+            }
         })
         .build()
 }

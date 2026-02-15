@@ -96,6 +96,11 @@ impl SegmentHolder {
                 std::thread::Builder::new()
                     .name("background_flush".to_string())
                     .spawn(move || {
+                        #[cfg(target_os = "linux")]
+                        if let Err(err) = common::cpu::linux_low_thread_priority() {
+                            log::debug!("Failed to set low thread priority for background flush: {err}");
+                        }
+
                         for flusher in flushers {
                             flusher()?;
                         }

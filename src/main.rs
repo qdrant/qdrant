@@ -646,6 +646,11 @@ fn main() -> anyhow::Result<()> {
         thread::Builder::new()
             .name("deadlock_checker".to_string())
             .spawn(move || {
+                #[cfg(target_os = "linux")]
+                if let Err(err) = ::common::cpu::linux_low_thread_priority() {
+                    log::debug!("Failed to set low thread priority for deadlock checker: {err}");
+                }
+
                 loop {
                     thread::sleep(DEADLOCK_CHECK_PERIOD);
                     let deadlocks = deadlock::check_deadlock();

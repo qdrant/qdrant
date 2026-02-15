@@ -268,6 +268,11 @@ pub fn snapshot_files(
 
         // remove tmp directory in background
         let _ = thread::spawn(move || {
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_low_thread_priority() {
+                log::debug!("Failed to set low thread priority for snapshot cleanup: {err}");
+            }
+
             let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
