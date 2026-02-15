@@ -18,6 +18,10 @@ pub type GrpcStatusCode = i32;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    /// Per-collection request statistics: endpoint -> collection -> status -> stats
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub collection_responses:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -32,6 +36,11 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Per-collection request stats: endpoint -> collection -> status -> aggregator
+    collection_methods: HashMap<
+        String,
+        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -112,14 +121,28 @@ impl ActixWorkerTelemetryCollector {
         method: String,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
+        collection: Option<String>,
     ) {
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        // Also record per-collection if a collection name was extracted
+        if let Some(collection_name) = collection {
+            let aggregator = self
+                .collection_methods
+                .entry(method)
+                .or_default()
+                .entry(collection_name)
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
@@ -131,7 +154,25 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+
+        let mut collection_responses = HashMap::new();
+        for (method, collections) in &self.collection_methods {
+            let mut collections_map = HashMap::new();
+            for (collection, status_codes) in collections {
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map
+                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                collections_map.insert(collection.clone(), status_codes_map);
+            }
+            collection_responses.insert(method.clone(), collections_map);
+        }
+
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -154,6 +195,16 @@ impl WebApiTelemetry {
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
+            }
+        }
+        for (method, collections) in &other.collection_responses {
+            let collections_map = self.collection_responses.entry(method.clone()).or_default();
+            for (collection, status_codes) in collections {
+                let status_codes_map = collections_map.entry(collection.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = status_codes_map.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -194,7 +245,11 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        // Don't include per-collection data in anonymized telemetry
+        WebApiTelemetry {
+            responses,
+            collection_responses: HashMap::new(),
+        }
     }
 }
 

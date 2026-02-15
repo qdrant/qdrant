@@ -15,6 +15,17 @@ pub struct ActixTelemetryService<S> {
     telemetry_data: Arc<Mutex<ActixWorkerTelemetryCollector>>,
 }
 
+/// Extract collection name from a REST URL path.
+/// Expects paths like `/collections/{name}/points/search`.
+fn extract_collection_name(path: &str) -> Option<String> {
+    let path = path.strip_prefix("/collections/")?;
+    let name = path.split('/').next()?;
+    if name.is_empty() {
+        return None;
+    }
+    Some(name.to_string())
+}
+
 pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
@@ -40,6 +51,11 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
+
+        // Extract collection name from URL path for per-collection metrics.
+        // URL pattern: /collections/{name}/...
+        let collection_name = extract_collection_name(request.path());
+
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -48,7 +64,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(request_key, status, instant, collection_name);
             Ok(response)
         })
     }
