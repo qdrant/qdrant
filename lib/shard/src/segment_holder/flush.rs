@@ -98,7 +98,9 @@ impl SegmentHolder {
                     .spawn(move || {
                         #[cfg(target_os = "linux")]
                         if let Err(err) = common::cpu::linux_low_thread_priority() {
-                            log::debug!("Failed to set low thread priority for background flush: {err}");
+                            log::debug!(
+                                "Failed to set low thread priority for background flush: {err}"
+                            );
                         }
 
                         for flusher in flushers {

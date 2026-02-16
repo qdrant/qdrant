@@ -613,7 +613,9 @@ impl LocalShard {
                 .spawn(move || {
                     #[cfg(target_os = "linux")]
                     if let Err(err) = common::cpu::linux_low_thread_priority() {
-                        log::debug!("Failed to set low thread priority for segment building: {err}");
+                        log::debug!(
+                            "Failed to set low thread priority for segment building: {err}"
+                        );
                     }
 
                     build_segment(&path_clone, &segment_config, true)
