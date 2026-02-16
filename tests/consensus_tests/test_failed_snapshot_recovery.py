@@ -137,6 +137,7 @@ def remove_file_from_tar(original_tar, file_to_remove, new_tar):
 
 # The test validates that a node can recover from a corrupted snapshot
 def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
+    assert False, "Intentional failure to demonstrate --failed-first"
     assert_project_root()
 
 
