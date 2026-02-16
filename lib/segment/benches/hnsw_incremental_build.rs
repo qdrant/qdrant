@@ -436,7 +436,7 @@ fn measure_accuracy(
                     .vector_index
                     .borrow()
                     .search(&[query], None, top, None, &Default::default())
-                    .pipe(|results| process_search_results(&*id_tracker, results))
+                    .pipe(|results| process_search_results(&id_tracker, results))
             })
             .collect::<Vec<_>>();
         log::debug!("Exact search time = {:?}", start.elapsed());
@@ -458,7 +458,7 @@ fn measure_accuracy(
                     }),
                     &Default::default(),
                 )
-                .pipe(|results| process_search_results(&*id_tracker, results));
+                .pipe(|results| process_search_results(&id_tracker, results));
 
             // Get number of same results.
             index_result

@@ -428,9 +428,8 @@ impl HNSWIndex {
             let mut ids = Vec::with_capacity(total_vector_count);
             let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
-            let mut ids_iter = id_tracker_ref
-                .point_mappings()
-                .iter_internal_excluding(deleted_bitslice);
+            let point_mappings = id_tracker_ref.point_mappings();
+            let mut ids_iter = point_mappings.iter_internal_excluding(deleted_bitslice);
             if let Some(old_index) = old_index {
                 progress_migrate.start();
 
@@ -480,7 +479,7 @@ impl HNSWIndex {
                     vector_storage_ref.deref(),
                     quantized_vectors_ref.as_ref(),
                     None,
-                    id_tracker_ref.deleted_point_bitslice(),
+                    point_mappings.deleted_point_bitslice(),
                     internal_hardware_counter,
                 )?;
 
@@ -739,10 +738,12 @@ impl HNSWIndex {
         let cardinality_estimation =
             payload_index.estimate_cardinality(&filter, &disposed_hw_counter);
 
+        let point_mappings = id_tracker.point_mappings();
         payload_index
             .iter_filtered_points(
                 &filter,
                 id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 &disposed_hw_counter,
                 stopped,
@@ -802,12 +803,13 @@ impl HNSWIndex {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
             };
+            let point_mappings = id_tracker.point_mappings();
             let points_scorer = FilteredScorer::new_internal(
                 block_point_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
                 Some(BoxCow::Borrowed(&block_condition_checker)),
-                id_tracker.deleted_point_bitslice(),
+                point_mappings.deleted_point_bitslice(),
                 internal_hardware_counter,
             )?;
 
@@ -1029,9 +1031,11 @@ impl HNSWIndex {
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
 
+        // TODO drop if vector_query_context has valid deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_points = vector_query_context
             .deleted_points()
-            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| point_mappings.deleted_point_bitslice());
 
         let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
@@ -1136,7 +1140,7 @@ impl HNSWIndex {
 
             postprocess_search_result(
                 search_result,
-                id_tracker.deleted_point_bitslice(),
+                point_mappings.deleted_point_bitslice(),
                 &vector_storage,
                 quantized_vectors.as_ref(),
                 vector,
@@ -1192,9 +1196,11 @@ impl HNSWIndex {
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
 
+        // TODO drop if vector_query_context has valid deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_points = vector_query_context
             .deleted_points()
-            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| point_mappings.deleted_point_bitslice());
 
         let is_stopped = vector_query_context.is_stopped();
         let oversampled_top = get_oversampled_top(quantized_vectors.as_ref(), params, top);
@@ -1213,7 +1219,7 @@ impl HNSWIndex {
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
                 std::mem::take(search_result),
-                id_tracker.deleted_point_bitslice(),
+                point_mappings.deleted_point_bitslice(),
                 &vector_storage,
                 quantized_vectors.as_ref(),
                 query_vector,
@@ -1250,7 +1256,8 @@ impl HNSWIndex {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let id_tracker = self.id_tracker.borrow();
-        let ids_iterator = id_tracker.point_mappings().iter_internal();
+        let point_mappings = id_tracker.point_mappings();
+        let ids_iterator = point_mappings.iter_internal();
         self.search_plain_iterator_batched(vectors, ids_iterator, top, params, vector_query_context)
     }
 

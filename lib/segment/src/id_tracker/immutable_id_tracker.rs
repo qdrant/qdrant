@@ -2,7 +2,6 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::ext::BitSliceExt as _;
@@ -466,10 +465,6 @@ impl IdTracker for ImmutableIdTracker {
 
     fn deleted_point_count(&self) -> usize {
         self.total_point_count() - self.available_point_count()
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {

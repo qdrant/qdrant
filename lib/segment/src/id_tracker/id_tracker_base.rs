@@ -6,6 +6,7 @@ use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::guards::NestedGuard;
 use common::types::PointOffsetType;
+use parking_lot::RwLockReadGuard;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -91,12 +92,6 @@ pub trait IdTracker: fmt::Debug {
 
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
-
-    /// Get [`BitSlice`] representation for deleted points with deletion flags
-    ///
-    /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
-    /// vectors in this segment.
-    fn deleted_point_bitslice(&self) -> &BitSlice;
 
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
@@ -187,9 +182,8 @@ pub trait IdTracker: fmt::Debug {
 ///
 /// Provides iteration methods over external/internal IDs without requiring
 /// the `IdTracker` trait to return boxed iterators.
-#[derive(Clone, Copy)]
 pub enum PointMappingsRefEnum<'a> {
-    Plain(&'a PointMappings),
+    Plain(RwLockReadGuard<'a, PointMappings>),
     Compressed(&'a CompressedPointMappings),
 }
 
@@ -197,7 +191,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over all external IDs.
     ///
     /// Excludes soft deleted points.
-    pub fn iter_external(self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
+    pub fn iter_external(&'a self) -> Box<dyn Iterator<Item = PointIdType> + 'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.iter_external(),
             PointMappingsRefEnum::Compressed(m) => m.iter_external(),
@@ -207,7 +201,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs (offsets).
     ///
     /// Excludes soft deleted points.
-    pub fn iter_internal(self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+    pub fn iter_internal(&'a self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.iter_internal(),
             PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
@@ -218,7 +212,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     ///
     /// Excludes soft deleted points.
     pub fn iter_from(
-        self,
+        &'a self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
         match self {
@@ -230,7 +224,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs in a random order.
     ///
     /// Excludes soft deleted points.
-    pub fn iter_random(self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
+    pub fn iter_random(&'a self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + 'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.iter_random(),
             PointMappingsRefEnum::Compressed(m) => m.iter_random(),
@@ -240,7 +234,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs (offsets), excluding soft deleted points
     /// and flagged items from `exclude_bitslice`.
     pub fn iter_internal_excluding(
-        self,
+        &'a self,
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
@@ -250,6 +244,15 @@ impl<'a> PointMappingsRefEnum<'a> {
         Box::new(
             iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
         )
+    }
+
+    pub fn deleted_point_bitslice(&'a self) -> &'a BitSlice {
+        match self {
+            PointMappingsRefEnum::Plain(points_mappings) => points_mappings.deleted(),
+            PointMappingsRefEnum::Compressed(compressed_point_mappings) => {
+                compressed_point_mappings.deleted()
+            }
+        }
     }
 }
 
@@ -425,16 +428,6 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_count(),
-        }
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
-            #[cfg(feature = "rocksdb")]
-            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
 

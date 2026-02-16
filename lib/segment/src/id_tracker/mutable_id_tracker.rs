@@ -5,14 +5,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use bitvec::prelude::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
 use memory::fadvise::OneshotFile;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use uuid::Uuid;
 
 use super::point_mappings::FileEndianess;
@@ -101,7 +101,7 @@ impl MappingChangeType {
 pub struct MutableIdTracker {
     segment_path: PathBuf,
     internal_to_version: Vec<SeqNumberType>,
-    pub(super) mappings: PointMappings,
+    pub(super) mappings: RwLock<PointMappings>,
 
     /// List of point versions pending to be persisted, will be persisted on flush
     pending_versions: Arc<Mutex<BTreeMap<PointOffsetType, SeqNumberType>>>,
@@ -180,7 +180,7 @@ impl MutableIdTracker {
         Ok(Self {
             segment_path,
             internal_to_version,
-            mappings,
+            mappings: mappings.into(),
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
@@ -225,11 +225,11 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
+        self.mappings.read().internal_id(&external_id)
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.mappings.external_id(internal_id)
+        self.mappings.read().external_id(internal_id)
     }
 
     fn set_link(
@@ -237,7 +237,7 @@ impl IdTracker for MutableIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        self.mappings.set_link(external_id, internal_id);
+        self.mappings.get_mut().set_link(external_id, internal_id);
         self.pending_mappings
             .lock()
             .push(MappingChange::Insert(external_id, internal_id));
@@ -245,7 +245,7 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = self.mappings.drop(external_id);
+        let internal_id = self.mappings.get_mut().drop(external_id);
         self.pending_mappings
             .lock()
             .push(MappingChange::Delete(external_id));
@@ -256,8 +256,9 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        if let Some(external_id) = self.mappings.external_id(internal_id) {
-            self.mappings.drop(external_id);
+        let mappings = self.mappings.get_mut();
+        if let Some(external_id) = mappings.external_id(internal_id) {
+            mappings.drop(external_id);
             self.pending_mappings
                 .lock()
                 .push(MappingChange::Delete(external_id));
@@ -269,19 +270,20 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
-        PointMappingsRefEnum::Plain(&self.mappings)
+        PointMappingsRefEnum::Plain(self.mappings.read())
     }
 
     fn total_point_count(&self) -> usize {
-        self.mappings.total_point_count()
+        self.mappings.read().total_point_count()
     }
 
     fn available_point_count(&self) -> usize {
-        self.mappings.available_point_count()
+        self.mappings.read().available_point_count()
     }
 
     fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+        let mappings = self.mappings.read();
+        mappings.total_point_count() - mappings.available_point_count()
     }
 
     /// Creates a flusher function, that persists the removed points in the mapping database
@@ -373,11 +375,7 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        self.mappings.is_deleted_point(key)
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
+        self.mappings.read().is_deleted_point(key)
     }
 
     fn iter_internal_versions(

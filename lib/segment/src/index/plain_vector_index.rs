@@ -115,9 +115,11 @@ impl VectorIndex for PlainVectorIndex {
         let vector_storage = self.vector_storage.borrow();
         let quantized_storage = self.quantized_vectors.borrow();
         let id_tracker = self.id_tracker.borrow();
+        // TODO drop if vector_query_context has valid deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_points = query_context
             .deleted_points()
-            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| point_mappings.deleted_point_bitslice());
         let quantization_enabled = is_quantized_search(quantized_storage.as_ref(), params);
         let quantized_vectors = quantization_enabled
             .then_some(quantized_storage.as_ref())

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bincode;
-use bitvec::prelude::{BitSlice, BitVec};
+use bitvec::prelude::BitVec;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -32,7 +32,7 @@ pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
     mapping_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     versions_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
-    mappings: PointMappings,
+    mappings: RwLock<PointMappings>,
 }
 
 impl SimpleIdTracker {
@@ -124,7 +124,7 @@ impl SimpleIdTracker {
             internal_to_version,
             mapping_db_wrapper,
             versions_db_wrapper,
-            mappings,
+            mappings: mappings.into(),
         })
     }
 
@@ -208,11 +208,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        self.mappings.internal_id(&external_id)
+        self.mappings.read().internal_id(&external_id)
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        self.mappings.external_id(internal_id)
+        self.mappings.read().external_id(internal_id)
     }
 
     fn set_link(
@@ -220,20 +220,20 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        self.mappings.set_link(external_id, internal_id);
+        self.mappings.get_mut().set_link(external_id, internal_id);
         self.persist_key(&external_id, internal_id as _)?;
         Ok(())
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        self.mappings.drop(external_id);
+        self.mappings.get_mut().drop(external_id);
         self.delete_key(&external_id)?;
         Ok(())
     }
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        if let Some(external_id) = self.mappings.external_id(internal_id) {
-            self.mappings.drop(external_id);
+        if let Some(external_id) = self.mappings.get_mut().external_id(internal_id) {
+            self.mappings.get_mut().drop(external_id);
             self.delete_key(&external_id)?;
         }
 
@@ -241,19 +241,20 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn point_mappings(&self) -> PointMappingsRefEnum<'_> {
-        PointMappingsRefEnum::Plain(&self.mappings)
+        PointMappingsRefEnum::Plain(self.mappings.read())
     }
 
     fn total_point_count(&self) -> usize {
-        self.mappings.total_point_count()
+        self.mappings.read().total_point_count()
     }
 
     fn available_point_count(&self) -> usize {
-        self.mappings.available_point_count()
+        self.mappings.read().available_point_count()
     }
 
     fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+        let mappings = self.mappings.read();
+        mappings.total_point_count() - mappings.available_point_count()
     }
 
     /// Creates a flusher function, that persists the removed points in the mapping database
@@ -271,11 +272,7 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        self.mappings.is_deleted_point(key)
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
+        self.mappings.read().is_deleted_point(key)
     }
 
     fn iter_internal_versions(

@@ -36,11 +36,17 @@ pub fn for_each_unique_point<'a>(
     id_trackers: impl Iterator<Item = &'a (impl IdTracker + ?Sized + 'a)>,
     mut f: impl FnMut(MergedPointId),
 ) {
-    let mut iter = id_trackers
+    // TODO can we remove the allocation with yet another NestedGuard-like?
+    let mappings = id_trackers
+        .map(|id_tracker| (id_tracker, id_tracker.point_mappings()))
+        .collect_vec();
+    let mut iter = mappings
+        .iter()
         .enumerate()
-        .map(|(segment_index, id_tracker)| {
-            id_tracker.point_mappings().iter_from(None).filter_map(
-                move |(external_id, internal_id)| {
+        .map(|(segment_index, (id_tracker, mapping))| {
+            mapping
+                .iter_from(None)
+                .filter_map(move |(external_id, internal_id)| {
                     let version = id_tracker.internal_version(internal_id);
                     // a point without a version had an interrupted flush sequence and should be discarded
                     version.map(|version| MergedPointId {
@@ -49,8 +55,7 @@ pub fn for_each_unique_point<'a>(
                         internal_id,
                         version,
                     })
-                },
-            )
+                })
         })
         .kmerge_by(|a, b| a.external_id < b.external_id);
 

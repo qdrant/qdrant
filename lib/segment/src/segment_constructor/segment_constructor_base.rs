@@ -993,7 +993,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         );
 
         // Set external ID to internal ID mapping
-        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+        for (external_id, internal_id) in old_id_tracker.point_mappings().iter_from(None) {
             new_id_tracker.set_link(external_id, internal_id)?;
         }
 
