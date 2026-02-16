@@ -17,9 +17,11 @@ pub const BLOCK_SIZE: usize = 32 * 1024;
 
 /// Internal identifier of a cold file.
 ///
-/// This is used as the starting [`BlockId`] of the cold file in the cache
+/// This is used as the starting [`BlockKey`] of the cold file in the cache
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct FileId(BlockId);
+struct FileId {
+    starting_block: BlockKey,
+}
 
 /// Offset within a file, in blocks.
 ///
@@ -40,24 +42,16 @@ impl BlockOffset {
 /// This uniquely identifies a block in a cold file.
 /// Acts as a cache key.
 #[derive(Copy, Hash, PartialEq, Eq, Clone, Debug)]
-struct BlockId(u64);
-
-impl BlockId {
-    /// The same offset but in bytes instead of blocks.
-    fn bytes(self) -> usize {
-        self.0 as usize * BLOCK_SIZE
-    }
-}
+struct BlockKey(u64);
 
 /// A request for a range of bytes inside of a block
 struct BlockRequest {
-    key: BlockId,
+    key: BlockKey,
     file_id: FileId,
     range: Range<usize>,
 }
 
-// todo: remove AsIndex trait
-impl AsIndex for BlockId {
+impl AsIndex for BlockKey {
     fn as_index(&self) -> usize {
         self.0 as usize
     }

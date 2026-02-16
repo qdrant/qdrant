@@ -11,9 +11,11 @@ use fs_err::os::unix::fs::FileExt;
 #[cfg(target_os = "linux")]
 use fs_err::os::unix::fs::OpenOptionsExt;
 use parking_lot::{Mutex, RwLock};
+use quick_cache::UnitWeighter;
+use quick_cache::sync::GuardResult;
 
 use super::cached_file::CachedFile;
-use super::{BLOCK_SIZE, BlockKey, BlockOffset, BlockRequest, FileId};
+use super::{BLOCK_SIZE, BlockId, BlockOffset, BlockRequest, FileId};
 use crate::fs::clear_disk_cache;
 
 /// Number to subtract to the cache capacity, so that we always make sure to
@@ -34,10 +36,10 @@ pub struct CacheController {
     pub(super) files: RwLock<HashMap<FileId, fs::File>>,
 
     /// Used to assign file ids on new files.
-    pub(super) block_id_counter: Mutex<BlockKey>,
+    pub(super) block_id_counter: Mutex<BlockId>,
 
     pub(super) cache:
-        trififo::ShardedCache<BlockKey, BlockOffset, BlocksLifecycle, ahash::RandomState>,
+        trififo::ShardedCache<BlockId, BlockOffset, BlocksLifecycle, ahash::RandomState>,
 
     /// Tracks the unused blocks in the cache file.
     ///
@@ -105,7 +107,7 @@ impl CacheController {
 
         Ok(Arc::new(CacheController {
             files: RwLock::new(HashMap::new()),
-            block_id_counter: Mutex::new(BlockKey(0)),
+            block_id_counter: Mutex::new(BlockId(0)),
             cache,
             blocks_lifecycle,
             cache_file,
@@ -114,7 +116,7 @@ impl CacheController {
     }
 
     /// Opens a new file and returns its descriptor.
-    pub fn open_file(self: &Arc<Self>, path: &Path) -> io::Result<CachedFile> {
+    pub(crate) fn open_file(self: &Arc<Self>, path: &Path) -> io::Result<CachedFile> {
         // FIXME: clear_disk_cache is no-op on macos
         clear_disk_cache(path)?;
 
@@ -136,7 +138,7 @@ impl CacheController {
 
         let starting_block_id = {
             let mut file_id_counter = self.block_id_counter.lock();
-            *file_id_counter = BlockKey(file_id_counter.0.checked_add(num_blocks).unwrap_or_else(
+            *file_id_counter = BlockId(file_id_counter.0.checked_add(num_blocks).unwrap_or_else(
                 || {
                     // TODO: drain the entire cache so that we don't corrupt stuff
                     //
@@ -152,12 +154,9 @@ impl CacheController {
             *file_id_counter
         };
 
-        let file_id = FileId {
-            starting_block: starting_block_id,
-        };
-        self.files.write().insert(file_id, f);
+        self.files.write().insert(FileId(starting_block_id), f);
         Ok(CachedFile {
-            file_id,
+            starting_block_id,
             len,
             controller: Arc::clone(self),
         })
@@ -193,7 +192,7 @@ impl CacheController {
                     .get(&file_id)
                     .expect("cached file descriptor is not open");
 
-                let offset = (key.0 - file_id.starting_block.0) * BLOCK_SIZE as u64;
+                let offset = (key.0 - file_id.0.0) * BLOCK_SIZE as u64;
                 if range.len() == BLOCK_SIZE {
                     file.read_exact_at(&mut buf, offset)?;
                 } else {
@@ -254,14 +253,14 @@ impl BlocksLifecycle {
     }
 }
 
-impl quick_cache::Lifecycle<BlockKey, BlockOffset> for BlocksLifecycle {
-    type RequestState = Option<(BlockKey, BlockOffset)>;
+impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
+    type RequestState = Option<(BlockId, BlockOffset)>;
 
     fn begin_request(&self) -> Self::RequestState {
         None
     }
 
-    fn on_evict(&self, state: &mut Self::RequestState, key: BlockKey, val: BlockOffset) {
+    fn on_evict(&self, state: &mut Self::RequestState, key: BlockId, val: BlockOffset) {
         // putting the evicted value in the state allows for quick_cache to hold its locks
         // for less time. And allows to defer the handling for later.
         //
@@ -274,7 +273,7 @@ impl quick_cache::Lifecycle<BlockKey, BlockOffset> for BlocksLifecycle {
         }
     }
 
-    fn is_pinned(&self, _key: &BlockKey, _val: &BlockOffset) -> bool {
+    fn is_pinned(&self, _key: &BlockId, _val: &BlockOffset) -> bool {
         // TODO: pin blocks that are being read
         false
     }
@@ -282,7 +281,7 @@ impl quick_cache::Lifecycle<BlockKey, BlockOffset> for BlocksLifecycle {
     fn before_evict(
         &self,
         _state: &mut Self::RequestState,
-        _key: &BlockKey,
+        _key: &BlockId,
         _val: &mut BlockOffset,
     ) {
         // do nothing
@@ -297,8 +296,8 @@ impl quick_cache::Lifecycle<BlockKey, BlockOffset> for BlocksLifecycle {
     }
 }
 
-impl trififo::lifecycle::Lifecycle<BlockKey, BlockOffset> for BlocksLifecycle {
-    fn on_evict(&self, _key: BlockKey, value: BlockOffset) {
+impl trififo::lifecycle::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
+    fn on_evict(&self, _key: BlockId, value: BlockOffset) {
         self.unused_blocks.lock().push(value)
     }
 }
