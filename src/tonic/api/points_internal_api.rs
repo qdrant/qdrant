@@ -408,7 +408,7 @@ async fn facet_counts_internal(
 
     let request = FacetParams {
         key: JsonPath::from_str(&key)
-            .map_err(|_| Status::invalid_argument("Failed to parse facet key"))?,
+            .map_err(|()| Status::invalid_argument("Failed to parse facet key"))?,
         limit: limit as usize,
         filter: filter.map(Filter::try_from).transpose()?,
         exact,

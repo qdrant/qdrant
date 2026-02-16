@@ -294,12 +294,12 @@ impl ShardReplicaSet {
                     }
                 }
 
-                _ = &mut update_watcher, if local_is_readable && !is_local_operation_resolved => {
+                () = &mut update_watcher, if local_is_readable && !is_local_operation_resolved => {
                     pending_operations.extend(operations.next());
                     continue;
                 }
 
-                _ = &mut fan_out_delay_sleep, if !is_fan_out_delay_resolved => {
+                () = &mut fan_out_delay_sleep, if !is_fan_out_delay_resolved => {
                     is_fan_out_delay_resolved = true;
                     pending_operations.extend(operations.next());
                     continue;

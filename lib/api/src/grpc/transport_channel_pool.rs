@@ -211,7 +211,7 @@ impl TransportChannelPool {
                         res = client.health_check(HealthCheckRequest {}) => {
                             res
                         }
-                        _ = tokio::time::sleep(HEALTH_CHECK_TIMEOUT) => {
+                        () = tokio::time::sleep(HEALTH_CHECK_TIMEOUT) => {
                             // Current healthcheck timed out, but maybe there were other requests
                             // that succeeded in a given time window.
                             // If so, we can continue watching.

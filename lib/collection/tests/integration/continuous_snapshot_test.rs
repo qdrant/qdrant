@@ -258,7 +258,7 @@ async fn test_continuous_snapshot() {
                 Err(e) => panic!("snapshot_task panicked: {e}"),
             }
         }
-        _ = &mut timeout => {
+        () = &mut timeout => {
             stop_flag.store(true, Ordering::Relaxed);
             log::info!("Timeout reached, stopping test");
         }

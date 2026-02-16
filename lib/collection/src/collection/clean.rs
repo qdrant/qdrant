@@ -129,7 +129,7 @@ impl ShardCleanTasks {
             };
             match result {
                 // Status updated, loop again to check it another time
-                Ok(Ok(_)) => (),
+                Ok(Ok(())) => (),
                 // Channel dropped, return error
                 Ok(Err(_)) => {
                     return Err(CollectionError::service_error(

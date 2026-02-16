@@ -373,14 +373,14 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                     .into();
                 let to = to
                     .parse()
-                    .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
+                    .map_err(|()| tonic::Status::invalid_argument("invalid payload key"))?;
                 ExpressionInternal::GeoDistance { origin, to }
             }
             Variant::Datetime(dt_str) => ExpressionInternal::Datetime(dt_str),
             Variant::DatetimeKey(dt_key) => {
                 let json_path = dt_key
                     .parse()
-                    .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
+                    .map_err(|()| tonic::Status::invalid_argument("invalid payload key"))?;
                 ExpressionInternal::DatetimeKey(json_path)
             }
             Variant::Mult(grpc::MultExpression { mult }) => {

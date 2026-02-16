@@ -72,7 +72,7 @@ pub async fn create_shard_dir(
 ) -> CollectionResult<PathBuf> {
     let shard_path = shard_path(collection_path, shard_id);
     match tokio_fs::create_dir(&shard_path).await {
-        Ok(_) => Ok(shard_path),
+        Ok(()) => Ok(shard_path),
         // If the directory already exists, remove it and create it again
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             log::warn!("Shard path already exists, removing and creating again: {shard_path:?}");
@@ -108,7 +108,7 @@ async fn await_consensus_sync(
         timeout_at(wait_until, consensus.await_consensus_sync(channel_service)).await;
 
     match sync_consensus {
-        Ok(Ok(_)) => log::trace!("All peers reached consensus"),
+        Ok(Ok(())) => log::trace!("All peers reached consensus"),
         // Failed to sync explicitly, waiting until timeout to assume synchronization
         Ok(Err(err)) => {
             log::warn!("All peers failed to synchronize consensus, waiting until timeout: {err}");

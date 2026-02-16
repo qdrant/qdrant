@@ -42,7 +42,7 @@ fn wrong_recommend_example() -> RecommendExample {
 
 fn check_validation_error<T: Validate>(v: T) {
     match v.validate() {
-        Ok(_) => panic!("Expected validation error"),
+        Ok(()) => panic!("Expected validation error"),
         // check if there is an error message about the length of the sparse vector
         Err(e) => assert!(e.to_string().contains("must be the same length as indices")),
     }

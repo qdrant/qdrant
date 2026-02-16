@@ -257,7 +257,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             any::<(CollectionUpdateOperations, Option<ClockTag>)>()
                 .prop_map(|(operation, clock_tag)| Self::new(operation, clock_tag))
                 .boxed()
@@ -268,7 +268,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             any::<(PeerId, u32, u64)>()
                 .prop_map(|(peer_id, clock_id, clock_tick)| {
                     Self::new(peer_id, clock_id, clock_tick)
@@ -281,7 +281,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             prop_oneof![
                 any::<point_ops::PointOperations>().prop_map(Self::PointOperation),
                 any::<vector_ops::VectorOperations>().prop_map(Self::VectorOperation),
@@ -296,7 +296,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             let upsert = Self::UpsertPoints(PointInsertOperationsInternal::PointsList(Vec::new()));
             let delete = Self::DeletePoints { ids: Vec::new() };
 
@@ -327,7 +327,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             let update = Self::UpdateVectors(UpdateVectorsOp {
                 points: Vec::new(),
                 update_filter: None,
@@ -359,7 +359,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             let set = Self::SetPayload(SetPayloadOp {
                 payload: Payload(Default::default()),
                 points: None,
@@ -404,7 +404,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             let create = Self::CreateIndex(CreateIndex {
                 field_name: "field_name".parse().unwrap(),
                 field_schema: None,

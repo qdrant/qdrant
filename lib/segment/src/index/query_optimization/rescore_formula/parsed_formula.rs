@@ -287,7 +287,7 @@ impl FromStr for VariableId {
                 // parse as reserved word
                 let json_path = score
                     .parse::<JsonPath>()
-                    .map_err(|_| format!("Invalid reserved variable: {var_str}"))?;
+                    .map_err(|()| format!("Invalid reserved variable: {var_str}"))?;
                 match json_path.first_key.as_str() {
                     SCORE_KEYWORD => match &json_path.rest[..] {
                         // Default prefetch index, like "$score"
@@ -309,7 +309,7 @@ impl FromStr for VariableId {
                 // parse as regular payload variable
                 let parsed = var_str
                     .parse()
-                    .map_err(|_| format!("Invalid payload variable: {var_str}"))?;
+                    .map_err(|()| format!("Invalid payload variable: {var_str}"))?;
                 VariableId::Payload(parsed)
             }
         };

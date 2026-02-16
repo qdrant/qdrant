@@ -518,7 +518,7 @@ impl<'de> Deserialize<'de> for JsonPath {
         let string = String::deserialize(deserializer)?;
         string
             .parse()
-            .map_err(|_| serde::de::Error::custom(format!("Invalid json path: \'{string}\'")))
+            .map_err(|()| serde::de::Error::custom(format!("Invalid json path: \'{string}\'")))
     }
 }
 

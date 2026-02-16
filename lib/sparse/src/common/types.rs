@@ -33,17 +33,17 @@ impl Weight for f32 {
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
 
     #[inline]
-    fn from_f32(_: (), value: f32) -> Self {
+    fn from_f32((): (), value: f32) -> Self {
         value
     }
 
     #[inline]
-    fn to_f32(self, _: ()) -> f32 {
+    fn to_f32(self, (): ()) -> f32 {
         self
     }
 
     #[inline]
-    fn into_f32_slice<'a>(_: (), weights: &'a [Self], _buffer: &'a mut [f32]) -> &'a [f32] {
+    fn into_f32_slice<'a>((): (), weights: &'a [Self], _buffer: &'a mut [f32]) -> &'a [f32] {
         // Zero-copy conversion, ignore buffer
         weights
     }
@@ -56,16 +56,16 @@ impl Weight for half::f16 {
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
 
     #[inline]
-    fn from_f32(_: (), value: f32) -> Self {
+    fn from_f32((): (), value: f32) -> Self {
         half::f16::from_f32(value)
     }
 
-    fn to_f32(self, _: ()) -> f32 {
+    fn to_f32(self, (): ()) -> f32 {
         self.to_f32()
     }
 
     #[inline]
-    fn into_f32_slice<'a>(_: (), weights: &'a [Self], buffer: &'a mut [f32]) -> &'a [f32] {
+    fn into_f32_slice<'a>((): (), weights: &'a [Self], buffer: &'a mut [f32]) -> &'a [f32] {
         weights.convert_to_f32_slice(buffer);
         buffer
     }
@@ -79,17 +79,17 @@ impl Weight for u8 {
     fn quantization_params_for(_values: impl ExactSizeIterator<Item = DimWeight> + Clone) {}
 
     #[inline]
-    fn from_f32(_: (), value: f32) -> Self {
+    fn from_f32((): (), value: f32) -> Self {
         value as u8
     }
 
     #[inline]
-    fn to_f32(self, _: ()) -> f32 {
+    fn to_f32(self, (): ()) -> f32 {
         f32::from(self)
     }
 
     #[inline]
-    fn into_f32_slice<'a>(_: (), weights: &'a [Self], buffer: &'a mut [f32]) -> &'a [f32] {
+    fn into_f32_slice<'a>((): (), weights: &'a [Self], buffer: &'a mut [f32]) -> &'a [f32] {
         for (i, &weight) in weights.iter().enumerate() {
             buffer[i] = f32::from(weight);
         }

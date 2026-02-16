@@ -21,7 +21,7 @@ impl FromPyObject<'_, '_> for PyJsonPath {
     fn extract(json_path: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let json_path: String = json_path.extract()?;
         let json_path = JsonPath::from_str(&json_path)
-            .map_err(|_| PyValueError::new_err(format!("invalid JSON path {json_path}")))?;
+            .map_err(|()| PyValueError::new_err(format!("invalid JSON path {json_path}")))?;
 
         Ok(PyJsonPath(json_path))
     }

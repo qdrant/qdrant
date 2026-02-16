@@ -112,7 +112,7 @@ pub async fn do_save_uploaded_snapshot(
 
     let absolute_path = fs::canonicalize(&path)?;
 
-    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
+    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|()| {
         StorageError::service_error(format!(
             "Failed to convert path to URL: {}",
             absolute_path.display()
@@ -572,7 +572,7 @@ async fn delete_shard_snapshot(
             snapshot,
         )
         .await
-        .map(|_| true)
+        .map(|()| true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await

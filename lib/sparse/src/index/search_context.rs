@@ -200,7 +200,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         posting.posting_list_iterator.for_each_till_id(
             PointOffsetType::MAX,
             &mut (),
-            |_, id, weight| {
+            |(), id, weight| {
                 // do not score if filter condition is not satisfied
                 if !filter_condition(id) {
                     return;

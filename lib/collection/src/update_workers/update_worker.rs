@@ -60,7 +60,7 @@ impl UpdateWorkers {
         let receiver = loop {
             let signal = tokio::select! {
                 biased; // biased to check cancellation first
-                _ = cancel.cancelled() => {
+                () = cancel.cancelled() => {
                     break receiver;
                 }
                 signal = receiver.recv() => match signal {
@@ -175,7 +175,7 @@ impl UpdateWorkers {
                         );
                     }),
                 UpdateSignal::Plunger(callback_sender) => {
-                    callback_sender.send(()).unwrap_or_else(|_| {
+                    callback_sender.send(()).unwrap_or_else(|()| {
                         log::debug!("Can't notify sender, assume nobody is waiting anymore");
                     });
                 }

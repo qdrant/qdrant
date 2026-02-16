@@ -62,7 +62,7 @@ pub async fn download_snapshot(
 ) -> Result<DownloadResult, StorageError> {
     match url.scheme() {
         "file" => {
-            let local_path = url.to_file_path().map_err(|_| {
+            let local_path = url.to_file_path().map_err(|()| {
                 StorageError::bad_request(
                     "Invalid snapshot URI, file path must be absolute or on localhost",
                 )

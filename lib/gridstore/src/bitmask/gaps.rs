@@ -297,7 +297,7 @@ mod tests {
         type Parameters = ();
         type Strategy = BoxedStrategy<Self>;
 
-        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+        fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
             arbitrary_region_gaps(DEFAULT_REGION_SIZE_BLOCKS as u16).boxed()
         }
     }

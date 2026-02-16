@@ -622,7 +622,7 @@ impl Consensus {
             tokio::select! {
                 biased;
                 message = self.receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
-                _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
+                () = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
             }
         })
     }

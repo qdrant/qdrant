@@ -1085,7 +1085,7 @@ mod tests {
                                 );
                                 log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                                 match flusher() {
-                                    Ok(_) => log::debug!("op:{i} FLUSH DONE"),
+                                    Ok(()) => log::debug!("op:{i} FLUSH DONE"),
                                     Err(err) => log::error!("op:{i} FLUSH failed {err:?}"),
                                 }
                                 *flush_lock_guard = false; // no flusher alive

@@ -822,7 +822,7 @@ where
 fn create_temp_dir(parent_path: &Path) -> Result<TempDir, OperationError> {
     // Ensure parent path exists
     fs::create_dir_all(parent_path)
-        .and_then(|_| TempDir::with_prefix_in("segment_builder_", parent_path))
+        .and_then(|()| TempDir::with_prefix_in("segment_builder_", parent_path))
         .map_err(|err| {
             OperationError::service_error(format!(
                 "Could not create temp directory in `{}`: {}",

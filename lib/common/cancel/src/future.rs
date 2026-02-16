@@ -40,7 +40,7 @@ where
 {
     tokio::select! {
         biased;
-        _ = cancel.cancelled() => Err(Error::Cancelled),
+        () = cancel.cancelled() => Err(Error::Cancelled),
         output = future => Ok(output),
     }
 }
@@ -61,7 +61,7 @@ pub async fn cancel_and_abort_on_token<T>(
     let abort_handle = handle.abort_handle();
     tokio::select! {
         biased;
-        _ = cancel.cancelled() => {
+        () = cancel.cancelled() => {
             // Prematurely abort blocking task if not started yet
             abort_handle.abort();
             Err(Error::Cancelled)

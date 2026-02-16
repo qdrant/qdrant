@@ -63,7 +63,7 @@ impl GroupsAggregator {
             .into_iter()
             .map(GroupId::try_from)
             .collect::<Result<Vec<GroupId>, ()>>()
-            .map_err(|_| AggregatorError::BadKeyType)?;
+            .map_err(|()| AggregatorError::BadKeyType)?;
 
         let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
 

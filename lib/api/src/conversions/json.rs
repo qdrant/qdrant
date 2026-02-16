@@ -43,7 +43,7 @@ pub fn json_to_proto(json_value: serde_json::Value) -> Value {
 
 pub fn json_path_from_proto(a: &str) -> Result<JsonPath, Status> {
     JsonPath::try_from(a)
-        .map_err(|_| Status::invalid_argument(format!("Invalid json path: \'{a}\'")))
+        .map_err(|()| Status::invalid_argument(format!("Invalid json path: \'{a}\'")))
 }
 
 pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {

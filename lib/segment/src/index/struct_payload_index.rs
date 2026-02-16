@@ -424,7 +424,7 @@ impl StructPayloadIndex {
                     // Destroy all RocksDB files
                     let options = crate::common::rocksdb_wrapper::make_db_options();
                     match rocksdb::DB::destroy(&options, &index.path) {
-                        Ok(_) => log::debug!("Deleted RocksDB for payload indices"),
+                        Ok(()) => log::debug!("Deleted RocksDB for payload indices"),
                         Err(err) => {
                             log::warn!("Failed to delete RocksDB for payload indices: {err}")
                         }
@@ -1119,7 +1119,7 @@ impl PayloadIndex for StructPayloadIndex {
         Box::new(move || {
             for flusher in flushers {
                 match flusher() {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(OperationError::RocksDbColumnFamilyNotFound { name }) => {
                         // It is possible, that the index was removed during the flush by user or another thread.
                         // In this case, non-existing column family is not an error, but an expected behavior.

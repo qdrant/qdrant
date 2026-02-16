@@ -535,13 +535,13 @@ impl Debug for VectorStructPersisted {
                 write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
             }
             VectorStructPersisted::Named(vectors) => write!(f, "Named(( ")
-                .and_then(|_| {
+                .and_then(|()| {
                     for (name, vector) in vectors {
                         write!(f, "{name}: {vector:?}, ")?;
                     }
                     Ok(())
                 })
-                .and_then(|_| write!(f, "))")),
+                .and_then(|()| write!(f, "))")),
         }
     }
 }

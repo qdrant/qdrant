@@ -395,7 +395,7 @@ fn test_large_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorage
     let hw_counter = HardwareCounterCell::new();
     let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
     match result {
-        Ok(_) => {
+        Ok(()) => {
             panic!("Inserting vector should fail");
         }
         Err(e) => {
@@ -464,7 +464,7 @@ fn test_large_volatile_multi_dense_vector_storage() {
     let hw_counter = HardwareCounterCell::new();
     let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
     match result {
-        Ok(_) => {
+        Ok(()) => {
             panic!("Inserting vector should fail");
         }
         Err(e) => {

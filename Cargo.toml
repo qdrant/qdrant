@@ -192,6 +192,7 @@ used_underscore_binding = "warn"
 match_wildcard_for_single_variants = "warn"
 needless_pass_by_ref_mut = "warn"
 unused_async = "warn"
+ignored_unit_patterns = "warn"
 
 [workspace.lints.rust]
 # https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs

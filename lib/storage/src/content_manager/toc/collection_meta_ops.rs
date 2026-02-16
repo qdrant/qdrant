@@ -88,7 +88,7 @@ impl TableOfContent {
 
                 self.handle_resharding(collection, operation)
                     .await
-                    .map(|_| true)
+                    .map(|()| true)
             }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {operation:?} of {collection}");

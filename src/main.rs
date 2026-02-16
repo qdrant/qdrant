@@ -476,7 +476,7 @@ fn main() -> anyhow::Result<()> {
                 .cancel_related_transfers("Source or target peer restarted")
                 .await
             {
-                Ok(_) => {
+                Ok(()) => {
                     log::debug!("All transfers if any cancelled");
                 }
                 Err(err) => {
