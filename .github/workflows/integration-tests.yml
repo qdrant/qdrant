@@ -73,7 +73,7 @@ jobs:
         run: uv --project tests run bash ./tests/integration-tests.sh distributed
         shell: bash
       - name: Restore pytest cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .pytest_cache
           key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
@@ -82,7 +82,8 @@ jobs:
         run: uv --project tests run pytest tests/consensus_tests --failed-first --new-first --durations=10
         timeout-minutes: 60
       - name: Save pytest cache
-        uses: actions/cache@v4
+        if: always()
+        uses: actions/cache/save@v4
         with:
           path: .pytest_cache
           key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
