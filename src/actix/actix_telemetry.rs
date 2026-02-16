@@ -15,12 +15,10 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// Looks for pattern: /collections/{collection_name}/...
 fn extract_collection(path: &str) -> Option<Cow<'_, str>> {
     let mut segments = path.split('/').filter(|s| !s.is_empty());
-    
+
     while let Some(segment) = segments.next() {
         if segment == "collections" {
-            if let Some(collection) = segments.next() {
-                return urlencoding::decode(collection).ok();
-            }
+            return segments.next().and_then(|c| urlencoding::decode(c).ok());
         }
     }
     None
@@ -56,25 +54,25 @@ where
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
         let request_key = format!("{} {}", request.method(), match_pattern);
-        
+
         // Extract collection from actual path (not pattern)
         let collection: Option<String> = extract_collection(request.path()).map(Cow::into_owned);
-        
+
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
-        
+
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
-            
+
             telemetry_data.lock().add_response_with_collection(
                 &request_key,
                 status,
                 instant,
                 collection.as_deref(),
             );
-            
+
             Ok(response)
         })
     }

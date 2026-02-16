@@ -3,8 +3,8 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use common::types::TelemetryDetail;
-use parking_lot::Mutex;
 use lru::LruCache;
+use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::common::operation_time_statistics::{
@@ -40,7 +40,8 @@ fn get_per_collection_lru_capacity() -> NonZeroUsize {
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub responses_per_collection: HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
+    pub responses_per_collection:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -56,9 +57,11 @@ pub struct ActixTelemetryCollector {
 
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    per_collection_data: LruCache<CollectionEndpointKey, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    per_collection_data: LruCache<
+        CollectionEndpointKey,
+        HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
+    >,
 }
-
 
 impl Default for ActixWorkerTelemetryCollector {
     fn default() -> Self {
@@ -75,9 +78,11 @@ pub struct TonicTelemetryCollector {
 
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    per_collection_data: LruCache<CollectionEndpointKey, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    per_collection_data: LruCache<
+        CollectionEndpointKey,
+        HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
+    >,
 }
-
 
 impl Default for TonicWorkerTelemetryCollector {
     fn default() -> Self {
@@ -154,8 +159,10 @@ impl TonicWorkerTelemetryCollector {
                 collection: collection_name.to_string(),
                 endpoint: method,
             };
-            
-            let status_map = self.per_collection_data.get_or_insert_mut(key, HashMap::new);
+
+            let status_map = self
+                .per_collection_data
+                .get_or_insert_mut(key, HashMap::new);
             let aggregator = status_map
                 .entry(status_code)
                 .or_insert_with(OperationDurationsAggregator::new);
@@ -178,14 +185,14 @@ impl TonicWorkerTelemetryCollector {
             let collection_map = responses_per_collection
                 .entry(key.collection.clone())
                 .or_insert_with(HashMap::new);
-            
+
             // Aggregate all status codes into single stats per endpoint
             let mut aggregated = OperationDurationStatistics::default();
-            for (_status_code, aggregator) in status_codes {
+            for aggregator in status_codes.values() {
                 let stats = aggregator.lock().get_statistics(detail);
                 aggregated = aggregated + stats;
             }
-            
+
             collection_map.insert(key.endpoint.clone(), aggregated);
         }
 
@@ -197,15 +204,6 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
-    pub fn add_response(
-        &mut self,
-        endpoint: &str,
-        status: HttpStatusCode,
-        instant: std::time::Instant,
-    ) {
-        self.add_response_with_collection(endpoint, status, instant, None);
-    }
-
     pub fn add_response_with_collection(
         &mut self,
         endpoint: &str,
@@ -228,8 +226,10 @@ impl ActixWorkerTelemetryCollector {
                 collection: collection_name.to_string(),
                 endpoint: endpoint.to_string(),
             };
-            
-            let status_map = self.per_collection_data.get_or_insert_mut(key, HashMap::new);
+
+            let status_map = self
+                .per_collection_data
+                .get_or_insert_mut(key, HashMap::new);
             let aggregator = status_map
                 .entry(status)
                 .or_insert_with(OperationDurationsAggregator::new);
@@ -252,11 +252,11 @@ impl ActixWorkerTelemetryCollector {
             let collection_map = responses_per_collection
                 .entry(key.collection.clone())
                 .or_insert_with(HashMap::new);
-            
+
             let endpoint_map = collection_map
                 .entry(key.endpoint.clone())
                 .or_insert_with(HashMap::new);
-            
+
             for (status_code, aggregator) in status_codes {
                 endpoint_map.insert(*status_code, aggregator.lock().get_statistics(detail));
             }
@@ -360,7 +360,9 @@ impl Anonymize for WebApiTelemetry {
                 let anonymized_collection = collection.clone();
                 let anonymized_endpoints = endpoints
                     .iter()
-                    .map(|(endpoint, statuses)| (endpoint.clone(), anonymize_collection_values(statuses)))
+                    .map(|(endpoint, statuses)| {
+                        (endpoint.clone(), anonymize_collection_values(statuses))
+                    })
                     .collect();
                 (anonymized_collection, anonymized_endpoints)
             })
