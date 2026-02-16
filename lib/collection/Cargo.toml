@@ -71,7 +71,6 @@ actix-files = { workspace = true }
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
-io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false }

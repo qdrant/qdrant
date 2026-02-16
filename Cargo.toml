@@ -121,8 +121,6 @@ raft-proto = { version = "0.7.0", features = [
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
-io = { path = "lib/common/io" }
-memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
 shard = { path = "lib/shard", default-features = false }
