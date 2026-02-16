@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::guards::NestedGuard;
 use common::types::TelemetryDetail;
 use io::safe_delete::safe_delete_with_suffix;
 use uuid::Uuid;
@@ -249,12 +250,11 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn iter_points(&self) -> PointExternalIterator<'_> {
-        // Sorry for that, but I didn't find any way easier.
-        // If you try simply return iterator - it won't work because AtomicRef should exist
-        // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
-        // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        let mappings = unsafe { self.id_tracker.as_ptr().as_ref().unwrap().point_mappings() };
-        PointExternalIterator::new(mappings)
+        let id_tracker = self.id_tracker.borrow();
+        let nested_guard = unsafe { NestedGuard::new(id_tracker, |idt| idt.point_mappings()) };
+        PointExternalIterator {
+            mappings: nested_guard,
+        }
     }
 
     fn read_filtered<'a>(

@@ -1,8 +1,10 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use atomic_refcell::AtomicRef;
 use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
+use common::guards::NestedGuard;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -256,14 +258,10 @@ impl<'a> PointMappingsRefEnum<'a> {
 /// Used by `NonAppendableSegmentEntry::iter_points()` to return a handle
 /// over external point IDs without creating the iterator inside the unsafe block.
 pub struct PointExternalIterator<'a> {
-    mappings: PointMappingsRefEnum<'a>,
+    pub(crate) mappings: NestedGuard<'a, AtomicRef<'a, IdTrackerEnum>, PointMappingsRefEnum<'a>>,
 }
 
 impl<'a> PointExternalIterator<'a> {
-    pub fn new(mappings: PointMappingsRefEnum<'a>) -> Self {
-        Self { mappings }
-    }
-
     pub fn iter(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
         self.mappings.iter_external()
     }
