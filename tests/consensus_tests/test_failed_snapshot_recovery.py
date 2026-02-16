@@ -140,6 +140,11 @@ def test_new_demo():
     pass
 
 
+def test_another_new_demo():
+    """Another new test to demonstrate --new-first ordering."""
+    pass
+
+
 # The test validates that a node can recover from a corrupted snapshot
 def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     assert False, "Intentional failure to demonstrate --failed-first"
