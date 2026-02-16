@@ -17,6 +17,12 @@ pub type HttpStatusCode = u16;
 /// gRPC status code type alias used for gRPC telemetry tracking.
 pub type GrpcStatusCode = i32;
 
+/// Type alias for per-endpoint response statistics keyed by status code.
+type StatusAggregators = HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>;
+
+/// Type alias for per-collection, per-endpoint response statistics.
+type CollectionMethodAggregators = HashMap<String, HashMap<String, StatusAggregators>>;
+
 /// Aggregated telemetry data for REST API responses.
 ///
 /// Tracks per-endpoint and per-collection request duration statistics,
@@ -58,12 +64,10 @@ pub struct ActixTelemetryCollector {
 /// both globally and broken down by collection name.
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
-    methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    methods: HashMap<String, StatusAggregators>,
     /// Per-collection request stats: endpoint → collection name → status code → aggregator.
-    collection_methods: HashMap<
-        String,
-        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
-    >,
+    #[allow(clippy::type_complexity)]
+    collection_methods: CollectionMethodAggregators,
 }
 
 /// Collects gRPC telemetry across all Tonic worker threads.
