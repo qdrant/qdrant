@@ -4,11 +4,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::disk_cache::{CacheController, CachedFile};
 use common::ext::BitSliceExt as _;
-use common::maybe_uninit::maybe_uninit_fill_from;
+use common::maybe_uninit::maybe_uninit_fill_from_with_drop;
 use common::mmap;
+use common::mmap::chunked::get_cached;
 use common::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapBitSlice, MmapFlusher,
+    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapBitSlice, MmapChunkView,
+    MmapFlusher,
 };
 use common::types::PointOffsetType;
 use fs_err::{File, OpenOptions};
@@ -45,6 +48,7 @@ pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     /// `None` on platforms that do not support multiple memory maps to the same file.
     /// Use [`mmap_seq`] utility function to access this mmap if available.
     _mmap_seq: Option<Arc<Mmap>>,
+    cached: Option<CachedFile>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Option<Mutex<UringReader<T>>>,
@@ -110,11 +114,16 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             None
         };
 
+        let cached = CacheController::global()
+            .map(|controller| controller.open_file(&vectors_path))
+            .transpose()?;
+
         Ok(MmapDenseVectors {
             dim,
             num_vectors,
             mmap: mmap.into(),
             _mmap_seq: mmap_seq,
+            cached,
             uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
@@ -161,14 +170,22 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     /// Returns reference to vector data by key
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> MmapChunkView<'_, T> {
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
     /// Returns an optional reference to vector data by key
-    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[T]> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset::<P>(offset))
+    pub fn get_vector_opt<P: AccessPattern>(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<MmapChunkView<'_, T>> {
+        let offset = self.data_offset(key)?;
+        if let Some(cached) = &self.cached {
+            let range = offset..(offset + self.raw_size());
+            Some(get_cached(cached, range))
+        } else {
+            Some(MmapChunkView::Slice(self.raw_vector_offset::<P>(offset)))
+        }
     }
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], mut f: F) {
@@ -177,14 +194,17 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
         // then fetching and scoring in a single loop.
-        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
-            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            // maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            maybe_uninit_fill_from_with_drop(&mut vectors_buffer, iter)
         } else {
             let iter = keys.iter().map(|key| self.get_vector::<Random>(*key));
-            maybe_uninit_fill_from(&mut vectors_buffer, iter).0
-        };
+            // maybe_uninit_fill_from(&mut vectors_buffer, iter).0
+            maybe_uninit_fill_from_with_drop(&mut vectors_buffer, iter)
+        }
+        .0;
 
         for (i, vec) in vectors.iter().enumerate() {
             f(i, vec);
@@ -221,7 +241,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     ) {
         for (idx, point) in points.enumerate() {
             let vector = self.get_vector::<Random>(point);
-            callback(idx, point, vector);
+            callback(idx, point, &vector);
         }
     }
 
