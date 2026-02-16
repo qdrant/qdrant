@@ -690,7 +690,7 @@ impl MetricsProvider for WebApiTelemetry {
                     );
                 }
             }
-            builder.build(prefix, "rest", metrics);
+            builder.build(prefix, "rest_collection", metrics);
         }
     }
 }
@@ -722,23 +722,26 @@ impl MetricsProvider for GrpcTelemetry {
         // Per-collection metrics
         for (collection, endpoints) in &self.responses_per_collection {
             let mut builder = OperationDurationMetricsBuilder::default();
-            for (endpoint, stats) in endpoints {
+            for (endpoint, status_codes) in endpoints {
                 if GRPC_ENDPOINT_WHITELIST
                     .binary_search(&endpoint.as_str())
                     .is_err()
                 {
                     continue;
                 }
-                builder.add(
-                    stats,
-                    &[
-                        ("endpoint", endpoint.as_str()),
-                        ("collection", collection.as_str()),
-                    ],
-                    true,
-                );
+                for (status, stats) in status_codes {
+                    builder.add(
+                        stats,
+                        &[
+                            ("endpoint", endpoint.as_str()),
+                            ("status", &status.to_string()),
+                            ("collection", collection.as_str()),
+                        ],
+                        true,
+                    );
+                }
             }
-            builder.build(prefix, "grpc", metrics);
+            builder.build(prefix, "grpc_collection", metrics);
         }
     }
 }

@@ -30,7 +30,7 @@ METRICS=
 echo "Validating per-collection metrics..."
 
 # Check REST metrics with collection label
-if echo "" | grep -q "rest_responses_total.*collection=\"\""; then
+if echo "" | grep -q "rest_collection_responses_total.*collection=\"\""; then
     echo "✓ REST per-collection metrics found"
 else
     echo "✗ REST per-collection metrics NOT found"
