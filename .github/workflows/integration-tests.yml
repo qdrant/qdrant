@@ -79,6 +79,7 @@ jobs:
           key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
             pytest-cache-${{ github.ref }}
+            pytest-cache-refs/heads/${{ github.base_ref }}
             pytest-cache-refs/heads/dev
       - name: Run integration tests - multiple peers - pytest
         run: uv --project tests run pytest tests/consensus_tests --failed-first --new-first --durations=10
