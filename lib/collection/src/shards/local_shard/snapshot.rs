@@ -342,9 +342,8 @@ where
         // Get segment to snapshot
         let op_result = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => {
-                let guard = proxy_segment.read();
-                let segment = guard.wrapped_segment.get();
-                // Call provided function on wrapped segment while holding guard to parent segment
+                let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                let segment = wrapped_segment.get();
                 operation(segment)
             }
             // All segments to snapshot should be proxy, warn if this is not the case
