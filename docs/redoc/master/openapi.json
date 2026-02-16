@@ -13833,8 +13833,7 @@
       "WebApiTelemetry": {
         "type": "object",
         "required": [
-          "responses",
-          "responses_per_collection"
+          "responses"
         ],
         "properties": {
           "responses": {
@@ -13843,18 +13842,6 @@
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/components/schemas/OperationDurationStatistics"
-              }
-            }
-          },
-          "responses_per_collection": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/OperationDurationStatistics"
-                }
               }
             }
           }
@@ -13863,20 +13850,10 @@
       "GrpcTelemetry": {
         "type": "object",
         "required": [
-          "responses",
-          "responses_per_collection"
+          "responses"
         ],
         "properties": {
           "responses": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/components/schemas/OperationDurationStatistics"
-              }
-            }
-          },
-          "responses_per_collection": {
             "type": "object",
             "additionalProperties": {
               "type": "object",
