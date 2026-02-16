@@ -145,6 +145,11 @@ def test_another_new_demo():
     pass
 
 
+def test_brand_new_for_next_run():
+    """This test was added after the cache was saved, so --new-first should prioritize it."""
+    pass
+
+
 # The test validates that a node can recover from a corrupted snapshot
 def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     assert False, "Intentional failure to demonstrate --failed-first"
