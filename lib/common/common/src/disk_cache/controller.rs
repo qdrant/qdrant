@@ -113,7 +113,7 @@ impl CacheController {
     }
 
     /// Opens a new file and returns its descriptor.
-    pub(crate) fn open_file(self: &Arc<Self>, path: &Path) -> io::Result<CachedFile> {
+    pub fn open_file(self: &Arc<Self>, path: &Path) -> io::Result<CachedFile> {
         // FIXME: clear_disk_cache is no-op on macos
         clear_disk_cache(path)?;
 

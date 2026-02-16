@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io;
 use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
@@ -227,8 +228,14 @@ fn get_cached<'a, T: Copy + Sized + 'static>(
     file: &'a crate::disk_cache::CachedFile,
     range: Range<usize>,
 ) -> MmapChunkView<'a, T> {
-    let slice = file.get_range(range).into_owned();
-    MmapChunkView::Box(
-        unsafe { crate::disk_cache::unsafe_transmute_zerocopy_vec(slice) }.into_boxed_slice(),
-    )
+    let range = (range.start * size_of::<T>())..(range.end * size_of::<T>());
+    // SAFETY: no
+    match file.get_range(range) {
+        Cow::Borrowed(b) => MmapChunkView::Slice(unsafe {
+            std::slice::from_raw_parts(b.as_ptr() as *const T, b.len() / size_of::<T>())
+        }),
+        Cow::Owned(o) => MmapChunkView::Box({
+            unsafe { crate::disk_cache::unsafe_transmute_zerocopy_vec(o) }.into_boxed_slice()
+        }),
+    }
 }

@@ -178,13 +178,11 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> MmapChunkView<'_, T> {
-        MmapChunkView::Slice(
-            self.mmap_store
-                .as_ref()
-                .unwrap()
-                .get_vector_opt::<P>(key)
-                .unwrap_or_else(|| panic!("vector not found: {key}")),
-        )
+        self.mmap_store
+            .as_ref()
+            .unwrap()
+            .get_vector_opt::<P>(key)
+            .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
