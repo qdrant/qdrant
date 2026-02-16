@@ -203,8 +203,7 @@ impl ActixWorkerTelemetryCollector {
             for (collection, status_codes) in collections {
                 let mut status_codes_map = HashMap::new();
                 for (status_code, aggregator) in status_codes {
-                    status_codes_map
-                        .insert(*status_code, aggregator.lock().get_statistics(detail));
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
                 }
                 collections_map.insert(collection.clone(), status_codes_map);
             }

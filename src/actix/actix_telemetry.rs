@@ -30,7 +30,11 @@ fn extract_collection_name(path: &str) -> Option<String> {
     if name.is_empty() {
         return None;
     }
-    Some(urlencoding::decode(name).unwrap_or(std::borrow::Cow::Borrowed(name)).into_owned())
+    Some(
+        urlencoding::decode(name)
+            .unwrap_or(std::borrow::Cow::Borrowed(name))
+            .into_owned(),
+    )
 }
 
 /// Actix middleware transform that creates [`ActixTelemetryService`] instances for each worker.
