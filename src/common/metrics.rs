@@ -644,12 +644,12 @@ impl MetricsProvider for RequestsTelemetry {
 
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        // Global metrics (backward compatible)
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
             let Some((method, endpoint)) = endpoint.split_once(' ') else {
                 continue;
             };
-            // Endpoint must be whitelisted
             if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
                 continue;
             }
@@ -666,14 +666,40 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
         builder.build(prefix, "rest", metrics);
+
+        // Per-collection metrics
+        for (collection, endpoints) in &self.responses_per_collection {
+            let mut builder = OperationDurationMetricsBuilder::default();
+            for (endpoint, responses) in endpoints {
+                let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                    continue;
+                };
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
+                for (status, stats) in responses {
+                    builder.add(
+                        stats,
+                        &[
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                            ("collection", collection.as_str()),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
+            }
+            builder.build(prefix, "rest", metrics);
+        }
     }
 }
 
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
+        // Global metrics (backward compatible)
         let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
-            // Endpoint must be whitelisted
             if GRPC_ENDPOINT_WHITELIST
                 .binary_search(&endpoint.as_str())
                 .is_err()
@@ -692,6 +718,28 @@ impl MetricsProvider for GrpcTelemetry {
             }
         }
         builder.build(prefix, "grpc", metrics);
+
+        // Per-collection metrics
+        for (collection, endpoints) in &self.responses_per_collection {
+            let mut builder = OperationDurationMetricsBuilder::default();
+            for (endpoint, stats) in endpoints {
+                if GRPC_ENDPOINT_WHITELIST
+                    .binary_search(&endpoint.as_str())
+                    .is_err()
+                {
+                    continue;
+                }
+                builder.add(
+                    stats,
+                    &[
+                        ("endpoint", endpoint.as_str()),
+                        ("collection", collection.as_str()),
+                    ],
+                    true,
+                );
+            }
+            builder.build(prefix, "grpc", metrics);
+        }
     }
 }
 
