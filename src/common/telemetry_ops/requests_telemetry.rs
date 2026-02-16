@@ -17,14 +17,15 @@ pub type HttpStatusCode = u16;
 
 pub type GrpcStatusCode = i32;
 
-/// Key for per-collection endpoint tracking in LRU cache
+/// Key for (collection, endpoint) tracking in LRU cache.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CollectionEndpointKey {
     pub collection: String,
     pub endpoint: String,
 }
 
-/// Get LRU capacity from ENV or default to 1000
+/// Get LRU capacity from ENV or default to 1000.
+/// This limits retained `(collection, endpoint)` pairs.
 fn get_per_collection_lru_capacity() -> NonZeroUsize {
     match std::env::var("QDRANT_TELEMETRY_COLLECTION_LIMIT") {
         Ok(val) => val
