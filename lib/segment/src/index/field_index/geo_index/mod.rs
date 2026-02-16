@@ -1041,7 +1041,7 @@ mod tests {
             field_condition: FieldCondition,
             index_type: IndexType,
         ) {
-            let (field_index, _, _) = build_random_index(500, 20, index_type);
+            let (field_index, _, ()) = build_random_index(500, 20, index_type);
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -1115,7 +1115,7 @@ mod tests {
             field_condition: FieldCondition,
             index_type: IndexType,
         ) {
-            let (field_index, _, _) = build_random_index(500, 20, index_type);
+            let (field_index, _, ()) = build_random_index(500, 20, index_type);
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -1171,7 +1171,7 @@ mod tests {
         ) where
             F: Fn(&GeoPoint) -> bool + Clone,
         {
-            let (field_index, _, _) = build_random_index(1000, 5, index_type);
+            let (field_index, _, ()) = build_random_index(1000, 5, index_type);
 
             let hw_counter = HardwareCounterCell::new();
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
@@ -1231,7 +1231,7 @@ mod tests {
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
-        let (field_index, _, _) = build_random_index(1000, 5, index_type);
+        let (field_index, _, ()) = build_random_index(1000, 5, index_type);
         let hw_counter = HardwareCounterCell::new();
         let top_level_points = field_index.points_of_hash(&Default::default(), &hw_counter);
         assert_eq!(top_level_points, 1_000);
@@ -1264,7 +1264,7 @@ mod tests {
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexType) {
-        let (mut builder, _, _) = create_builder(index_type);
+        let (mut builder, _, ()) = create_builder(index_type);
 
         let r_meters = 100.0;
         let geo_values = json!([
@@ -1352,7 +1352,7 @@ mod tests {
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
-        let (mut builder, _, _) = create_builder(index_type);
+        let (mut builder, _, ()) = create_builder(index_type);
         let geo_values = json!([
             {
                 "lon": BERLIN.lon,
@@ -1400,7 +1400,7 @@ mod tests {
     #[case(IndexType::RamMmap)]
     fn load_from_disk(#[case] index_type: IndexType) {
         let temp_dir = {
-            let (mut builder, temp_dir, _) = create_builder(index_type);
+            let (mut builder, temp_dir, ()) = create_builder(index_type);
 
             let geo_values = json!([
                 {
@@ -1479,7 +1479,7 @@ mod tests {
     #[case(IndexType::RamMmap)]
     fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         let temp_dir = {
-            let (mut builder, temp_dir, _) = create_builder(index_type);
+            let (mut builder, temp_dir, ()) = create_builder(index_type);
 
             let geo_values = json!([
                 {
@@ -1574,7 +1574,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let (field_index, _, _) = build_random_index(0, 0, index_type);
+        let (field_index, _, ()) = build_random_index(0, 0, index_type);
         assert!(
             field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1586,7 +1586,7 @@ mod tests {
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
-        let (field_index, _, _) = build_random_index(0, 100, index_type);
+        let (field_index, _, ()) = build_random_index(0, 100, index_type);
         assert!(
             field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1598,7 +1598,7 @@ mod tests {
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
-        let (field_index, _, _) = build_random_index(100, 100, index_type);
+        let (field_index, _, ()) = build_random_index(100, 100, index_type);
         assert!(
             !field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1618,7 +1618,7 @@ mod tests {
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn query_across_antimeridian(#[case] index_type: IndexType) {
-        let (mut builder, _, _) = create_builder(index_type);
+        let (mut builder, _, ()) = create_builder(index_type);
         // Index BERLIN
         let geo_values = json!([
             {
