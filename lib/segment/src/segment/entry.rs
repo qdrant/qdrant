@@ -330,7 +330,8 @@ impl NonAppendableSegmentEntry for Segment {
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let id_tracker = self.id_tracker.borrow();
-        let iterator = id_tracker.point_mappings().iter_from(from).map(|x| x.0);
+        let point_mappings = id_tracker.point_mappings();
+        let iterator = point_mappings.iter_from(from).map(|x| x.0);
         match to {
             None => iterator.collect(),
             Some(to_id) => iterator.take_while(|x| *x < to_id).collect(),

@@ -16,10 +16,10 @@ where
 {
     /// Nested guard holder constructor.  Calling it is inherently unsafe.
     ///
-    /// * Safety
+    /// # Safety
     ///
     /// 1. It is safe if `outer_guard`'s `Deref` refers to some value that `outer_guard` refers to, but not to a `outer_guard`
-    /// itself, i.e. `inner_value_fn` cannot refer to the `outer_guard`.
+    ///    itself, i.e. `inner_value_fn` cannot refer to the `outer_guard`.
     /// 2. Also, it must be safe to drop the result of `inner_guard_fn` before the `outer_guard`.
     pub unsafe fn new(
         outer_guard: Outer,

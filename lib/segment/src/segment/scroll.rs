@@ -104,12 +104,14 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let point_mappints = id_tracker.point_mappings();
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
 
         let ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappints,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

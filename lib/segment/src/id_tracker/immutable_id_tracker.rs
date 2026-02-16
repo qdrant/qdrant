@@ -3,7 +3,7 @@ use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
-use common::atomic_bitvec::prelude::{BitSlice, BitVec};
+use common::atomic_bitvec::prelude::BitVec;
 use common::ext::BitSliceExt as _;
 use common::mmap::{
     AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
@@ -465,10 +465,6 @@ impl IdTracker for ImmutableIdTracker {
 
     fn deleted_point_count(&self) -> usize {
         self.total_point_count() - self.available_point_count()
-    }
-
-    fn deleted_point_bitslice(&self) -> &BitSlice {
-        self.mappings.deleted()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {

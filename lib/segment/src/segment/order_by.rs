@@ -25,6 +25,7 @@ impl Segment {
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let point_mappings = id_tracker.point_mappings();
 
         let numeric_index = payload_index
             .field_indexes
@@ -42,6 +43,7 @@ impl Segment {
             .iter_filtered_points(
                 condition,
                 &id_tracker,
+                &point_mappings,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

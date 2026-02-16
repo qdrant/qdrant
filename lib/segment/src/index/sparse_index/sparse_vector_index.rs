@@ -296,9 +296,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        // TODO drop if vector_query_context has deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or(point_mappings.deleted_point_bitslice());
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -346,9 +348,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let is_stopped = vector_query_context.is_stopped();
 
+        // TODO drop if vector_query_context has valid deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or(point_mappings.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let hw_counter = vector_query_context.hardware_counter();
@@ -397,9 +401,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> Vec<ScoredPointOffset> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        // TODO drop if vector_query_context has valid deleted_points.
+        let point_mappings = id_tracker.point_mappings();
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or(point_mappings.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let not_deleted_condition = |idx: PointOffsetType| -> bool {

@@ -335,7 +335,12 @@ impl Segment {
     }
 
     pub fn get_deleted_points_bitvec(&self) -> BitVec {
-        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
+        BitVec::from(
+            self.id_tracker
+                .borrow()
+                .point_mappings()
+                .deleted_point_bitslice(),
+        )
     }
 
     pub(super) fn lookup_internal_id(
