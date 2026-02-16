@@ -48,7 +48,8 @@ pub struct WebApiTelemetry {
 pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub responses_per_collection: HashMap<String, HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>>,
+    pub responses_per_collection:
+        HashMap<String, HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -391,7 +392,9 @@ impl Anonymize for GrpcTelemetry {
                 let anonymized_collection = collection.clone();
                 let anonymized_endpoints = endpoints
                     .iter()
-                    .map(|(endpoint, statuses)| (endpoint.clone(), anonymize_collection_values(statuses)))
+                    .map(|(endpoint, statuses)| {
+                        (endpoint.clone(), anonymize_collection_values(statuses))
+                    })
                     .collect();
                 (anonymized_collection, anonymized_endpoints)
             })
