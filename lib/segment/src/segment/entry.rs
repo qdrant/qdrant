@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::safe_delete_with_suffix;
-use common::types::{DeferredBehavior, TelemetryDetail};
+use common::types::{DeferredBehavior, OwningGuard, TelemetryDetail};
 use uuid::Uuid;
 
 use super::Segment;
@@ -24,7 +24,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
-use crate::id_tracker::{IdTracker, PointExternalIterator};
+use crate::id_tracker::{IdTracker, IdTrackerEnum, PointExternalIterator};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
@@ -267,12 +267,15 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn iter_points(&self) -> PointExternalIterator<'_> {
-        // Sorry for that, but I didn't find any way easier.
-        // If you try simply return iterator - it won't work because AtomicRef should exist
-        // If you try to make callback instead - you won't be able to create <dyn SegmentEntry>
-        // Attempt to create return borrowed value along with iterator failed because of insane lifetimes
-        let mappings = unsafe { self.id_tracker.as_ptr().as_ref().unwrap().point_mappings() };
-        PointExternalIterator::new(mappings)
+        let id_tracker_guard = self.id_tracker.borrow();
+        // Safety: OwningGuard is safe to use here because:
+        // 1. The second argument function only accesses the `id_tracker_guard` nested value.
+        // 2. The `id_tracker_guard`'s nested value does not escape.
+        let owinging_guard =
+            unsafe { OwningGuard::new(id_tracker_guard, IdTrackerEnum::point_mappings) };
+        PointExternalIterator {
+            mappings: owinging_guard,
+        }
     }
 
     fn read_filtered<'a>(
