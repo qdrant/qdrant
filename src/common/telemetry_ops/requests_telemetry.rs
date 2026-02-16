@@ -48,7 +48,7 @@ pub struct WebApiTelemetry {
 pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub responses_per_collection: HashMap<String, HashMap<String, OperationDurationStatistics>>,
+    pub responses_per_collection: HashMap<String, HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>>,
 }
 
 pub struct ActixTelemetryCollector {
@@ -186,14 +186,12 @@ impl TonicWorkerTelemetryCollector {
                 .entry(key.collection.clone())
                 .or_insert_with(HashMap::new);
 
-            // Aggregate all status codes into single stats per endpoint
-            let mut aggregated = OperationDurationStatistics::default();
-            for aggregator in status_codes.values() {
-                let stats = aggregator.lock().get_statistics(detail);
-                aggregated = aggregated + stats;
+            let status_map = collection_map
+                .entry(key.endpoint.clone())
+                .or_insert_with(HashMap::new);
+            for (status_code, aggregator) in status_codes {
+                status_map.insert(*status_code, aggregator.lock().get_statistics(detail));
             }
-
-            collection_map.insert(key.endpoint.clone(), aggregated);
         }
 
         GrpcTelemetry {
@@ -284,9 +282,12 @@ impl GrpcTelemetry {
                 .responses_per_collection
                 .entry(collection.clone())
                 .or_default();
-            for (endpoint, statistics) in endpoints {
-                let entry = self_collection.entry(endpoint.clone()).or_default();
-                *entry = entry.clone() + statistics.clone();
+            for (endpoint, status_codes) in endpoints {
+                let self_endpoint = self_collection.entry(endpoint.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = self_endpoint.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -390,7 +391,7 @@ impl Anonymize for GrpcTelemetry {
                 let anonymized_collection = collection.clone();
                 let anonymized_endpoints = endpoints
                     .iter()
-                    .map(|(endpoint, stats)| (endpoint.clone(), stats.clone()))
+                    .map(|(endpoint, statuses)| (endpoint.clone(), anonymize_collection_values(statuses)))
                     .collect();
                 (anonymized_collection, anonymized_endpoints)
             })
