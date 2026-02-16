@@ -66,12 +66,16 @@ where
             let response = future.await?;
             let status = response.response().status().as_u16();
 
-            telemetry_data.lock().add_response_with_collection(
-                &request_key,
-                status,
-                instant,
-                collection.as_deref(),
-            );
+            let mut telemetry = telemetry_data.lock();
+            match collection.as_deref() {
+                Some(collection_name) => telemetry.add_response_with_collection(
+                    &request_key,
+                    status,
+                    instant,
+                    Some(collection_name),
+                ),
+                None => telemetry.add_response(&request_key, status, instant),
+            }
 
             Ok(response)
         })

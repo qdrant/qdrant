@@ -28,11 +28,15 @@ pub struct CollectionEndpointKey {
 /// This limits retained `(collection, endpoint)` pairs.
 fn get_per_collection_lru_capacity() -> NonZeroUsize {
     match std::env::var("QDRANT_TELEMETRY_COLLECTION_LIMIT") {
-        Ok(val) => val
-            .parse()
-            .ok()
-            .and_then(NonZeroUsize::new)
-            .unwrap_or_else(|| NonZeroUsize::new(1000).unwrap()),
+        Ok(val) => match val.parse::<usize>().ok().and_then(NonZeroUsize::new) {
+            Some(limit) => limit,
+            None => {
+                log::warn!(
+                    "Invalid QDRANT_TELEMETRY_COLLECTION_LIMIT value '{val}', using default 1000"
+                );
+                NonZeroUsize::new(1000).unwrap()
+            }
+        },
         Err(_) => NonZeroUsize::new(1000).unwrap(),
     }
 }
@@ -206,6 +210,15 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
+    pub fn add_response(
+        &mut self,
+        endpoint: &str,
+        status: HttpStatusCode,
+        instant: std::time::Instant,
+    ) {
+        self.add_response_with_collection(endpoint, status, instant, None);
+    }
+
     pub fn add_response_with_collection(
         &mut self,
         endpoint: &str,
