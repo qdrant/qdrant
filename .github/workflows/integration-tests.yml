@@ -75,7 +75,7 @@ jobs:
       - name: Restore pytest cache
         uses: actions/cache/restore@v4
         with:
-          path: .pytest_cache
+          path: tests/.pytest_cache
           key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
             pytest-cache-${{ github.ref }}
@@ -88,7 +88,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: .pytest_cache
+          path: tests/.pytest_cache
           key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
       - name: upload logs
         uses: actions/upload-artifact@v6
