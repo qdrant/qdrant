@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use common::types::TelemetryDetail;
 use parking_lot::Mutex;
+use lru::LruCache;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::common::operation_time_statistics::{
@@ -15,32 +17,75 @@ pub type HttpStatusCode = u16;
 
 pub type GrpcStatusCode = i32;
 
+/// Key for per-collection endpoint tracking in LRU cache
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CollectionEndpointKey {
+    pub collection: String,
+    pub endpoint: String,
+}
+
+/// Get LRU capacity from ENV or default to 1000
+fn get_per_collection_lru_capacity() -> NonZeroUsize {
+    match std::env::var("QDRANT_TELEMETRY_COLLECTION_LIMIT") {
+        Ok(val) => val
+            .parse()
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| NonZeroUsize::new(1000).unwrap()),
+        Err(_) => NonZeroUsize::new(1000).unwrap(),
+    }
+}
+
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub responses_per_collection: HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub responses_per_collection: HashMap<String, HashMap<String, OperationDurationStatistics>>,
 }
 
 pub struct ActixTelemetryCollector {
     pub workers: Vec<Arc<Mutex<ActixWorkerTelemetryCollector>>>,
 }
 
-#[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    per_collection_data: LruCache<CollectionEndpointKey, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+}
+
+
+impl Default for ActixWorkerTelemetryCollector {
+    fn default() -> Self {
+        Self {
+            methods: HashMap::new(),
+            per_collection_data: LruCache::new(get_per_collection_lru_capacity()),
+        }
+    }
 }
 
 pub struct TonicTelemetryCollector {
     pub workers: Vec<Arc<Mutex<TonicWorkerTelemetryCollector>>>,
 }
 
-#[derive(Default)]
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    per_collection_data: LruCache<CollectionEndpointKey, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+}
+
+
+impl Default for TonicWorkerTelemetryCollector {
+    fn default() -> Self {
+        Self {
+            methods: HashMap::new(),
+            per_collection_data: LruCache::new(get_per_collection_lru_capacity()),
+        }
+    }
 }
 
 impl ActixTelemetryCollector {
@@ -81,16 +126,41 @@ impl TonicWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
         method: String,
-        instant: std::time::Instant,
         status_code: GrpcStatusCode,
+        instant: std::time::Instant,
     ) {
+        self.add_response_with_collection(method, status_code, instant, None);
+    }
+
+    pub fn add_response_with_collection(
+        &mut self,
+        method: String,
+        status_code: GrpcStatusCode,
+        instant: std::time::Instant,
+        collection: Option<&str>,
+    ) {
+        // Global tracking
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(method.clone())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        // Per-collection tracking
+        if let Some(collection_name) = collection {
+            let key = CollectionEndpointKey {
+                collection: collection_name.to_string(),
+                endpoint: method,
+            };
+            
+            let status_map = self.per_collection_data.get_or_insert_mut(key, HashMap::new);
+            let aggregator = status_map
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
@@ -102,36 +172,100 @@ impl TonicWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        GrpcTelemetry { responses }
+
+        let mut responses_per_collection = HashMap::new();
+        for (key, status_codes) in self.per_collection_data.iter() {
+            let collection_map = responses_per_collection
+                .entry(key.collection.clone())
+                .or_insert_with(HashMap::new);
+            
+            // Aggregate all status codes into single stats per endpoint
+            let mut aggregated = OperationDurationStatistics::default();
+            for (_status_code, aggregator) in status_codes {
+                let stats = aggregator.lock().get_statistics(detail);
+                aggregated = aggregated + stats;
+            }
+            
+            collection_map.insert(key.endpoint.clone(), aggregated);
+        }
+
+        GrpcTelemetry {
+            responses,
+            responses_per_collection,
+        }
     }
 }
 
 impl ActixWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
-        method: String,
-        status_code: HttpStatusCode,
+        endpoint: &str,
+        status: HttpStatusCode,
         instant: std::time::Instant,
     ) {
+        self.add_response_with_collection(endpoint, status, instant, None);
+    }
+
+    pub fn add_response_with_collection(
+        &mut self,
+        endpoint: &str,
+        status: HttpStatusCode,
+        instant: std::time::Instant,
+        collection: Option<&str>,
+    ) {
+        // Global tracking
         let aggregator = self
             .methods
-            .entry(method)
+            .entry(endpoint.to_string())
             .or_default()
-            .entry(status_code)
+            .entry(status)
             .or_insert_with(OperationDurationsAggregator::new);
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
+        // Per-collection tracking
+        if let Some(collection_name) = collection {
+            let key = CollectionEndpointKey {
+                collection: collection_name.to_string(),
+                endpoint: endpoint.to_string(),
+            };
+            
+            let status_map = self.per_collection_data.get_or_insert_mut(key, HashMap::new);
+            let aggregator = status_map
+                .entry(status)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut responses = HashMap::new();
-        for (method, status_codes) in &self.methods {
+        for (endpoint, status_codes) in &self.methods {
             let mut status_codes_map = HashMap::new();
             for (status_code, aggregator) in status_codes {
                 status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
             }
-            responses.insert(method.clone(), status_codes_map);
+            responses.insert(endpoint.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+
+        let mut responses_per_collection = HashMap::new();
+        for (key, status_codes) in self.per_collection_data.iter() {
+            let collection_map = responses_per_collection
+                .entry(key.collection.clone())
+                .or_insert_with(HashMap::new);
+            
+            let endpoint_map = collection_map
+                .entry(key.endpoint.clone())
+                .or_insert_with(HashMap::new);
+            
+            for (status_code, aggregator) in status_codes {
+                endpoint_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+            }
+        }
+
+        WebApiTelemetry {
+            responses,
+            responses_per_collection,
+        }
     }
 }
 
@@ -144,6 +278,17 @@ impl GrpcTelemetry {
                 *status_entry = status_entry.clone() + statistics.clone();
             }
         }
+
+        for (collection, endpoints) in &other.responses_per_collection {
+            let self_collection = self
+                .responses_per_collection
+                .entry(collection.clone())
+                .or_default();
+            for (endpoint, statistics) in endpoints {
+                let entry = self_collection.entry(endpoint.clone()).or_default();
+                *entry = entry.clone() + statistics.clone();
+            }
+        }
     }
 }
 
@@ -154,6 +299,20 @@ impl WebApiTelemetry {
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
+            }
+        }
+
+        for (collection, endpoints) in &other.responses_per_collection {
+            let self_collection = self
+                .responses_per_collection
+                .entry(collection.clone())
+                .or_default();
+            for (endpoint, status_codes) in endpoints {
+                let self_endpoint = self_collection.entry(endpoint.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = self_endpoint.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -194,7 +353,23 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        let responses_per_collection = self
+            .responses_per_collection
+            .iter()
+            .map(|(collection, endpoints)| {
+                let anonymized_collection = collection.clone();
+                let anonymized_endpoints = endpoints
+                    .iter()
+                    .map(|(endpoint, statuses)| (endpoint.clone(), anonymize_collection_values(statuses)))
+                    .collect();
+                (anonymized_collection, anonymized_endpoints)
+            })
+            .collect();
+
+        WebApiTelemetry {
+            responses,
+            responses_per_collection,
+        }
     }
 }
 
@@ -206,6 +381,22 @@ impl Anonymize for GrpcTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        GrpcTelemetry { responses }
+        let responses_per_collection = self
+            .responses_per_collection
+            .iter()
+            .map(|(collection, endpoints)| {
+                let anonymized_collection = collection.clone();
+                let anonymized_endpoints = endpoints
+                    .iter()
+                    .map(|(endpoint, stats)| (endpoint.clone(), stats.clone()))
+                    .collect();
+                (anonymized_collection, anonymized_endpoints)
+            })
+            .collect();
+
+        GrpcTelemetry {
+            responses,
+            responses_per_collection,
+        }
     }
 }

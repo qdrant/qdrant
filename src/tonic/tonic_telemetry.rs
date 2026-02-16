@@ -72,7 +72,7 @@ where
 
             telemetry_data
                 .lock()
-                .add_response(method_name, instant, status_code);
+                .add_response(method_name, status_code, instant);
             Ok(response)
         })
     }
