@@ -3,7 +3,6 @@ use std::fmt;
 use std::path::Path;
 
 use api::grpc::qdrant::RecoveryPointClockTag;
-use io::file_operations;
 use serde::{Deserialize, Serialize};
 use tonic::Status;
 
@@ -35,12 +34,12 @@ impl ClockMap {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let clock_map = file_operations::read_json(path)?;
+        let clock_map = common::fs::read_json(path)?;
         Ok(clock_map)
     }
 
     pub fn store(&mut self, path: &Path) -> Result<()> {
-        file_operations::atomic_save_json(path, self)?;
+        common::fs::atomic_save_json(path, self)?;
         self.changed = false;
         Ok(())
     }
@@ -474,11 +473,11 @@ pub enum Error {
     SerdeJson(#[from] serde_json::Error),
 }
 
-impl From<file_operations::Error> for Error {
-    fn from(err: file_operations::Error) -> Self {
+impl From<common::fs::FileOperationError> for Error {
+    fn from(err: common::fs::FileOperationError) -> Self {
         match err {
-            file_operations::Error::Io(err) => err.into(),
-            file_operations::Error::SerdeJson(err) => err.into(),
+            common::fs::FileOperationError::Io(err) => err.into(),
+            common::fs::FileOperationError::SerdeJson(err) => err.into(),
             _ => unreachable!(),
         }
     }

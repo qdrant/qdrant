@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
-use io::file_operations::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;

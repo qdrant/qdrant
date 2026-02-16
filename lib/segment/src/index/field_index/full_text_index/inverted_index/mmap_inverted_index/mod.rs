@@ -3,13 +3,12 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::clear_disk_cache;
+use common::mmap;
+use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use itertools::Either;
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops;
-use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
@@ -124,15 +123,14 @@ impl MmapInvertedIndex {
         let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
 
         let point_to_tokens_count = unsafe {
-            MmapSlice::try_from(mmap_ops::open_write_mmap(
+            MmapSlice::try_from(mmap::open_write_mmap(
                 &point_to_tokens_count_path,
                 AdviceSetting::Global,
                 populate,
             )?)?
         };
 
-        let deleted =
-            mmap_ops::open_write_mmap(&deleted_points_path, AdviceSetting::Global, populate)?;
+        let deleted = mmap::open_write_mmap(&deleted_points_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
 
         let num_deleted_points = deleted.count_ones();

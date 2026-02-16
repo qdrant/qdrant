@@ -4,12 +4,11 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use common::mmap::{Advice, AdviceSetting, Madviseable, open_read_mmap};
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use fs_err::File;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::open_read_mmap;
 use posting_list::{
     PostingChunk, PostingList, PostingListComponents, PostingListView, PostingValue,
     RemainderPosting, SizedTypeFor, ValueHandler,

@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
-use memory::madvise::AdviceSetting;
 use rstest::rstest;
 use tempfile::Builder;
 

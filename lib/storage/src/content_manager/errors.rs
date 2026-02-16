@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use collection::operations::types::CollectionError;
 use collection::shards::shard::ShardId;
-use io::file_operations::FileStorageError;
+use common::fs::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
 

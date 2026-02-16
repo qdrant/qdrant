@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use io::storage_version::StorageVersion;
 
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;

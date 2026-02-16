@@ -4,14 +4,12 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::mmap;
+use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
 use fs_err as fs;
-use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{self, create_and_ensure_length};
-use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
 use super::Encodable;
@@ -170,12 +168,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
-        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
+        let deleted = mmap::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
         let do_populate = !is_on_disk;
         let map = unsafe {
-            MmapSlice::try_from(mmap_ops::open_write_mmap(
+            MmapSlice::try_from(mmap::open_write_mmap(
                 &pairs_path,
                 AdviceSetting::Global,
                 do_populate,

@@ -2,13 +2,11 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::{Madviseable, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::OpenOptions;
 use memmap2::{Mmap, MmapMut};
-use memory::madvise;
-use memory::madvise::Madviseable;
-use memory::mmap_type::MmapFlusher;
 
 #[derive(Debug)]
 pub struct QuantizedMmapStorage {
@@ -37,7 +35,7 @@ impl QuantizedMmapStorage {
     ) -> std::io::Result<QuantizedMmapStorage> {
         let file = OpenOptions::new().read(true).open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
-        madvise::madvise(&mmap, madvise::get_global())?;
+        advice::madvise(&mmap, advice::get_global())?;
 
         let quantized_vector_size = NonZeroUsize::new(quantized_vector_size).ok_or_else(|| {
             std::io::Error::new(
@@ -168,7 +166,7 @@ impl QuantizedMmapStorageBuilder {
         file.set_len(encoded_storage_size as u64)?;
 
         let mmap = unsafe { MmapMut::map_mut(&file) }?;
-        madvise::madvise(&mmap, madvise::get_global())?;
+        advice::madvise(&mmap, advice::get_global())?;
         Ok(Self {
             mmap,
             cursor_pos: 0,

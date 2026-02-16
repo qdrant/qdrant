@@ -1,11 +1,9 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::fs::clear_disk_cache;
+use common::mmap::{Advice, AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use itertools::Itertools;
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::{Advice, AdviceSetting};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::MmapSlice;
 
 use super::{RegionId, StorageConfig};
 use crate::Result;

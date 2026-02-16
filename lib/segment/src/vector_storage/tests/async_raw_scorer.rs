@@ -1,8 +1,8 @@
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use memory::madvise::AdviceSetting;
 use rand::SeedableRng as _;
 use rand::seq::IteratorRandom as _;
 

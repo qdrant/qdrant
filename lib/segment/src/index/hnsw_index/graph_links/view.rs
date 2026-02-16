@@ -304,7 +304,7 @@ impl GraphLinksView<'_> {
                 let start = offsets.get(idx).unwrap() as usize;
                 let end = offsets.get(idx + 1).unwrap() as usize;
 
-                memory::madvise::will_need_multiple_pages(&neighbors[start..end]);
+                common::mmap::advice::will_need_multiple_pages(&neighbors[start..end]);
 
                 let mut pos = start;
 

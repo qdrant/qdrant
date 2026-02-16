@@ -5,9 +5,9 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use memory::madvise::AdviceSetting;
 
 use crate::common::Flusher;
 use crate::common::flags::bitvec_flags::BitvecFlags;
