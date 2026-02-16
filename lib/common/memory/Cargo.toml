@@ -13,18 +13,4 @@ publish = false
 workspace = true
 
 [dependencies]
-ahash = { workspace = true }
-delegate = { workspace = true }
-fs-err = { workspace = true }
-memmap2 = { workspace = true }
-log = { workspace = true }
-parking_lot = { workspace = true }
-serde = { workspace = true }
-bitvec = { workspace = true }
-thiserror = { workspace = true }
-nix = { workspace = true }
-
-[dev-dependencies]
-fs-err = { workspace = true, features = ["debug"] }
-rand = { workspace = true }
-tempfile = { workspace = true }
+common = { path = "../common" }
