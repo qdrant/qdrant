@@ -61,8 +61,49 @@ pub enum ThreadPriorityError {
 /// On Linux, make current thread lower priority (nice: 10).
 #[cfg(target_os = "linux")]
 pub fn linux_low_thread_priority() -> Result<(), ThreadPriorityError> {
-    // 25% corresponds to a nice value of 10
-    set_linux_thread_priority(25)
+    let mode: u32 = std::env::var("QDRANT_LOW_THREAD_PRIORITY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    match mode {
+        0 => {
+            // SCHED_IDLE: only get CPU when no normal threads want it
+
+            use nix::libc;
+            let param = libc::sched_param { sched_priority: 0 };
+            let ret = unsafe { libc::sched_setscheduler(0, libc::SCHED_IDLE, &param) };
+            if ret != 0 {
+                log::error!(
+                    "Failed to set SCHED_IDLE: {}, falling back to nice 10",
+                    std::io::Error::last_os_error(),
+                );
+                return set_linux_thread_priority(25);
+            }
+            // log::info!("Thread set to SCHED_IDLE");
+            Ok(())
+        }
+        1 => {
+            // SCHED_BATCH + nice 19: lowest CFS weight, no interactive bonus
+
+            use nix::libc;
+            let param = libc::sched_param { sched_priority: 0 };
+            let ret = unsafe { libc::sched_setscheduler(0, libc::SCHED_BATCH, &param) };
+            if ret != 0 {
+                log::error!(
+                    "Failed to set SCHED_BATCH: {}, falling back to nice 10",
+                    std::io::Error::last_os_error(),
+                );
+                return set_linux_thread_priority(25);
+            }
+            // nice 19 = lowest normal priority, ~5% weight maps to about that
+            set_linux_thread_priority(5)?;
+            // log::info!("Thread set to SCHED_BATCH + nice 19");
+            Ok(())
+        }
+        // Default: nice 10 (original behavior)
+        _ => set_linux_thread_priority(25),
+    }
 }
 
 /// On Linux, make current thread high priority (nice: -10).
