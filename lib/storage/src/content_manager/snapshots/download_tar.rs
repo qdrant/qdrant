@@ -1,14 +1,80 @@
 use std::io::Read;
 use std::path::Path;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Duration;
 
 use cancel::CancellationToken;
 use common::tar_unpack::tar_unpack_reader;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncRead, ReadBuf};
+use tokio::time::{Instant, Sleep};
 use tokio_util::io::StreamReader;
 use url::Url;
 
 use crate::StorageError;
+
+/// Timeout for stream reads - if no data is received within this duration, the download fails.
+const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// An async reader wrapper that times out if no data is received within a specified duration.
+///
+/// This implements an inactivity timeout - the timeout resets each time data is successfully read.
+/// If the underlying reader returns `Pending` for too long without making progress, the read
+/// will fail with `io::ErrorKind::TimedOut`.
+struct TimeoutReader<R> {
+    inner: Pin<Box<R>>,
+    sleep: Pin<Box<Sleep>>,
+    timeout: Duration,
+}
+
+impl<R> TimeoutReader<R> {
+    fn new(inner: R, timeout: Duration) -> Self {
+        Self {
+            inner: Box::pin(inner),
+            sleep: Box::pin(tokio::time::sleep(timeout)),
+            timeout,
+        }
+    }
+}
+
+impl<R: AsyncRead> AsyncRead for TimeoutReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        // Safe to get &mut self because TimeoutReader is Unpin
+        // (all fields are Unpin: Pin<Box<_>> is Unpin, Duration is Unpin)
+        let this = &mut *self;
+        let filled_before = buf.filled().len();
+
+        // First, try to read from the inner reader
+        match this.inner.as_mut().poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                eprintln!("buf.filled().len() = {:#?}", buf.filled().len());
+                // If we read some data, reset the timeout
+                if buf.filled().len() > filled_before {
+                    this.sleep.as_mut().reset(Instant::now() + this.timeout);
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => {
+                // Inner is not ready, check if timeout has expired
+                // This also registers the sleep's waker so we wake up on timeout
+                if this.sleep.as_mut().poll(cx).is_ready() {
+                    return Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "stream read timeout: no data received within timeout period",
+                    )));
+                }
+                Poll::Pending
+            }
+        }
+    }
+}
 
 /// A sync Read wrapper that checks a cancellation token before each read.
 struct CancellableReader<R> {
@@ -109,9 +175,11 @@ pub async fn download_and_unpack_tar(
         )));
     }
 
-    // Convert the response body stream into an AsyncRead
+    // Convert the response body stream into an AsyncRead with timeout
     let stream = response.bytes_stream().map_err(std::io::Error::other);
-    let async_reader = StreamReader::new(stream);
+    let stream_reader = StreamReader::new(stream);
+    // Wrap with timeout to detect stalled downloads
+    let async_reader = TimeoutReader::new(stream_reader, STREAM_READ_TIMEOUT);
 
     let target_dir = target_dir.to_path_buf();
     let target_dir_for_log = target_dir.clone();
