@@ -52,6 +52,7 @@ pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[schemars(skip)]
+    // intentionally hidden from OpenAPI schema to avoid schema churn while feature stabilizes
     pub responses_per_collection:
         HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
@@ -61,6 +62,7 @@ pub struct GrpcTelemetry {
     pub responses: HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[schemars(skip)]
+    // intentionally hidden from OpenAPI schema to avoid schema churn while feature stabilizes
     pub responses_per_collection:
         HashMap<String, HashMap<String, HashMap<GrpcStatusCode, OperationDurationStatistics>>>,
 }
