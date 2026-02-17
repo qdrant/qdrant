@@ -10,6 +10,25 @@ use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
 
+/// Shared slot for communicating the target collection name from gRPC handlers
+/// to the telemetry middleware. The middleware inserts a default (empty) slot
+/// into the request extensions; the handler fills it; the middleware reads it
+/// after the response resolves.
+#[derive(Clone, Default)]
+pub struct GrpcCollectionSlot(Arc<parking_lot::Mutex<Option<String>>>);
+
+impl GrpcCollectionSlot {
+    pub fn set(&self, collection: String) {
+        let mut guard = self.0.lock();
+        *guard = Some(collection);
+    }
+
+    pub fn take(&self) -> Option<String> {
+        let mut guard = self.0.lock();
+        guard.take()
+    }
+}
+
 /// Based on https://grpc.io/docs/guides/status-codes/
 /// Default gRPC status code for all responses (0 = OK)
 const DEFAULT_SUCCESS_GRPC_STATUS_CODE: i32 = 0;
@@ -47,8 +66,14 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(&mut self, mut request: Request) -> Self::Future {
         let method_name = request.uri().path().to_string();
+
+        // Insert a shared slot; handlers write their collection name into it.
+        let slot = GrpcCollectionSlot::default();
+        let slot_reader = slot.clone();
+        request.extensions_mut().insert(slot);
+
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
         Box::pin(async move {
@@ -70,9 +95,25 @@ where
                     }
                 });
 
-            telemetry_data
-                .lock()
-                .add_response(method_name, status_code, instant);
+            // slot_reader is captured by this async block so it's dropped here,
+            // not at the end of call() — avoids rustc 1.93.1 ICE in check_mod_deathness.
+            let collection = slot_reader.take();
+
+            // Inline per-collection tracking to avoid rustc 1.93.1 ICE.
+            // The ICE is triggered when calling a method in requests_telemetry that takes
+            // Option<String> from this async block, even without .as_deref().
+            let mut telemetry = telemetry_data.lock();
+            if let Some(c) = collection {
+                telemetry.add_response_with_collection(
+                    method_name.clone(),
+                    status_code,
+                    instant,
+                    Some(&c),
+                );
+            } else {
+                telemetry.add_response(method_name, status_code, instant);
+            }
+
             Ok(response)
         })
     }
