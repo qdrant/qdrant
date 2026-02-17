@@ -26,6 +26,12 @@ pub struct CollectionEndpointKey {
 
 /// Get LRU capacity from ENV or default to 1000.
 /// This limits retained `(collection, endpoint)` pairs.
+///
+/// **Operational note**: When a `(collection, endpoint)` pair is evicted from the
+/// LRU cache and later re-observed, its per-collection counter resets to zero.
+/// In Prometheus this can appear as a counter decrease for high-churn workloads
+/// (many distinct collection names). Increase `QDRANT_TELEMETRY_COLLECTION_LIMIT`
+/// if you need stable counters across a large number of collections.
 fn get_per_collection_lru_capacity() -> NonZeroUsize {
     match std::env::var("QDRANT_TELEMETRY_COLLECTION_LIMIT") {
         Ok(val) => match val.parse::<usize>().ok().and_then(NonZeroUsize::new) {
@@ -65,6 +71,9 @@ pub struct ActixTelemetryCollector {
 
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Bounded LRU tracking per-collection request statistics.
+    /// LRU eviction resets counters for evicted `(collection, endpoint)` pairs;
+    /// see [`get_per_collection_lru_capacity`] for details.
     per_collection_data: LruCache<
         CollectionEndpointKey,
         HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
@@ -86,6 +95,9 @@ pub struct TonicTelemetryCollector {
 
 pub struct TonicWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Bounded LRU tracking per-collection request statistics.
+    /// LRU eviction resets counters for evicted `(collection, endpoint)` pairs;
+    /// see [`get_per_collection_lru_capacity`] for details.
     per_collection_data: LruCache<
         CollectionEndpointKey,
         HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
