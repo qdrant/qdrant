@@ -43,7 +43,14 @@ fn get_per_collection_lru_capacity() -> NonZeroUsize {
                 NonZeroUsize::new(1000).unwrap()
             }
         },
-        Err(_) => NonZeroUsize::new(1000).unwrap(),
+        Err(std::env::VarError::NotPresent) => NonZeroUsize::new(1000).unwrap(),
+        Err(std::env::VarError::NotUnicode(val)) => {
+            log::warn!(
+                "QDRANT_TELEMETRY_COLLECTION_LIMIT has invalid unicode {:?}, using default 1000",
+                val
+            );
+            NonZeroUsize::new(1000).unwrap()
+        }
     }
 }
 
