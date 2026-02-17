@@ -18,7 +18,6 @@ staging = []
 [dependencies]
 api = { path = "../api" }
 common = { path = "../common/common" }
-io = { path = "../common/io" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
 

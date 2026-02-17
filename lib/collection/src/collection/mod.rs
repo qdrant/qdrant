@@ -23,7 +23,7 @@ use std::time::Duration;
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
-use io::storage_version::StorageVersion;
+use common::storage_version::StorageVersion;
 use segment::types::{SeqNumberType, ShardKey};
 use semver::Version;
 use tokio::runtime::Handle;

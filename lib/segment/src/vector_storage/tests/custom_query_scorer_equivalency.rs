@@ -4,10 +4,10 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(target_os = "linux")]
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-#[cfg(target_os = "linux")]
-use memory::madvise::AdviceSetting;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
 use rand::{Rng, SeedableRng};

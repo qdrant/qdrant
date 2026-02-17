@@ -1,9 +1,9 @@
-use memory::mmap_type;
+use common::mmap;
 
 #[derive(thiserror::Error, Debug)]
 pub enum GridstoreError {
     #[error("{0}")]
-    Mmap(#[from] mmap_type::Error),
+    Mmap(#[from] mmap::Error),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]

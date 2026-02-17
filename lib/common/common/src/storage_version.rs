@@ -5,7 +5,7 @@ use atomicwrites::{AllowOverwrite, AtomicFile};
 use fs_err::File;
 use semver::Version;
 
-use crate::file_operations::{FileOperationResult, FileStorageError};
+use crate::fs::{FileOperationResult, FileStorageError};
 
 pub const VERSION_FILE: &str = "version.info";
 

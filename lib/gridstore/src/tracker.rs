@@ -1,12 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
-use memmap2::MmapMut;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
+use common::mmap::{Advice, AdviceSetting, Madviseable};
 #[expect(deprecated, reason = "legacy code")]
-use memory::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
-};
+use common::mmap::{create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8};
+use memmap2::MmapMut;
 use smallvec::SmallVec;
 use zerocopy::FromZeros;
 
@@ -506,7 +504,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[expect(deprecated, reason = "legacy code")]
-    use memory::mmap_ops::transmute_from_u8;
+    use common::mmap::transmute_from_u8;
     use rstest::rstest;
     use tempfile::Builder;
 

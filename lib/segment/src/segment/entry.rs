@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::safe_delete_with_suffix;
 use common::types::TelemetryDetail;
-use io::safe_delete::safe_delete_with_suffix;
 use uuid::Uuid;
 
 use super::Segment;

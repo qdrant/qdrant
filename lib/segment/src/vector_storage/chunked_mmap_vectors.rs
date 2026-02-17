@@ -4,16 +4,15 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::{atomic_save_json, clear_disk_cache};
 use common::maybe_uninit::maybe_uninit_fill_from;
+use common::mmap::chunked::{chunk_name, create_chunk, read_mmaps};
+use common::mmap::{
+    Advice, AdviceSetting, MmapType, UniversalMmapChunk, create_and_ensure_length, open_write_mmap,
+};
 use fs_err as fs;
 use fs_err::File;
-use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
-use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_mmaps};
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::{Advice, AdviceSetting};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 

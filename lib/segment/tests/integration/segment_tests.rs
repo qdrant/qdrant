@@ -252,7 +252,7 @@ mod normalize_segment_dir {
     #[test]
     fn missing_version_case() {
         let (tmpdir, original_path, _original_uuid) = make_segment();
-        fs::remove_file(original_path.join(io::storage_version::VERSION_FILE)).unwrap();
+        fs::remove_file(original_path.join(common::storage_version::VERSION_FILE)).unwrap();
         assert!(normalize_segment_dir(&original_path).unwrap().is_none());
         assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
     }

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::is_alive_lock::IsAliveLock;
+use common::mmap::MmapSlice;
 use common::types::PointOffsetType;
-use memory::mmap_type::MmapSlice;
 use parking_lot::{Mutex, RwLock};
 
 use crate::common::Flusher;

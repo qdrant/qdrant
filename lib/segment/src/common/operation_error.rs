@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atomicwrites::Error as AtomicIoError;
+use common::fs::FileStorageError;
+use common::mmap::Error as MmapError;
 use gridstore::error::GridstoreError;
-use io::file_operations::FileStorageError;
-use memory::mmap_type::Error as MmapError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 

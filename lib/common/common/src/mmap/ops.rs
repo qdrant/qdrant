@@ -7,7 +7,7 @@ use fs_err as fs;
 use fs_err::{File, OpenOptions};
 use memmap2::{Mmap, MmapMut};
 
-use crate::madvise::{self, AdviceSetting, Madviseable};
+use super::advice::{AdviceSetting, Madviseable, madvise};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 
@@ -98,7 +98,7 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
         mmap.populate();
     }
 
-    madvise::madvise(&mmap, advice.resolve())?;
+    madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }
@@ -114,7 +114,7 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
         mmap.populate();
     }
 
-    madvise::madvise(&mmap, advice.resolve())?;
+    madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }

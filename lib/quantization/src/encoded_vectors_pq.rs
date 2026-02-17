@@ -10,11 +10,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::atomic_save_json;
+use common::mmap::MmapFlusher;
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use io::file_operations::atomic_save_json;
-use memory::mmap_type::MmapFlusher;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 

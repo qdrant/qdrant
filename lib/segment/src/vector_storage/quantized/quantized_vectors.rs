@@ -4,9 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::types::PointOffsetType;
-use io::file_operations::{atomic_save_json, read_json};
-use memory::fadvise::clear_disk_cache;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
 use quantization::{EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};

@@ -13,7 +13,6 @@ staging = ["shard/staging"]
 
 [dependencies]
 common = { path = "../common/common" }
-io = { path = "../common/io" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
 

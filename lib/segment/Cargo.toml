@@ -111,9 +111,7 @@ charabia = { version = "0.9.7", default-features = false, features = [
 gridstore = { path = "../gridstore" }
 
 common = { path = "../common/common" }
-io = { path = "../common/io" }
 macros = { path = "../macros" }
-memory = { path = "../common/memory" }
 posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
 sparse = { path = "../sparse" }

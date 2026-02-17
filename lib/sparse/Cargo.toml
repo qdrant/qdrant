@@ -21,8 +21,6 @@ bincode = { workspace = true }
 common = { path = "../common/common" }
 fs-err = { workspace = true }
 half = { workspace = true }
-io = { path = "../common/io" }
-memory = { path = "../common/memory" }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

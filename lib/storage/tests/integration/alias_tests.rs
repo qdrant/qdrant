@@ -7,7 +7,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
 use common::load_concurrency::LoadConcurrencyConfig;
-use memory::madvise;
+use common::mmap;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
@@ -61,7 +61,7 @@ fn test_alias_operation() {
         },
         hnsw_index: Default::default(),
         hnsw_global_config: Default::default(),
-        mmap_advice: madvise::Advice::Random,
+        mmap_advice: mmap::Advice::Random,
         node_type: Default::default(),
         update_queue_size: Default::default(),
         handle_collection_load_errors: false,

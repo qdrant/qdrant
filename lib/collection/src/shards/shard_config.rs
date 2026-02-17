@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use common::fs::{atomic_save_json, read_json};
 use common::tar_ext;
-use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
 use crate::operations::types::CollectionResult;

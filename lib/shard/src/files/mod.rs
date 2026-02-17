@@ -116,23 +116,23 @@ pub fn move_data(from_shard_path: &Path, to_shard_path: &Path) -> std::io::Resul
     } = to_shard_data_files;
 
     if from_wal_path.exists() {
-        io::move_files::move_dir(&from_wal_path, &to_wal_path)?;
+        common::fs::move_dir(&from_wal_path, &to_wal_path)?;
     }
 
     if from_segments_path.exists() {
-        io::move_files::move_dir(&from_segments_path, &to_segments_path)?;
+        common::fs::move_dir(&from_segments_path, &to_segments_path)?;
     }
 
     if from_newest_clocks_path.exists() {
-        io::move_files::move_file(&from_newest_clocks_path, &to_newest_clocks_path)?;
+        common::fs::move_file(&from_newest_clocks_path, &to_newest_clocks_path)?;
     }
 
     if from_oldest_clocks_path.exists() {
-        io::move_files::move_file(&from_oldest_clocks_path, &to_oldest_clocks_path)?;
+        common::fs::move_file(&from_oldest_clocks_path, &to_oldest_clocks_path)?;
     }
 
     if from_applied_seq_path.exists() {
-        io::move_files::move_file(&from_applied_seq_path, &to_applied_seq_path)?;
+        common::fs::move_file(&from_applied_seq_path, &to_applied_seq_path)?;
     }
 
     Ok(())

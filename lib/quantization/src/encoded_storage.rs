@@ -7,14 +7,14 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(feature = "testing")]
+use common::fs::OneshotFile;
+use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
 #[cfg(feature = "testing")]
 use fs_err as fs;
 #[cfg(feature = "testing")]
 use fs_err::File;
-#[cfg(feature = "testing")]
-use memory::fadvise::OneshotFile;
-use memory::mmap_type::MmapFlusher;
 
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8];

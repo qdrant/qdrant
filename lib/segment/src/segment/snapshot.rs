@@ -4,9 +4,9 @@ use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::{fmt, thread};
 
+use common::storage_version::VERSION_FILE;
 use common::tar_ext;
 use fs_err as fs;
-use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};

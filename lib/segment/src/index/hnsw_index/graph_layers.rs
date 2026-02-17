@@ -31,9 +31,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::fs::{atomic_save, read_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use fs_err as fs;
-use io::file_operations::{atomic_save, read_bin};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 

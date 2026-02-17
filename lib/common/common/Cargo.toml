@@ -16,34 +16,37 @@ workspace = true
 testing = []
 
 [dependencies]
+ahash = { workspace = true }
+atomicwrites = { workspace = true }
+bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+delegate = { workspace = true }
 fs-err = { workspace = true }
+fs_extra = { workspace = true }
+log = { workspace = true }
+memmap2 = { workspace = true }
 nix = { workspace = true }
 num-traits = { workspace = true }
 num_cpus = "1.17"
 ordered-float = { workspace = true }
+parking_lot = { workspace = true }
 ph = { workspace = true }
 rand = { workspace = true }
+schemars = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
 tap = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 validator = { workspace = true }
-memmap2 = { workspace = true }
-semver = { workspace = true }
-schemars = { workspace = true }
-thiserror = { workspace = true }
-zerocopy = { workspace = true }
-log = { workspace = true }
 walkdir = { workspace = true }
-atomicwrites = { workspace = true }
-parking_lot = { workspace = true, features = ["arc_lock"] }
-serde_json = { workspace = true }
-strum = { workspace = true }
-memory = { path = "../memory" }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }

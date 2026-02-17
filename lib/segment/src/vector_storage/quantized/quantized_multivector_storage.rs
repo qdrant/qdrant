@@ -2,12 +2,11 @@ use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use fs_err as fs;
 use memmap2::MmapMut;
-use memory::madvise::{Advice, AdviceSetting};
-use memory::mmap_type::{MmapFlusher, MmapSlice};
 use quantization::EncodedVectors;
 use serde::{Deserialize, Serialize};
 

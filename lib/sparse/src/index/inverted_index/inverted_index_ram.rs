@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
-use io::storage_version::StorageVersion;
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
