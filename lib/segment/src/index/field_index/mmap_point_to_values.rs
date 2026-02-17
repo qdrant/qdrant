@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::path::{Path, PathBuf};
 
 use common::counter::conditioned_counter::ConditionedCounter;
@@ -202,16 +203,13 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = T::Referenced<'a>>)> + Clone,
     ) -> OperationResult<Self> {
         // calculate file size
-        let points_count = iter
-            .clone()
-            .map(|(point_id, _)| (point_id + 1) as usize)
-            .max()
-            .unwrap_or(0);
+        let mut points_count: usize = 0;
+        let mut values_size = 0;
+        for (point_id, values) in iter.clone() {
+            points_count = max(points_count, (point_id + 1) as usize);
+            values_size += values.map(|v| T::mmapped_size(v)).sum::<usize>();
+        }
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
-        let values_size = iter
-            .clone()
-            .map(|v| v.1.map(|v| T::mmapped_size(v)).sum::<usize>())
-            .sum::<usize>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
 
         // create new file and mmap
