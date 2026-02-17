@@ -164,26 +164,33 @@ impl TonicWorkerTelemetryCollector {
         instant: std::time::Instant,
         collection: Option<&str>,
     ) {
-        // Global tracking
-        let aggregator = self
-            .methods
-            .entry(method.clone())
-            .or_default()
-            .entry(status_code)
-            .or_insert_with(OperationDurationsAggregator::new);
-        ScopeDurationMeasurer::new_with_instant(aggregator, instant);
-
-        // Per-collection tracking
         if let Some(collection_name) = collection {
+            // Clone needed: method goes to both global map key and per-collection key
+            let aggregator = self
+                .methods
+                .entry(method.clone())
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+
             let key = CollectionEndpointKey {
                 collection: collection_name.to_string(),
                 endpoint: method,
             };
-
             let status_map = self
                 .per_collection_data
                 .get_or_insert_mut(key, HashMap::new);
             let aggregator = status_map
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        } else {
+            // No per-collection tracking: move method without cloning
+            let aggregator = self
+                .methods
+                .entry(method)
+                .or_default()
                 .entry(status_code)
                 .or_insert_with(OperationDurationsAggregator::new);
             ScopeDurationMeasurer::new_with_instant(aggregator, instant);
