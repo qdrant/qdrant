@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::path::{Path, PathBuf};
 
 use common::counter::conditioned_counter::ConditionedCounter;
@@ -13,7 +14,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
-const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
+const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
@@ -202,16 +203,13 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         iter: impl Iterator<Item = (PointOffsetType, impl Iterator<Item = T::Referenced<'a>>)> + Clone,
     ) -> OperationResult<Self> {
         // calculate file size
-        let points_count = iter
-            .clone()
-            .map(|(point_id, _)| (point_id + 1) as usize)
-            .max()
-            .unwrap_or(0);
+        let mut points_count: usize = 0;
+        let mut values_size = 0;
+        for (point_id, values) in iter.clone() {
+            points_count = max(points_count, (point_id + 1) as usize);
+            values_size += values.map(|v| T::mmapped_size(v)).sum::<usize>();
+        }
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
-        let values_size = iter
-            .clone()
-            .map(|v| v.1.map(|v| T::mmapped_size(v)).sum::<usize>())
-            .sum::<usize>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
 
         // create new file and mmap
@@ -226,7 +224,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         };
         header
             .write_to_prefix(mmap.as_mut())
-            .map_err(|_| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            .map_err(|_| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
 
         // counter for values offset
         let mut point_values_offset = header.ranges_start as usize + ranges_size;
@@ -235,12 +233,11 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
             let mut values_count = 0;
             for value in values {
                 values_count += 1;
-                let bytes = mmap.get_mut(point_values_offset..).ok_or_else(|| {
-                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
-                })?;
-                T::write_to_mmap(value.clone(), bytes).ok_or_else(|| {
-                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
-                })?;
+                let bytes = mmap
+                    .get_mut(point_values_offset..)
+                    .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
+                T::write_to_mmap(value.clone(), bytes)
+                    .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
                 point_values_offset += T::mmapped_size(value);
             }
 
@@ -253,7 +250,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                     + point_id as usize * std::mem::size_of::<MmapRange>()..,
             )
             .and_then(|bytes| range.write_to_prefix(bytes).ok())
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
         }
 
         mmap.flush()?;
@@ -270,7 +267,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         let mmap = open_write_mmap(&file_name, AdviceSetting::Global, populate)?;
         let (header, _) = Header::read_from_prefix(mmap.as_ref()).map_err(|_| {
             OperationError::InconsistentStorage {
-                description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
+                description: NOT_ENOUGH_BYTES_ERROR_MESSAGE.to_owned(),
             }
         })?;
 
