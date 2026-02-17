@@ -464,8 +464,8 @@ pub fn sync_points(
                 segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
             let mut updated = 0;
 
-            for stored_record in stored_records {
-                let point = id_to_point.get(&stored_record.id).unwrap();
+            for (id, stored_record) in stored_records {
+                let point = id_to_point.get(&id).unwrap();
                 if !point.is_equal_to(&stored_record) {
                     points_to_update.push(*point);
                     updated += 1;
