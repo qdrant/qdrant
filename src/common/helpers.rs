@@ -20,6 +20,12 @@ pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
             let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("search-{id}")
         })
+        .on_thread_start(|| {
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_high_io_priority() {
+                log::error!("Failed to set high IO priority for search runtime thread: {err}");
+            }
+        })
         .build()
 }
 
@@ -54,6 +60,12 @@ pub fn create_general_purpose_runtime() -> io::Result<Runtime> {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let general_id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
             format!("general-{general_id}")
+        })
+        .on_thread_start(|| {
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_high_io_priority() {
+                log::error!("Failed to set high IO priority for general runtime thread: {err}");
+            }
         })
         .build()
 }

@@ -1286,6 +1286,7 @@ dependencies = [
  "criterion",
  "fs-err",
  "itertools 0.14.0",
+ "libc",
  "log",
  "memmap2",
  "memory",

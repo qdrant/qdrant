@@ -91,3 +91,30 @@ fn set_linux_thread_priority(priority: u8) -> Result<(), ThreadPriorityError> {
     );
     set_current_thread_priority(new_priority).map_err(ThreadPriorityError::SetThreadPriority)
 }
+
+/// On Linux, set high I/O priority (best-effort class, priority 0) for the current thread.
+///
+/// Uses the `ioprio_set` syscall to set the I/O scheduling class to `IOPRIO_CLASS_BE` (best
+/// effort) with the highest priority level (0) within that class. This is useful for threads
+/// serving user-facing API requests (e.g. gRPC and REST) to reduce I/O latency.
+///
+/// Only works on Linux because the `ioprio_set` syscall is Linux-specific.
+/// - <https://man7.org/linux/man-pages/man2/ioprio_set.2.html>
+#[cfg(target_os = "linux")]
+pub fn linux_high_io_priority() -> Result<(), std::io::Error> {
+    const IOPRIO_WHO_THREAD: libc::c_int = 1;
+    const IOPRIO_CLASS_BE: libc::c_int = 2;
+    const IOPRIO_CLASS_SHIFT: libc::c_int = 13;
+
+    // Best-effort class, priority 0 (highest within best-effort)
+    let ioprio = (IOPRIO_CLASS_BE << IOPRIO_CLASS_SHIFT) | 0;
+
+    // SAFETY: `ioprio_set` with `IOPRIO_WHO_THREAD` and tid 0 (current thread) is safe.
+    let ret = unsafe { libc::syscall(libc::SYS_ioprio_set, IOPRIO_WHO_THREAD, 0, ioprio) };
+
+    if ret < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}

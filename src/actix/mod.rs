@@ -93,6 +93,11 @@ pub fn init(
         }
 
         let mut server = HttpServer::new(move || {
+            #[cfg(target_os = "linux")]
+            if let Err(err) = common::cpu::linux_high_io_priority() {
+                log::error!("Failed to set high IO priority for actix worker thread: {err}");
+            }
+
             let cors = Cors::default()
                 .allow_any_origin()
                 .allow_any_method()
