@@ -468,10 +468,12 @@ mod tests {
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
+        let point_mappings = borrowed_id_tracker.point_mappings();
+
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             2,
         );
         let res = searcher
@@ -488,7 +490,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             2,
         );
         let res = searcher
@@ -557,12 +559,14 @@ mod tests {
             "2 vectors must be deleted"
         );
 
+        let point_mappings = borrowed_id_tracker.point_mappings();
+
         let vector = vec![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             5,
         );
 
@@ -592,7 +596,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -619,7 +623,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -679,12 +683,14 @@ mod tests {
             "2 vectors must be deleted from other storage"
         );
 
+        let point_mappings = borrowed_id_tracker.point_mappings();
+
         let vector = vec![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            point_mappings.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -747,14 +753,13 @@ mod tests {
             storage.update_from(&mut iter, &Default::default()).unwrap();
         }
 
+        let point_mappings = borrowed_id_tracker.point_mappings();
+
         let vector = vec![-1.0, -1.0, -1.0, -1.0];
         let query = vector.as_slice().into();
 
-        let mut scorer = FilteredScorer::new_for_test(
-            query,
-            &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        let mut scorer =
+            FilteredScorer::new_for_test(query, &storage, point_mappings.deleted_point_bitslice());
 
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer

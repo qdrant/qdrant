@@ -861,7 +861,7 @@ impl HNSWIndex {
                 vector_storage,
                 quantized_vectors.as_ref(),
                 None,
-                id_tracker.deleted_point_bitslice(),
+                id_tracker.point_mappings().deleted_point_bitslice(),
                 hardware_counter,
             )
         };
@@ -918,7 +918,7 @@ impl HNSWIndex {
                     vector_storage,
                     quantized_vectors.as_ref(),
                     Some(BoxCow::Owned(block_condition_checker)),
-                    id_tracker.deleted_point_bitslice(),
+                    id_tracker.point_mappings().deleted_point_bitslice(),
                     hardware_counter,
                 )
             },

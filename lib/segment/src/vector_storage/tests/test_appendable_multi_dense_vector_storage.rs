@@ -134,12 +134,14 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
         2,
         "2 vectors must be deleted"
     );
+    let point_mappings = borrowed_id_tracker.point_mappings();
+
     let vector: Vec<Vec<f32>> = vec![vec![2.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -166,7 +168,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -192,7 +194,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -249,6 +251,8 @@ fn do_test_update_from_delete_points(
         "2 vectors must be deleted from other storage"
     );
 
+    let point_mappings = borrowed_id_tracker.point_mappings();
+
     let vector: Vec<Vec<f32>> = vec![vec![1.0; vector_dim]];
 
     let query = QueryVector::Nearest(vector.try_into().unwrap());
@@ -256,7 +260,7 @@ fn do_test_update_from_delete_points(
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher

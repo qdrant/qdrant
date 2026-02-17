@@ -81,8 +81,14 @@ fn test_async_raw_scorer(
         storage.update_from(&mut iter, &Default::default())?;
     }
 
+    let point_mappings = id_tracker.point_mappings();
     for _ in 0..score {
-        test_random_score(&mut rng, dim, &storage, id_tracker.deleted_point_bitslice())?;
+        test_random_score(
+            &mut rng,
+            dim,
+            &storage,
+            point_mappings.deleted_point_bitslice(),
+        )?;
     }
 
     Ok(())

@@ -36,7 +36,7 @@ impl InMemoryIdTracker {
 
         let mut id_tracker = Self {
             internal_to_version: vec![rand.random(); size as usize],
-            mappings,
+            mappings: RwLock::new(mappings),
         };
 
         // Delete points after creating the id tracker completely to maintain consistency.

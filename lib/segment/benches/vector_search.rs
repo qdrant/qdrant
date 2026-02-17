@@ -65,6 +65,7 @@ fn benchmark_naive(c: &mut Criterion) {
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_id_tracker = id_tracker.borrow();
+    let point_mappings = borrowed_id_tracker.point_mappings();
 
     let mut group = c.benchmark_group("storage-score-all");
 
@@ -75,7 +76,7 @@ fn benchmark_naive(c: &mut Criterion) {
             BatchFilteredSearcher::new_for_test(
                 &[vector],
                 &storage,
-                borrowed_id_tracker.deleted_point_bitslice(),
+                point_mappings.deleted_point_bitslice(),
                 10,
             )
             .peek_top_all(&DEFAULT_STOPPED)
@@ -93,6 +94,7 @@ fn benchmark_naive_4(c: &mut Criterion) {
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_id_tracker = id_tracker.borrow();
+    let point_mappings = borrowed_id_tracker.point_mappings();
 
     let mut group = c.benchmark_group("storage-score-all");
 
@@ -107,7 +109,7 @@ fn benchmark_naive_4(c: &mut Criterion) {
             BatchFilteredSearcher::new_for_test(
                 &vectors,
                 &storage,
-                borrowed_id_tracker.deleted_point_bitslice(),
+                point_mappings.deleted_point_bitslice(),
                 10,
             )
             .peek_top_all(&DEFAULT_STOPPED)
@@ -122,17 +124,15 @@ fn random_access_benchmark(c: &mut Criterion) {
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
     let borrowed_id_tracker = id_tracker.borrow();
+    let point_mappings = borrowed_id_tracker.point_mappings();
 
     let mut group = c.benchmark_group("storage-score-random");
 
     let vector = random_vector(DIM);
     let vector = vector.as_slice().into();
 
-    let scorer = FilteredScorer::new_for_test(
-        vector,
-        &storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
-    );
+    let scorer =
+        FilteredScorer::new_for_test(vector, &storage, point_mappings.deleted_point_bitslice());
 
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {

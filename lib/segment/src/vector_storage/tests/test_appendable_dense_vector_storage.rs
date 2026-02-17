@@ -62,12 +62,14 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         "2 vectors must be deleted",
     );
 
+    let point_mappings = borrowed_id_tracker.point_mappings();
+
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -95,7 +97,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -122,7 +124,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -176,13 +178,15 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         "2 vectors must be deleted from other storage",
     );
 
+    let point_mappings = borrowed_id_tracker.point_mappings();
+
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
 
     let searcher = BatchFilteredSearcher::new_for_test(
         std::slice::from_ref(&query),
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -229,18 +233,21 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
-    let searcher = BatchFilteredSearcher::new_for_test(
-        std::slice::from_ref(&query),
-        storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
-        2,
-    );
-    let closest = searcher
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
-        .unwrap()
-        .into_iter()
-        .exactly_one()
-        .unwrap();
+    let closest = {
+        let point_mappings = borrowed_id_tracker.point_mappings();
+        let searcher = BatchFilteredSearcher::new_for_test(
+            std::slice::from_ref(&query),
+            storage,
+            point_mappings.deleted_point_bitslice(),
+            2,
+        );
+        searcher
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), &DEFAULT_STOPPED)
+            .unwrap()
+            .into_iter()
+            .exactly_one()
+            .unwrap()
+    };
 
     let top_idx = match closest.first() {
         Some(scored_point) => {
@@ -254,12 +261,14 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         .drop(PointIdType::NumId(u64::from(top_idx)))
         .unwrap();
 
+    let point_mappings = borrowed_id_tracker.point_mappings();
+
     let mut raw_scorer = FilteredScorer::new(
         query.clone(),
         storage,
         None,
         None,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         HardwareCounterCell::new(),
     )
     .unwrap();
@@ -270,7 +279,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None,
         None,
         2,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        point_mappings.deleted_point_bitslice(),
         HardwareCounterCell::new(),
     )
     .unwrap();

@@ -1007,7 +1007,10 @@ pub(super) mod tests {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (old_mappings, old_versions) = {
             let id_tracker = make_mutable_tracker(segment_dir.path());
-            (id_tracker.mappings, id_tracker.internal_to_version)
+            (
+                id_tracker.mappings.into_inner(),
+                id_tracker.internal_to_version,
+            )
         };
 
         let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
@@ -1024,7 +1027,7 @@ pub(super) mod tests {
             );
         }
 
-        assert_eq!(old_mappings, loaded_id_tracker.mappings);
+        assert_eq!(old_mappings, *loaded_id_tracker.mappings.read());
 
         loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
     }
@@ -1075,7 +1078,7 @@ pub(super) mod tests {
             if dropped_points.contains(point) {
                 assert!(id_tracker.is_deleted_point(internal_id));
                 assert_eq!(id_tracker.external_id(internal_id), None);
-                assert!(id_tracker.mappings.internal_id(point).is_none());
+                assert!(id_tracker.mappings.read().internal_id(point).is_none());
 
                 continue;
             }
@@ -1161,7 +1164,7 @@ pub(super) mod tests {
             id_tracker.drop(point_to_delete).unwrap();
             id_tracker.mapping_flusher()().unwrap();
             id_tracker.versions_flusher()().unwrap();
-            id_tracker.mappings
+            id_tracker.mappings.into_inner()
         };
 
         // Point should still be gone
@@ -1170,7 +1173,7 @@ pub(super) mod tests {
 
         old_mappings
             .iter_internal_raw()
-            .zip(id_tracker.mappings.iter_internal_raw())
+            .zip(id_tracker.mappings.read().iter_internal_raw())
             .for_each(
                 |((old_internal, old_external), (new_internal, new_external))| {
                     assert_eq!(old_internal, new_internal);
