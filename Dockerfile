@@ -16,7 +16,7 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 # Note: using bookworm base image to match GPU runtime image, otherwise we're
 # seeing runtime errors due to libc version mismatch.
 # See: <https://github.com/qdrant/qdrant/pull/7334>
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.93.0-bookworm  AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.93.1-bookworm  AS chef
 
 
 FROM chef AS planner
