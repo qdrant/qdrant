@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(test)]
+use common::fs::read_json;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
-#[cfg(test)]
-use io::file_operations::read_json;
 use serde::{Deserialize, Serialize};
 use shard::files::APPLIED_SEQ_FILE;
 

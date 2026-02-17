@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, TelemetryDetail};
 use fs_err as fs;
-use io::storage_version::VERSION_FILE;
 use itertools::Itertools;
 use rand::SeedableRng;
 use rand::rngs::StdRng;

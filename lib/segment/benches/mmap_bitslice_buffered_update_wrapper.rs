@@ -1,10 +1,10 @@
 use std::hint::black_box;
 use std::iter;
 
+use common::mmap::MmapBitSlice;
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err::File;
 use memmap2::MmapMut;
-use memory::mmap_type::MmapBitSlice;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use segment::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use ::io::safe_delete::{safe_delete_with_suffix, sync_parent_dir_async};
+use common::fs::{safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::tokio as tokio_fs;

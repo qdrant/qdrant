@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::fs::clear_disk_cache;
+use common::mmap::{
+    AdviceSetting, Madviseable as _, MmapBitSlice, MmapType, advice, create_and_ensure_length,
+    open_write_mmap,
+};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use memmap2::MmapMut;
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::{self, AdviceSetting, Madviseable as _};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{MmapBitSlice, MmapType};
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -129,7 +130,7 @@ impl DynamicMmapFlags {
         let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
         drop(file);
 
-        flags_mmap.madvise(madvise::get_global())?;
+        flags_mmap.madvise(advice::get_global())?;
 
         if populate {
             flags_mmap.populate();

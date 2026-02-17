@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::save_on_disk::SaveOnDisk;
-use io::storage_version::StorageVersion;
+use common::storage_version::StorageVersion;
 use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::entry::NonAppendableSegmentEntry as _;

@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::fs::atomic_save_json;
 use common::is_alive_lock::IsAliveLock;
 use fs_err as fs;
 use fs_err::File;
-use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use parking_lot::RwLock;

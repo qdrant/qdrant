@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::mmap::AdviceSetting;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use memory::madvise::AdviceSetting;
 use rand::Rng;
 use rand::distr::StandardUniform;
 use segment::data_types::named_vectors::CowVector;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use common::is_alive_lock::IsAliveLock;
-use memory::mmap_type::MmapBitSlice;
+use common::mmap::MmapBitSlice;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;

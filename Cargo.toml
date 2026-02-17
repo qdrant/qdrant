@@ -121,8 +121,6 @@ raft-proto = { version = "0.7.0", features = [
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
-io = { path = "lib/common/io" }
-memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
 shard = { path = "lib/shard", default-features = false }
@@ -251,7 +249,7 @@ nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
-parking_lot = { version = "0.12.5", features = ["deadlock_detection", "serde"] }
+parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.10.0", default-features = false, features = ["std"] }

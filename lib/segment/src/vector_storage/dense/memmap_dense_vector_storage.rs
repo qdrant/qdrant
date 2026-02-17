@@ -6,12 +6,12 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::clear_disk_cache;
+use common::mmap;
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -273,7 +273,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             // Safety: T implements zerocopy::IntoBytes.
             #[expect(deprecated, reason = "legacy code")]
-            let raw_bites = unsafe { mmap_ops::transmute_to_u8_slice(vector.as_ref()) };
+            let raw_bites = unsafe { mmap::transmute_to_u8_slice(vector.as_ref()) };
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
@@ -364,9 +364,9 @@ mod tests {
 
     use atomic_refcell::AtomicRefCell;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use itertools::Itertools;
     #[expect(deprecated, reason = "legacy code")]
-    use memory::mmap_ops::transmute_to_u8_slice;
+    use common::mmap::transmute_to_u8_slice;
+    use itertools::Itertools;
     use tempfile::Builder;
 
     use super::*;

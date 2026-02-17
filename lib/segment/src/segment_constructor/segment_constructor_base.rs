@@ -7,14 +7,14 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
+use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
+use common::mmap::{Advice, AdviceSetting};
 use common::progress_tracker::ProgressTracker;
+use common::storage_version::StorageVersion;
 use fs_err as fs;
 use fs_err::File;
-use io::safe_delete::{safe_delete_with_suffix, sync_parent_dir};
-use io::storage_version::StorageVersion;
 use log::info;
-use memory::madvise::{Advice, AdviceSetting};
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;

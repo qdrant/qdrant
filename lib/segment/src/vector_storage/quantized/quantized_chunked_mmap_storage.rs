@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
-use memory::madvise::{Advice, AdviceSetting};
-use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;

@@ -7,11 +7,11 @@ use std::sync::atomic::AtomicU64;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
-use memory::fadvise::OneshotFile;
 use parking_lot::Mutex;
 use uuid::Uuid;
 

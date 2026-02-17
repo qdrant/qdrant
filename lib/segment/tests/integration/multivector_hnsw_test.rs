@@ -5,8 +5,8 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::mmap::AdviceSetting;
 use common::progress_tracker::ProgressTracker;
-use memory::madvise::AdviceSetting;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
 use segment::data_types::vectors::{

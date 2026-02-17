@@ -3,9 +3,9 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use memory::madvise::AdviceSetting;
 use tempfile::Builder;
 
 #[cfg(feature = "rocksdb")]

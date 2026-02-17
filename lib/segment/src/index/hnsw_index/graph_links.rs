@@ -3,10 +3,9 @@ use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 
+use common::mmap::{Advice, AdviceSetting, Madviseable, open_read_mmap};
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::open_read_mmap;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::HnswM;
@@ -346,7 +345,7 @@ pub(super) fn normalize_links(m: usize, mut links: Vec<PointOffsetType>) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use io::file_operations::atomic_save;
+    use common::fs::atomic_save;
     use rand::Rng;
     use rstest::rstest;
     use tempfile::Builder;

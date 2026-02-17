@@ -27,8 +27,8 @@ use std::{fmt, mem, slice};
 
 use memmap2::Mmap;
 
-use crate::madvise::Madviseable;
-use crate::mmap_type::Error;
+use super::advice::Madviseable;
+use super::mmap_rw::Error;
 
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
@@ -371,8 +371,8 @@ mod tests {
     use tempfile::{Builder, NamedTempFile};
 
     use super::*;
-    use crate::madvise::AdviceSetting;
-    use crate::mmap_ops;
+    use crate::mmap;
+    use crate::mmap::AdviceSetting;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
         let tempfile = Builder::new()
@@ -389,7 +389,7 @@ mod tests {
     fn test_open_from() {
         const SIZE: usize = 1024;
         let tempfile = create_temp_mmap_file(SIZE);
-        let mmap = mmap_ops::open_read_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
+        let mmap = mmap::open_read_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
         let result = unsafe { MmapSliceReadOnly::<u64>::try_from(mmap).unwrap() };
 
         assert_eq!(result.len(), SIZE / size_of::<u64>());

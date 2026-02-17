@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use fs_err as fs;
 
-use crate::madvise::{Advice, AdviceSetting};
-use crate::mmap_ops::{
+use super::advice::{Advice, AdviceSetting};
+use super::mmap_readonly::MmapSliceReadOnly;
+use super::mmap_rw::{Error as MmapError, MmapFlusher, MmapSlice};
+use super::ops::{
     MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
 };
-use crate::mmap_type::{Error as MmapError, MmapFlusher, MmapSlice};
-use crate::mmap_type_readonly::MmapSliceReadOnly;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";

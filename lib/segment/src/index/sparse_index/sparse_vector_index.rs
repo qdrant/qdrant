@@ -6,9 +6,9 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::storage_version::{StorageVersion as _, VERSION_FILE};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
-use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
 use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;

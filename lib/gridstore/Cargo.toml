@@ -30,8 +30,6 @@ rand = { workspace = true }
 bitvec = { workspace = true }
 itertools = { workspace = true }
 zerocopy = { workspace = true }
-io = { path = "../common/io" }
-memory = { path = "../common/memory" }
 dataset = { path = "../common/dataset" }
 common = { path = "../common/common" }
 

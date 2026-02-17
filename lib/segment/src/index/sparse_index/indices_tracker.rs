@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use ahash::AHashMap;
-use io::file_operations::{atomic_save_json, read_json};
+use common::fs::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::types::{DimId, DimOffset};

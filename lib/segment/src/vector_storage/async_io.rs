@@ -1,10 +1,10 @@
 use std::fmt;
 use std::os::fd::AsRawFd;
 
+use common::mmap;
 use common::types::PointOffsetType;
 use fs_err::File;
 use io_uring::{IoUring, opcode, types};
-use memory::mmap_ops;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -193,7 +193,7 @@ fn submit_and_read<T: PrimitiveVectorElement>(
         let buffer = &buffers.buffers[buffer_id].buffer;
         // TODO Safety: While `T: zerocopy::FromBytes`, it is not clear if buffer has proper alignment.
         #[expect(deprecated, reason = "legacy code")]
-        let vector = unsafe { mmap_ops::transmute_from_u8_to_slice(buffer) };
+        let vector = unsafe { mmap::transmute_from_u8_to_slice(buffer) };
         callback(meta.index, meta.point_id, vector);
         unused_buffer_ids.push(buffer_id);
     }
