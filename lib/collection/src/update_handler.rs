@@ -113,7 +113,7 @@ pub struct UpdateHandler {
     /// If specified, this threshold (in kilobytes) configures a max size of unoptimized segment
     /// which can still be updated. If there are unoptimized segments larger than this threshold,
     /// updates will be blocked until those segments are optimized.
-    prevent_unoptimized_threshold_kb: Option<usize>,
+    pub prevent_unoptimized_threshold_kb: Option<usize>,
 
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
