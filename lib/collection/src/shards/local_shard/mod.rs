@@ -518,6 +518,70 @@ impl LocalShard {
         self.path.clone()
     }
 
+    /// Updates all internally stored paths after the shard directory has been renamed.
+    ///
+    /// This is used during two-phase partial snapshot recovery: the shard is first loaded
+    /// from a staging directory, then the staging directory is renamed to the final shard
+    /// path. Open file descriptors and mmaps survive the rename (POSIX), but stored PathBufs
+    /// need rebasing so that future path derivations (optimizer creating new segments, clock
+    /// persistence, flush workers, etc.) use the correct location.
+    pub async fn update_shard_path(&mut self, new_path: PathBuf) -> CollectionResult<()> {
+        let old_path = std::mem::replace(&mut self.path, new_path.clone());
+
+        // Update segment paths
+        {
+            let holder = self.segments.write();
+            for (_id, segment_arc) in holder.iter_original() {
+                let mut segment = segment_arc.write();
+                if let Ok(relative) = segment.segment_path.strip_prefix(&old_path) {
+                    segment.segment_path = new_path.join(relative);
+                }
+            }
+        }
+
+        // Update disk usage watcher path
+        self.disk_usage_watcher.set_disk_path(new_path.clone());
+
+        // Rebuild optimizers with new path and restart workers with updated shard_path.
+        // Workers capture cloned shard_path at spawn time, so they must be restarted.
+        let config = self.collection_config.read().await;
+        let mut update_handler = self.update_handler.lock().await;
+
+        update_handler.set_shard_path(new_path.clone());
+        update_handler.stop_flush_worker();
+        update_handler.stop_update_worker();
+
+        let update_receiver = update_handler.wait_workers_stops().await;
+        let update_receiver = match update_receiver {
+            Ok(Some(receiver)) => receiver,
+            _ => {
+                // Create a new channel if the old one was lost
+                let (update_sender, update_receiver) =
+                    mpsc::channel(self.shared_storage_config.update_queue_size);
+                let _old_sender = self.update_sender.swap(Arc::new(update_sender));
+                update_receiver
+            }
+        };
+
+        let new_optimizers = build_optimizers(
+            &new_path,
+            &config.params,
+            &config.optimizer_config,
+            &config.hnsw_config,
+            &self.shared_storage_config.hnsw_global_config,
+            &config.quantization_config,
+        );
+        update_handler.optimizers = new_optimizers.clone();
+        update_handler.run_workers(update_receiver);
+
+        drop(update_handler);
+        drop(config);
+
+        self.optimizers.store(new_optimizers);
+
+        Ok(())
+    }
+
     pub fn wal_path(shard_path: &Path) -> PathBuf {
         shard::files::wal_path(shard_path)
     }

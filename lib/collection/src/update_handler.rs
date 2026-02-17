@@ -187,6 +187,10 @@ impl UpdateHandler {
         }
     }
 
+    pub fn set_shard_path(&mut self, shard_path: PathBuf) {
+        self.shard_path = shard_path;
+    }
+
     pub fn run_workers(&mut self, update_receiver: Receiver<UpdateSignal>) {
         let (tx, rx) = mpsc::channel(self.shared_storage_config.update_queue_size);
 

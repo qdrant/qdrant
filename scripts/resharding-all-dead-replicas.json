@@ -1,0 +1,125 @@
+"metadata": {
+        "_cluster_manager/resharding/collections/benchmark": {
+          "uuid": "e8416342-328b-48ab-a342-7e28ddb0218a",
+          "direction": "down",
+          "shard_id": 3,
+          "peer_id": 8026666460338483,
+          "stage": "migrate_points",
+          "relevant_shards": [
+            1,
+            0,
+            2
+          ],
+          "shards_migrating": [],
+          "shards_migrated": [],
+          "replicas_migrating": [
+            [
+              2,
+              8026666460338483
+            ]
+          ],
+          "replicas_migrated": [
+            [
+              1,
+              4905613015804057
+            ],
+            [
+              0,
+              8026666460338483
+            ],
+            [
+              0,
+              8405020171258925
+            ],
+            [
+              1,
+              8405020171258925
+            ]
+          ],
+          "replicas_deleted": []
+        }
+      }
+
+
+      8405020171258925 (n0), 8026666460338483 (n2) -> shard 2 dead
+
+
+      {
+        "result": {
+          "peer_id": 4905613015804057, N1
+          "shard_count": 4,
+          "local_shards": [
+            {
+              "shard_id": 1,
+              "points_count": 60169,
+              "state": "Active"
+            },
+            {
+              "shard_id": 3,
+              "points_count": 47118,
+              "state": "Active"
+            }
+          ],
+          "remote_shards": [
+            {
+              "shard_id": 0,
+              "peer_id": 8026666460338483, N2
+              "state": "Active"
+            },
+            {
+              "shard_id": 0,
+              "peer_id": 8405020171258925, N0
+              "state": "Active"
+            },
+            {
+              "shard_id": 1,
+              "peer_id": 8405020171258925,
+              "state": "Active"
+            },
+            {
+              "shard_id": 2,
+              "peer_id": 8405020171258925,
+              "state": "Dead"
+            },
+            {
+              "shard_id": 2,
+              "peer_id": 8026666460338483, --> N2 this was the destination for migration
+              "state": "Dead"
+            },
+            {
+              "shard_id": 3,
+              "peer_id": 8026666460338483, -> this one was getting resharded downwards. we were migrating points from this to `8026666460338483:2`
+              "state": "Active"
+            }
+          ],
+          "shard_transfers": []
+        },
+        "status": "ok",
+        "time": 0.00002472
+      }
+
+      "peers": {
+        "8026666460338483": { // destination shard 2
+          "uri": "http://qdrant-chaos-testing-debug-2.qdrant-headless-chaos-testing-debug:6335/" -> destination: shard 2
+        },
+        "8405020171258925": {
+          "uri": "http://qdrant-chaos-testing-debug-0.qdrant-headless-chaos-testing-debug:6335/"
+        },
+        "4905613015804057": { // source shard 3
+          "uri": "http://qdrant-chaos-testing-debug-1.qdrant-headless-chaos-testing-debug:6335/" -> source: shard 3
+        }
+      },
+
+      // so it was between replicas on same node (n2)
+      // 3 -> 2
+      // the node itself was killed
+
+
+      // "replicas_migrating":[[1,8405020171258925]],"replicas_migrated":[[0,8405020171258925],[1,4905613015804057],[0,8026666460338483]],"replicas_deleted":[]}"
+      // 2025-06-22 00:10:00.035 -> n0 was killed
+      // 8405020171258925 (n0) goes down (2025-06-22 00:10:15.922 -> Starting initializing for pod 0)
+      // "replicas_migrating":[[2,8026666460338483]],"replicas_migrated":[[1,4905613015804057],[0,8026666460338483],[0,8405020171258925],[1,8405020171258925]],"replicas_deleted":[]}" -> 4905613015804057:3 (n1) -> 8026666460338483:2 (n2) was ongoing and registered on all 3
+      // now cluster remains stuck at this stage
+
+
+      relevant_shards order changes on each API call. We should stabalize it for more readable logs

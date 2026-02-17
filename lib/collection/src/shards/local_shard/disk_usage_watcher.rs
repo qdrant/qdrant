@@ -51,6 +51,10 @@ impl DiskUsageWatcher {
         };
         watcher
     }
+    pub fn set_disk_path(&mut self, disk_path: PathBuf) {
+        self.disk_path = disk_path;
+    }
+
     /// Returns true if the disk free space is less than the `disk_buffer_threshold_mb`
     /// As the side effect, it updates the disk usage every `update_count_threshold` calls
     pub async fn is_disk_full(&self) -> CollectionResult<Option<bool>> {
