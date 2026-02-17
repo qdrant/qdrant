@@ -57,6 +57,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist, false);
     let borrowed_id_tracker = id_tracker.borrow();
+    let point_mappings = borrowed_id_tracker.point_mappings();
 
     let mut group = c.benchmark_group("storage-score-all");
 
@@ -67,7 +68,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
                 BatchFilteredSearcher::new_for_test(
                     &[vector],
                     &storage,
-                    borrowed_id_tracker.deleted_point_bitslice(),
+                    point_mappings.deleted_point_bitslice(),
                     10,
                 )
                 .peek_top_all(&DEFAULT_STOPPED)
@@ -87,6 +88,7 @@ fn benchmark_scorer_mmap_4(c: &mut Criterion) {
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_mmap_vector_storage(dir.path(), DIM, NUM_VECTORS, dist, false);
     let borrowed_id_tracker = id_tracker.borrow();
+    let point_mappings = borrowed_id_tracker.point_mappings();
 
     let mut group = c.benchmark_group("storage-score-all");
 
@@ -104,7 +106,7 @@ fn benchmark_scorer_mmap_4(c: &mut Criterion) {
                 BatchFilteredSearcher::new_for_test(
                     &vecs,
                     &storage,
-                    borrowed_id_tracker.deleted_point_bitslice(),
+                    point_mappings.deleted_point_bitslice(),
                     10,
                 )
                 .peek_top_all(&DEFAULT_STOPPED)
