@@ -375,14 +375,14 @@ impl Anonymize for WebApiTelemetry {
             .responses_per_collection
             .iter()
             .map(|(collection, endpoints)| {
-                let anonymized_collection = collection.clone();
+                let collection_name = collection.clone();
                 let anonymized_endpoints = endpoints
                     .iter()
                     .map(|(endpoint, statuses)| {
                         (endpoint.clone(), anonymize_collection_values(statuses))
                     })
                     .collect();
-                (anonymized_collection, anonymized_endpoints)
+                (collection_name, anonymized_endpoints)
             })
             .collect();
 
@@ -405,14 +405,14 @@ impl Anonymize for GrpcTelemetry {
             .responses_per_collection
             .iter()
             .map(|(collection, endpoints)| {
-                let anonymized_collection = collection.clone();
+                let collection_name = collection.clone();
                 let anonymized_endpoints = endpoints
                     .iter()
                     .map(|(endpoint, statuses)| {
                         (endpoint.clone(), anonymize_collection_values(statuses))
                     })
                     .collect();
-                (anonymized_collection, anonymized_endpoints)
+                (collection_name, anonymized_endpoints)
             })
             .collect();
 
