@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 
@@ -45,17 +44,13 @@ impl Segment {
             })
             .unzip();
 
-        let mut segment_records: AHashMap<_, _> = self
-            .retrieve(
-                &point_ids,
-                with_payload,
-                with_vector,
-                hw_counter,
-                is_stopped,
-            )?
-            .into_iter()
-            .map(|record| (record.id, record))
-            .collect();
+        let mut segment_records = self.retrieve(
+            &point_ids,
+            with_payload,
+            with_vector,
+            hw_counter,
+            is_stopped,
+        )?;
 
         let mut results = Vec::with_capacity(point_ids.len());
 
