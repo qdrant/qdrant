@@ -102,14 +102,11 @@ where
             // Inline per-collection tracking to avoid rustc 1.93.1 ICE.
             // The ICE is triggered when calling a method in requests_telemetry that takes
             // Option<String> from this async block, even without .as_deref().
+            // NOTE: crate MSRV is 1.92, but the ICE was observed on rustc 1.93.1
+            // in check_mod_deathness. Keep this structure until upstream is fixed.
             let mut telemetry = telemetry_data.lock();
             if let Some(c) = collection {
-                telemetry.add_response_with_collection(
-                    method_name.clone(),
-                    status_code,
-                    instant,
-                    Some(&c),
-                );
+                telemetry.add_response_with_collection(method_name, status_code, instant, Some(&c));
             } else {
                 telemetry.add_response(method_name, status_code, instant);
             }

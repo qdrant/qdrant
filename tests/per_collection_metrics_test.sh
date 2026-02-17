@@ -26,7 +26,7 @@ curl -fsS -X PUT "$QDRANT_HOST/collections/$TEST_COLLECTION/points" \
 sleep 2
 
 echo "Fetching metrics..."
-METRICS="$(curl -s "$QDRANT_HOST/metrics")"
+METRICS="$(curl -fsS "$QDRANT_HOST/metrics")"
 
 echo "Validating per-collection metrics..."
 if echo "$METRICS" | grep -q "rest_collection_responses_total.*collection=\"$TEST_COLLECTION\""; then
@@ -44,7 +44,7 @@ else
 fi
 
 echo "Validating telemetry endpoint..."
-TELEMETRY="$(curl -s "$QDRANT_HOST/telemetry")"
+TELEMETRY="$(curl -fsS "$QDRANT_HOST/telemetry")"
 if echo "$TELEMETRY" | grep -q "responses_per_collection"; then
   echo "✓ Telemetry contains responses_per_collection"
 else
