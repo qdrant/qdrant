@@ -12,7 +12,7 @@ pub use controller::CacheController;
 
 /// We cache data in blocks of this size.
 /// Should be multiple of filesystem block size (usually 4 KiB).
-pub const BLOCK_SIZE: usize = 4 * 1024;
+pub const BLOCK_SIZE: usize = 16 * 1024;
 
 /// Internal identifier of a cold file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
