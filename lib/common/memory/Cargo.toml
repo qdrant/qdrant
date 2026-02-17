@@ -23,6 +23,7 @@ serde = { workspace = true }
 bitvec = { workspace = true }
 thiserror = { workspace = true }
 nix = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 fs-err = { workspace = true, features = ["debug"] }
