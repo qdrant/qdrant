@@ -53,7 +53,6 @@ impl<R: AsyncRead> AsyncRead for TimeoutReader<R> {
         // First, try to read from the inner reader
         match this.inner.as_mut().poll_read(cx, buf) {
             Poll::Ready(Ok(())) => {
-                eprintln!("buf.filled().len() = {:#?}", buf.filled().len());
                 // If we read some data, reset the timeout
                 if buf.filled().len() > filled_before {
                     this.sleep.as_mut().reset(Instant::now() + this.timeout);
