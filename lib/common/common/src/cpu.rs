@@ -94,10 +94,6 @@ fn set_linux_thread_priority(priority: u8) -> Result<(), ThreadPriorityError> {
 
 /// On Linux, set high I/O priority (best-effort class, priority 0) for the current thread.
 ///
-/// Uses the `ioprio_set` syscall to set the I/O scheduling class to `IOPRIO_CLASS_BE` (best
-/// effort) with the highest priority level (0) within that class. This is useful for threads
-/// serving user-facing API requests (e.g. gRPC and REST) to reduce I/O latency.
-///
 /// Only works on Linux because the `ioprio_set` syscall is Linux-specific.
 /// - <https://man7.org/linux/man-pages/man2/ioprio_set.2.html>
 #[cfg(target_os = "linux")]
