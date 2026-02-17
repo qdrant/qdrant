@@ -94,7 +94,7 @@ impl CacheController {
                 //       The default number is num_detected_cores * 4.
                 //       We need to optimize unused_offsets so that it can also leverage sharding, otherwise it
                 //       might become a source of contention.
-                .shards(1)
+                // .shards(1)
                 .build()
                 .unwrap(),
             UnitWeighter,
