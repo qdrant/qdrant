@@ -90,10 +90,7 @@ impl<R> CancellableReader<R> {
 impl<R: Read> Read for CancellableReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.cancel.is_cancelled() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                "download cancelled",
-            ));
+            return Err(std::io::Error::other("download cancelled"));
         }
         self.inner.read(buf)
     }
@@ -224,6 +221,11 @@ pub async fn download_and_unpack_tar(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    use futures::StreamExt;
+
     use super::*;
 
     #[tokio::test]
@@ -257,5 +259,63 @@ mod tests {
             .collect();
 
         assert!(entries.contains(&"wal".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_async_cancellation() {
+        let is_finished: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+        let is_finished_clone = is_finished.clone();
+
+        let stream = futures::stream::iter(0..100).then(|_| async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Ok::<std::io::Cursor<Vec<u8>>, std::io::Error>(std::io::Cursor::new(vec![1u8]))
+        });
+        let stream_reader = StreamReader::new(stream);
+
+        let async_reader = TimeoutReader::new(stream_reader, STREAM_READ_TIMEOUT);
+
+        // Use spawn_cancel_on_drop to ensure the blocking task is canceled when the future is dropped
+        let handler = async {
+            cancel::blocking::spawn_cancel_on_drop(move |cancel| {
+                // SyncIoBridge converts an AsyncRead into a sync Read
+                // It must be used within a tokio runtime context (spawn_blocking provides this)
+                let sync_reader = tokio_util::io::SyncIoBridge::new(async_reader);
+
+                // Wrap the reader with cancellation support
+                let mut cancellable_reader = CancellableReader::new(sync_reader, cancel);
+
+                let mut buf = [0u8; 8192];
+
+                loop {
+                    let res = cancellable_reader.read(&mut buf);
+                    if res.is_err() {
+                        break;
+                    }
+                }
+
+                is_finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await
+        };
+
+        tokio::select! {
+            _ = handler => {
+                // Task finished on its own, which is unexpected in this test
+
+            }
+             _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                // Timeout waiting for task to finish, which means cancellation likely failed
+                eprintln!("Cancelled");
+            }
+        }
+
+        // Check that the task was stopped.
+        tokio::time::timeout(Duration::from_millis(100), async {
+            while !is_finished_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("Task was not cancelled properly");
     }
 }
