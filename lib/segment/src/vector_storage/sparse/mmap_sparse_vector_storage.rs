@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::slice::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;

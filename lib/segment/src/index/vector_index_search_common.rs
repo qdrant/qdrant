@@ -1,4 +1,4 @@
-use bitvec::slice::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;

@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::iter;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
+use common::atomic_bitvec::prelude::{BitSlice, BitVec};
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
 use common::types::PointOffsetType;

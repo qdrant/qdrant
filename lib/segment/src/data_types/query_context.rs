@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::SimpleCow;
