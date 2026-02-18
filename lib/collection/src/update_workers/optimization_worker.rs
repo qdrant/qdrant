@@ -12,8 +12,8 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::QuantizationConfig;
 use shard::operations::optimization::OptimizerThresholds;
+use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -30,8 +30,7 @@ use crate::collection_manager::optimizers::{
     Tracker, TrackerLog, TrackerSegmentInfo, TrackerStatus,
 };
 use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
-use crate::config::CollectionParams;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{Optimizer, OptimizerSignal};
 use crate::update_workers::UpdateWorkers;
@@ -113,8 +112,7 @@ impl UpdateWorkers {
                 let result = Self::ensure_appendable_segment_with_capacity(
                     &segments,
                     optimizer.segments_path(),
-                    &optimizer.collection_params(),
-                    optimizer.quantization_config().as_ref(),
+                    optimizer.segment_config(),
                     optimizer.threshold_config(),
                     payload_index_schema.clone(),
                 );
@@ -391,7 +389,7 @@ impl UpdateWorkers {
                         callback();
                     }
                     // Cancelled
-                    Ok(Err(CollectionError::Cancelled { description })) => {
+                    Ok(Err(OperationError::Cancelled { description })) => {
                         is_optimized = false;
                         log::debug!("Optimization cancelled - {description}");
                         status = TrackerStatus::Cancelled(description);
@@ -412,7 +410,7 @@ impl UpdateWorkers {
 
                         is_optimized = false;
                         status = TrackerStatus::Error(status_msg.clone());
-                        reported_error = Some(CollectionError::service_error(status_msg));
+                        reported_error = Some(OperationError::service_error(status_msg));
                         log::warn!(
                             "Optimization task panicked, collection may be in unstable state\
                              {separator}{message}"
@@ -441,8 +439,7 @@ impl UpdateWorkers {
     pub fn ensure_appendable_segment_with_capacity(
         segments: &LockedSegmentHolder,
         segments_path: &Path,
-        collection_params: &CollectionParams,
-        collection_quantization: Option<&QuantizationConfig>,
+        segment_config: &SegmentOptimizerConfig,
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
@@ -469,14 +466,10 @@ impl UpdateWorkers {
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
 
-            let segment_config = collection_params
-                .to_base_segment_config(collection_quantization)
-                .map_err(|err| OperationError::service_error(err.to_string()))?;
-
             let segments_guard = segments.upgradable_read();
             let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                Some(segment_config),
+                Some(segment_config.base_segment_config()),
                 payload_index_schema,
                 true,
             )?;

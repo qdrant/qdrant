@@ -8,6 +8,9 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
+use shard::optimizers::config::{
+    DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
+};
 use validator::Validate;
 
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
@@ -15,6 +18,8 @@ use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
+use crate::operations::config_diff::DiffConfig;
+use crate::operations::types::CollectionResult;
 use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
@@ -168,6 +173,57 @@ pub fn clear_temp_segments(shard_path: &Path) {
     }
 }
 
+pub fn build_segment_optimizer_config(
+    collection_params: &CollectionParams,
+    hnsw_config: &HnswConfig,
+    quantization_config: &Option<QuantizationConfig>,
+) -> CollectionResult<SegmentOptimizerConfig> {
+    let dense_vector = collection_params
+        .vectors
+        .params_iter()
+        .map(|(name, params)| {
+            (
+                name.into(),
+                DenseVectorOptimizerConfig {
+                    on_disk: params.on_disk,
+                    hnsw_config: hnsw_config.update_opt(params.hnsw_config.as_ref()),
+                    quantization_config: params
+                        .quantization_config
+                        .as_ref()
+                        .or(quantization_config.as_ref())
+                        .cloned(),
+                },
+            )
+        })
+        .collect();
+
+    let sparse_vector = collection_params
+        .sparse_vectors
+        .as_ref()
+        .map(|config| {
+            config
+                .iter()
+                .map(|(name, params)| {
+                    (
+                        name.clone(),
+                        SparseVectorOptimizerConfig {
+                            on_disk: params.index.and_then(|index| index.on_disk),
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(SegmentOptimizerConfig {
+        payload_storage_type: collection_params.payload_storage_type(),
+        base_vector_data: collection_params.to_base_vector_data(quantization_config.as_ref())?,
+        base_sparse_vector_data: collection_params.to_sparse_vector_data()?,
+        dense_vector,
+        sparse_vector,
+    })
+}
+
 pub fn build_optimizers(
     shard_path: &Path,
     collection_params: &CollectionParams,
@@ -180,6 +236,9 @@ pub fn build_optimizers(
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
+    let segment_config =
+        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config)
+            .expect("failed to build optimizer segment config");
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
@@ -187,20 +246,18 @@ pub fn build_optimizers(
             threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
-            collection_params.clone(),
+            segment_config.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
             threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
-            collection_params.clone(),
+            segment_config.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            quantization_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -208,19 +265,17 @@ pub fn build_optimizers(
             threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
-            collection_params.clone(),
+            segment_config.clone(),
             *hnsw_config,
             hnsw_global_config.clone(),
-            quantization_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
             segments_path,
             temp_segments_path,
-            collection_params.clone(),
+            segment_config,
             *hnsw_config,
             hnsw_global_config.clone(),
-            quantization_config.clone(),
         )),
     ])
 }

@@ -40,6 +40,7 @@ use crate::collection_manager::optimizers::TrackerStatus;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
+use crate::optimizers_builder::build_segment_optimizer_config;
 use crate::update_handler::Optimizer;
 use crate::update_workers::UpdateWorkers;
 
@@ -242,6 +243,10 @@ async fn test_new_segment_when_all_over_capacity() {
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
     };
+    let hnsw_config = Default::default();
+    let segment_config =
+        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default())
+            .unwrap();
 
     let payload_schema_file = dir.path().join("payload.schema");
     let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
@@ -264,8 +269,7 @@ async fn test_new_segment_when_all_over_capacity() {
     UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
-        &collection_params,
-        None,
+        &segment_config,
         &optimizer_thresholds,
         payload_index_schema.clone(),
     )
@@ -276,8 +280,7 @@ async fn test_new_segment_when_all_over_capacity() {
     UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
-        &collection_params,
-        None,
+        &segment_config,
         &optimizer_thresholds,
         payload_index_schema.clone(),
     )
@@ -322,8 +325,7 @@ async fn test_new_segment_when_all_over_capacity() {
     UpdateWorkers::ensure_appendable_segment_with_capacity(
         &segments,
         dir.path(),
-        &collection_params,
-        None,
+        &segment_config,
         &optimizer_thresholds,
         payload_index_schema,
     )
