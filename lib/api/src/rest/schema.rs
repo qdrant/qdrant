@@ -907,6 +907,7 @@ pub enum FeedbackStrategy {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct NaiveFeedbackStrategy {
+    #[validate(nested)]
     pub naive: NaiveFeedbackStrategyParams,
 }
 
