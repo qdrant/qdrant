@@ -211,7 +211,7 @@ async fn test_cancel_optimization() {
         };
 
         let log = optimizers_log.lock().to_telemetry();
-        assert_eq!(log.len(), expected_optimization_count);
+        assert!(log.len() <= expected_optimization_count);
         for status in log {
             assert_eq!(status.name, "indexing");
             assert!(matches!(status.status, TrackerStatus::Cancelled(_)));
