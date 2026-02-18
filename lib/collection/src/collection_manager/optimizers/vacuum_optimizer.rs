@@ -182,6 +182,7 @@ mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use segment::entry::entry_point::NonAppendableSegmentEntry as _;
+    use segment::id_tracker::IdTracker;
     use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::Value;

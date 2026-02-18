@@ -1,3 +1,5 @@
+use segment::id_tracker::IdTracker;
+
 use crate::shards::local_shard::LocalShard;
 
 impl LocalShard {

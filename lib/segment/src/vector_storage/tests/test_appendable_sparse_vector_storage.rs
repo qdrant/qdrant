@@ -1,9 +1,7 @@
 use std::path::Path;
-use std::sync::Arc;
 #[cfg(feature = "rocksdb")]
 use std::sync::atomic::AtomicBool;
 
-use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -13,8 +11,8 @@ use tempfile::Builder;
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
-use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::id_tracker::IdTrackerSS;
+use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
@@ -36,10 +34,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     .collect();
 
     let delete_mask = [false, false, true, true, false];
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-
-    let borrowed_id_tracker = id_tracker.borrow_mut();
+    let id_tracker = create_id_tracker_fixture(points.len());
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -86,7 +81,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -133,12 +128,9 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     .map(|opt| opt.map(|v| v.try_into().unwrap()))
     .collect();
 
-    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
-        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-
     let hw_counter = HardwareCounterCell::new();
 
-    let borrowed_id_tracker = id_tracker.borrow_mut();
+    let id_tracker = create_id_tracker_fixture(points.len());
     {
         let mut storage2 = new_volatile_sparse_vector_storage();
 
@@ -181,7 +173,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(),
         5,
     );
     let results = searcher
