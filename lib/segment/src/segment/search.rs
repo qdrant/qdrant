@@ -22,28 +22,33 @@ impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
     pub(super) fn process_search_result(
         &self,
-        internal_result: Vec<ScoredPointOffset>,
+        mut internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
-        let (point_ids, scored_offsets): (Vec<_>, Vec<_>) = internal_result
-            .into_iter()
-            .filter_map(|scored_point_offset| {
-                let point_offset = scored_point_offset.idx;
-                let point_id = id_tracker.external_id(point_offset);
+        let mut missing_point_results_index = Vec::new();
+        let mut point_ids = Vec::with_capacity(internal_result.len());
+
+        // Find results without internal id.
+        for (index, scored_point_offset) in internal_result.iter().enumerate() {
+            let point_offset = scored_point_offset.idx;
+            if let Some(point_id) = id_tracker.external_id(point_offset) {
+                point_ids.push(point_id);
+            } else {
                 // This can happen if point was modified between retrieving and post-processing
                 // But this function locks the segment, so it can't be modified during its execution
                 debug_assert!(
-                    point_id.is_some(),
+                    false,
                     "Point with internal ID {point_offset} not found in id tracker"
                 );
-                point_id.map(|id| (id, scored_point_offset))
-            })
-            .unzip();
+                missing_point_results_index.push(index);
+            }
+        }
 
+        // Batch retrieve by internal ids
         let mut segment_records = self.retrieve(
             &point_ids,
             with_payload,
@@ -52,9 +57,14 @@ impl Segment {
             is_stopped,
         )?;
 
-        let mut results = Vec::with_capacity(point_ids.len());
+        // Remove results without internal ids.
+        missing_point_results_index.sort_unstable_by(|a, b| b.cmp(a)); // descending
+        for i in missing_point_results_index {
+            internal_result.swap_remove(i);
+        }
 
-        for (point_id, scored_offset) in point_ids.into_iter().zip(scored_offsets) {
+        let mut results = Vec::with_capacity(point_ids.len());
+        for (point_id, scored_offset) in point_ids.into_iter().zip(internal_result) {
             let ScoredPointOffset {
                 idx: point_offset,
                 score: point_score,
