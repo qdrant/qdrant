@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::atomic_bitvec::prelude::{BitSlice, BitVec};
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use common::atomic_bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;

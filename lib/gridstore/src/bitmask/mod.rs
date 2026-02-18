@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
-use bitvec::slice::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::fs::clear_disk_cache;
 use common::mmap::{
     Advice, AdviceSetting, MmapBitSlice, create_and_ensure_length, open_write_mmap,
@@ -283,7 +283,7 @@ impl Bitmask {
         // Iterate over the integers that compose the bitvec. So that we can perform bitwise operations.
         const BITS_IN_CHUNK: u32 = usize::BITS;
         for (chunk_idx, chunk) in raw_region.iter().enumerate() {
-            let mut chunk = *chunk;
+            let mut chunk = chunk.load(std::sync::atomic::Ordering::Acquire);
 
             // case of all zeros
             if chunk == 0 {
@@ -436,7 +436,7 @@ impl Bitmask {
         // So starting from the end should give us bigger `max` earlier.
         for chunk in raw_region.iter().rev() {
             // Ensure that the chunk is little-endian.
-            let mut chunk = chunk.to_le();
+            let mut chunk = chunk.load(std::sync::atomic::Ordering::Acquire).to_le();
             // case of all zeros
             if chunk == 0 {
                 current += BITS_IN_CHUNK;
@@ -503,13 +503,15 @@ impl Bitmask {
         } else {
             leading = raw_region
                 .iter()
-                .take_while_inclusive(|chunk| chunk == &&0)
+                .map(|chunk| chunk.load(std::sync::atomic::Ordering::Acquire))
+                .take_while_inclusive(|chunk| chunk == &0)
                 .map(|chunk| chunk.trailing_zeros())
                 .sum::<u32>();
             trailing = raw_region
                 .iter()
                 .rev()
-                .take_while_inclusive(|chunk| chunk == &&0)
+                .map(|chunk| chunk.load(std::sync::atomic::Ordering::Acquire))
+                .take_while_inclusive(|chunk| chunk == &0)
                 .map(|chunk| chunk.leading_zeros())
                 .sum::<u32>();
         }
@@ -550,7 +552,7 @@ impl Bitmask {
 mod tests {
 
     use bitvec::bits;
-    use bitvec::vec::BitVec;
+    use common::atomic_bitvec::prelude::BitVec;
     use proptest::prelude::*;
     use rand::{Rng, rng};
 
@@ -626,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_raw_bitvec() {
-        use bitvec::prelude::Lsb0;
+        use bitvec::prelude::{BitVec, Lsb0};
         let bits = bits![
             0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

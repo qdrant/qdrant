@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::clear_disk_cache;
 use common::mmap::{

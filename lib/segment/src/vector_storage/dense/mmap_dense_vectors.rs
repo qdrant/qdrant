@@ -3,7 +3,7 @@ use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
-use bitvec::prelude::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;

@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use bitvec::vec::BitVec;
+use common::atomic_bitvec::prelude::BitVec;
 use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
@@ -14,7 +14,10 @@ pub fn bench_bitmask_ops(c: &mut Criterion) {
         .take(1000 * DEFAULT_REGION_SIZE_BLOCKS)
         .collect::<BitVec>();
 
-    let mut bitslice_iter = random_bitvec.windows(DEFAULT_REGION_SIZE_BLOCKS).cycle();
+    // It could be just random_bitvec.windows(DEFAULT_REGION_SIZE_BLOCKS).cycle(), but `bitvec`'s `Window` has
+    // incorrectly restrictive `Clone` bounds.
+    let mut bitslice_iter = (0..(random_bitvec.len() - DEFAULT_REGION_SIZE_BLOCKS))
+        .map(|start| &random_bitvec[start..(start + DEFAULT_REGION_SIZE_BLOCKS)]);
 
     c.bench_function("calculate_gaps", |b| {
         b.iter(|| {

@@ -19,7 +19,7 @@ testing = []
 ahash = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
-bitvec = { workspace = true }
+bitvec = { workspace = true, features = ["atomic"] }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 delegate = { workspace = true }

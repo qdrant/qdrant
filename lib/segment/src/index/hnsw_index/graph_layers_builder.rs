@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-use bitvec::prelude::BitVec;
+use common::atomic_bitvec::prelude::BitVec;
 use common::ext::BitSliceExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
@@ -47,7 +47,7 @@ pub struct GraphLayersBuilder {
     visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    ready_list: BitVec<AtomicUsize>,
+    ready_list: bitvec::prelude::BitVec<AtomicUsize>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {

@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;

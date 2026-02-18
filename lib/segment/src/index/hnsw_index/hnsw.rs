@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
+use common::atomic_bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cow::BoxCow;
 #[cfg(target_os = "linux")]

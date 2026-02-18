@@ -1,4 +1,4 @@
-use bitvec::prelude::BitVec;
+use common::atomic_bitvec::prelude::BitVec;
 use common::types::PointOffsetType;
 use uuid::Uuid;
 

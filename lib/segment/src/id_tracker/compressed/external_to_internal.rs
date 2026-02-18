@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use bitvec::prelude::BitVec;
+use common::atomic_bitvec::prelude::BitVec;
 use common::types::PointOffsetType;
 use itertools::Either;
 use uuid::Uuid;

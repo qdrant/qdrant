@@ -1,4 +1,4 @@
-use bitvec::vec::BitVec;
+use common::atomic_bitvec::BitVec;
 use common::types::PointOffsetType;
 
 /// Set deleted state in given bitvec.
