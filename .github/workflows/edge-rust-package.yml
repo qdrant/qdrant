@@ -1,0 +1,44 @@
+name: Qdrant Edge Rust Package
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  edge-rust-package:
+    name: Test Qdrant Edge Rust Package
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install ast-grep
+        run: npm install --global @ast-grep/cli
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Amalgamate
+        run: lib/edge/publish/amalgamate.py
+
+      - name: Cargo check
+        working-directory: lib/edge/publish
+        run: cargo check -p examples
