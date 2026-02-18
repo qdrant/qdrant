@@ -6,9 +6,7 @@ use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
 use shard::count::CountRequestInternal;
-use shard::operations::optimization::{
-    OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
-};
+use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 
 use super::Collection;
 use crate::operations::config_diff::*;

@@ -12,6 +12,7 @@ use api::rest::{
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
+use common::fs::FileStorageError;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;

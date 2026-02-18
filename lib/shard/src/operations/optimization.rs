@@ -1,11 +1,11 @@
 use common::progress_tracker::ProgressTree;
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::tracker::TrackerStatus;
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Optimization {
     /// Unique identifier of the optimization process.
     ///
@@ -13,7 +13,7 @@ pub struct Optimization {
     /// this UUID.
     pub uuid: Uuid,
     /// Name of the optimizer that performed this optimization.
-    pub optimizer: &'static str,
+    pub optimizer: String,
     pub status: TrackerStatus,
     /// Segments being optimized.
     ///
@@ -24,7 +24,7 @@ pub struct Optimization {
 }
 
 /// Optimizations progress for the collection
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationsResponse {
     pub summary: OptimizationsSummary,
     /// Currently running optimizations.
@@ -43,7 +43,44 @@ pub struct OptimizationsResponse {
     pub idle_segments: Option<Vec<OptimizationSegmentInfo>>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+impl OptimizationsResponse {
+    /// Merge another `OptimizationsResponse` into this one.
+    pub fn merge(&mut self, other: OptimizationsResponse) {
+        let OptimizationsResponse {
+            summary:
+                OptimizationsSummary {
+                    queued_optimizations,
+                    queued_segments,
+                    queued_points,
+                    idle_segments: idle_segments_count,
+                },
+            running,
+            queued,
+            completed,
+            idle_segments,
+        } = other;
+
+        self.running.extend(running);
+        self.summary.queued_optimizations += queued_optimizations;
+        self.summary.queued_segments += queued_segments;
+        self.summary.queued_points += queued_points;
+        self.summary.idle_segments += idle_segments_count;
+        merge_optional_vec(&mut self.completed, completed);
+        merge_optional_vec(&mut self.queued, queued);
+        merge_optional_vec(&mut self.idle_segments, idle_segments);
+    }
+}
+
+/// Merge two `Option<Vec<T>>` values: if either side has data, the result has data.
+fn merge_optional_vec<T>(target: &mut Option<Vec<T>>, source: Option<Vec<T>>) {
+    match (target.as_mut(), source) {
+        (Some(target), Some(source)) => target.extend(source),
+        (None, source @ Some(_)) => *target = source,
+        (Some(_) | None, None) => {}
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationsSummary {
     /// Number of pending optimizations in the queue.
     /// Each optimization will take one or more unoptimized segments and produce
@@ -57,16 +94,16 @@ pub struct OptimizationsSummary {
     pub idle_segments: usize,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PendingOptimization {
     /// Name of the optimizer that scheduled this optimization.
-    pub optimizer: &'static str,
+    pub optimizer: String,
     /// Segments that will be optimized.
     pub segments: Vec<OptimizationSegmentInfo>,
 }
 
 // See also [`segment::types::SegmentInfo`] which is used in telemetry.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationSegmentInfo {
     /// Unique identifier of the segment.
     pub uuid: Uuid,

@@ -74,7 +74,7 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
-    UpdateQueueInfo, check_sparse_compatible_with_segment_config,
+    ShardUpdateQueueInfo, check_sparse_compatible_with_segment_config,
 };
 use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::shards::CollectionId;

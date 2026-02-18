@@ -22,6 +22,9 @@ use common::save_on_disk::SaveOnDisk;
 use replica_set_state::{ReplicaSetState, ReplicaState};
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
 use serde::{Deserialize, Serialize};
+use shard::operations::optimization::{
+    OptimizationsRequestOptions, OptimizationsResponse, OptimizationsSummary,
+};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::spawn_blocking;
@@ -38,10 +41,7 @@ use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{
-    CollectionError, CollectionResult, OptimizationsRequestOptions, OptimizationsResponse,
-    OptimizationsSummary, UpdateResult, UpdateStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
