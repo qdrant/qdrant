@@ -265,11 +265,11 @@ pub trait SegmentOptimizer: Sync {
             payload_storage_type: segment_config.payload_storage_type,
         };
 
-        Ok(SegmentBuilder::new(
+        SegmentBuilder::new(
             self.temp_path(),
             &optimized_config,
             self.hnsw_global_config(),
-        )?)
+        )
     }
 
     /// Test wrapper for [`SegmentOptimizer::optimize`].
