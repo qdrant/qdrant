@@ -181,12 +181,25 @@ impl ChannelService {
 
         // Ensure there aren't more peer addresses than metadata
         if id_to_address.len() > id_to_metadata.len() {
+            let peers_without_metadata: HashMap<_, _> = id_to_address
+                .iter()
+                .filter(|(id, _uri)| !id_to_metadata.contains_key(id))
+                .collect();
+            log::info!(
+                "Not all peers at version:{version} because there are peers without metadata:{peers_without_metadata:?}"
+            );
             return false;
         }
 
-        id_to_metadata
+        let all = id_to_metadata
             .values()
-            .all(|metadata| &metadata.version >= version)
+            .all(|metadata| &metadata.version >= version);
+
+        if !all {
+            log::info!("Not all peers at version:{version} peers:{id_to_metadata:?}");
+        }
+
+        all
     }
 
     /// Check whether the specified peer is running at least the given version
