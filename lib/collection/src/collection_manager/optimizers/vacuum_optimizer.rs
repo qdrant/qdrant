@@ -65,6 +65,7 @@ mod tests {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_vacuum_optimizer(
         deleted_threshold: f64,
         min_vectors_number: usize,
