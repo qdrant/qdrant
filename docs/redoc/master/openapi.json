@@ -16240,22 +16240,24 @@
         }
       },
       "FeedbackStrategy": {
-        "oneOf": [
+        "anyOf": [
           {
-            "type": "object",
-            "required": [
-              "naive"
-            ],
-            "properties": {
-              "naive": {
-                "$ref": "#/components/schemas/NaiveFeedbackStrategy"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/NaiveFeedbackStrategy"
           }
         ]
       },
       "NaiveFeedbackStrategy": {
+        "type": "object",
+        "required": [
+          "naive"
+        ],
+        "properties": {
+          "naive": {
+            "$ref": "#/components/schemas/NaiveFeedbackStrategyParams"
+          }
+        }
+      },
+      "NaiveFeedbackStrategyParams": {
         "type": "object",
         "required": [
           "a",
