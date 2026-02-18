@@ -1,0 +1,63 @@
+# %PACKAGE% and %DEPS% are injected by python script.
+
+# Insert `%PACKAGE%` after `crate::`.
+# Before: `crate::types::Distance`
+# After:  `crate::segment::types::Distance`
+---
+id: self-crate
+language: rust
+rule:
+  kind: crate
+  not: { inside: { kind: visibility_modifier } } # Don't fix `crate` in `pub(crate)`.
+fix: crate::%PACKAGE%
+---
+id: self-crate-in-macro-rules
+language: rust
+rule:
+  all:
+    - kind: metavariable
+    - regex: ^\$crate$
+    - inside: { kind: macro_definition, stopBy: end }
+fix: $crate::%PACKAGE%
+
+# Prepend `crate::` before `%DEPS%`.
+# Before:        `quantization::DistanceType::Dot`
+# After:  `crate::quantization::DistanceType::Dot`
+---
+id: inner-deps
+language: rust
+rule:
+  all:
+    - kind: identifier
+    - pattern: $MOD
+    - regex: ^(%DEPS%)$ # Assuming `%DEPS%` is `|`-separated list of dependencies.
+    - any:
+        - inside: { kind: scoped_identifier,      stopBy: end }
+        - inside: { kind: scoped_type_identifier, stopBy: end }
+        - inside: { kind: scoped_use_list,        stopBy: end }
+    - any:
+        - precedes: { kind: identifier,      stopBy: end }
+        - precedes: { kind: type_identifier, stopBy: end }
+        - precedes: { kind: use_list,        stopBy: end }
+fix: crate::$MOD
+
+# Remove `Anonymize` derives.
+# Before: `#[derive(Debug, Anonymize)]`
+# After:  `#[derive(Debug)]`
+---
+id: drop-anonymize-derive
+language: rust
+rule:
+  pattern: "Anonymize"
+  inside:
+    pattern: "#[derive($$$)]"
+    stopBy: end
+fix:
+  template: ""
+  expandEnd: { regex: ',' }
+---
+id: drop-anonymize-attr
+language: rust
+rule:
+  pattern: "#[anonymize($$$ARGS)]"
+fix: ""
