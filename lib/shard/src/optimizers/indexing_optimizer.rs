@@ -113,6 +113,11 @@ impl IndexingOptimizer {
 
         false
     }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn threshold_config_mut_for_test(&mut self) -> &mut OptimizerThresholds {
+        &mut self.thresholds_config
+    }
 }
 
 impl SegmentOptimizer for IndexingOptimizer {

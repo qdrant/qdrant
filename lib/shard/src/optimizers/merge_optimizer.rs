@@ -74,6 +74,16 @@ impl MergeOptimizer {
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
     }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn threshold_config_mut_for_test(&mut self) -> &mut OptimizerThresholds {
+        &mut self.thresholds_config
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn set_default_segments_number_for_test(&mut self, value: usize) {
+        self.default_segments_number = value;
+    }
 }
 
 impl SegmentOptimizer for MergeOptimizer {

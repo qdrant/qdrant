@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::progress_tracker::ProgressTracker;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -81,7 +81,7 @@ pub trait SegmentOptimizer: Sync {
 
     /// Wrapper around [`SegmentOptimizer::plan_optimizations`].
     /// Simplified interface and extra checks.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     fn plan_optimizations_for_test(&self, segments: &LockedSegmentHolder) -> Vec<Vec<SegmentId>> {
         let segments = segments.read();
 
@@ -273,7 +273,7 @@ pub trait SegmentOptimizer: Sync {
     }
 
     /// Test wrapper for [`SegmentOptimizer::optimize`].
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     fn optimize_for_test(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> usize {
         let permit_cpu_count = segment::index::hnsw_index::num_rayon_threads(0);
         let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
@@ -380,7 +380,7 @@ impl<'a> OptimizationPlanner<'a> {
     }
 
     /// Returns [`Self::scheduled`], but without `Option<Arc<Optimizer>>` part.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub fn into_scheduled_for_test(self) -> Vec<Vec<SegmentId>> {
         self.scheduled
             .into_iter()
