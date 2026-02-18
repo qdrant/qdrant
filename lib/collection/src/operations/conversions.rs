@@ -1938,9 +1938,9 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
 impl From<rest::FeedbackStrategy> for FeedbackStrategy {
     fn from(strategy: rest::FeedbackStrategy) -> Self {
         match strategy {
-            rest::FeedbackStrategy::Naive(rest::NaiveFeedbackStrategy { a, b, c }) => {
-                FeedbackStrategy::Naive { a, b, c }
-            }
+            rest::FeedbackStrategy::Naive(rest::NaiveFeedbackStrategy {
+                naive: rest::NaiveFeedbackStrategyParams { a, b, c },
+            }) => FeedbackStrategy::Naive { a, b, c },
         }
     }
 }

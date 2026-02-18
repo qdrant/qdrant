@@ -900,13 +900,19 @@ pub struct FeedbackItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum FeedbackStrategy {
     Naive(NaiveFeedbackStrategy),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct NaiveFeedbackStrategy {
+    #[validate(nested)]
+    pub naive: NaiveFeedbackStrategyParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct NaiveFeedbackStrategyParams {
     pub a: f32,
     #[validate(range(min = 0.0))]
     pub b: f32,
