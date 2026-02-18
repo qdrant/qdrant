@@ -40,6 +40,7 @@ mod tests {
     const VECTOR1_NAME: &VectorName = "vector1";
     const VECTOR2_NAME: &VectorName = "vector2";
 
+    #[allow(clippy::too_many_arguments)]
     fn new_indexing_optimizer(
         default_segments_number: usize,
         thresholds_config: OptimizerThresholds,

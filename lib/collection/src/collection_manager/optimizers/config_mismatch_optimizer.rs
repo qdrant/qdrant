@@ -59,14 +59,14 @@ mod tests {
         let dense_vector = dense_map_from_segment(segment_config, dense_overrides);
         let mut base_vector_data = segment_config.vector_data.clone();
         for (name, cfg) in &dense_vector {
-            if let Some(vector_data) = base_vector_data.get_mut(name) {
-                if let Some(on_disk) = cfg.on_disk {
-                    vector_data.storage_type = if on_disk {
-                        VectorStorageType::Mmap
-                    } else {
-                        VectorStorageType::Memory
-                    };
-                }
+            if let Some(vector_data) = base_vector_data.get_mut(name)
+                && let Some(on_disk) = cfg.on_disk
+            {
+                vector_data.storage_type = if on_disk {
+                    VectorStorageType::Mmap
+                } else {
+                    VectorStorageType::Memory
+                };
             }
         }
 

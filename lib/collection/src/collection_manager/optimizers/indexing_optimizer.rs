@@ -44,6 +44,7 @@ mod tests {
     use crate::operations::{CreateIndex, FieldIndexOperations};
     use crate::optimizers_builder::build_segment_optimizer_config;
 
+    #[allow(clippy::too_many_arguments)]
     fn new_indexing_optimizer(
         default_segments_number: usize,
         thresholds_config: OptimizerThresholds,
