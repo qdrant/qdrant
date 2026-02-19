@@ -245,8 +245,7 @@ async fn test_new_segment_when_all_over_capacity() {
     };
     let hnsw_config = Default::default();
     let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default())
-            .unwrap();
+        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
 
     let payload_schema_file = dir.path().join("payload.schema");
     let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =

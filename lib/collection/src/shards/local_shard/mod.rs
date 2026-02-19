@@ -484,7 +484,7 @@ impl LocalShard {
                 "Shard has no appendable segments, this should never happen. Creating new appendable segment now",
             );
             let segments_path = LocalShard::segments_path(shard_path);
-            let segment_config = collection_config.read().await.to_base_segment_config()?;
+            let segment_config = collection_config.read().await.to_base_segment_config();
             segment_holder.create_appendable_segment(
                 &segments_path,
                 segment_config,
@@ -597,8 +597,8 @@ impl LocalShard {
 
         let vector_params = config
             .params
-            .to_base_vector_data(config.quantization_config.as_ref())?;
-        let sparse_vector_params = config.params.to_sparse_vector_data()?;
+            .to_base_vector_data(config.quantization_config.as_ref());
+        let sparse_vector_params = config.params.to_sparse_vector_data();
         let segment_number = config.optimizer_config.get_number_segments();
 
         for _sid in 0..segment_number {

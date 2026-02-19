@@ -235,8 +235,7 @@ pub(crate) fn get_merge_optimizer(
     };
     let hnsw_config = Default::default();
     let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default())
-            .expect("failed to build segment optimizer config");
+        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
 
     MergeOptimizer::new(
         5,
@@ -264,8 +263,7 @@ pub(crate) fn get_indexing_optimizer(
     };
     let hnsw_config = Default::default();
     let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default())
-            .expect("failed to build segment optimizer config");
+        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
 
     IndexingOptimizer::new(
         2,

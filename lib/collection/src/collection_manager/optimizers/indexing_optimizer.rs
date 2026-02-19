@@ -56,8 +56,7 @@ mod tests {
         quantization_config: Option<QuantizationConfig>,
     ) -> IndexingOptimizer {
         let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config)
-                .expect("failed to build segment optimizer config");
+            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
         shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
             default_segments_number,
             thresholds_config,
@@ -79,8 +78,7 @@ mod tests {
         quantization_config: Option<QuantizationConfig>,
     ) -> ConfigMismatchOptimizer {
         let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config)
-                .expect("failed to build segment optimizer config");
+            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
         shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer::new(
             thresholds_config,
             segments_path,

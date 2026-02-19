@@ -19,7 +19,6 @@ use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
-use crate::operations::types::CollectionResult;
 use crate::update_handler::Optimizer;
 
 const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
@@ -177,7 +176,7 @@ pub fn build_segment_optimizer_config(
     collection_params: &CollectionParams,
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
-) -> CollectionResult<SegmentOptimizerConfig> {
+) -> SegmentOptimizerConfig {
     let dense_vector = collection_params
         .vectors
         .params_iter()
@@ -215,13 +214,13 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    Ok(SegmentOptimizerConfig {
+    SegmentOptimizerConfig {
         payload_storage_type: collection_params.payload_storage_type(),
-        base_vector_data: collection_params.to_base_vector_data(quantization_config.as_ref())?,
-        base_sparse_vector_data: collection_params.to_sparse_vector_data()?,
+        base_vector_data: collection_params.to_base_vector_data(quantization_config.as_ref()),
+        base_sparse_vector_data: collection_params.to_sparse_vector_data(),
         dense_vector,
         sparse_vector,
-    })
+    }
 }
 
 pub fn build_optimizers(
@@ -237,8 +236,7 @@ pub fn build_optimizers(
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
     let segment_config =
-        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config)
-            .expect("failed to build optimizer segment config");
+        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
