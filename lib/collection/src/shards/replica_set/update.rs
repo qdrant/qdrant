@@ -163,7 +163,7 @@ impl ShardReplicaSet {
             // Lock updates only for strong ordering.
             let _write_ordering_lock = match ordering {
                 WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await),
-                // Medium writes already tolerate short-term inconsistencies after leader changes.
+                // Medium may tolerate temporary ordering divergence on non-leader replicas.
                 // Avoid serializing all medium writes behind remote I/O.
                 WriteOrdering::Weak | WriteOrdering::Medium => None,
             };
