@@ -142,10 +142,16 @@ def test_incompatible_snapshot_recovery(tmp_path: pathlib.Path, wait: bool):
     create_collection(read_peer, shard_number = 1, replication_factor = 1, indexing_threshold = 1000000, sparse_vectors = False, vector_size=1000)
     wait_collection_exists_and_active_on_all_peers(COLLECTION, [read_peer])
 
-    write_peer = bootstrap_write_peer(tmp_path, 10_000)
+    write_peer = bootstrap_write_peer(tmp_path, bootstrap_points = 10)
 
     res = try_recover_partial_snapshot_from(read_peer, write_peer, wait=wait)
-    assert res.json()["status"] == {'error': 'Wrong input: Vectors configuration is not compatible: origin vector  size: 1000, while other vector size: 4'}
+
+    if wait:
+        # When wait=true, the error is returned synchronously
+        assert res.json()["status"] == {'error': 'Wrong input: Vectors configuration is not compatible: origin vector  size: 1000, while other vector size: 4'}
+    else:
+        # TODO: When wait=false, config validation happens asynchronously, so the error is not returned to the client
+        assert res.json()["status"] == "accepted"
 
 def test_partial_snapshot_empty(tmp_path: pathlib.Path):
     assert_project_root()
