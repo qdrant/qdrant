@@ -1273,8 +1273,8 @@ impl HNSWIndex {
 
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-
         let query_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
+        // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points = payload_index.iter_filtered_points(
             filter,
             &*id_tracker,
