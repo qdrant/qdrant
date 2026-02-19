@@ -93,7 +93,7 @@ strum = { workspace = true }
 urlencoding = { workspace = true }
 
 tracing = { workspace = true, optional = true }
-fs4 = "0.13.1"
+fs4 = { workspace = true }
 
 # AWS S3 support
 object_store = { version = "0.13.1", features = ["aws"] }

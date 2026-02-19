@@ -35,6 +35,7 @@ use segment::types::{
 };
 use semver::Version;
 use shard::count::CountRequestInternal;
+use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 use shard::retrieve::record_internal::RecordInternal;
 use shard::scroll::ScrollRequestInternal;
 use shard::search::CoreSearchRequestBatch;
@@ -55,7 +56,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CountResult,
-    OptimizationsRequestOptions, OptimizationsResponse, PointRequestInternal, UpdateResult,
+    PointRequestInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;

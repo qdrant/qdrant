@@ -4,9 +4,10 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
-use collection::operations::types::{CollectionError, OptimizationsRequestOptions};
+use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
+use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,

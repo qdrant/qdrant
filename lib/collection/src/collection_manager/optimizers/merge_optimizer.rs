@@ -1,19 +1,3 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use itertools::Itertools;
-use parking_lot::Mutex;
-use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::NonAppendableSegmentEntry as _;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
-
-use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizationPlanner, OptimizerThresholds, SegmentOptimizer,
-};
-use crate::config::CollectionParams;
-
-const BYTES_IN_KB: usize = 1024;
-
 /// Optimizer that tries to reduce number of segments until it fits configured
 /// value.
 ///
@@ -42,147 +26,73 @@ const BYTES_IN_KB: usize = 1024;
 /// - good:  [A B C]      →  ∅ X    (one segment less)
 /// - good:  [A B] [C D]  →  ∅ X Y  (one segment less)
 /// ```
-pub struct MergeOptimizer {
-    default_segments_number: usize,
-    thresholds_config: OptimizerThresholds,
-    segments_path: PathBuf,
-    collection_temp_dir: PathBuf,
-    collection_params: CollectionParams,
-    hnsw_config: HnswConfig,
-    hnsw_global_config: HnswGlobalConfig,
-    quantization_config: Option<QuantizationConfig>,
-    telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
-}
-
-impl MergeOptimizer {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        default_segments_number: usize,
-        thresholds_config: OptimizerThresholds,
-        segments_path: PathBuf,
-        collection_temp_dir: PathBuf,
-        collection_params: CollectionParams,
-        hnsw_config: HnswConfig,
-        hnsw_global_config: HnswGlobalConfig,
-        quantization_config: Option<QuantizationConfig>,
-    ) -> Self {
-        MergeOptimizer {
-            default_segments_number,
-            thresholds_config,
-            segments_path,
-            collection_temp_dir,
-            collection_params,
-            hnsw_config,
-            hnsw_global_config,
-            quantization_config,
-            telemetry_durations_aggregator: OperationDurationsAggregator::new(),
-        }
-    }
-}
-
-impl SegmentOptimizer for MergeOptimizer {
-    fn name(&self) -> &'static str {
-        "merge"
-    }
-
-    fn segments_path(&self) -> &Path {
-        self.segments_path.as_path()
-    }
-
-    fn temp_path(&self) -> &Path {
-        self.collection_temp_dir.as_path()
-    }
-
-    fn collection_params(&self) -> CollectionParams {
-        self.collection_params.clone()
-    }
-
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
-    }
-
-    fn hnsw_global_config(&self) -> &HnswGlobalConfig {
-        &self.hnsw_global_config
-    }
-
-    fn quantization_config(&self) -> Option<QuantizationConfig> {
-        self.quantization_config.clone()
-    }
-
-    fn threshold_config(&self) -> &OptimizerThresholds {
-        &self.thresholds_config
-    }
-
-    fn plan_optimizations(&self, planner: &mut OptimizationPlanner) {
-        let mut candidates = planner
-            .remaining()
-            .iter()
-            .map(|(&segment_id, segment)| {
-                let size = segment
-                    .read()
-                    .max_available_vectors_size_in_bytes()
-                    .unwrap_or_default();
-                (segment_id, size)
-            })
-            .collect_vec();
-
-        candidates.sort_by_key(|(_segment_id, size)| *size);
-        let threshold = self
-            .thresholds_config
-            .max_segment_size_kb
-            .saturating_mul(BYTES_IN_KB);
-
-        let mut first_batch = None;
-        let mut taken_candidates = 0;
-        let mut last_candidate =
-            (planner.expected_segments_number() + 2).saturating_sub(self.default_segments_number);
-        while taken_candidates < last_candidate.min(candidates.len()) {
-            let batch = candidates[taken_candidates..last_candidate.min(candidates.len())]
-                .iter()
-                .scan(0, |size_sum, &(segment_id, size)| {
-                    *size_sum += size;
-                    (*size_sum < threshold).then_some(segment_id)
-                })
-                .collect_vec();
-
-            if batch.len() < 2 {
-                return;
-            }
-            let is_first_batch = taken_candidates == 0;
-            taken_candidates += batch.len();
-            last_candidate += 1;
-            if is_first_batch && batch.len() < 3 {
-                // First batch has length 2. To guarantee that the number of
-                // segments will be reduced, we need another batch.
-                // So, hold the first batch until we find the second one.
-                first_batch = Some(batch);
-                continue;
-            }
-            if let Some(first_batch) = first_batch.take() {
-                planner.plan(first_batch);
-            }
-            planner.plan(batch);
-        }
-    }
-
-    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
-        &self.telemetry_durations_aggregator
-    }
-}
+pub use shard::optimizers::merge_optimizer::MergeOptimizer;
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::path::Path;
 
+    use itertools::Itertools;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
+    use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use segment::types::{Distance, HnswConfig, HnswGlobalConfig};
+    use shard::locked_segment::LockedSegment;
+    use shard::operations::optimization::OptimizerThresholds;
+    use shard::optimizers::config::{DenseVectorOptimizerConfig, SegmentOptimizerConfig};
+    use shard::optimizers::segment_optimizer::SegmentOptimizer;
     use shard::segment_holder::locked::LockedSegmentHolder;
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{get_merge_optimizer, random_segment};
-    use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+    use crate::collection_manager::fixtures::random_segment;
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
+
+    fn test_segment_config(dim: usize) -> SegmentOptimizerConfig {
+        let temp_dir = Builder::new().prefix("segment_cfg_dir").tempdir().unwrap();
+        let segment = build_simple_segment(temp_dir.path(), dim, Distance::Dot).unwrap();
+        let mut dense_vector = HashMap::new();
+        for vector_name in segment.segment_config.vector_data.keys() {
+            dense_vector.insert(
+                vector_name.clone(),
+                DenseVectorOptimizerConfig {
+                    on_disk: None,
+                    hnsw_config: HnswConfig::default(),
+                    quantization_config: None,
+                },
+            );
+        }
+        SegmentOptimizerConfig {
+            payload_storage_type: segment.segment_config.payload_storage_type,
+            base_vector_data: segment.segment_config.vector_data.clone(),
+            base_sparse_vector_data: segment.segment_config.sparse_vector_data.clone(),
+            dense_vector,
+            sparse_vector: Default::default(),
+        }
+    }
+
+    fn get_merge_optimizer(
+        segment_path: &Path,
+        collection_temp_dir: &Path,
+        dim: usize,
+        optimizer_thresholds: Option<OptimizerThresholds>,
+    ) -> MergeOptimizer {
+        MergeOptimizer::new(
+            5,
+            optimizer_thresholds.unwrap_or(OptimizerThresholds {
+                max_segment_size_kb: 1000,
+                memmap_threshold_kb: 100,
+                indexing_threshold_kb: 50,
+            }),
+            segment_path.to_owned(),
+            collection_temp_dir.to_owned(),
+            test_segment_config(dim),
+            Default::default(),
+            HnswGlobalConfig::default(),
+        )
+    }
 
     #[test]
     fn test_max_merge_size() {
@@ -202,15 +112,19 @@ mod tests {
 
         let locked_holder = LockedSegmentHolder::new(holder);
 
-        merge_optimizer.default_segments_number = 1;
+        merge_optimizer.set_default_segments_number_for_test(1);
 
-        merge_optimizer.thresholds_config.max_segment_size_kb = 100;
+        merge_optimizer
+            .threshold_config_mut_for_test()
+            .max_segment_size_kb = 100;
 
         let check_result_empty = merge_optimizer.plan_optimizations_for_test(&locked_holder);
 
         assert!(check_result_empty.is_empty());
 
-        merge_optimizer.thresholds_config.max_segment_size_kb = 200;
+        merge_optimizer
+            .threshold_config_mut_for_test()
+            .max_segment_size_kb = 200;
 
         let check_result = merge_optimizer.plan_optimizations_for_test(&locked_holder);
         let check_result = check_result.into_iter().exactly_one().unwrap();
@@ -343,8 +257,10 @@ mod tests {
 
         for &(default_segment_number, max_segment_size, expected) in TEST_TABLE {
             let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
-            merge_optimizer.thresholds_config.max_segment_size_kb = max_segment_size; // 1 KiB == 1 vector
-            merge_optimizer.default_segments_number = default_segment_number;
+            merge_optimizer
+                .threshold_config_mut_for_test()
+                .max_segment_size_kb = max_segment_size; // 1 KiB == 1 vector
+            merge_optimizer.set_default_segments_number_for_test(default_segment_number);
             let result = merge_optimizer
                 .plan_optimizations_for_test(&locked_holder)
                 .into_iter()

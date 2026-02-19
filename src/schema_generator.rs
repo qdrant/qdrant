@@ -17,14 +17,15 @@ use collection::operations::snapshot_ops::{
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
     CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, OptimizationsResponse, PointGroup, PointRequest, RecommendGroupsRequest,
-    RecommendRequest, RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest,
-    SearchRequest, SearchRequestBatch, UpdateResult,
+    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
+    RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
+    SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::DeleteVectors;
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde::Serialize;
+use shard::operations::optimization::OptimizationsResponse;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };

@@ -8,7 +8,7 @@ use api::grpc::qdrant::{
     GetShardRecoveryPointResponse, InitiateShardTransferRequest, UpdateShardCutoffPointRequest,
     WaitForShardStateRequest,
 };
-use collection::operations::types::OptimizationsRequestOptions;
+use shard::operations::optimization::OptimizationsRequestOptions;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::{Access, AccessRequirements, Auth, AuthType, CollectionPass};
 use tonic::{Request, Response, Status};
