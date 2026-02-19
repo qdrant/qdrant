@@ -76,7 +76,7 @@ impl VacuumOptimizer {
     /// We are only interested in indexed vectors, as they are the ones affected by soft-deletes.
     ///
     /// This finds the maximum deletion ratio for a named vector. The ratio is based on the number
-    /// of deleted vectors versus the number of indexed vector.s
+    /// of deleted vectors versus the number of indexed vectors.
     ///
     /// Returns `None` if littered ratio did not reach vacuum thresholds for no named vectors.
     fn littered_vectors_index_ratio(&self, segment: &Segment) -> Option<f64> {
