@@ -26,6 +26,7 @@ use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
 use segment::types::{SeqNumberType, ShardKey};
 use semver::Version;
+use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
@@ -40,10 +41,7 @@ use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::OperationWithClockTag;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{
-    CollectionError, CollectionResult, NodeType, OptimizationsRequestOptions,
-    OptimizationsResponse, OptimizersStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;

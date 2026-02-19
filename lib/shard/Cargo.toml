@@ -23,6 +23,7 @@ sparse = { path = "../sparse" }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }
+chrono = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -42,6 +43,7 @@ validator = { workspace = true }
 wal = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
+fs4 = { workspace = true }
 tempfile = { workspace = true }
 
 

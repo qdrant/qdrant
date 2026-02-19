@@ -61,11 +61,7 @@ impl LocalShard {
         let shard_path = self.path.clone();
 
         let segments_path = Self::segments_path(&self.path);
-        let segment_config = self
-            .collection_config
-            .read()
-            .await
-            .to_base_segment_config()?;
+        let segment_config = self.collection_config.read().await.to_base_segment_config();
 
         let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
 
