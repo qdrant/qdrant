@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::CString;
+use std::ffi::{CString, c_char};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -141,7 +141,7 @@ impl Instance {
             .iter()
             .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
             .collect();
-        let extension_names_raw: Vec<*const i8> = extensions_cstr
+        let extension_names_raw: Vec<*const c_char> = extensions_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
@@ -154,7 +154,7 @@ impl Instance {
             .iter()
             .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
             .collect();
-        let layers_raw: Vec<*const i8> = layers_cstr
+        let layers_raw: Vec<*const c_char> = layers_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
