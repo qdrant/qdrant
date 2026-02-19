@@ -154,6 +154,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       requestBody:
         description: Field name
         content:
@@ -211,6 +218,13 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/WriteOrdering"
+        - name: timeout
+          in: query
+          description: "Timeout for the operation"
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       responses: #@ response(reference("UpdateResult"))
 
   /collections/{collection_name}/cluster:
