@@ -1234,14 +1234,14 @@ impl HNSWIndex {
     fn search_plain_batched(
         &self,
         vectors: &[&QueryVector],
-        filtered_points: &[PointOffsetType],
+        filtered_points: impl Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.search_plain_iterator_batched(
             vectors,
-            filtered_points.iter().copied(),
+            filtered_points,
             top,
             params,
             vector_query_context,
@@ -1268,13 +1268,21 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let hw_counter = &vector_query_context.hardware_counter();
+        let is_stopped = &vector_query_context.is_stopped();
+
+        let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-        let filtered_points = payload_index.query_points(
+
+        let query_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
+        let filtered_points = payload_index.iter_filtered_points(
             filter,
-            &vector_query_context.hardware_counter(),
-            &vector_query_context.is_stopped(),
+            &*id_tracker,
+            &query_cardinality,
+            hw_counter,
+            is_stopped,
         );
-        self.search_plain_batched(vectors, &filtered_points, top, params, vector_query_context)
+        self.search_plain_batched(vectors, filtered_points, top, params, vector_query_context)
     }
 
     fn discovery_search_with_graph(

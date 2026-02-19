@@ -86,7 +86,7 @@ pub trait PayloadIndex {
     /// If `is_stopped` is set to true during execution, the function should return early with no results.
     fn query_points(
         &self,
-        query: &Filter,
+        filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType>;

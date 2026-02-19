@@ -950,15 +950,15 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn query_points(
         &self,
-        query: &Filter,
+        filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(query, hw_counter);
+        let query_cardinality = self.estimate_cardinality(filter, hw_counter);
         let id_tracker = self.id_tracker.borrow();
         self.iter_filtered_points(
-            query,
+            filter,
             &*id_tracker,
             &query_cardinality,
             hw_counter,
