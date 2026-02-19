@@ -301,34 +301,26 @@ async fn _do_recover_from_snapshot(
             // This peer may have been switched into recovery state before restore. If the snapshot
             // does not contain local data for this shard, revert to previous state so the replica
             // is not left stuck in `Partial`/`ManualRecovery`.
-            if let Some(previous_state) = local_states_before_recovery.get(shard_id).copied() {
-                let current_state = collection
-                    .state()
-                    .await
-                    .shards
-                    .get(shard_id)
-                    .and_then(|info| info.replicas.get(&this_peer_id))
-                    .copied();
-
-                if current_state == Some(recovery_state) {
-                    if toc.is_distributed() {
-                        toc.send_set_replica_state_proposal(
-                            collection_pass.to_string(),
-                            this_peer_id,
+            if let Some(previous_state) = local_states_before_recovery.get(shard_id).copied()
+                && previous_state != recovery_state
+            {
+                if toc.is_distributed() {
+                    toc.send_set_replica_state_proposal(
+                        collection_pass.to_string(),
+                        this_peer_id,
+                        *shard_id,
+                        previous_state,
+                        Some(recovery_state),
+                    )?;
+                } else {
+                    collection
+                        .set_shard_replica_state(
                             *shard_id,
+                            this_peer_id,
                             previous_state,
                             Some(recovery_state),
-                        )?;
-                    } else {
-                        collection
-                            .set_shard_replica_state(
-                                *shard_id,
-                                this_peer_id,
-                                previous_state,
-                                Some(recovery_state),
-                            )
-                            .await?;
-                    }
+                        )
+                        .await?;
                 }
             }
 
