@@ -163,11 +163,11 @@ impl PayloadIndex for PlainPayloadIndex {
 
     fn query_points(
         &self,
-        query: &Filter,
+        filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> Vec<PointOffsetType> {
-        let filter_context = self.filter_context(query, hw_counter);
+        let filter_context = self.filter_context(filter, hw_counter);
         let id_tracker = self.id_tracker.borrow();
         let all_points_iter = id_tracker.iter_internal();
         all_points_iter
