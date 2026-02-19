@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use segment::common::Flusher;
@@ -215,7 +216,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<SegmentRecord>> {
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let filtered_point_ids: Vec<PointIdType> = point_ids
             .iter()
             .copied()

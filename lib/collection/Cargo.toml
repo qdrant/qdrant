@@ -59,7 +59,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = { workspace = true }
 async-trait = { workspace = true }
-arc-swap = "1.8.1"
+arc-swap = "1.8.2"
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { workspace = true }
@@ -71,7 +71,6 @@ actix-files = { workspace = true }
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
-io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false }

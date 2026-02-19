@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap::MmapFlusher;
 use common::typelevel::TBool;
 use common::types::PointOffsetType;
-use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;

@@ -15,7 +15,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use common::load_concurrency::LoadConcurrencyConfig;
-use memory::madvise;
+use common::mmap;
 use schemars::JsonSchema;
 use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
@@ -91,7 +91,7 @@ pub struct StorageConfig {
     #[serde(default)]
     pub hnsw_global_config: HnswGlobalConfig,
     #[serde(default = "default_mmap_advice")]
-    pub mmap_advice: madvise::Advice,
+    pub mmap_advice: mmap::Advice,
     #[serde(default)]
     pub node_type: NodeType,
     #[serde(default)]
@@ -145,8 +145,8 @@ fn default_snapshots_path() -> PathBuf {
     PathBuf::from(DEFAULT_SNAPSHOTS_PATH)
 }
 
-const fn default_mmap_advice() -> madvise::Advice {
-    madvise::Advice::Random
+const fn default_mmap_advice() -> mmap::Advice {
+    mmap::Advice::Random
 }
 
 fn validate_path(path: &Path) -> Result<(), ValidationError> {

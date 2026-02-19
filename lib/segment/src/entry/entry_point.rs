@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use uuid::Uuid;
@@ -21,9 +22,9 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
-    VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations which can be performed with non-appendable Segment or Segment-like entity.
@@ -91,7 +92,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<SegmentRecord>>;
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

@@ -6,11 +6,11 @@ use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::ext::BitSliceExt as _;
+use common::mmap::{
+    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
+};
 use common::types::PointOffsetType;
 use fs_err::File;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use uuid::Uuid;
 
 use crate::common::Flusher;

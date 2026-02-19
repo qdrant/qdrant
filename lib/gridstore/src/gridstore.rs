@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
+use common::fs::atomic_save_json;
 use common::is_alive_lock::IsAliveLock;
 use fs_err as fs;
 use fs_err::File;
-use io::file_operations::atomic_save_json;
 use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use parking_lot::RwLock;
@@ -617,8 +617,7 @@ impl<V> Gridstore<V> {
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            let mut bitmask_guard = bitmask.upgradable_read();
-            bitmask_guard.flush()?;
+            bitmask.read().flush()?;
             for page in pages.read().iter() {
                 page.flush()?;
             }
@@ -629,21 +628,25 @@ impl<V> Gridstore<V> {
                 // Nothing to do flush here
                 return Ok(());
             }
+
             // Update all free blocks in the bitmask
-            bitmask_guard.with_upgraded(|guard| {
-                for (page_id, pointer_group) in
-                    &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
-                {
-                    let local_ranges = pointer_group.map(|pointer| {
-                        let start = pointer.block_offset;
-                        let end = pointer.block_offset
-                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
-                        start as usize..end as usize
-                    });
-                    guard.mark_blocks_batch(page_id, local_ranges, false);
-                }
-            });
-            bitmask_guard.flush()?;
+            {
+                let mut bitmask_guard = bitmask.upgradable_read();
+                bitmask_guard.with_upgraded(|guard| {
+                    for (page_id, pointer_group) in
+                        &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+                    {
+                        let local_ranges = pointer_group.map(|pointer| {
+                            let start = pointer.block_offset;
+                            let end = pointer.block_offset
+                                + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
+                            start as usize..end as usize
+                        });
+                        guard.mark_blocks_batch(page_id, local_ranges, false);
+                    }
+                });
+                bitmask_guard.flush()?;
+            }
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);

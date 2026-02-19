@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
+use common::fs::safe_delete_in_tmp;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
-use io::safe_delete::safe_delete_in_tmp;
 use log::info;
 use shard::snapshots::snapshot_data::SnapshotData;
 use storage::content_manager::alias_mapping::AliasPersistence;

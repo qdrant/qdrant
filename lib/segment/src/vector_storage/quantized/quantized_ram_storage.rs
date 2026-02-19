@@ -2,11 +2,11 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::OneshotFile;
+use common::mmap::MmapFlusher;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::File;
-use memory::fadvise::OneshotFile;
-use memory::mmap_type::MmapFlusher;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;

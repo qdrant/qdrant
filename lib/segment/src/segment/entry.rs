@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::safe_delete_with_suffix;
 use common::types::TelemetryDetail;
-use io::safe_delete::safe_delete_with_suffix;
 use uuid::Uuid;
 
 use super::Segment;
@@ -30,9 +30,9 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
+    PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentType, SeqNumberType, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::VectorStorage;
 
@@ -173,7 +173,7 @@ impl NonAppendableSegmentEntry for Segment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<SegmentRecord>> {
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let mut records = AHashMap::with_capacity(point_ids.len());
 
         let mut update_record_vector =
@@ -244,7 +244,7 @@ impl NonAppendableSegmentEntry for Segment {
             point_record.payload = payload;
         }
 
-        Ok(records.into_values().collect())
+        Ok(records)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType>> {

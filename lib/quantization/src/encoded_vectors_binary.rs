@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::atomic_save_json;
+use common::mmap::MmapFlusher;
+#[expect(deprecated, reason = "legacy code")]
+use common::mmap::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use io::file_operations::atomic_save_json;
-#[expect(deprecated, reason = "legacy code")]
-use memory::mmap_ops::{transmute_from_u8_to_slice, transmute_to_u8_slice};
-use memory::mmap_type::MmapFlusher;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 

@@ -45,7 +45,7 @@ pub fn retrieve_blocking(
             *version_entry.or_default() = version;
         }
 
-        for record in segment.retrieve(
+        for (id, record) in segment.retrieve(
             &newer_version_points,
             with_payload,
             with_vector,
@@ -53,7 +53,7 @@ pub fn retrieve_blocking(
             is_stopped,
         )? {
             // We expect all points to be found since we already checked their versions
-            point_records.insert(record.id, RecordInternal::from(record));
+            point_records.insert(id, RecordInternal::from(record));
             applied += 1;
         }
 

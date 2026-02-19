@@ -3,11 +3,11 @@ use std::io::{self, BufRead as _, BufReader, Lines};
 use std::mem::size_of;
 use std::path::Path;
 
+use common::mmap::{Advice, AdviceSetting};
+#[expect(deprecated, reason = "legacy code")]
+use common::mmap::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
 use fs_err::File;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting};
-#[expect(deprecated, reason = "legacy code")]
-use memory::mmap_ops::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
 use validator::ValidationErrors;
 
 use crate::common::sparse_vector::SparseVector;

@@ -19,6 +19,9 @@ use std::time::Duration;
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
+use ::common::fs::{FsCheckResult, check_fs_info, check_mmap_functionality};
+use ::common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
+use ::common::mmap::advice::set_global;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -26,8 +29,6 @@ use collection::profiling::interface::init_requests_profile_collector;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use fs_err as fs;
-use memory::checkfs::{check_fs_info, check_mmap_functionality};
-use memory::mmap_ops::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -169,7 +170,7 @@ fn main() -> anyhow::Result<()> {
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
-    memory::madvise::set_global(settings.storage.mmap_advice);
+    set_global(settings.storage.mmap_advice);
     segment::vector_storage::common::set_async_scorer(
         settings
             .storage
@@ -227,10 +228,10 @@ fn main() -> anyhow::Result<()> {
     // Check if the filesystem is compatible with Qdrant
     let mmaps_working;
     match check_fs_info(&settings.storage.storage_path) {
-        memory::checkfs::FsCheckResult::Good => {
+        FsCheckResult::Good => {
             mmaps_working = true;
         }
-        memory::checkfs::FsCheckResult::Unknown(details) => {
+        FsCheckResult::Unknown(details) => {
             match check_mmap_functionality(&settings.storage.storage_path) {
                 Ok(true) => {
                     log::warn!(
@@ -255,7 +256,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        memory::checkfs::FsCheckResult::Bad(details) => {
+        FsCheckResult::Bad(details) => {
             log::error!(
                 "Filesystem check failed for storage path {}. Details: {details}",
                 settings.storage.storage_path.display(),

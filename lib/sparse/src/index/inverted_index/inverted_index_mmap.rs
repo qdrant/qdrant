@@ -4,17 +4,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use io::file_operations::{atomic_save_json, read_json};
-use io::storage_version::StorageVersion;
-use memmap2::{Mmap, MmapMut};
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::mmap::{Advice, AdviceSetting, Madviseable};
 #[expect(deprecated, reason = "legacy code")]
-use memory::mmap_ops::{
+use common::mmap::{
     create_and_ensure_length, open_read_mmap, open_write_mmap, transmute_from_u8,
     transmute_from_u8_to_slice, transmute_to_u8, transmute_to_u8_slice,
 };
+use common::storage_version::StorageVersion;
+use common::types::PointOffsetType;
+use memmap2::{Mmap, MmapMut};
 use serde::{Deserialize, Serialize};
 
 use super::INDEX_FILE_NAME;

@@ -11,8 +11,9 @@ use fs_err as fs;
 #[cfg(fs_type_check_supported)]
 use nix::sys::statfs::statfs;
 
-use crate::madvise::{Advice, AdviceSetting};
-use crate::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
+use crate::mmap::{
+    Advice, AdviceSetting, create_and_ensure_length, open_read_mmap, open_write_mmap,
+};
 
 #[derive(Debug)]
 pub enum FsCheckResult {
@@ -29,7 +30,7 @@ const MAGIC_BYTES_POSITION: usize = MAGIC_FILE_SIZE / 2; // write in the middle
 const MAGIC_FILE_NAME: &str = ".qdrant_fs_check";
 
 #[derive(Debug, PartialEq)]
-pub enum FsType {
+enum FsType {
     Ext234,
     Btrfs,
     Xfs,
@@ -121,7 +122,7 @@ fn get_filesystem_type(path: impl AsRef<Path>) -> Result<FsType, String> {
 
 /// Check filesystem information to identify known non-POSIX filesystems
 #[cfg(fs_type_check_supported)]
-pub fn _check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
+fn _check_fs_info(path: impl AsRef<Path>) -> FsCheckResult {
     let path = path.as_ref();
 
     let Ok(fs_type) = get_filesystem_type(path) else {

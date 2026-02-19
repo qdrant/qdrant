@@ -12,12 +12,12 @@ use api::rest::{
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::ext::OptionExt;
+use common::fs::FileStorageError;
 use common::progress_tracker::ProgressTree;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use common::{defaults, save_on_disk};
-use io::file_operations::FileStorageError;
 use issues::IssueRecord;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;

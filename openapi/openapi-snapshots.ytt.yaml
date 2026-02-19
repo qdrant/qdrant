@@ -255,3 +255,44 @@ paths:
               schema:
                 type: string
                 format: binary
+
+  /collections/{collection_name}/shards/{shard_id}/snapshot:
+    get:
+      tags:
+        - Snapshots
+      summary: Download shard snapshot
+      description: Stream the current state of a shard as a snapshot file
+      operationId: stream_shard_snapshot
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+        - name: shard_id
+          in: path
+          description: Id of the shard
+          required: true
+          schema:
+            type: integer
+      responses:
+        default:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        4XX:
+          description: error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        '200':
+          description: Snapshot file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary

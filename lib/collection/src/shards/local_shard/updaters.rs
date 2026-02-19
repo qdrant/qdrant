@@ -73,9 +73,16 @@ impl LocalShard {
             &self.shared_storage_config.hnsw_global_config,
             &config.quantization_config,
         );
+        let prevent_unoptimized_threshold_kb = config
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or_default()
+            .then(|| config.optimizer_config.get_indexing_threshold_kb());
+
         update_handler.optimizers = new_optimizers.clone();
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
+        update_handler.prevent_unoptimized_threshold_kb = prevent_unoptimized_threshold_kb;
         update_handler.run_workers(update_receiver);
 
         self.optimizers.store(new_optimizers);

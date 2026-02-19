@@ -358,6 +358,12 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     ),
+    "stream_shard_snapshot": EndpointAccess(
+        False,
+        True,
+        True,
+        "GET /collections/{collection_name}/shards/{shard_id}/snapshot",
+    ),
     ### Full Snapshots ###
     "list_full_snapshots": EndpointAccess(
         True,
@@ -1396,6 +1402,15 @@ def test_download_shard_snapshot(shard_snapshot_name: str):
             "collection_name": COLL_NAME,
             "shard_id": SHARD_ID,
             "snapshot_name": shard_snapshot_name,
+        },
+    )
+
+def test_stream_shard_snapshot():
+    check_access(
+        "stream_shard_snapshot",
+        path_params={
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
         },
     )
 

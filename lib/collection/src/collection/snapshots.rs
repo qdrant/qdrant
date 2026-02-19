@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use common::fs::read_json;
+use common::storage_version::StorageVersion as _;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
 use fs_err::File;
-use io::file_operations::read_json;
-use io::storage_version::StorageVersion as _;
 use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -127,7 +127,7 @@ impl Collection {
         // Save collection config and version
         tar.append_data(
             CollectionVersion::current_raw().as_bytes().to_vec(),
-            Path::new(io::storage_version::VERSION_FILE),
+            Path::new(common::storage_version::VERSION_FILE),
         )
         .await?;
 

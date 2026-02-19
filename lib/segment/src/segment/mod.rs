@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
-use io::storage_version::StorageVersion;
+use common::storage_version::StorageVersion;
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;

@@ -4,10 +4,10 @@ use std::path::Path;
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::{atomic_save_json, read_json};
 use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use io::file_operations::{atomic_save_json, read_json};
 
 use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{

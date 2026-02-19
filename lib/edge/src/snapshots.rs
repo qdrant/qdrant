@@ -38,18 +38,18 @@ impl EdgeShard {
         } = merge_plan;
 
         for (move_file_from, move_file_to) in move_files {
-            io::move_files::move_file(&move_file_from, &move_file_to)?;
+            common::fs::move_file(&move_file_from, &move_file_to)?;
         }
 
         for (replace_dir_from, replace_dir_to) in replace_directories {
             if replace_dir_to.exists() {
                 fs::remove_dir_all(&replace_dir_to)?;
             }
-            io::move_files::move_dir(&replace_dir_from, &replace_dir_to)?;
+            common::fs::move_dir(&replace_dir_from, &replace_dir_to)?;
         }
 
         for (merge_dir_from, merge_dir_to) in merge_directories {
-            io::move_files::move_dir(&merge_dir_from, &merge_dir_to)?;
+            common::fs::move_dir(&merge_dir_from, &merge_dir_to)?;
         }
 
         for delete_file in delete_files {

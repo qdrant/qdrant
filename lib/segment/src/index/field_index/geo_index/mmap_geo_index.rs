@@ -2,14 +2,13 @@ use std::path::{Path, PathBuf};
 
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::mmap::{
+    AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
+};
 use common::types::PointOffsetType;
 use fs_err as fs;
-use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;

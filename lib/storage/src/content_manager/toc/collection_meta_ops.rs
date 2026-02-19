@@ -9,7 +9,7 @@ use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use io::safe_delete::safe_delete_in_tmp;
+use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
 use crate::common::utils::try_unwrap_with_timeout_async;

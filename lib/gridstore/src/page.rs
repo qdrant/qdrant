@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use common::fs::clear_disk_cache;
+use common::mmap::{
+    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, create_and_ensure_length,
+    open_read_mmap, open_write_mmap,
+};
 use fs_err as fs;
 use memmap2::{Mmap, MmapMut};
-use memory::fadvise::clear_disk_cache;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::{
-    MULTI_MMAP_IS_SUPPORTED, create_and_ensure_length, open_read_mmap, open_write_mmap,
-};
 
 use crate::Result;
 use crate::error::GridstoreError;

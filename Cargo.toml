@@ -121,8 +121,6 @@ raft-proto = { version = "0.7.0", features = [
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
-io = { path = "lib/common/io" }
-memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment", default-features = false }
 shard = { path = "lib/shard", default-features = false }
@@ -219,16 +217,16 @@ bytemuck = { version = "1.25.0", features = [
 bytes = "1.11.1"
 cc = "1.2"
 chrono = { version = "0.4.43", features = ["serde"] }
-clap = { version = "4.5.57", features = ["derive", "env"] }
+clap = { version = "4.5.58", features = ["derive", "env"] }
 criterion = "0.8.2"
 data-encoding = "2.10.0"
 delegate = "0.13.5"
 ecow = { version = "0.2.6", features = ["serde"] }
 env_logger = "0.11"
 fnv = "1.0"
-fs-err = { version = "3.2.2", features = ["tokio"] }
+fs-err = { version = "3.3.0", features = ["tokio"] }
 fs_extra = "1.3.0"
-futures = "0.3.31"
+futures = "0.3.32"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"
 half = { version = "2.7.1", features = [
@@ -241,7 +239,7 @@ humantime = "2.3.0"
 indexmap = { version = "2", features = ["serde"] }
 url = { version = "2.5.8", features = ["serde"] }
 urlencoding = "2.1.3"
-indicatif = { version = "0.18.3", features = ["rayon"] }
+indicatif = { version = "0.18.4", features = ["rayon"] }
 integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.29"
@@ -251,7 +249,7 @@ nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
 ordered-float = { version = "5.1.0", features = ["serde", "schemars"] }
 rayon = "1.11.0"
-parking_lot = { version = "0.12.5", features = ["deadlock_detection", "serde"] }
+parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.15.0", features = ["flamegraph", "prost-codec"] }
 proptest = { version = "1.10.0", default-features = false, features = ["std"] }
@@ -297,9 +295,9 @@ tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
-uuid = { version = "1.20", features = ["v4", "serde"] }
+uuid = { version = "1.21", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "2209eb2c4a359d9c32f63d868c580df360efa4a9" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "c07fb56ebc8120ebe4e3c602d31ce98f356f4676" }
 zerocopy = { version = "0.8.39", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"

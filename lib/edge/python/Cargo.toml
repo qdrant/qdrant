@@ -39,5 +39,5 @@ version = "2.1"
 features = ["into"]
 
 [dependencies.pyo3]
-version = "0.28.0"
+version = "0.28.1"
 features = ["uuid"]
