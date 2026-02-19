@@ -46,6 +46,7 @@ jobs:
         with:
           bin: qdrant
           target: ${{ matrix.target }}
+          features: rocksdb
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Debian Package
         if: matrix.target == 'x86_64-unknown-linux-musl'
