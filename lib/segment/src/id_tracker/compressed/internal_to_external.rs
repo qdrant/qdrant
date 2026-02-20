@@ -7,7 +7,7 @@ use crate::types::PointIdType;
 /// A compressed representation of `internal_to_external: Vec<PointIdType>`.
 ///
 /// The main idea is instead of `PointIdType` enum (which is 24 bytes) we use one
-/// Vec<u128> and bitmask which defines if the id is u64 or UUID (which is ~16 bytes).
+/// `Vec<u128>` and bitmask which defines if the id is u64 or UUID (which is ~16 bytes).
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct CompressedInternalToExternal {
     data: Vec<u128>,

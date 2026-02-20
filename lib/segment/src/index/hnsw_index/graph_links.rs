@@ -72,11 +72,11 @@ pub enum GraphLinksFormatParam<'a> {
 /// This trait lets the [`serialize_graph_links`] to access vector values.
 pub trait GraphLinksVectors {
     /// Base vectors will be included once per point on level 0.
-    /// The layout of each vector must correspond to [`VectorLayout::base`].
+    /// The layout of each vector must correspond to [`GraphLinksVectorsLayout::base`].
     fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>>;
 
     /// Link vectors will be included for each link per point.
-    /// The layout of each vector must correspond to [`VectorLayout::link`].
+    /// The layout of each vector must correspond to [`GraphLinksVectorsLayout::link`].
     fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>>;
 
     /// Get the layout of base and link vectors.

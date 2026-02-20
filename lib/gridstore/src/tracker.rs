@@ -449,7 +449,7 @@ where
 
     /// Writes the accumulated pending updates to storage and flushes it
     ///
-    /// Changes should be captured from [`self.pending_updates`]. This method may therefore flush
+    /// Changes should be captured from [`Self::pending_updates`]. This method may therefore flush
     /// an earlier version of changes.
     ///
     /// This updates the list of pending updates inside this tracker for each given update that is

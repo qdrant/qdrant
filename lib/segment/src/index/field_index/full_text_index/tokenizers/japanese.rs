@@ -5,7 +5,7 @@ use vaporetto::{Model, Predictor, Sentence};
 
 use super::TokensProcessor;
 
-/// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
+/// Vaporetto prediction model. Source: <https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0>
 const MODEL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tokenizer/bccwj-suw_c1.0.model"

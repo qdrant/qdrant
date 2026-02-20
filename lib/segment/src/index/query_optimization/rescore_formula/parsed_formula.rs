@@ -182,7 +182,7 @@ impl ParsedExpression {
     /// Transforms the constant part of the decay function into a single `lambda` value.
     ///
     /// Graphical representation of the formulas:
-    /// https://www.desmos.com/calculator/htg0vrfmks
+    /// <https://www.desmos.com/calculator/htg0vrfmks>
     pub fn decay_params_to_lambda(
         midpoint: Option<f32>,
         scale: Option<f32>,

@@ -214,7 +214,7 @@ impl ForwardProxyShard {
     /// Read a batch of points to transfer to the remote shard
     ///
     /// This function is optimized for reading and transferring 100% of the points in this shard
-    /// without filtering. If you need to filter by hash ring, use [`read_batch_with_hashring`]
+    /// without filtering. If you need to filter by hash ring, use [`Self::read_batch_with_hashring`]
     /// instead.
     ///
     /// Returns batch of points and new point offset. The new point offset can be used to start the
@@ -266,7 +266,7 @@ impl ForwardProxyShard {
     /// may be a bit smaller or larger.
     ///
     /// It is optimized for reading and transferring only a fraction of the points in this shard by
-    /// using a hash ring. If you need to read and transfer 100% of the points, use [`read_batch`]
+    /// using a hash ring. If you need to read and transfer 100% of the points, use [`Self::read_batch`]
     /// instead.
     ///
     /// Returns batch of points and new point offset. The new point offset can be used to start the

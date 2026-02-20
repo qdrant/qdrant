@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 
 use crate::types::SeqNumberType;
 
-/// Compressed representation of Vec<SeqNumberType>
+/// Compressed representation of `Vec<SeqNumberType>`
 /// Which takes advantage of the fact that the sequence numbers are likely to be < 2**32
 ///
 /// Implements a required subset of the Vec API:

@@ -650,7 +650,7 @@ impl SegmentHolder {
     ///
     /// # Warning
     ///
-    /// This function must not be used to apply point deletions, and [`apply_points`] must be used
+    /// This function must not be used to apply point deletions, and [`Self::apply_points`] must be used
     /// instead. There are two reasons for this:
     ///
     /// 1. moving a point first and deleting it after is unnecessary overhead.

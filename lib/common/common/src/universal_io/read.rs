@@ -11,7 +11,7 @@ pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     where
         Self: Sized;
 
-    /// Prefer [`read_batch`] if you need high performance.
+    /// Prefer [`Self::read_batch`] if you need high performance.
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
 
     /// Read the entire file in one logical access.

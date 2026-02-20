@@ -116,7 +116,7 @@ impl Context {
     /// It's used to synchronize access to buffers between different shaders.
     /// By Vulkan specification, resources between different shaders/transfers must be synchronized.
     /// Example of compute shader sync:
-    /// https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#compute-to-compute-dependencies
+    /// <https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#compute-to-compute-dependencies>
     /// In practice, we use `context.wait_finish()` to synchronize between different shaders.
     /// But, for additional safety, we have this `barrier_buffers` to synchronize access to buffers.
     pub fn barrier_buffers(&mut self, buffers: &[Arc<Buffer>]) -> GpuResult<()> {

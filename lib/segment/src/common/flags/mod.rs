@@ -1,4 +1,4 @@
-//! Different flavors of flags structures, akin to a Vec<bool>, but persistent and efficient.
+//! Different flavors of flags structures, akin to a `Vec<bool>`, but persistent and efficient.
 //!
 //! Here's a brief overview of the different flavors of flags structures:
 //! - `dynamic_mmap_flags`: Base implementation of storage in mmapped files.

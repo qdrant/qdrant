@@ -85,11 +85,11 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 /// To improve scoring efficiency, we reorganize the data using bit-level transposition:
 ///
 /// 1. Take the encoded scalar vector [scalar_1, scalar_2, ..., scalar_n]
-/// 2. Divide into batches of size sizeof::<TBitsStoreType>() = N:
+/// 2. Divide into batches of size `sizeof::<TBitsStoreType>()` = N:
 ///    [[scalar_1, scalar_2, ..., scalar_N], [scalar_N+1, ...], ...]
 /// 3. Transpose bit positions within each batch:
-///    - Store all first bits: [scalar_1[0], scalar_2[0], ..., scalar_N[0]]
-///    - Store all second bits: [scalar_1[1], scalar_2[1], ..., scalar_N[1]]
+///    - Store all first bits: \[scalar_1\[0\], scalar_2\[0\], ..., scalar_N\[0\]\]
+///    - Store all second bits: \[scalar_1\[1\], scalar_2\[1\], ..., scalar_N\[1\]\]
 ///    - Continue for all bit positions...
 ///
 /// SCORING ADVANTAGE:
@@ -97,12 +97,12 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
 /// - Extract a single TBitsStoreType value from the BQ vector
 /// - Perform N parallel operations with corresponding scalar bits
 /// - Use shift operations to compute the final score:
-///   (scalar_1[0] ^ bq_vector[0] + ) << 0 +
-///   (scalar_1[0] ^ bq_vector[0] + ) << 1 +
-///   (scalar_1[0] ^ bq_vector[0] + ) << 2 ...
+///   (scalar_1\[0\] ^ bq_vector\[0\] + ) << 0 +
+///   (scalar_1\[0\] ^ bq_vector\[0\] + ) << 1 +
+///   (scalar_1\[0\] ^ bq_vector\[0\] + ) << 2 ...
 ///
 /// This eliminates the need to extract individual bits from BQ vectors during scoring.
-/// This idea was taken from http://arxiv.org/pdf/2405.12497, see Figure 2.
+/// This idea was taken from <http://arxiv.org/pdf/2405.12497>, see Figure 2.
 pub struct EncodedScalarVector<TBitsStoreType: BitsStoreType> {
     pub encoded_vector: Vec<TBitsStoreType>,
 }

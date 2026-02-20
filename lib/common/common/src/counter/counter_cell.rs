@@ -64,7 +64,7 @@ impl CounterCell {
     }
 
     /// Creates a write-back counter for best performance possible.
-    /// For more information on when and why to use, see [`WriteBackCounterCell`]
+    /// For more information on when and why to use, see [`WritebackCounterCell`]
     #[inline]
     pub fn write_back_counter(&self) -> WritebackCounterCell<'_> {
         WritebackCounterCell::new(self)
@@ -130,7 +130,7 @@ impl<'a> OptionalCounterCell<'a> {
 /// Because this writeback counter only writes its values into the original cell when dropped, this is
 /// not suitable if you directly need to read from a `CounterCell` within the same scope. This should
 /// however avoided as much as possible, because these structures are for collecting measurements and should
-/// be read from the initial [`HwMeasurementAcc`].
+/// be read from the initial [`super::hardware_accumulator::HwMeasurementAcc`].
 pub struct WritebackCounterCell<'a> {
     cell: &'a CounterCell,
     counter: usize,

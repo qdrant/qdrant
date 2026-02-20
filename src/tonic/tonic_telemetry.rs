@@ -10,11 +10,11 @@ use crate::common::telemetry_ops::requests_telemetry::{
     TonicTelemetryCollector, TonicWorkerTelemetryCollector,
 };
 
-/// Based on https://grpc.io/docs/guides/status-codes/
+/// Based on <https://grpc.io/docs/guides/status-codes/>
 /// Default gRPC status code for all responses (0 = OK)
 const DEFAULT_SUCCESS_GRPC_STATUS_CODE: i32 = 0;
 
-/// Based on https://grpc.io/docs/guides/status-codes/
+/// Based on <https://grpc.io/docs/guides/status-codes/>
 /// Default gRPC status code for errors (2 = UNKNOWN)
 const DEFAULT_FAILURE_GRPC_STATUS_CODE: i32 = 2;
 

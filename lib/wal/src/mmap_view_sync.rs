@@ -6,7 +6,7 @@ use std::sync::Arc;
 use fs_err::File;
 use memmap2::{MmapMut, MmapOptions};
 
-/// ported from https://github.com/danburkert/memmap-rs in version 0.5.2
+/// ported from <https://github.com/danburkert/memmap-rs> in version 0.5.2
 ///
 /// A thread-safe view of a memory map.
 ///

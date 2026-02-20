@@ -14,7 +14,7 @@ pub struct EntryGenerator {
 
     /// Gamma(shape=1.25, scale=25.6) distribution for generating entry sizes.
     /// Produces values with a mean of 32 bytes and a median of 24 bytes. See
-    /// http://wolfr.am/8r3vGRkZ.
+    /// <http://wolfr.am/8r3vGRkZ>.
     dist: rand_distr::Gamma<f32>,
 
     remaining_size: usize,

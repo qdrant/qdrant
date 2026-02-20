@@ -103,7 +103,7 @@ impl<V: MmapPostingValue> MmapPostings<V> {
             .map(|(header, _)| header)
     }
 
-    /// Create PostingListView<V> from the given header
+    /// Create [`PostingListView<V>`] from the given header
     ///
     /// Assume the following layout:
     ///
