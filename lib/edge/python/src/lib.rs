@@ -75,6 +75,13 @@ mod qdrant_edge {
     #[pymodule_export]
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
     #[pymodule_export]
+    use super::types::payload_schema::{
+        PyBoolIndexParams, PyDatetimeIndexParams, PyFloatIndexParams, PyGeoIndexParams,
+        PyIntegerIndexParams, PyKeywordIndexParams, PyLanguage, PyPayloadSchemaType,
+        PySnowballLanguage, PySnowballParams, PyStopwordsSet, PyTextIndexParams, PyTokenizerType,
+        PyUuidIndexParams,
+    };
+    #[pymodule_export]
     use super::types::query::{
         PyContextPair, PyContextQuery, PyDiscoverQuery, PyFeedbackItem, PyFeedbackNaiveQuery,
         PyNaiveFeedbackCoefficients, PyPayloadSelectorInterface, PyQueryInterface,
