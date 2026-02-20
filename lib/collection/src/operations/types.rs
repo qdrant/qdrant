@@ -914,6 +914,8 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk space: {description}")]
+    OutOfDisk { description: String },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
     #[error("Precondition failed: {description}")]
@@ -1052,6 +1054,12 @@ impl CollectionError {
         }
     }
 
+    pub fn out_of_disk(description: impl Into<String>) -> Self {
+        Self::OutOfDisk {
+            description: description.into(),
+        }
+    }
+
     /// Returns true if the error is transient and the operation can be retried.
     /// Returns false if the error is not transient and the operation should fail on all replicas.
     pub fn is_transient(&self) -> bool {
@@ -1061,6 +1069,7 @@ impl CollectionError {
             Self::Timeout { .. } => true,
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
+            Self::OutOfDisk { .. } => true,
             Self::PreConditionFailed { .. } => true,
             Self::ShardUnavailable { .. } => true,
             // Not transient
@@ -1088,6 +1097,10 @@ impl CollectionError {
             Self::PointNotFound { .. } => true,
             _ => false,
         }
+    }
+
+    pub fn is_out_of_disk(&self) -> bool {
+        matches!(self, Self::OutOfDisk { .. })
     }
 }
 
@@ -1138,6 +1151,7 @@ impl From<OperationError> for CollectionError {
             OperationError::OutOfMemory { description, free } => {
                 Self::OutOfMemory { description, free }
             }
+            OperationError::OutOfDisk { description } => Self::OutOfDisk { description },
             OperationError::Timeout { description } => Self::Timeout { description },
             OperationError::InconsistentStorage { .. } => Self::ServiceError {
                 error: format!("{err}"),
@@ -1217,9 +1231,17 @@ impl From<JsonError> for CollectionError {
 
 impl From<std::io::Error> for CollectionError {
     fn from(err: std::io::Error) -> Self {
-        CollectionError::ServiceError {
-            error: format!("File IO error: {err}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
+        if err.kind() == std::io::ErrorKind::StorageFull
+            || err.kind() == std::io::ErrorKind::FileTooLarge
+        {
+            CollectionError::OutOfDisk {
+                description: format!("File IO error: {err}"),
+            }
+        } else {
+            CollectionError::ServiceError {
+                error: format!("File IO error: {err}"),
+                backtrace: Some(Backtrace::force_capture().to_string()),
+            }
         }
     }
 }
@@ -1364,11 +1386,21 @@ impl From<cancel::Error> for CollectionError {
 
 impl From<tempfile::PathPersistError> for CollectionError {
     fn from(err: tempfile::PathPersistError) -> Self {
-        Self::service_error(format!(
-            "failed to persist temporary file path {}: {}",
-            err.path.display(),
-            err.error,
-        ))
+        if err.error.kind() == std::io::ErrorKind::StorageFull
+            || err.error.kind() == std::io::ErrorKind::FileTooLarge
+        {
+            Self::out_of_disk(format!(
+                "failed to persist temporary file path {}: {}",
+                err.path.display(),
+                err.error,
+            ))
+        } else {
+            Self::service_error(format!(
+                "failed to persist temporary file path {}: {}",
+                err.path.display(),
+                err.error,
+            ))
+        }
     }
 }
 

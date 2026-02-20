@@ -64,8 +64,8 @@ impl ShardOperation for LocalShard {
             .await?
             .unwrap_or(false)
         {
-            return Err(CollectionError::service_error(
-                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            return Err(CollectionError::out_of_disk(
+                "No space left on device: WAL buffer size exceeds available disk space",
             ));
         }
 

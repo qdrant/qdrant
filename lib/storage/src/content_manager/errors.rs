@@ -161,6 +161,10 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
+            CollectionError::OutOfDisk { .. } => StorageError::ServiceError {
+                description: overriding_description,
+                backtrace: None,
+            },
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: overriding_description,
             },
@@ -220,6 +224,10 @@ impl From<CollectionError> for StorageError {
                 StorageError::from_inconsistent_shard_failure(*error, full_description)
             }
             CollectionError::OutOfMemory { .. } => StorageError::ServiceError {
+                description: format!("{err}"),
+                backtrace: None,
+            },
+            CollectionError::OutOfDisk { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
                 backtrace: None,
             },
