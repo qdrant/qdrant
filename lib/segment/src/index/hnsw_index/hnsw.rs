@@ -38,6 +38,7 @@ use crate::common::operation_time_statistics::{
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -1264,6 +1265,7 @@ impl HNSWIndex {
         &self,
         vectors: &[&QueryVector],
         filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
@@ -1273,12 +1275,11 @@ impl HNSWIndex {
 
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
-        let query_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points = payload_index.iter_filtered_points(
             filter,
             &*id_tracker,
-            &query_cardinality,
+            query_cardinality,
             hw_counter,
             is_stopped,
         );
@@ -1444,6 +1445,10 @@ impl VectorIndex for HNSWIndex {
                 // depending on the amount of filtered-out points the optimal strategy could be
                 // - to retrieve possible points and score them after
                 // - to use HNSW index with filtering condition
+                let hw_counter = query_context.hardware_counter();
+                let payload_index = self.payload_index.borrow();
+                let query_point_cardinality =
+                    payload_index.estimate_cardinality(query_filter, &hw_counter);
 
                 // if exact search is requested, we should not use HNSW index
                 if exact || is_hnsw_disabled {
@@ -1458,41 +1463,38 @@ impl VectorIndex for HNSWIndex {
                     return self.search_vectors_plain(
                         vectors,
                         query_filter,
+                        &query_point_cardinality,
                         top,
                         params_ref,
                         query_context,
                     );
                 }
 
-                let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
                 let available_vector_count = vector_storage.available_vector_count();
 
-                let hw_counter = query_context.hardware_counter();
-
-                let query_point_cardinality =
-                    payload_index.estimate_cardinality(query_filter, &hw_counter);
-                let query_cardinality = adjust_to_available_vectors(
+                let adjusted_query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
                     id_tracker.available_point_count(),
                 );
 
-                if query_cardinality.max < self.config.full_scan_threshold {
+                if adjusted_query_cardinality.max < self.config.full_scan_threshold {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     return self.search_vectors_plain(
                         vectors,
                         query_filter,
+                        &adjusted_query_cardinality,
                         top,
                         params,
                         query_context,
                     );
                 }
 
-                if query_cardinality.min > self.config.full_scan_threshold {
+                if adjusted_query_cardinality.min > self.config.full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
@@ -1523,7 +1525,14 @@ impl VectorIndex for HNSWIndex {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    self.search_vectors_plain(vectors, query_filter, top, params, query_context)
+                    self.search_vectors_plain(
+                        vectors,
+                        query_filter,
+                        &adjusted_query_cardinality,
+                        top,
+                        params,
+                        query_context,
+                    )
                 }
             }
         }
