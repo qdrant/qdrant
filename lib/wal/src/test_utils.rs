@@ -1,10 +1,8 @@
-use log::info;
-use rand::Rng;
-use std::env;
-use std::fmt;
+use std::{env, fmt};
 
+use log::info;
 use rand;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, StandardUniform};
 
 use crate::segment;

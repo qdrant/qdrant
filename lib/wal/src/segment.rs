@@ -1,20 +1,18 @@
-use log::{debug, error, log_enabled, trace};
 use std::cmp::{Ordering, min};
-use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{Error, ErrorKind, Result};
-use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::ptr;
-use std::thread;
 #[cfg(target_os = "windows")]
 use std::time::Duration;
+use std::{fmt, mem, ptr, thread};
 
-use crate::mmap_view_sync::MmapViewSync;
 use byteorder::{ByteOrder, LittleEndian};
 #[cfg(not(unix))]
 use fs4::fs_std::FileExt;
+use log::{debug, error, log_enabled, trace};
+
+use crate::mmap_view_sync::MmapViewSync;
 
 /// The magic bytes and version tag of the segment header.
 const SEGMENT_MAGIC: &[u8; 3] = b"wal";
@@ -726,15 +724,14 @@ pub fn segment_overhead() -> usize {
 
 #[cfg(test)]
 mod test {
-    use std::{io::ErrorKind, path::Path};
+    use std::io::ErrorKind;
+    use std::path::Path;
+
     use tempfile::{Builder, TempDir};
 
     use super::{Segment, padding};
-
-    use crate::{
-        segment::{HEADER_LEN, entry_size_disk},
-        test_utils::EntryGenerator,
-    };
+    use crate::segment::{HEADER_LEN, entry_size_disk};
+    use crate::test_utils::EntryGenerator;
 
     #[test]
     fn test_pad_len() {
@@ -982,8 +979,9 @@ mod test {
         );
     }
 
-    use rand::RngCore;
     use std::hash::Hasher;
+
+    use rand::RngCore;
 
     #[test]
     fn test_crc32c() {

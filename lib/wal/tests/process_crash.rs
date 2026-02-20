@@ -12,8 +12,7 @@
 //!    corruption or data loss has occurred.
 
 use std::collections::HashMap;
-use std::env;
-use std::process;
+use std::{env, process};
 
 use rand::RngCore;
 use tempfile::Builder;

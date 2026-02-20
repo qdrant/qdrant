@@ -1,11 +1,13 @@
-use crate::{OpenSegment, Segment};
-use log::warn;
 use std::cmp::max;
 #[cfg(not(target_os = "windows"))]
 use std::fs::File;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::thread;
+
+use log::warn;
+
+use crate::{OpenSegment, Segment};
 
 pub struct SegmentCreatorV2 {
     /// Where to create segments
@@ -168,8 +170,9 @@ impl Drop for SegmentCreatorV2 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::Builder;
+
+    use super::*;
 
     fn init_logger() {
         let _ = env_logger::builder().is_test(true).try_init();

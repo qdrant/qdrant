@@ -7,7 +7,6 @@ use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 use regex::Regex;
 use serde::Deserialize;
-
 use wal::Segment;
 
 static USAGE: &str = "

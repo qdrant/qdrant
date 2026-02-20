@@ -1,7 +1,9 @@
+use std::num::NonZeroUsize;
+
+use tempfile::Builder;
+
 use crate::test_utils::EntryGenerator;
 use crate::{Wal, WalOptions};
-use std::num::NonZeroUsize;
-use tempfile::Builder;
 
 #[test]
 fn test_handling_missing_empty_segment() {

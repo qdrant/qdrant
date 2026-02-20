@@ -1,19 +1,17 @@
-use crate::segment_creator::SegmentCreatorV2;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::fs::{self, File};
+use std::io::{Error, ErrorKind, Result};
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::{fmt, mem, ops, result, thread};
+
 use fs4::fs_std::FileExt;
 use log::{debug, info, trace};
 pub use segment::{Entry, Segment};
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt;
-use std::fs::{self, File};
-use std::io::{Error, ErrorKind, Result};
-use std::mem;
-use std::num::NonZeroUsize;
-use std::ops;
-use std::path::{Path, PathBuf};
-use std::result;
-use std::str::FromStr;
-use std::thread;
+
+use crate::segment_creator::SegmentCreatorV2;
 
 mod mmap_view_sync;
 mod segment;
@@ -619,16 +617,15 @@ fn open_dir_entry(entry: fs::DirEntry) -> Result<Option<WalSegment>> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_utils::EntryGenerator;
+    use std::io::Write;
+    use std::num::{NonZeroU8, NonZeroUsize};
+
     use log::trace;
     use quickcheck::TestResult;
-    use std::{
-        io::Write,
-        num::{NonZeroU8, NonZeroUsize},
-    };
     use tempfile::Builder;
 
     use super::{Wal, WalOptions};
+    use crate::test_utils::EntryGenerator;
 
     fn init_logger() {
         let _ = env_logger::builder().is_test(true).try_init();

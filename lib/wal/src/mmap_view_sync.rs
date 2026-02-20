@@ -1,10 +1,10 @@
-use memmap2::{MmapMut, MmapOptions};
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::fs::File;
-use std::io::Result;
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
+
+use memmap2::{MmapMut, MmapOptions};
 
 /// ported from https://github.com/danburkert/memmap-rs in version 0.5.2
 ///
@@ -187,10 +187,10 @@ unsafe impl Send for MmapViewSync {}
 
 #[cfg(test)]
 mod test {
-    use std::fs;
     use std::io::{Read, Write};
     use std::sync::Arc;
-    use std::thread;
+    use std::{fs, thread};
+
     use tempfile::Builder;
 
     use super::*;
