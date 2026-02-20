@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::OneshotFile;
-use common::mmap::MmapFlusher;
+use common::mmap::{MmapChunkView, MmapFlusher};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::File;
@@ -42,8 +42,8 @@ impl QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        self.vectors.get(index as VectorOffsetType)
+    fn get_vector_data(&self, index: PointOffsetType) -> MmapChunkView<'_, u8> {
+        MmapChunkView::Slice(self.vectors.get(index as VectorOffsetType))
     }
 
     fn upsert_vector(

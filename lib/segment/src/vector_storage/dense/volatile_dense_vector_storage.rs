@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::ext::BitSliceExt as _;
+use common::mmap::MmapChunkView;
 use common::types::PointOffsetType;
 
 use crate::common::Flusher;
@@ -81,8 +82,8 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for VolatileDenseVectorSto
         self.dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key as VectorOffsetType)
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> MmapChunkView<'_, T> {
+        MmapChunkView::Slice(self.vectors.get(key as VectorOffsetType))
     }
 }
 

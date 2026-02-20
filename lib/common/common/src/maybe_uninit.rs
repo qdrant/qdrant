@@ -1,33 +1,103 @@
-use std::mem::{MaybeUninit, transmute};
+use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut};
 
-/// [`MaybeUninit::fill_from`] backported to stable.
+/// Backported ustable method [`std::slice::write_iter`] (was [`MaybeUninit::fill_from`]).
+/// <https://github.com/rust-lang/rust/blob/1.93.0/library/core/src/mem/maybe_uninit.rs#L1368>
 ///
-/// Unlike the standard library version, this function does not support [`Drop`]
-/// types, for simplicity of implementation.
-///
-/// TODO: remove in favor of [`MaybeUninit::fill_from`] once stabilized.
+/// TODO: remove in favor of [`std::slice::write_iter`] once stabilized.
 /// <https://github.com/rust-lang/rust/issues/117428>
 pub fn maybe_uninit_fill_from<I: IntoIterator>(
     this: &mut [MaybeUninit<I::Item>],
     it: I,
 ) -> (&mut [I::Item], &mut [MaybeUninit<I::Item>]) {
-    const { assert!(!std::mem::needs_drop::<I::Item>(), "Not supported") };
-
     let iter = it.into_iter();
+    let mut guard = Guard {
+        slice: this,
+        initialized: 0,
+    };
 
-    let mut initialized_len = 0;
-    for (element, val) in this.iter_mut().zip(iter) {
+    for (element, val) in guard.slice.iter_mut().zip(iter) {
         element.write(val);
-        initialized_len += 1;
+        guard.initialized += 1;
     }
+
+    let initialized_len = guard.initialized;
+    std::mem::forget(guard);
 
     // SAFETY: guard.initialized <= this.len()
     let (initted, remainder) = unsafe { this.split_at_mut_unchecked(initialized_len) };
 
     // SAFETY: Valid elements have just been written into `init`, so that portion
     // of `this` is initialized.
-    (
-        unsafe { transmute::<&mut [MaybeUninit<I::Item>], &mut [I::Item]>(initted) },
-        remainder,
-    )
+    (unsafe { assume_init_mut(initted) }, remainder)
+}
+
+/// Backported private struct.
+/// <https://github.com/rust-lang/rust/blob/1.93.0/library/core/src/mem/maybe_uninit.rs#L1556>
+struct Guard<'a, T> {
+    slice: &'a mut [MaybeUninit<T>],
+    initialized: usize,
+}
+
+impl<'a, T> Drop for Guard<'a, T> {
+    fn drop(&mut self) {
+        let initialized_part = &mut self.slice[..self.initialized];
+        // SAFETY: this raw sub-slice will contain only initialized objects.
+        unsafe { assume_init_drop(initialized_part) }
+    }
+}
+
+/// Backported unstable method [`std::slice::assume_init_drop`].
+/// <https://github.com/rust-lang/rust/blob/1.93.0/library/core/src/mem/maybe_uninit.rs#L808>
+#[inline(always)]
+pub unsafe fn assume_init_drop<T>(this: &mut [MaybeUninit<T>]) {
+    if !this.is_empty() {
+        // SAFETY: the caller must guarantee that every element of `this`
+        // is initialized and satisfies all invariants of `T`.
+        // Dropping the value in place is safe if that is the case.
+        unsafe { std::ptr::drop_in_place(this as *mut [MaybeUninit<T>] as *mut [T]) }
+    }
+}
+
+/// Backported unstable method [`std::slice::assume_init_mut`].
+/// <https://github.com/rust-lang/rust/blob/1.93.0/library/core/src/mem/maybe_uninit.rs#L993>
+#[inline(always)]
+unsafe fn assume_init_mut<T>(this: &mut [MaybeUninit<T>]) -> &mut [T] {
+    // SAFETY: similar to safety notes for `slice_get_ref`, but we have a
+    // mutable reference which is also guaranteed to be valid for writes.
+    unsafe { &mut *(this as *mut [MaybeUninit<T>] as *mut [T]) }
+}
+
+/// Wrapper around [`maybe_uninit_fill_from`] that doesn't leak on drop.
+#[inline(always)]
+pub fn maybe_uninit_fill_from_with_drop<I: IntoIterator>(
+    this: &mut [MaybeUninit<I::Item>],
+    it: I,
+) -> (RefDropper<'_, [I::Item]>, &mut [MaybeUninit<I::Item>]) {
+    let (initted, remainder) = maybe_uninit_fill_from(this, it);
+    (RefDropper(initted), remainder)
+}
+
+pub struct RefDropper<'a, T: ?Sized>(&'a mut T);
+
+impl<'a, T: ?Sized> Deref for RefDropper<'a, T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T: ?Sized> DerefMut for RefDropper<'a, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T: ?Sized> Drop for RefDropper<'a, T> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe { std::ptr::drop_in_place(self.0) }
+    }
 }

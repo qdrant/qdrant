@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
+use common::mmap::{MmapChunkView, MmapFlusher};
 use common::typelevel::True;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -510,10 +510,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     #[inline]
     fn get_vec_ptr(&self, i: PointOffsetType) -> (f32, *const u8) {
         let data = self.encoded_vectors.get_vector_data(i);
-        Self::parse_vec_data(data)
+        Self::parse_vec_data(&data)
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> MmapChunkView<'_, u8> {
         self.encoded_vectors.get_vector_data(i)
     }
 
@@ -608,7 +608,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
         let bytes = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, bytes, hw_counter)
+        self.score_bytes(True, query, &bytes, hw_counter)
     }
 
     fn score_internal(

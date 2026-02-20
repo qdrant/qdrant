@@ -1,10 +1,12 @@
 use std::alloc::Layout;
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::mmap::MmapChunkView;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
@@ -266,7 +268,7 @@ impl QuantizedVectors {
         }
     }
 
-    pub fn get_quantized_vector(&self, id: PointOffsetType) -> &[u8] {
+    pub fn get_quantized_vector(&self, id: PointOffsetType) -> MmapChunkView<'_, u8> {
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => storage.get_quantized_vector(id),
             QuantizedVectorStorage::ScalarMmap(storage) => storage.get_quantized_vector(id),
@@ -660,11 +662,21 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
-            PrimitiveVectorElement::quantization_preprocess(
-                quantization_config,
-                distance,
-                vector_storage.get_dense::<Sequential>(i),
-            )
+            match vector_storage.get_dense::<Sequential>(i) {
+                MmapChunkView::Slice(vector) => PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    vector,
+                ),
+                MmapChunkView::Box(vector) => Cow::Owned(
+                    PrimitiveVectorElement::quantization_preprocess(
+                        quantization_config,
+                        distance,
+                        &vector,
+                    )
+                    .into_owned(),
+                ),
+            }
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
@@ -744,8 +756,20 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors = vector_storage.iterate_inner_vectors().map(|v| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, v)
+        let vectors = vector_storage.iterate_inner_vectors().map(|v| match v {
+            Cow::Borrowed(vector) => PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                vector,
+            ),
+            Cow::Owned(vector) => Cow::Owned(
+                PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    &vector,
+                )
+                .into_owned(),
+            ),
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
@@ -1965,7 +1989,7 @@ impl QuantizedVectors {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let VectorRef::MultiDense(vector) = vector {
-            Ok(quantization_storage.upsert_vector(id, vector.flattened_vectors, hw_counter)?)
+            Ok(quantization_storage.upsert_vector(id, &vector.flattened_vectors, hw_counter)?)
         } else {
             Err(OperationError::WrongMulti)
         }

@@ -71,15 +71,6 @@ impl<T: Copy + Sized + 'static> Deref for MmapChunkView<'_, T> {
     }
 }
 
-impl<'a, T: Copy + Sized + 'static> From<MmapChunkView<'a, T>> for Cow<'a, [T]> {
-    fn from(view: MmapChunkView<'a, T>) -> Self {
-        match view {
-            MmapChunkView::Slice(slice) => Cow::Borrowed(slice),
-            MmapChunkView::Box(boxed) => Cow::Owned(boxed.into_vec()),
-        }
-    }
-}
-
 impl<T: Copy + Sized + 'static> UniversalMmapChunk<T> {
     pub fn get(&self, range: Range<usize>) -> MmapChunkView<'_, T> {
         if let Some(cached) = &self.cached {
@@ -233,7 +224,7 @@ pub fn create_chunk<T: Copy + Sized>(
     })
 }
 
-pub fn get_cached<'a, T: Copy + Sized + 'static>(
+fn get_cached<'a, T: Copy + Sized + 'static>(
     file: &'a crate::disk_cache::CachedFile,
     range: Range<usize>,
 ) -> MmapChunkView<'a, T> {

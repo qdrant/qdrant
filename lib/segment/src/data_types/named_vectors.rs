@@ -79,10 +79,10 @@ impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {
     pub fn as_vec_ref(&'a self) -> TypedMultiDenseVectorRef<'a, TElement> {
         match self {
             CowMultiVector::Owned(v) => TypedMultiDenseVectorRef {
-                flattened_vectors: &v.flattened_vectors,
+                flattened_vectors: Cow::Borrowed(&v.flattened_vectors),
                 dim: v.dim,
             },
-            CowMultiVector::Borrowed(v) => *v,
+            CowMultiVector::Borrowed(v) => v.clone(),
         }
     }
 }
@@ -326,7 +326,7 @@ impl<'a> NamedVectors<'a> {
                 CowVector::MultiDense(multi_vector) => {
                     // invalid temp value to swap with multi_vector and reduce reallocations
                     let mut tmp_multi_vector = CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
-                        flattened_vectors: &[],
+                        flattened_vectors: Cow::Borrowed(&[]),
                         dim: 1,
                     });
                     // `multi_vector` is empty invalid and `tmp_multi_vector` owns the real data
