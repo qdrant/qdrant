@@ -17,6 +17,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyTextIndexParams {
+    #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None))]
     pub fn new(
