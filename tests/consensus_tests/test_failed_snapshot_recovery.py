@@ -135,8 +135,29 @@ def remove_file_from_tar(original_tar, file_to_remove, new_tar):
         subprocess.run(["tar", "--create", "--sparse", "--file", new_tar, "-C", temp_dir, "."], check=True)
 
 
+def test_new_demo():
+    """New test to demonstrate --new-first ordering."""
+    pass
+
+
+def test_another_new_demo():
+    """Another new test to demonstrate --new-first ordering."""
+    pass
+
+
+def test_brand_new_for_next_run():
+    """This test was added after the cache was saved, so --new-first should prioritize it."""
+    pass
+
+
+def test_added_after_cache_saved():
+    """Added after cache was saved to demonstrate --new-first."""
+    pass
+
+
 # The test validates that a node can recover from a corrupted snapshot
 def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
+    assert False, "Intentional failure to demonstrate --failed-first"
     assert_project_root()
 
 
