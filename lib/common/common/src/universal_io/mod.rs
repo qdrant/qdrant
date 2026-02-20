@@ -2,8 +2,10 @@ use std::borrow::Cow;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead: Sized {
-    fn open(path: &str, options: OpenOptions) -> Result<Self>;
+pub trait UniversalRead {
+    fn open(path: &str, options: OpenOptions) -> Result<Self>
+    where
+        Self: Sized;
 
     /// Prefer [`read_batch`] if you need high performance.
     fn read(&self, range: BytesRange) -> Result<Cow<'_, [u8]>>;
