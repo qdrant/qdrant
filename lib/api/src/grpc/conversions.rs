@@ -20,7 +20,9 @@ use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
-use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
+use segment::types::{
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, default_quantization_ignore_value,
+};
 use segment::vector_storage::query::{self as segment_query, NaiveFeedbackCoefficients};
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
@@ -29,7 +31,7 @@ use uuid::Uuid;
 use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
-    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
+    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition, IntegerRange,
     KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
     MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
     SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
@@ -1756,6 +1758,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         } = value;
 
         let geo_bounding_box =
@@ -1764,6 +1767,9 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
 
         let mut range = range.map(Into::into);
+        if range.is_none() {
+            range = integer_range.map(Into::into);
+        }
         if range.is_none() {
             range = datetime_range
                 .map(segment::types::RangeInterface::try_from)
@@ -1798,15 +1804,17 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             is_null,
         } = value;
 
-        let (range, datetime_range) = match range {
-            Some(segment::types::RangeInterface::Float(range)) => (Some(Range::from(range)), None),
-            Some(segment::types::RangeInterface::Integer(range)) => {
-                // Convert integer range to float range for gRPC (proto uses f64)
-                let float_range = range.map(|i| ordered_float::OrderedFloat(i as f64));
-                (Some(Range::from(float_range)), None)
+        let (range, integer_range, datetime_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => {
+                (Some(Range::from(range)), None, None)
             }
-            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
-            None => (None, None),
+            Some(segment::types::RangeInterface::Integer(range)) => {
+                (None, Some(IntegerRange::from(range)), None)
+            }
+            Some(segment::types::RangeInterface::DateTime(range)) => {
+                (None, None, Some(range.into()))
+            }
+            None => (None, None, None),
         };
 
         Self {
@@ -1820,6 +1828,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             datetime_range,
             is_empty,
             is_null,
+            integer_range,
         }
     }
 }
@@ -1972,6 +1981,26 @@ impl From<segment::types::Range<OrderedFloat<FloatPayloadType>>> for Range {
 impl From<Range> for segment::types::RangeInterface {
     fn from(value: Range) -> Self {
         Self::Float(value.into())
+    }
+}
+
+impl From<segment::types::Range<IntPayloadType>> for IntegerRange {
+    fn from(value: segment::types::Range<IntPayloadType>) -> Self {
+        let segment::types::Range { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<IntegerRange> for segment::types::Range<IntPayloadType> {
+    fn from(value: IntegerRange) -> Self {
+        let IntegerRange { lt, gt, gte, lte } = value;
+        Self { lt, gt, gte, lte }
+    }
+}
+
+impl From<IntegerRange> for segment::types::RangeInterface {
+    fn from(value: IntegerRange) -> Self {
+        Self::Integer(value.into())
     }
 }
 
