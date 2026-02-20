@@ -17,6 +17,35 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyTextIndexParams {
+    #[new]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None))]
+    pub fn new(
+        tokenizer: Option<PyTokenizerType>,
+        min_token_len: Option<usize>,
+        max_token_len: Option<usize>,
+        lowercase: Option<bool>,
+        ascii_folding: Option<bool>,
+        phrase_matching: Option<bool>,
+        stopwords: Option<PyStopwords>,
+        on_disk: Option<bool>,
+        stemmer: Option<PyStemmingAlgorithm>,
+        enable_hnsw: Option<bool>,
+    ) -> Self {
+        Self(TextIndexParams {
+            r#type: Default::default(),
+            tokenizer: tokenizer.map(TokenizerType::from).unwrap_or_default(),
+            min_token_len,
+            max_token_len,
+            lowercase,
+            ascii_folding,
+            phrase_matching,
+            stopwords: stopwords.map(StopwordsInterface::from),
+            on_disk,
+            stemmer: stemmer.map(StemmingAlgorithm::from),
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn tokenizer(&self) -> PyTokenizerType {
         PyTokenizerType::from(self.0.tokenizer)
@@ -349,6 +378,15 @@ pub struct PyStopwordsSet(StopwordsSet);
 #[pyclass_repr]
 #[pymethods]
 impl PyStopwordsSet {
+    #[new]
+    #[pyo3(signature = (languages = None, custom = None))]
+    pub fn new(languages: Option<BTreeSet<PyLanguage>>, custom: Option<BTreeSet<String>>) -> Self {
+        Self(StopwordsSet {
+            languages: languages.map(|langs| langs.into_iter().map(Language::from).collect()),
+            custom,
+        })
+    }
+
     #[getter]
     pub fn languages(&self) -> Option<BTreeSet<PyLanguage>> {
         self.0
@@ -450,6 +488,14 @@ pub struct PySnowballParams(SnowballParams);
 #[pyclass_repr]
 #[pymethods]
 impl PySnowballParams {
+    #[new]
+    pub fn new(language: PySnowballLanguage) -> Self {
+        Self(SnowballParams {
+            r#type: Default::default(),
+            language: SnowballLanguage::from(language),
+        })
+    }
+
     #[getter]
     pub fn language(&self) -> PySnowballLanguage {
         PySnowballLanguage::from(self.0.language)

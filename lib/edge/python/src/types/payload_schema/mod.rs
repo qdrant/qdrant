@@ -178,6 +178,17 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyKeywordIndexParams {
+    #[new]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None))]
+    pub fn new(is_tenant: Option<bool>, on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+        Self(KeywordIndexParams {
+            r#type: Default::default(),
+            is_tenant,
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
@@ -214,6 +225,25 @@ pub struct PyIntegerIndexParams(IntegerIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyIntegerIndexParams {
+    #[new]
+    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None))]
+    pub fn new(
+        lookup: Option<bool>,
+        range: Option<bool>,
+        is_principal: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> Self {
+        Self(IntegerIndexParams {
+            r#type: Default::default(),
+            lookup,
+            range,
+            is_principal,
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn lookup(&self) -> Option<bool> {
         self.0.lookup
@@ -262,6 +292,21 @@ pub struct PyFloatIndexParams(FloatIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyFloatIndexParams {
+    #[new]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None))]
+    pub fn new(
+        is_principal: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> Self {
+        Self(FloatIndexParams {
+            r#type: Default::default(),
+            is_principal,
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
@@ -298,6 +343,16 @@ pub struct PyGeoIndexParams(GeoIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyGeoIndexParams {
+    #[new]
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None))]
+    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+        Self(GeoIndexParams {
+            r#type: Default::default(),
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
@@ -328,6 +383,16 @@ pub struct PyBoolIndexParams(BoolIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyBoolIndexParams {
+    #[new]
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None))]
+    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+        Self(BoolIndexParams {
+            r#type: Default::default(),
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         self.0.on_disk
@@ -358,6 +423,21 @@ pub struct PyDatetimeIndexParams(DatetimeIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyDatetimeIndexParams {
+    #[new]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None))]
+    pub fn new(
+        is_principal: Option<bool>,
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+    ) -> Self {
+        Self(DatetimeIndexParams {
+            r#type: Default::default(),
+            is_principal,
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
@@ -394,6 +474,17 @@ pub struct PyUuidIndexParams(UuidIndexParams);
 #[pyclass_repr]
 #[pymethods]
 impl PyUuidIndexParams {
+    #[new]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None))]
+    pub fn new(is_tenant: Option<bool>, on_disk: Option<bool>, enable_hnsw: Option<bool>) -> Self {
+        Self(UuidIndexParams {
+            r#type: Default::default(),
+            is_tenant,
+            on_disk,
+            enable_hnsw,
+        })
+    }
+
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
