@@ -15,6 +15,7 @@ staging = ["shard/staging"]
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard" }
+wal = { path = "../wal" }
 
 ahash = { workspace = true }
 fs-err = { workspace = true }
@@ -23,8 +24,6 @@ log = { workspace = true }
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
-wal = { workspace = true }
-
 
 [dev-dependencies]
 anyhow = { workspace = true }

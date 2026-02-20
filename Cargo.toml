@@ -71,7 +71,6 @@ clap = { workspace = true }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
-wal = { workspace = true }
 ordered-float = { workspace = true }
 ahash = { workspace = true }
 urlencoding = { workspace = true }
@@ -128,6 +127,7 @@ collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
 gpu = { path = "lib/gpu" }
+wal = { path = "lib/wal" }
 
 actix-multipart = "0.7.2"
 constant_time_eq = "0.4.2"
@@ -298,7 +298,6 @@ tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.21", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "c07fb56ebc8120ebe4e3c602d31ce98f356f4676" }
 zerocopy = { version = "0.8.39", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
@@ -357,6 +356,7 @@ members = [
     "lib/sparse",
     "lib/storage",
     "lib/trififo",
+    "lib/wal",
 ]
 
 [profile.release]

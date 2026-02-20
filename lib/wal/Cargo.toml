@@ -7,37 +7,38 @@ authors = [
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
-readme = "README.md"
-homepage = "https://qdrant.tech/"
-repository = "https://github.com/qdrant/wal"
 edition = "2024"
+publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
-byteorder = "1.5"
+byteorder = { workspace = true }
 crc32c = "0.6.8"
-log = "0.4"
-memmap2 = "0.9.4"
-rand = "0.9"
-rand_distr = "0.5"
-fs4 = "0.13.1"
+crossbeam-channel = "0.5.15"
+fs4 = { workspace = true }
+log = { workspace = true }
+memmap2 = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
 # fs4 depends on rustix, but pulling this dependency explicitly into the tree
 # to use direct functions on FreeBSD
 rustix = { version = "1", features = ["fs"] }
-crossbeam-channel = "0.5.15"
 
 # Binary dependencies
 docopt = "1.1"
-env_logger = "0.11"
-serde = { version = "1", features = ["derive"] }
+env_logger = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 crc = "3.3.0"
+criterion = { workspace = true }
 hdrhistogram = "7.5.4"
 quickcheck = "1.0.3"
 regex = "1.11.3"
-tempfile = "3.23.0"
-chrono = "0.4.42"
-criterion = "0.8.0"
+tempfile = { workspace = true }
 
 [[bench]]
 name = "benchmark"

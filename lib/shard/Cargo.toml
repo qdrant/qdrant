@@ -20,6 +20,7 @@ api = { path = "../api" }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }
+wal = { path = "../wal" }
 
 ahash = { workspace = true }
 bitvec = { workspace = true }
@@ -40,7 +41,6 @@ thiserror = { workspace = true }
 tonic = { workspace = true }
 uuid = { workspace = true }
 validator = { workspace = true }
-wal = { workspace = true }
 serde_json = { workspace = true }
 fs-err = { workspace = true }
 fs4 = { workspace = true }
