@@ -44,7 +44,6 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = { workspace = true }
-wal = { workspace = true }
 ordered-float = { workspace = true }
 hashring = "0.3.6"
 tinyvec = { workspace = true }
@@ -76,6 +75,7 @@ segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
+wal = { path = "../wal" }
 
 itertools = { workspace = true }
 indicatif = { workspace = true }

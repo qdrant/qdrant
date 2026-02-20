@@ -1,0 +1,46 @@
+[package]
+name = "wal"
+version = "0.1.4"
+authors = [
+    "Dan Burkert <dan@danburkert.com>",
+    "Andrey Vasnetsov <andrey@vasnetsov.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+byteorder = { workspace = true }
+crc32c = "0.6.8"
+crossbeam-channel = "0.5.15"
+fs4 = { workspace = true }
+fs-err = { workspace = true }
+log = { workspace = true }
+memmap2 = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+# fs4 depends on rustix, but pulling this dependency explicitly into the tree
+# to use direct functions on FreeBSD
+rustix = { version = "1", features = ["fs"] }
+
+# Binary dependencies
+docopt = "1.1"
+env_logger = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+crc = "3.3.0"
+criterion = { workspace = true }
+hdrhistogram = "7.5.4"
+quickcheck = "1.0.3"
+regex = "1.11.3"
+tempfile = { workspace = true }
+
+[[bench]]
+name = "benchmark"
+harness = false

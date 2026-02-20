@@ -26,7 +26,6 @@ ahash = { workspace = true }
 fs-err = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
-wal = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }
@@ -60,6 +59,7 @@ segment = { path = "../segment", default-features = false }
 collection = { path = "../collection" }
 shard = { path = "../shard" }
 api = { path = "../api" }
+wal = { path = "../wal" }
 futures = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
