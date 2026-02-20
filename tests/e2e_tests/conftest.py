@@ -98,6 +98,7 @@ def qdrant_image(docker_client: docker.DockerClient, request) -> str:
         build_cmd = [
             "docker", "buildx", "build",
             "--build-arg=PROFILE=ci",
+            "--build-arg=FEATURES=data-consistency-check,rocksdb,staging",
             "--load",
             str(project_root),
             f"--tag={image_tag}"
