@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fs::{self, File};
 use std::io::{Error, ErrorKind, Result};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt, mem, ops, result, thread};
 
+use fs_err as fs;
+use fs_err::File;
 use fs4::fs_std::FileExt;
 use log::{debug, info, trace};
 pub use segment::{Entry, Segment};
@@ -152,7 +153,7 @@ impl Wal {
             dir
         };
 
-        if !dir.try_lock_exclusive()? {
+        if !dir.file().try_lock_exclusive()? {
             return Err(fs4::lock_contended_error());
         }
 
@@ -601,7 +602,7 @@ fn open_dir_entry(entry: fs::DirEntry) -> Result<Option<WalSegment>> {
         Some(("open", id)) => {
             let id = u64::from_str(id).map_err(|_| error())?;
             let segment = Segment::open(entry.path())?;
-            Ok(Some(WalSegment::Open(OpenSegment { segment, id })))
+            Ok(Some(WalSegment::Open(OpenSegment { id, segment })))
         }
         Some(("closed", start)) => {
             let start = u64::from_str(start).map_err(|_| error())?;
@@ -620,6 +621,7 @@ mod test {
     use std::io::Write;
     use std::num::{NonZeroU8, NonZeroUsize};
 
+    use fs_err as fs;
     use log::trace;
     use quickcheck::TestResult;
     use tempfile::Builder;
@@ -881,7 +883,7 @@ mod test {
 
             {
                 // Create fake temp file to simulate a crash.
-                let mut file = std::fs::OpenOptions::new()
+                let mut file = fs::OpenOptions::new()
                     .read(true)
                     .write(true)
                     .create(true)
@@ -942,7 +944,7 @@ mod test {
                 }
             }
 
-            wal.truncate(truncate as u64).unwrap();
+            wal.truncate(u64::from(truncate)).unwrap();
 
             for (index, expected) in entries.iter().take(truncate as usize).enumerate() {
                 match wal.entry(index as u64) {
@@ -952,7 +954,7 @@ mod test {
                 }
             }
 
-            TestResult::from_bool(wal.entry(truncate as u64).is_none())
+            TestResult::from_bool(wal.entry(u64::from(truncate)).is_none())
         }
 
         quickcheck::quickcheck(truncate as fn(u8, u8) -> TestResult);
@@ -992,7 +994,7 @@ mod test {
                 }
             }
 
-            wal.prefix_truncate(until as u64).unwrap();
+            wal.prefix_truncate(u64::from(until)).unwrap();
 
             let retained = if has_ever_reached_max {
                 // If it ever reaches max, it should stay there

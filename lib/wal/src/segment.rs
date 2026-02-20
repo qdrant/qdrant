@@ -1,5 +1,4 @@
 use std::cmp::{Ordering, min};
-use std::fs::{self, OpenOptions};
 use std::io::{Error, ErrorKind, Result};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -8,6 +7,8 @@ use std::time::Duration;
 use std::{fmt, mem, ptr, thread};
 
 use byteorder::{ByteOrder, LittleEndian};
+use fs_err as fs;
+use fs_err::OpenOptions;
 #[cfg(not(unix))]
 use fs4::fs_std::FileExt;
 use log::{debug, error, log_enabled, trace};
@@ -160,7 +161,7 @@ impl Segment {
 
             // fs4 provides some cross-platform bindings which help for Windows.
             #[cfg(not(unix))]
-            file.allocate(capacity as u64)?;
+            file.file().allocate(capacity as u64)?;
             // For all unix systems WAL can just use ftruncate directly
             #[cfg(unix)]
             {
@@ -194,7 +195,7 @@ impl Segment {
             .read(true)
             .write(true)
             .create(false)
-            .open(&path)?;
+            .open(path.as_ref())?;
 
         let mmap = MmapViewSync::from_file(&file, 0, capacity)?;
 
@@ -220,7 +221,7 @@ impl Segment {
             .read(true)
             .write(true)
             .create(false)
-            .open(&path)?;
+            .open(path.as_ref())?;
         let capacity = file.metadata()?.len();
         if capacity > usize::MAX as u64 || capacity < HEADER_LEN as u64 {
             return Err(Error::new(
@@ -503,7 +504,7 @@ impl Segment {
                 .open(&self.path)?;
             // fs4 provides some cross-platform bindings which help for Windows.
             #[cfg(not(unix))]
-            file.allocate(required_capacity as u64)?;
+            file.file().allocate(required_capacity as u64)?;
             // For all unix systems WAL can just use ftruncate directly
             #[cfg(unix)]
             {

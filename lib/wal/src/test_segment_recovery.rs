@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use fs_err as fs;
 use tempfile::Builder;
 
 use crate::test_utils::EntryGenerator;
@@ -41,14 +42,14 @@ fn test_handling_missing_empty_segment() {
 
     // List directory contents
 
-    let entries: Vec<_> = std::fs::read_dir(dir.path())
+    let entries: Vec<_> = fs::read_dir(dir.path())
         .unwrap()
         .map(|res| res.map(|e| e.file_name()))
         .collect::<Result<_, std::io::Error>>()
         .unwrap();
 
     for entry in &entries {
-        eprintln!("{:?}", entry);
+        eprintln!("{entry:?}");
     }
 
     // Remove the last segment file (which is empty)
@@ -57,7 +58,7 @@ fn test_handling_missing_empty_segment() {
         "open-3 should not exist",
     );
     let last_segment_file = dir.path().join("open-2");
-    std::fs::remove_file(last_segment_file).unwrap();
+    fs::remove_file(last_segment_file).unwrap();
 
     eprintln!("------------ removed last segment ------------");
 

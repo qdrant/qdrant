@@ -8302,6 +8302,7 @@ dependencies = [
  "crossbeam-channel",
  "docopt",
  "env_logger",
+ "fs-err",
  "fs4",
  "hdrhistogram",
  "log",

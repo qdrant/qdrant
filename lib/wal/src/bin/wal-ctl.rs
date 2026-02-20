@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use docopt::Docopt;
+use fs_err::PathExt;
 use serde::Deserialize;
 use wal::Wal;
 
@@ -46,7 +47,7 @@ fn main() {
         .unwrap_or_else(|e| e.exit());
 
     let path: PathBuf = PathBuf::from(&args.flag_path)
-        .canonicalize()
+        .fs_err_canonicalize()
         .unwrap_or_else(|error| {
             eprintln!(
                 "Unable to open write ahead log in directory {:?}: {}.",

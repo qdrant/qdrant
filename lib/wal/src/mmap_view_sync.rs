@@ -1,9 +1,9 @@
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::fs::File;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::Arc;
 
+use fs_err::File;
 use memmap2::{MmapMut, MmapOptions};
 
 /// ported from https://github.com/danburkert/memmap-rs in version 0.5.2
@@ -189,8 +189,9 @@ unsafe impl Send for MmapViewSync {}
 mod test {
     use std::io::{Read, Write};
     use std::sync::Arc;
-    use std::{fs, thread};
+    use std::thread;
 
+    use fs_err as fs;
     use tempfile::Builder;
 
     use super::*;

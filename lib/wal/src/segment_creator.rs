@@ -1,10 +1,10 @@
 use std::cmp::max;
-#[cfg(not(target_os = "windows"))]
-use std::fs::File;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::thread;
 
+#[cfg(not(target_os = "windows"))]
+use fs_err::File;
 use log::warn;
 
 use crate::{OpenSegment, Segment};
@@ -170,6 +170,7 @@ impl Drop for SegmentCreatorV2 {
 
 #[cfg(test)]
 mod tests {
+    use fs_err as fs;
     use tempfile::Builder;
 
     use super::*;
@@ -203,7 +204,7 @@ mod tests {
         drop(creator);
 
         // List directory contents
-        let mut entries: Vec<_> = std::fs::read_dir(dir.path())
+        let mut entries: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
             .map(|res| res.map(|e| e.file_name()))
             .collect::<Result<_, std::io::Error>>()
@@ -212,7 +213,7 @@ mod tests {
         entries.sort();
 
         for entry in &entries {
-            eprintln!("{:?}", entry);
+            eprintln!("{entry:?}");
         }
 
         assert_eq!(entries.len(), 10 - 3 + 1); // open-3 and open-4 existed, open-5 to open-9 created + open-10 created ahead
@@ -234,7 +235,7 @@ mod tests {
             SegmentCreatorV2::new(dir.path(), segment.as_ref(), unused_segments, 1024, 1);
         for i in 4..10 {
             let another_segment = creator.next().unwrap();
-            eprintln!("another_segment = {:#?}", another_segment);
+            eprintln!("another_segment = {another_segment:#?}");
             assert_eq!(i, another_segment.id);
         }
 
@@ -242,7 +243,7 @@ mod tests {
         drop(creator);
 
         // List directory contents
-        let mut entries: Vec<_> = std::fs::read_dir(dir.path())
+        let mut entries: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
             .map(|res| res.map(|e| e.file_name()))
             .collect::<Result<_, std::io::Error>>()
@@ -251,7 +252,7 @@ mod tests {
         entries.sort();
 
         for entry in &entries {
-            eprintln!("{:?}", entry);
+            eprintln!("{entry:?}");
         }
 
         assert_eq!(entries.len(), 10 - 3 + 1); // open-3 existed, open-4 to open-9 created + open-10 created ahead
