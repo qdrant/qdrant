@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 from common import *
-
 from qdrant_edge import *
+
 
 print("---- Point conversions ----")
 
@@ -136,6 +136,7 @@ points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
 for point in points:
     print(point)
 
+
 print("---- Scroll ----")
 
 scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2))
@@ -150,38 +151,36 @@ while next_offset is not None:
     for point in scroll_result:
         print(point)
 
+
 print("---- Count ----")
 
 count = shard.count(CountRequest(exact=True))
-
 print(f"Total points count: {count}")
 
-print("---- Facet (requires payload index) ----")
 
-# Note: Facet requires a payload index on the field being faceted.
-# In Edge, payload indexes cannot be created directly - you need to:
-# 1. Create the index in a full Qdrant instance
-# 2. Create a shard snapshot
-# 3. Load the snapshot into Edge
-try:
-    response = shard.facet(
-        FacetRequest(
-            key="hello",
-            limit=10,
-            exact=False,
-        )
+print("---- Facet ----")
+
+shard.update(UpdateOperation.create_field_index("hello", PayloadSchemaType.Keyword))
+
+response = shard.facet(
+    FacetRequest(
+        key="hello",
+        limit=10,
+        exact=False,
     )
-    print(f"Facet results ({len(response)} hits):")
-    for hit in response:
-        print(f"  {hit.value}: {hit.count}")
-except Exception as e:
-    # Expected error when no payload index exists
-    print(f"Facet error (expected without payload index): {e}")
+)
 
-print("---- info ----")
+print(f"Facet results ({len(response)} hits):")
+
+for hit in response:
+    print(f"  {hit.value}: {hit.count}")
+
+
+print("---- Info ----")
 
 info = shard.info()
 print(info)
+
 
 print("---- Close and reopen shard ----")
 
@@ -190,5 +189,4 @@ shard.close()
 reopened_shard = EdgeShard(DATA_DIRECTORY)
 
 info = reopened_shard.info()
-
 print(info)

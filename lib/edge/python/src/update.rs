@@ -4,32 +4,9 @@ use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, VectorNameBuf};
 use shard::operations::point_ops::{PointIdsList, PointInsertOperationsInternal, UpdateMode};
-use shard::operations::{CollectionUpdateOperations, payload_ops, point_ops, vector_ops};
+use shard::operations::*;
 
 use crate::*;
-
-/// Defines the mode of the upsert operation
-#[pyclass(name = "UpdateMode", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PyUpdateMode {
-    /// Default mode - insert new points, update existing points
-    #[default]
-    Upsert = 0,
-    /// Only insert new points, do not update existing points
-    InsertOnly = 1,
-    /// Only update existing points, do not insert new points
-    UpdateOnly = 2,
-}
-
-impl From<PyUpdateMode> for UpdateMode {
-    fn from(mode: PyUpdateMode) -> Self {
-        match mode {
-            PyUpdateMode::Upsert => UpdateMode::Upsert,
-            PyUpdateMode::InsertOnly => UpdateMode::InsertOnly,
-            PyUpdateMode::UpdateOnly => UpdateMode::UpdateOnly,
-        }
-    }
-}
 
 #[pyclass(name = "UpdateOperation", from_py_object)]
 #[derive(Clone, Debug, Into)]
@@ -217,5 +194,44 @@ impl PyUpdateOperation {
         });
 
         Self(CollectionUpdateOperations::PayloadOperation(operation))
+    }
+
+    #[staticmethod]
+    pub fn create_field_index(field_name: PyJsonPath, schema: PyPayloadFieldSchema) -> Self {
+        let operation = FieldIndexOperations::CreateIndex(CreateIndex {
+            field_name: JsonPath::from(field_name),
+            field_schema: Some(PayloadFieldSchema::from(schema)),
+        });
+
+        Self(CollectionUpdateOperations::FieldIndexOperation(operation))
+    }
+
+    #[staticmethod]
+    pub fn delete_field_index(field_name: PyJsonPath) -> Self {
+        let operation = FieldIndexOperations::DeleteIndex(JsonPath::from(field_name));
+        Self(CollectionUpdateOperations::FieldIndexOperation(operation))
+    }
+}
+
+/// Defines the mode of the upsert operation
+#[pyclass(name = "UpdateMode", eq, eq_int, from_py_object)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PyUpdateMode {
+    /// Default mode - insert new points, update existing points
+    #[default]
+    Upsert = 0,
+    /// Only insert new points, do not update existing points
+    InsertOnly = 1,
+    /// Only update existing points, do not insert new points
+    UpdateOnly = 2,
+}
+
+impl From<PyUpdateMode> for UpdateMode {
+    fn from(mode: PyUpdateMode) -> Self {
+        match mode {
+            PyUpdateMode::Upsert => UpdateMode::Upsert,
+            PyUpdateMode::InsertOnly => UpdateMode::InsertOnly,
+            PyUpdateMode::UpdateOnly => UpdateMode::UpdateOnly,
+        }
     }
 }

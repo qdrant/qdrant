@@ -5,8 +5,8 @@ This module provides type hints for the qdrant_edge package to enable
 IDE autocompletion and type checking.
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from uuid import UUID
 
 # Type aliases
@@ -880,7 +880,7 @@ class PayloadIndexInfo:
         ...
 
     @property
-    def params(self) -> Optional[Any]:
+    def params(self) -> Optional[PayloadSchemaParams]:
         """Index parameters."""
         ...
 
@@ -888,6 +888,466 @@ class PayloadIndexInfo:
     def points(self) -> int:
         """Number of points with this field."""
         ...
+
+
+# ============================================================================
+# Payload Index Schema Parameters
+# ============================================================================
+
+PayloadSchemaParams = Union[
+    "KeywordIndexParams", "IntegerIndexParams", "FloatIndexParams", "GeoIndexParams",
+    "TextIndexParams", "BoolIndexParams", "DatetimeIndexParams", "UuidIndexParams"
+]
+
+
+class KeywordIndexParams:
+    """Index parameters for keyword fields."""
+
+    def __init__(
+            self,
+            is_tenant: Optional[bool] = None,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create KeywordIndexParams.
+
+        Args:
+            is_tenant: Whether this field is used for tenant separation.
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def is_tenant(self) -> Optional[bool]:
+        """Whether this field is used for tenant separation."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class IntegerIndexParams:
+    """Index parameters for integer fields."""
+
+    def __init__(
+            self,
+            lookup: Optional[bool] = None,
+            range: Optional[bool] = None,
+            is_principal: Optional[bool] = None,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create IntegerIndexParams.
+
+        Args:
+            lookup: Enable exact match filtering.
+            range: Enable range filtering.
+            is_principal: Whether this field is a principal identifier.
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def lookup(self) -> Optional[bool]:
+        """Enable exact match filtering."""
+        ...
+
+    @property
+    def range(self) -> Optional[bool]:
+        """Enable range filtering."""
+        ...
+
+    @property
+    def is_principal(self) -> Optional[bool]:
+        """Whether this field is a principal identifier."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class FloatIndexParams:
+    """Index parameters for float fields."""
+
+    def __init__(
+            self,
+            is_principal: Optional[bool] = None,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create FloatIndexParams.
+
+        Args:
+            is_principal: Whether this field is a principal identifier.
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def is_principal(self) -> Optional[bool]:
+        """Whether this field is a principal identifier."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class GeoIndexParams:
+    """Index parameters for geo fields."""
+
+    def __init__(
+            self,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create GeoIndexParams.
+
+        Args:
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class BoolIndexParams:
+    """Index parameters for boolean fields."""
+
+    def __init__(
+            self,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create BoolIndexParams.
+
+        Args:
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class DatetimeIndexParams:
+    """Index parameters for datetime fields."""
+
+    def __init__(
+            self,
+            is_principal: Optional[bool] = None,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create DatetimeIndexParams.
+
+        Args:
+            is_principal: Whether this field is a principal identifier.
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def is_principal(self) -> Optional[bool]:
+        """Whether this field is a principal identifier."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class UuidIndexParams:
+    """Index parameters for UUID fields."""
+
+    def __init__(
+            self,
+            is_tenant: Optional[bool] = None,
+            on_disk: Optional[bool] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create UuidIndexParams.
+
+        Args:
+            is_tenant: Whether this field is used for tenant separation.
+            on_disk: Whether to store index on disk.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def is_tenant(self) -> Optional[bool]:
+        """Whether this field is used for tenant separation."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class TextIndexParams:
+    """Index parameters for text fields."""
+
+    def __init__(
+            self,
+            tokenizer: Optional["TokenizerType"] = None,
+            min_token_len: Optional[int] = None,
+            max_token_len: Optional[int] = None,
+            lowercase: Optional[bool] = None,
+            ascii_folding: Optional[bool] = None,
+            phrase_matching: Optional[bool] = None,
+            stopwords: Optional["Stopwords"] = None,
+            on_disk: Optional[bool] = None,
+            stemmer: Optional["StemmingAlgorithm"] = None,
+            enable_hnsw: Optional[bool] = None,
+    ) -> None:
+        """
+        Create TextIndexParams.
+
+        Args:
+            tokenizer: Tokenizer type.
+            min_token_len: Minimum token length.
+            max_token_len: Maximum token length.
+            lowercase: Convert to lowercase.
+            ascii_folding: Apply ASCII folding.
+            phrase_matching: Enable phrase matching.
+            stopwords: Stopwords configuration.
+            on_disk: Whether to store index on disk.
+            stemmer: Stemming algorithm.
+            enable_hnsw: Whether to enable HNSW index for this field.
+        """
+        ...
+
+    @property
+    def tokenizer(self) -> "TokenizerType":
+        """Tokenizer type."""
+        ...
+
+    @property
+    def min_token_len(self) -> Optional[int]:
+        """Minimum token length."""
+        ...
+
+    @property
+    def max_token_len(self) -> Optional[int]:
+        """Maximum token length."""
+        ...
+
+    @property
+    def lowercase(self) -> Optional[bool]:
+        """Convert to lowercase."""
+        ...
+
+    @property
+    def ascii_folding(self) -> Optional[bool]:
+        """Apply ASCII folding."""
+        ...
+
+    @property
+    def phrase_matching(self) -> Optional[bool]:
+        """Enable phrase matching."""
+        ...
+
+    @property
+    def stopwords(self) -> Optional["Stopwords"]:
+        """Stopwords configuration."""
+        ...
+
+    @property
+    def on_disk(self) -> Optional[bool]:
+        """Whether to store index on disk."""
+        ...
+
+    @property
+    def stemmer(self) -> Optional["StemmingAlgorithm"]:
+        """Stemming algorithm."""
+        ...
+
+    @property
+    def enable_hnsw(self) -> Optional[bool]:
+        """Whether to enable HNSW index."""
+        ...
+
+
+class TokenizerType(Enum):
+    """Text tokenizer types."""
+
+    Prefix = ...
+    Whitespace = ...
+    Word = ...
+    Multilingual = ...
+
+
+Stopwords = Union["Language", "StopwordsSet"]
+"""Stopwords configuration - either a language or a custom set."""
+
+
+class Language(Enum):
+    """Predefined stopword languages."""
+
+    Arabic = ...
+    Azerbaijani = ...
+    Basque = ...
+    Bengali = ...
+    Catalan = ...
+    Chinese = ...
+    Danish = ...
+    Dutch = ...
+    English = ...
+    Finnish = ...
+    French = ...
+    German = ...
+    Greek = ...
+    Hebrew = ...
+    Hinglish = ...
+    Hungarian = ...
+    Indonesian = ...
+    Italian = ...
+    Japanese = ...
+    Kazakh = ...
+    Nepali = ...
+    Norwegian = ...
+    Portuguese = ...
+    Romanian = ...
+    Russian = ...
+    Slovene = ...
+    Spanish = ...
+    Swedish = ...
+    Tajik = ...
+    Turkish = ...
+
+
+class StopwordsSet:
+    """Custom stopwords set."""
+
+    def __init__(
+            self,
+            languages: Optional[Set["Language"]] = None,
+            custom: Optional[Set[str]] = None,
+    ) -> None:
+        """
+        Create a StopwordsSet.
+
+        Args:
+            languages: Predefined language stopwords to include.
+            custom: Custom stopwords to add.
+        """
+        ...
+
+    @property
+    def languages(self) -> Optional[Set["Language"]]:
+        """Predefined language stopwords."""
+        ...
+
+    @property
+    def custom(self) -> Optional[Set[str]]:
+        """Custom stopwords."""
+        ...
+
+
+StemmingAlgorithm = Union["SnowballParams"]
+
+
+class SnowballParams:
+    """Snowball stemming algorithm parameters."""
+
+    def __init__(self, language: "SnowballLanguage") -> None:
+        """
+        Create SnowballParams.
+
+        Args:
+            language: Snowball language.
+        """
+        ...
+
+    @property
+    def language(self) -> "SnowballLanguage":
+        """Snowball language."""
+        ...
+
+
+class SnowballLanguage(Enum):
+    """Snowball stemmer languages."""
+
+    Arabic = ...
+    Armenian = ...
+    Danish = ...
+    Dutch = ...
+    English = ...
+    Finnish = ...
+    French = ...
+    German = ...
+    Greek = ...
+    Hungarian = ...
+    Italian = ...
+    Norwegian = ...
+    Portuguese = ...
+    Romanian = ...
+    Russian = ...
+    Spanish = ...
+    Swedish = ...
+    Tamil = ...
+    Turkish = ...
 
 
 # ============================================================================
@@ -1424,25 +1884,25 @@ class Fusion:
     class Rrf:
         """
         RRF (Reciprocal Rank Fusion) with given parameters.
-        
+
         Args:
             k: The RRF k parameter.
             weights: Optional weights for each prefetch source.
                      Higher weight gives more influence on the final ranking.
                      If not specified, all prefetches are weighted equally.
-        
+
         Examples:
             # Basic RRF with k=2
             Fusion.Rrf(k=2)
-            
+
             # Weighted RRF - first prefetch has 3x weight
             Fusion.Rrf(k=2, weights=[3.0, 1.0])
         """
         def __init__(self, k: int, weights: Optional[List[float]] = None) -> None: ...
-        
+
         @property
         def k(self) -> int: ...
-        
+
         @property
         def weights(self) -> Optional[List[float]]: ...
 
@@ -2657,5 +3117,29 @@ class UpdateOperation:
             filter: Filter for points.
             payload: New payload.
             key: Optional nested key path.
+        """
+        ...
+
+    @staticmethod
+    def create_field_index(
+            field_name: str,
+            schema: Union[PayloadSchemaType, PayloadSchemaParams],
+    ) -> "UpdateOperation":
+        """
+        Create an index on a payload field.
+
+        Args:
+            field_name: Path to the payload field.
+            schema: Schema type or index parameters for the field.
+        """
+        ...
+
+    @staticmethod
+    def delete_field_index(field_name: str) -> "UpdateOperation":
+        """
+        Delete an index from a payload field.
+
+        Args:
+            field_name: Path to the payload field.
         """
         ...
