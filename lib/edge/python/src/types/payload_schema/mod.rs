@@ -173,7 +173,7 @@ impl Repr for PyPayloadSchemaParams {
 #[pyclass(name = "KeywordIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyKeywordIndexParams(KeywordIndexParams);
+pub struct PyKeywordIndexParams(KeywordIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -209,7 +209,7 @@ impl PyKeywordIndexParams {
 #[pyclass(name = "IntegerIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyIntegerIndexParams(IntegerIndexParams);
+pub struct PyIntegerIndexParams(IntegerIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -257,7 +257,7 @@ impl PyIntegerIndexParams {
 #[pyclass(name = "FloatIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyFloatIndexParams(FloatIndexParams);
+pub struct PyFloatIndexParams(FloatIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -293,7 +293,7 @@ impl PyFloatIndexParams {
 #[pyclass(name = "GeoIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyGeoIndexParams(GeoIndexParams);
+pub struct PyGeoIndexParams(GeoIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -323,7 +323,7 @@ impl PyGeoIndexParams {
 #[pyclass(name = "BoolIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyBoolIndexParams(BoolIndexParams);
+pub struct PyBoolIndexParams(BoolIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -353,7 +353,7 @@ impl PyBoolIndexParams {
 #[pyclass(name = "DatetimeIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyDatetimeIndexParams(DatetimeIndexParams);
+pub struct PyDatetimeIndexParams(DatetimeIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
@@ -389,7 +389,7 @@ impl PyDatetimeIndexParams {
 #[pyclass(name = "UuidIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-struct PyUuidIndexParams(UuidIndexParams);
+pub struct PyUuidIndexParams(UuidIndexParams);
 
 #[pyclass_repr]
 #[pymethods]
