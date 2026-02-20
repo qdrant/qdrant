@@ -243,6 +243,7 @@ impl Validate for grpc::FieldCondition {
             r#match,
             range,
             datetime_range,
+            integer_range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -254,6 +255,7 @@ impl Validate for grpc::FieldCondition {
         let all_fields_none = r#match.is_none()
             && range.is_none()
             && datetime_range.is_none()
+            && integer_range.is_none()
             && geo_bounding_box.is_none()
             && geo_radius.is_none()
             && geo_polygon.is_none()
