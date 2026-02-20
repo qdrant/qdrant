@@ -91,6 +91,8 @@ message FieldCondition {
   optional bool is_empty = 9;
   // Check if field is null
   optional bool is_null = 10;
+  // Check if points integer value lies in a given range (lossless for large i64)
+  IntegerRange integer_range = 11;
 }
 
 message Match {
@@ -131,6 +133,13 @@ message Range {
   optional double gt = 2;
   optional double gte = 3;
   optional double lte = 4;
+}
+
+message IntegerRange {
+  optional int64 lt = 1;
+  optional int64 gt = 2;
+  optional int64 gte = 3;
+  optional int64 lte = 4;
 }
 
 message DatetimeRange {

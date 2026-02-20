@@ -10,6 +10,7 @@ use crate::repr::*;
 
 #[derive(Copy, Clone, Debug, FromPyObject, IntoPyObject)]
 pub enum PyRange {
+    Integer(PyRangeInteger),
     Float(PyRangeFloat),
     DateTime(PyRangeDateTime),
 }
@@ -17,6 +18,7 @@ pub enum PyRange {
 impl Repr for PyRange {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            PyRange::Integer(integer) => integer.fmt(f),
             PyRange::Float(float) => float.fmt(f),
             PyRange::DateTime(date_time) => date_time.fmt(f),
         }
@@ -27,12 +29,7 @@ impl From<RangeInterface> for PyRange {
     fn from(range: RangeInterface) -> Self {
         match range {
             RangeInterface::Float(float) => PyRange::Float(PyRangeFloat(float)),
-            RangeInterface::Integer(int_range) => {
-                // Convert integer range to float range for Python edge bindings
-                PyRange::Float(PyRangeFloat(
-                    int_range.map(|i| ordered_float::OrderedFloat(i as f64)),
-                ))
-            }
+            RangeInterface::Integer(int_range) => PyRange::Integer(PyRangeInteger(int_range)),
             RangeInterface::DateTime(date_time) => PyRange::DateTime(PyRangeDateTime(date_time)),
         }
     }
@@ -41,6 +38,7 @@ impl From<RangeInterface> for PyRange {
 impl From<PyRange> for RangeInterface {
     fn from(range: PyRange) -> Self {
         match range {
+            PyRange::Integer(integer) => RangeInterface::Integer(integer.0),
             PyRange::Float(float) => RangeInterface::Float(float.0),
             PyRange::DateTime(date_time) => RangeInterface::DateTime(date_time.0),
         }
@@ -92,6 +90,57 @@ impl PyRangeFloat {
 }
 
 impl PyRangeFloat {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let Range {
+            gte: _,
+            gt: _,
+            lte: _,
+            lt: _,
+        } = self.0;
+    }
+}
+
+#[pyclass(name = "RangeInteger", from_py_object)]
+#[derive(Copy, Clone, Debug, Into)]
+pub struct PyRangeInteger(pub Range<IntPayloadType>);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyRangeInteger {
+    #[new]
+    #[pyo3(signature = (gte=None, gt=None, lte=None, lt=None))]
+    pub fn new(
+        gte: Option<IntPayloadType>,
+        gt: Option<IntPayloadType>,
+        lte: Option<IntPayloadType>,
+        lt: Option<IntPayloadType>,
+    ) -> Self {
+        Self(Range { gte, gt, lte, lt })
+    }
+
+    #[getter]
+    pub fn gte(&self) -> Option<IntPayloadType> {
+        self.0.gte
+    }
+
+    #[getter]
+    pub fn gt(&self) -> Option<IntPayloadType> {
+        self.0.gt
+    }
+
+    #[getter]
+    pub fn lte(&self) -> Option<IntPayloadType> {
+        self.0.lte
+    }
+
+    #[getter]
+    pub fn lt(&self) -> Option<IntPayloadType> {
+        self.0.lt
+    }
+}
+
+impl PyRangeInteger {
     fn _getters(self) {
         // Every field should have a getter method
         let Range {
