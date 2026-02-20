@@ -177,7 +177,6 @@ impl Wal {
         for &ClosedSegment {
             start_index,
             ref segment,
-            ..
         } in &closed_segments
         {
             match start_index.cmp(&next_start_index) {

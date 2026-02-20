@@ -604,8 +604,8 @@ impl Segment {
             mmap,
             path,
             index,
+            crc: _,
             flush_offset,
-            ..
         } = self;
         let mmap_len = mmap.len();
 
