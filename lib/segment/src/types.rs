@@ -17,6 +17,7 @@ use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use num_derive::FromPrimitive;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -249,10 +250,11 @@ impl<'de> serde::Deserialize<'de> for ExtendedPointId {
             return Ok(ExtendedPointId::Uuid(uuid));
         }
 
+        let value = crate::utils::fmt::SerdeValue(&value);
+
         Err(serde::de::Error::custom(format!(
-            "value {} is not a valid point ID, \
+            "value {value} is not a valid point ID, \
                  valid values are either an unsigned integer or a UUID",
-            crate::utils::fmt::SerdeValue(&value),
         )))
     }
 }

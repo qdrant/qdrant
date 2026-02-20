@@ -1,0 +1,12 @@
+[package]
+name = "examples"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Examples demonstrating how to use the Qdrant Edge library"
+
+[dependencies]
+qdrant-edge = { path = "../qdrant-edge" }
+anyhow = "1"
+fs-err = "3"
+serde_json = "1"

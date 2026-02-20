@@ -1013,13 +1013,13 @@ impl TryFrom<rest::Record> for RetrievedPoint {
 
 impl From<segment::data_types::order_by::OrderValue> for OrderValue {
     fn from(value: segment::data_types::order_by::OrderValue) -> Self {
-        use segment::data_types::order_by as segment;
+        use segment::data_types::order_by as segment_;
 
         use crate::grpc::qdrant::order_value::Variant;
 
         let variant = match value {
-            segment::OrderValue::Float(value) => Variant::Float(value),
-            segment::OrderValue::Int(value) => Variant::Int(value),
+            segment_::OrderValue::Float(value) => Variant::Float(value),
+            segment_::OrderValue::Int(value) => Variant::Int(value),
         };
 
         Self {
@@ -1032,7 +1032,7 @@ impl TryFrom<OrderValue> for segment::data_types::order_by::OrderValue {
     type Error = Status;
 
     fn try_from(value: OrderValue) -> Result<Self, Self::Error> {
-        use segment::data_types::order_by as segment;
+        use segment::data_types::order_by as segment_;
 
         use crate::grpc::qdrant::order_value::Variant;
 
@@ -1043,8 +1043,8 @@ impl TryFrom<OrderValue> for segment::data_types::order_by::OrderValue {
         })?;
 
         let value = match variant {
-            Variant::Float(value) => segment::OrderValue::Float(value),
-            Variant::Int(value) => segment::OrderValue::Int(value),
+            Variant::Float(value) => segment_::OrderValue::Float(value),
+            Variant::Int(value) => segment_::OrderValue::Int(value),
         };
 
         Ok(value)
