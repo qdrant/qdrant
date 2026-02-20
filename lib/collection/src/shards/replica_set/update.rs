@@ -160,12 +160,12 @@ impl ShardReplicaSet {
 
         // If we are the leader, run the update from this replica set
         if leader_peer == self.this_peer_id() {
-            // Lock updates if ordering is strong or medium
+            // Lock updates only for strong ordering.
             let _write_ordering_lock = match ordering {
-                WriteOrdering::Strong | WriteOrdering::Medium => {
-                    Some(self.write_ordering_lock.lock().await)
-                }
-                WriteOrdering::Weak => None,
+                WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await),
+                // Medium may tolerate temporary ordering divergence on non-leader replicas.
+                // Avoid serializing all medium writes behind remote I/O.
+                WriteOrdering::Weak | WriteOrdering::Medium => None,
             };
 
             self.update(
