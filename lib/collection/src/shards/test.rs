@@ -72,7 +72,7 @@ fn clock_set_clock_map_workflow() {
     helper.tick_clock().assert(101);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Helper {
     clock_set: ClockSet,
     clock_map: ClockMap,
@@ -88,7 +88,7 @@ impl Helper {
         }
     }
 
-    pub fn tick_clock(&mut self) -> TickClockStatus {
+    pub fn tick_clock(&self) -> TickClockStatus {
         let mut clock = self.clock_set.get_clock().unwrap(); // unwrap in test is fine
         let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once());
         TickClockStatus { clock_tag }
