@@ -617,36 +617,44 @@ impl<V> Gridstore<V> {
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            bitmask.read().flush()?;
-            for page in pages.read().iter() {
-                page.flush()?;
+            let bitmask_flusher = bitmask.read().flusher();
+            bitmask_flusher()?;
+
+            let page_flushers: Vec<_> = pages.read().iter().map(|p| p.flusher()).collect();
+            for flusher in page_flushers {
+                flusher()?;
             }
 
-            let old_pointers = tracker.write().write_pending(pending_updates);
-            tracker.read().flush()?;
+            let (old_pointers, tracker_flusher) = {
+                let mut guard = tracker.write();
+                let old_pointers = guard.write_pending(pending_updates);
+                let flusher = guard.flusher();
+                (old_pointers, flusher)
+            };
+            tracker_flusher()?;
+
             if old_pointers.is_empty() {
                 // Nothing to do flush here
                 return Ok(());
             }
 
             // Update all free blocks in the bitmask
-            {
-                let mut bitmask_guard = bitmask.upgradable_read();
-                bitmask_guard.with_upgraded(|guard| {
-                    for (page_id, pointer_group) in
-                        &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
-                    {
-                        let local_ranges = pointer_group.map(|pointer| {
-                            let start = pointer.block_offset;
-                            let end = pointer.block_offset
-                                + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
-                            start as usize..end as usize
-                        });
-                        guard.mark_blocks_batch(page_id, local_ranges, false);
-                    }
-                });
-                bitmask_guard.flush()?;
-            }
+            let bitmask_flusher = {
+                let mut guard = bitmask.write();
+                for (page_id, pointer_group) in
+                    &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+                {
+                    let local_ranges = pointer_group.map(|pointer| {
+                        let start = pointer.block_offset;
+                        let end = pointer.block_offset
+                            + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
+                        start as usize..end as usize
+                    });
+                    guard.mark_blocks_batch(page_id, local_ranges, false);
+                }
+                guard.flusher()
+            };
+            bitmask_flusher()?;
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
@@ -661,7 +669,7 @@ impl<V> Gridstore<V> {
         for page in self.pages.read().iter() {
             page.populate();
         }
-        self.tracker.read().populate();
+        self.tracker.read().populate()?;
         self.bitmask.read().populate()?;
         Ok(())
     }

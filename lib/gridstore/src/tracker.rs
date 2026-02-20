@@ -1,10 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use ahash::{AHashMap, AHashSet};
-use common::mmap::{Advice, AdviceSetting, Madviseable};
+use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8};
-use memmap2::MmapMut;
 use smallvec::SmallVec;
 use zerocopy::FromZeros;
 
@@ -227,7 +226,7 @@ pub struct Tracker {
     /// Header of the file
     header: TrackerHeader,
     /// Mmap of the file
-    mmap: MmapMut,
+    mmap: MmapSlice<u8>,
     /// Updates that haven't been flushed
     ///
     /// When flushing, these updates get written into the mmap and flushed at once.
@@ -258,6 +257,8 @@ impl Tracker {
         create_and_ensure_length(&path, size).expect("Failed to create page tracker file");
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
             .expect("Failed to open page tracker mmap");
+        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap) }
+            .expect("Failed to create MmapSlice for tracker");
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -283,14 +284,16 @@ impl Tracker {
         }
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)?;
         #[expect(deprecated, reason = "legacy code")]
-        let header: &TrackerHeader =
+        let header: TrackerHeader =
             // TODO SAFETY
-            unsafe { transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]) };
+            unsafe { transmute_from_u8::<TrackerHeader>(&mmap[0..size_of::<TrackerHeader>()]) }
+                .clone();
+        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap)? };
         let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
             path,
-            header: header.clone(),
+            header,
             mmap,
             pending_updates,
         })
@@ -351,15 +354,15 @@ impl Tracker {
         old_pointers
     }
 
-    pub fn flush(&self) -> std::io::Result<()> {
-        self.mmap.flush()
+    pub fn flusher(&self) -> MmapFlusher {
+        self.mmap.flusher()
     }
 
     #[cfg(test)]
-    pub fn write_pending_and_flush_internal(&mut self) -> std::io::Result<Vec<ValuePointer>> {
+    pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
         let res = self.write_pending(pending_updates);
-        self.flush()?;
+        self.mmap.flusher()()?;
         Ok(res)
     }
 
@@ -395,11 +398,13 @@ impl Tracker {
 
         // Grow tracker file if it isn't big enough
         if self.mmap.len() < end_offset {
-            self.mmap.flush().unwrap();
+            self.mmap.flusher()().unwrap();
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size).unwrap();
-            self.mmap = open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
-                .unwrap();
+            let new_mmap =
+                open_write_mmap(&self.path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
+                    .unwrap();
+            self.mmap = unsafe { MmapSlice::<u8>::try_from(new_mmap) }.unwrap();
         }
 
         let pointer: Optional<_> = pointer.into();
@@ -494,8 +499,8 @@ impl Tracker {
         pointer_opt
     }
 
-    pub fn populate(&self) {
-        self.mmap.populate();
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate()
     }
 }
 

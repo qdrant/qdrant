@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 
 use common::fs::clear_disk_cache;
 use common::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, create_and_ensure_length,
-    open_read_mmap, open_write_mmap,
+    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapFlusher, MmapSlice,
+    create_and_ensure_length, open_read_mmap, open_write_mmap,
 };
 use fs_err as fs;
-use memmap2::{Mmap, MmapMut};
+use memmap2::Mmap;
 
 use crate::Result;
 use crate::error::GridstoreError;
@@ -18,7 +18,7 @@ pub(crate) struct Page {
     /// Main data mmap for read/write
     ///
     /// Best suited for random reads.
-    mmap: MmapMut,
+    mmap: MmapSlice<u8>,
     /// Read-only mmap best suited for sequential reads
     ///
     /// `None` on platforms that do not support multiple memory maps to the same file.
@@ -27,15 +27,15 @@ pub(crate) struct Page {
 }
 
 impl Page {
-    /// Flushes outstanding memory map modifications to disk.
-    pub(crate) fn flush(&self) -> std::io::Result<()> {
-        self.mmap.flush()
+    pub(crate) fn flusher(&self) -> MmapFlusher {
+        self.mmap.flusher()
     }
 
     /// Create a new page at the given path
     pub fn new(path: &Path, size: usize) -> Result<Page> {
         create_and_ensure_length(path, size)?;
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
+        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap)? };
 
         // Only open second mmap for sequential reads if supported
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
@@ -67,6 +67,7 @@ impl Page {
             )));
         }
         let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
+        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap)? };
 
         // Only open second mmap for sequential reads if supported
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
@@ -94,7 +95,7 @@ impl Page {
         self._mmap_seq
             .as_ref()
             .map(|m| m.as_ref())
-            .unwrap_or(self.mmap.as_ref())
+            .unwrap_or(&self.mmap)
     }
 
     /// Write a value into the page
