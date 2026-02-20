@@ -7,10 +7,56 @@ use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
 use pyo3::prelude::*;
 use segment::data_types::index::*;
-use segment::types::{PayloadSchemaParams, PayloadSchemaType};
+use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
 
 pub use self::text_index::*;
 use crate::repr::*;
+
+#[derive(Clone, Debug, Into)]
+pub struct PyPayloadFieldSchema(PayloadFieldSchema);
+
+impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
+    type Error = PyErr;
+
+    fn extract(schema: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Helper {
+            Type(PyPayloadSchemaType),
+            Params(PyPayloadSchemaParams),
+        }
+
+        fn _variants(schema: PayloadFieldSchema) {
+            match schema {
+                PayloadFieldSchema::FieldType(_) => {}
+                PayloadFieldSchema::FieldParams(_) => {}
+            }
+        }
+
+        let schema = match schema.extract()? {
+            Helper::Type(schema_type) => PayloadFieldSchema::FieldType(schema_type.into()),
+            Helper::Params(schema_params) => PayloadFieldSchema::FieldParams(schema_params.into()),
+        };
+
+        Ok(Self(schema))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for PyPayloadFieldSchema {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self.0 {
+            PayloadFieldSchema::FieldType(schema_type) => {
+                PyPayloadSchemaType::from(schema_type).into_bound_py_any(py)
+            }
+            PayloadFieldSchema::FieldParams(schema_params) => {
+                PyPayloadSchemaParams(schema_params).into_bound_py_any(py)
+            }
+        }
+    }
+}
 
 #[pyclass(name = "PayloadSchemaType", from_py_object)]
 #[derive(Copy, Clone, Debug)]

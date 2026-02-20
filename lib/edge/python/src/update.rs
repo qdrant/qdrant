@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, VectorNameBuf};
 use shard::operations::point_ops::{PointIdsList, PointInsertOperationsInternal, UpdateMode};
-use shard::operations::{CollectionUpdateOperations, payload_ops, point_ops, vector_ops};
+use shard::operations::*;
 
 use crate::*;
 
@@ -217,5 +217,21 @@ impl PyUpdateOperation {
         });
 
         Self(CollectionUpdateOperations::PayloadOperation(operation))
+    }
+
+    #[staticmethod]
+    pub fn create_field_index(field_name: PyJsonPath, schema: PyPayloadFieldSchema) -> Self {
+        let operation = FieldIndexOperations::CreateIndex(CreateIndex {
+            field_name: JsonPath::from(field_name),
+            field_schema: Some(PayloadFieldSchema::from(schema)),
+        });
+
+        Self(CollectionUpdateOperations::FieldIndexOperation(operation))
+    }
+
+    #[staticmethod]
+    pub fn delete_field_index(field_name: PyJsonPath) -> Self {
+        let operation = FieldIndexOperations::DeleteIndex(JsonPath::from(field_name));
+        Self(CollectionUpdateOperations::FieldIndexOperation(operation))
     }
 }
