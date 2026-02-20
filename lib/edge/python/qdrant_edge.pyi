@@ -1179,7 +1179,7 @@ class TextIndexParams:
         ...
 
     @property
-    def tokenizer(self) -> Optional["TokenizerType"]:
+    def tokenizer(self) -> "TokenizerType":
         """Tokenizer type."""
         ...
 
@@ -1282,8 +1282,8 @@ class StopwordsSet:
 
     def __init__(
             self,
-            languages: Optional[List["Language"]] = None,
-            custom: Optional[List[str]] = None,
+            languages: Optional[Set["Language"]] = None,
+            custom: Optional[Set[str]] = None,
     ) -> None:
         """
         Create a StopwordsSet.
@@ -1295,12 +1295,12 @@ class StopwordsSet:
         ...
 
     @property
-    def languages(self) -> Optional[List["Language"]]:
+    def languages(self) -> Optional[Set["Language"]]:
         """Predefined language stopwords."""
         ...
 
     @property
-    def custom(self) -> Optional[List[str]]:
+    def custom(self) -> Optional[Set[str]]:
         """Custom stopwords."""
         ...
 
