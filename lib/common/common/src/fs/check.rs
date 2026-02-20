@@ -84,6 +84,7 @@ impl FsType {
             "xfs" => Self::Xfs,
             "ntfs" => Self::Ntfs,
             "fat" | "fat12" | "fat16" | "fat32" => Self::Fat,
+            "exfat" => Self::ExFat,
             "nfs" => Self::Nfs,
             "hfs" | "htf+" => Self::Hfs,
             "apfs" => Self::Apfs,
