@@ -24,7 +24,7 @@ impl MmapViewSync {
         unsafe {
             let mmap = &mut *self.inner.get();
             if let Err(err) = mmap.unchecked_advise(memmap2::UncheckedAdvice::DontNeed) {
-                log::warn!("Erorr clearing closed wal segment: {err:?}");
+                log::warn!("Error clearing closed wal segment: {err:?}");
             }
         }
     }
