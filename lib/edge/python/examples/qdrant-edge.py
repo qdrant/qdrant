@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 from common import *
-
 from qdrant_edge import *
+
 
 print("---- Point conversions ----")
 
@@ -136,6 +136,7 @@ points = shard.retrieve(point_ids=[1], with_vector=True, with_payload=True)
 for point in points:
     print(point)
 
+
 print("---- Scroll ----")
 
 scroll_result, next_offset = shard.scroll(ScrollRequest(limit=2))
@@ -150,10 +151,12 @@ while next_offset is not None:
     for point in scroll_result:
         print(point)
 
+
 print("---- Count ----")
 
 count = shard.count(CountRequest(exact=True))
 print(f"Total points count: {count}")
+
 
 print("---- Facet ----")
 
@@ -166,14 +169,18 @@ response = shard.facet(
         exact=False,
     )
 )
+
 print(f"Facet results ({len(response)} hits):")
+
 for hit in response:
     print(f"  {hit.value}: {hit.count}")
 
-print("---- info ----")
+
+print("---- Info ----")
 
 info = shard.info()
 print(info)
+
 
 print("---- Close and reopen shard ----")
 
@@ -182,5 +189,4 @@ shard.close()
 reopened_shard = EdgeShard(DATA_DIRECTORY)
 
 info = reopened_shard.info()
-
 print(info)

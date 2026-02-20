@@ -392,7 +392,7 @@ impl PyStopwordsSet {
         self.0
             .languages
             .as_ref()
-            .map(|langs| langs.iter().cloned().map(PyLanguage::from).collect())
+            .map(|langs| langs.iter().copied().map(PyLanguage::from).collect())
     }
 
     #[getter]
