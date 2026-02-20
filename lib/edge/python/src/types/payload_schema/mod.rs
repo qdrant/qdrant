@@ -41,23 +41,6 @@ impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
     }
 }
 
-impl<'py> IntoPyObject<'py> for PyPayloadFieldSchema {
-    type Target = PyAny;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        match self.0 {
-            PayloadFieldSchema::FieldType(schema_type) => {
-                PyPayloadSchemaType::from(schema_type).into_bound_py_any(py)
-            }
-            PayloadFieldSchema::FieldParams(schema_params) => {
-                PyPayloadSchemaParams(schema_params).into_bound_py_any(py)
-            }
-        }
-    }
-}
-
 #[pyclass(name = "PayloadSchemaType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadSchemaType {
