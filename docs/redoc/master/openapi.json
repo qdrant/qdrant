@@ -7476,7 +7476,8 @@
           "default",
           "binary",
           "scalar4bits",
-          "scalar8bits"
+          "scalar8bits",
+          "uncompressed"
         ]
       },
       "Datatype": {

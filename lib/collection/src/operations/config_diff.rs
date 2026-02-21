@@ -7,12 +7,14 @@ use std::num::NonZeroU32;
 use api::rest::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+    BinaryQuantization, BinaryQuantizationEncoding, BinaryQuantizationQueryEncoding, Distance,
+    HnswConfig, ProductQuantization, QuantizationConfig, ScalarQuantization, StrictModeConfig,
 };
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
 use crate::config::{CollectionParams, WalConfig};
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::optimizers_builder::OptimizersConfig;
 
 pub trait DiffConfig<Diff>: Clone {
@@ -488,6 +490,54 @@ pub enum QuantizationConfigDiff {
 impl QuantizationConfigDiff {
     pub fn new_disabled() -> Self {
         QuantizationConfigDiff::Disabled(Disabled::Disabled)
+    }
+
+    /// Validate that the quantization config is compatible with the collection parameters.
+    ///
+    /// Returns an error if incompatible (e.g., uncompressed query encoding with non-dot distance).
+    pub fn validate_compatibility(
+        &self,
+        collection_params: &CollectionParams,
+        existing_quantization: Option<&QuantizationConfig>,
+    ) -> CollectionResult<()> {
+        // We only need to validate Binary quantization with Uncompressed query encoding
+        if let QuantizationConfigDiff::Binary(binary) = self
+            && let Some(query_encoding) = &binary.binary.query_encoding
+            && matches!(
+                query_encoding,
+                BinaryQuantizationQueryEncoding::Uncompressed
+            )
+        {
+            // Check distance type for all vectors - uncompressed queries only work with dot product
+            for (vector_name, _) in collection_params.vectors.params_iter() {
+                let distance_type = collection_params.get_distance(vector_name)?;
+                if !matches!(distance_type, Distance::Dot) {
+                    return Err(CollectionError::bad_input(format!(
+                        "Uncompressed query encoding is only supported for dot product distance, \
+                         but vector '{vector_name}' uses {distance_type:?}. Use Binary or Scalar query encoding for L1/L2 distances.",
+                    )));
+                }
+            }
+
+            let effective_encoding = binary.binary.encoding.or_else(|| {
+                existing_quantization.and_then(|q| {
+                    if let QuantizationConfig::Binary(existing_binary) = q {
+                        existing_binary.binary.encoding
+                    } else {
+                        None
+                    }
+                })
+            });
+
+            // Check encoding - uncompressed queries only work with OneBit
+            if effective_encoding != Some(BinaryQuantizationEncoding::OneBit) {
+                return Err(CollectionError::bad_input(format!(
+                    "Uncompressed query encoding is only supported with OneBit storage encoding, \
+                     but got {effective_encoding:?}. Use Binary or Scalar query encoding for {effective_encoding:?} storage encoding.",
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
