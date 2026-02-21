@@ -168,6 +168,22 @@ impl ShardTransfer {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultiSourceTransferState {
+    pub transfer: MultiSourceTransfer,
+    pub completed_sources: Vec<(PeerId, ShardId)>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultiSourceTransfer {
+    pub from_peer_ids: Vec<PeerId>,
+    pub from_shard_ids: Vec<ShardId>,
+    pub to_peer_id: PeerId,
+    pub to_shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Filter>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
