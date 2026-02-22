@@ -39,6 +39,7 @@ pub struct PointsService {
 }
 
 impl PointsService {
+    /// Create a new points service instance.
     pub fn new(dispatcher: Arc<Dispatcher>, service_config: ServiceConfig) -> Self {
         Self {
             dispatcher,
@@ -46,6 +47,7 @@ impl PointsService {
         }
     }
 
+    /// Build hardware usage accounting for a request scoped to a collection.
     fn get_request_collection_hw_usage_counter(
         &self,
         collection_name: String,
@@ -60,6 +62,7 @@ impl PointsService {
     }
 }
 
+/// Store collection name in request extensions for telemetry middleware.
 fn set_grpc_collection_slot<T>(request: &Request<T>, collection_name: &str) {
     if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
         slot.set(collection_name.to_string());
@@ -68,6 +71,7 @@ fn set_grpc_collection_slot<T>(request: &Request<T>, collection_name: &str) {
 
 #[tonic::async_trait]
 impl Points for PointsService {
+    /// Handle gRPC endpoint for upsert.
     async fn upsert(
         &self,
         mut request: Request<UpsertPoints>,
@@ -96,6 +100,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
+    /// Handle gRPC endpoint for delete.
     async fn delete(
         &self,
         mut request: Request<DeletePoints>,
@@ -119,6 +124,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
+    /// Handle gRPC endpoint for get.
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
 
@@ -138,6 +144,7 @@ impl Points for PointsService {
         .await
     }
 
+    /// Handle gRPC endpoint for update vectors.
     async fn update_vectors(
         &self,
         mut request: Request<UpdatePointVectors>,
@@ -168,6 +175,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(PointsOperationResponse::from))
     }
 
+    /// Handle gRPC endpoint for delete vectors.
     async fn delete_vectors(
         &self,
         mut request: Request<DeletePointVectors>,
@@ -190,6 +198,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for set payload.
     async fn set_payload(
         &self,
         mut request: Request<SetPayloadPoints>,
@@ -214,6 +223,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for overwrite payload.
     async fn overwrite_payload(
         &self,
         mut request: Request<SetPayloadPoints>,
@@ -238,6 +248,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for delete payload.
     async fn delete_payload(
         &self,
         mut request: Request<DeletePayloadPoints>,
@@ -262,6 +273,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for clear payload.
     async fn clear_payload(
         &self,
         mut request: Request<ClearPayloadPoints>,
@@ -286,6 +298,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for update batch.
     async fn update_batch(
         &self,
         mut request: Request<UpdateBatchPoints>,
@@ -313,6 +326,7 @@ impl Points for PointsService {
         .await
     }
 
+    /// Handle gRPC endpoint for create field index.
     async fn create_field_index(
         &self,
         mut request: Request<CreateFieldIndexCollection>,
@@ -336,6 +350,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for delete field index.
     async fn delete_field_index(
         &self,
         mut request: Request<DeleteFieldIndexCollection>,
@@ -355,6 +370,7 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
+    /// Handle gRPC endpoint for search.
     async fn search(
         &self,
         mut request: Request<SearchPoints>,
@@ -378,6 +394,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for search batch.
     async fn search_batch(
         &self,
         mut request: Request<SearchBatchPoints>,
@@ -423,6 +440,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for search groups.
     async fn search_groups(
         &self,
         mut request: Request<SearchPointGroups>,
@@ -444,6 +462,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for scroll.
     async fn scroll(
         &self,
         mut request: Request<ScrollPoints>,
@@ -470,6 +489,7 @@ impl Points for PointsService {
         .await
     }
 
+    /// Handle gRPC endpoint for recommend.
     async fn recommend(
         &self,
         mut request: Request<RecommendPoints>,
@@ -490,6 +510,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for recommend batch.
     async fn recommend_batch(
         &self,
         mut request: Request<RecommendBatchPoints>,
@@ -521,6 +542,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for recommend groups.
     async fn recommend_groups(
         &self,
         mut request: Request<RecommendPointGroups>,
@@ -542,6 +564,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for discover.
     async fn discover(
         &self,
         mut request: Request<DiscoverPoints>,
@@ -562,6 +585,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for discover batch.
     async fn discover_batch(
         &self,
         mut request: Request<DiscoverBatchPoints>,
@@ -592,6 +616,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for count.
     async fn count(
         &self,
         mut request: Request<CountPoints>,
@@ -614,6 +639,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for query.
     async fn query(
         &self,
         mut request: Request<QueryPoints>,
@@ -640,6 +666,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for query batch.
     async fn query_batch(
         &self,
         mut request: Request<QueryBatchPoints>,
@@ -676,6 +703,7 @@ impl Points for PointsService {
         Ok(res)
     }
 
+    /// Handle gRPC endpoint for query groups.
     async fn query_groups(
         &self,
         mut request: Request<QueryPointGroups>,
@@ -701,6 +729,7 @@ impl Points for PointsService {
 
         Ok(res)
     }
+    /// Handle gRPC endpoint for facet.
     async fn facet(
         &self,
         mut request: Request<FacetCounts>,
@@ -719,6 +748,7 @@ impl Points for PointsService {
         .await
     }
 
+    /// Handle gRPC endpoint for search matrix pairs.
     async fn search_matrix_pairs(
         &self,
         mut request: Request<SearchMatrixPoints>,
@@ -746,6 +776,7 @@ impl Points for PointsService {
         Ok(Response::new(pairs_response))
     }
 
+    /// Handle gRPC endpoint for search matrix offsets.
     async fn search_matrix_offsets(
         &self,
         mut request: Request<SearchMatrixPoints>,

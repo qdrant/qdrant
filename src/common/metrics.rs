@@ -643,6 +643,7 @@ impl MetricsProvider for RequestsTelemetry {
 }
 
 impl MetricsProvider for WebApiTelemetry {
+    /// Add global and per-collection REST request metrics.
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder_global = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
@@ -695,6 +696,7 @@ impl MetricsProvider for WebApiTelemetry {
 }
 
 impl MetricsProvider for GrpcTelemetry {
+    /// Add global and per-collection gRPC request metrics.
     fn add_metrics(&self, metrics: &mut MetricsData, prefix: Option<&str>) {
         let mut builder_global = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {

@@ -18,11 +18,13 @@ use crate::common::telemetry_ops::requests_telemetry::{
 pub struct GrpcCollectionSlot(Arc<parking_lot::Mutex<Option<String>>>);
 
 impl GrpcCollectionSlot {
+    /// Set collection name in the shared telemetry slot.
     pub fn set(&self, collection: String) {
         let mut guard = self.0.lock();
         *guard = Some(collection);
     }
 
+    /// Take and clear collection name from the shared telemetry slot.
     pub fn take(&self) -> Option<String> {
         let mut guard = self.0.lock();
         guard.take()
@@ -62,10 +64,12 @@ where
     type Error = S::Error;
     type Future = BoxFuture<'static, Result<S::Response, S::Error>>;
 
+    /// Poll readiness of the wrapped gRPC service.
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
     }
 
+    /// Record telemetry for a single gRPC request.
     fn call(&mut self, mut request: Request) -> Self::Future {
         let method_name = request.uri().path().to_string();
 
@@ -119,6 +123,7 @@ where
 }
 
 impl TonicTelemetryLayer {
+    /// Construct telemetry layer with the provided collector.
     pub fn new(
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     ) -> TonicTelemetryLayer {
@@ -131,6 +136,7 @@ impl TonicTelemetryLayer {
 impl<S> Layer<S> for TonicTelemetryLayer {
     type Service = TonicTelemetryService<S>;
 
+    /// Wrap service with telemetry middleware.
     fn layer(&self, service: S) -> Self::Service {
         TonicTelemetryService {
             service,

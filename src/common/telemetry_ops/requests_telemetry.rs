@@ -89,6 +89,7 @@ pub struct ActixWorkerTelemetryCollector {
 }
 
 impl Default for ActixWorkerTelemetryCollector {
+    /// Create a default telemetry collector state.
     fn default() -> Self {
         Self {
             methods: HashMap::new(),
@@ -113,6 +114,7 @@ pub struct TonicWorkerTelemetryCollector {
 }
 
 impl Default for TonicWorkerTelemetryCollector {
+    /// Create a default telemetry collector state.
     fn default() -> Self {
         Self {
             methods: HashMap::new(),
@@ -122,12 +124,14 @@ impl Default for TonicWorkerTelemetryCollector {
 }
 
 impl ActixTelemetryCollector {
+    /// Create and register per-worker REST telemetry collector.
     pub fn create_web_worker_telemetry(&mut self) -> Arc<Mutex<ActixWorkerTelemetryCollector>> {
         let worker: Arc<Mutex<_>> = Default::default();
         self.workers.push(worker.clone());
         worker
     }
 
+    /// Build telemetry snapshot for the requested detail level.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut result = WebApiTelemetry::default();
         for web_data in &self.workers {
@@ -139,12 +143,14 @@ impl ActixTelemetryCollector {
 }
 
 impl TonicTelemetryCollector {
+    /// Create and register per-worker gRPC telemetry collector.
     pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TonicWorkerTelemetryCollector>> {
         let worker: Arc<Mutex<_>> = Default::default();
         self.workers.push(worker.clone());
         worker
     }
 
+    /// Build telemetry snapshot for the requested detail level.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
         let mut result = GrpcTelemetry::default();
         for grpc_data in &self.workers {
@@ -156,6 +162,7 @@ impl TonicTelemetryCollector {
 }
 
 impl TonicWorkerTelemetryCollector {
+    /// Record response metrics without collection context.
     pub fn add_response(
         &mut self,
         method: String,
@@ -165,6 +172,7 @@ impl TonicWorkerTelemetryCollector {
         self.add_response_with_collection(method, status_code, instant, None);
     }
 
+    /// Record response metrics with optional collection context.
     pub fn add_response_with_collection(
         &mut self,
         method: String,
@@ -195,6 +203,7 @@ impl TonicWorkerTelemetryCollector {
         }
     }
 
+    /// Build telemetry snapshot for the requested detail level.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> GrpcTelemetry {
         let mut responses = HashMap::new();
         for (method, status_codes) in &self.methods {
@@ -227,6 +236,7 @@ impl TonicWorkerTelemetryCollector {
 }
 
 impl ActixWorkerTelemetryCollector {
+    /// Record response metrics without collection context.
     pub fn add_response(
         &mut self,
         endpoint: &str,
@@ -236,6 +246,7 @@ impl ActixWorkerTelemetryCollector {
         self.add_response_with_collection(endpoint, status, instant, None);
     }
 
+    /// Record response metrics with optional collection context.
     pub fn add_response_with_collection(
         &mut self,
         endpoint: &str,
@@ -269,6 +280,7 @@ impl ActixWorkerTelemetryCollector {
         }
     }
 
+    /// Build telemetry snapshot for the requested detail level.
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut responses = HashMap::new();
         for (endpoint, status_codes) in &self.methods {
@@ -302,6 +314,7 @@ impl ActixWorkerTelemetryCollector {
 }
 
 impl GrpcTelemetry {
+    /// Merge telemetry counters from another snapshot.
     pub fn merge(&mut self, other: &GrpcTelemetry) {
         for (method, success_map) in &other.responses {
             let entry = self.responses.entry(method.clone()).or_default();
@@ -328,6 +341,7 @@ impl GrpcTelemetry {
 }
 
 impl WebApiTelemetry {
+    /// Merge telemetry counters from another snapshot.
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
@@ -360,6 +374,7 @@ pub struct RequestsTelemetry {
 }
 
 impl RequestsTelemetry {
+    /// Collect request telemetry for authorized callers.
     pub fn collect(
         auth: &Auth,
         actix_collector: &ActixTelemetryCollector,
@@ -381,6 +396,7 @@ impl RequestsTelemetry {
 }
 
 impl Anonymize for WebApiTelemetry {
+    /// Return anonymized telemetry values.
     fn anonymize(&self) -> Self {
         let responses = self
             .responses
@@ -411,6 +427,7 @@ impl Anonymize for WebApiTelemetry {
 }
 
 impl Anonymize for GrpcTelemetry {
+    /// Return anonymized telemetry values.
     fn anonymize(&self) -> Self {
         let responses = self
             .responses
@@ -450,6 +467,7 @@ mod tests {
     use super::{GrpcTelemetry, WebApiTelemetry};
 
     #[test]
+    /// Handle webapi anonymize obfuscates collection name keys.
     fn webapi_anonymize_obfuscates_collection_name_keys() {
         let collection = "sensitive_collection".to_string();
         let endpoint = "POST /collections/{name}/points".to_string();
@@ -483,6 +501,7 @@ mod tests {
     }
 
     #[test]
+    /// Handle grpc anonymize obfuscates collection name keys.
     fn grpc_anonymize_obfuscates_collection_name_keys() {
         let collection = "sensitive_collection_grpc".to_string();
         let endpoint = "/qdrant.Points/Search".to_string();
