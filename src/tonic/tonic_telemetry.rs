@@ -103,7 +103,9 @@ where
             // The ICE is triggered when calling a method in requests_telemetry that takes
             // Option<String> from this async block, even without .as_deref().
             // NOTE: crate MSRV is 1.92, but the ICE was observed on rustc 1.93.1
-            // in check_mod_deathness. Keep this structure until upstream is fixed.
+            // in check_mod_deathness.
+            // TODO(rust-lang/rust#121947): re-check this workaround on newer rustc
+            // and remove once the upstream ICE path in check_mod_deathness is resolved.
             let mut telemetry = telemetry_data.lock();
             if let Some(c) = collection {
                 telemetry.add_response_with_collection(method_name, status_code, instant, Some(&c));

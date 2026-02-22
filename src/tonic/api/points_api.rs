@@ -60,6 +60,12 @@ impl PointsService {
     }
 }
 
+fn set_grpc_collection_slot<T>(request: &Request<T>, collection_name: &str) {
+    if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
+        slot.set(collection_name.to_string());
+    }
+}
+
 #[tonic::async_trait]
 impl Points for PointsService {
     async fn upsert(
@@ -74,9 +80,7 @@ impl Points for PointsService {
         let inference_params = InferenceParams::new(api_keys, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -100,9 +104,7 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -121,11 +123,8 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
-        let slot = request.extensions().get::<GrpcCollectionSlot>().cloned();
+        set_grpc_collection_slot(&request, request.get_ref().collection_name.as_str());
         let inner_request = request.into_inner();
-        if let Some(s) = &slot {
-            s.set(inner_request.collection_name.clone());
-        }
         let hw_metrics = self
             .get_request_collection_hw_usage_counter(inner_request.collection_name.clone(), None);
 
@@ -153,9 +152,7 @@ impl Points for PointsService {
         let inference_params = InferenceParams::new(api_keys, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -179,9 +176,7 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         delete_vectors(
@@ -204,9 +199,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -230,9 +223,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -256,9 +247,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -282,9 +271,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -311,9 +298,7 @@ impl Points for PointsService {
         let inference_params = InferenceParams::new(api_keys, timeout);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -336,9 +321,7 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
 
@@ -361,9 +344,7 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name);
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         delete_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
@@ -382,9 +363,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
 
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         let res = search(
@@ -406,16 +385,13 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let auth = extract_auth(&mut request);
-        let slot = request.extensions().get::<GrpcCollectionSlot>().cloned();
+        set_grpc_collection_slot(&request, request.get_ref().collection_name.as_str());
         let SearchBatchPoints {
             collection_name,
             search_points,
             read_consistency,
             timeout,
         } = request.into_inner();
-        if let Some(s) = &slot {
-            s.set(collection_name.clone());
-        }
 
         let timeout = timeout.map(Duration::from_secs);
 
@@ -454,9 +430,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = search_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -503,9 +477,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -524,16 +496,13 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let slot = request.extensions().get::<GrpcCollectionSlot>().cloned();
+        set_grpc_collection_slot(&request, request.get_ref().collection_name.as_str());
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
             read_consistency,
             timeout,
         } = request.into_inner();
-        if let Some(s) = &slot {
-            s.set(collection_name.clone());
-        }
 
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
@@ -559,9 +528,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         let res = recommend_groups(
@@ -582,9 +549,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = discover(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -603,16 +568,13 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let slot = request.extensions().get::<GrpcCollectionSlot>().cloned();
+        set_grpc_collection_slot(&request, request.get_ref().collection_name.as_str());
         let DiscoverBatchPoints {
             collection_name,
             discover_points,
             read_consistency,
             timeout,
         } = request.into_inner();
-        if let Some(s) = &slot {
-            s.set(collection_name.clone());
-        }
 
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
@@ -638,9 +600,7 @@ impl Points for PointsService {
 
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let res = count(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -664,9 +624,7 @@ impl Points for PointsService {
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         let res = query(
@@ -691,7 +649,7 @@ impl Points for PointsService {
         let timeout = request.get_ref().timeout.map(Duration::from_secs);
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
-        let slot = request.extensions().get::<GrpcCollectionSlot>().cloned();
+        set_grpc_collection_slot(&request, request.get_ref().collection_name.as_str());
 
         let request = request.into_inner();
         let QueryBatchPoints {
@@ -700,9 +658,6 @@ impl Points for PointsService {
             read_consistency,
             timeout,
         } = request;
-        if let Some(s) = &slot {
-            s.set(collection_name.clone());
-        }
         let timeout = timeout.map(Duration::from_secs);
         let hw_metrics =
             self.get_request_collection_hw_usage_counter(collection_name.clone(), None);
@@ -731,9 +686,7 @@ impl Points for PointsService {
         let api_keys = extract_inference_auth(&request);
         let inference_params = InferenceParams::new(api_keys, timeout);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
 
         let res = query_groups(
@@ -755,9 +708,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -776,9 +727,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -805,9 +754,7 @@ impl Points for PointsService {
         let auth = extract_auth(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        if let Some(slot) = request.extensions().get::<GrpcCollectionSlot>() {
-            slot.set(collection_name.clone());
-        }
+        set_grpc_collection_slot(&request, &collection_name);
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, None);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
