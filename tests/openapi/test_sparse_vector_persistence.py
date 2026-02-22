@@ -128,7 +128,7 @@ def test_sparse_dense_vector_naming_validations(collection_name):
         }
     )
     assert not response.ok
-    assert 'Dense and sparse vector names must be unique - duplicate found with \'\'' in response.json()["status"]["error"]
+    assert 'Sparse vector name cannot be empty' in response.json()["status"]["error"]
 
     response = request_with_validation(
         api='/collections/{collection_name}',
