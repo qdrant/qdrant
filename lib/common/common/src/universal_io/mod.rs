@@ -1,4 +1,4 @@
-mod mmap;
+pub mod mmap;
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -70,4 +70,17 @@ pub struct BytesRange {
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
-pub type UniversalIoError = std::io::Error;
+
+#[derive(thiserror::Error, Debug)]
+pub enum UniversalIoError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Mmap(#[from] crate::mmap::Error),
+    #[error("Byte range {start}..{end} is out of bounds (data size: {data_length} bytes)")]
+    OutOfBounds {
+        start: u64,
+        end: u64,
+        data_length: usize,
+    },
+}
