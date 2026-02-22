@@ -1,19 +1,22 @@
+mod mmap;
+
 use std::borrow::Cow;
+use std::path::Path;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead {
-    fn open(path: &str, options: OpenOptions) -> Result<Self>
+pub trait UniversalRead<T: Copy + 'static> {
+    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Self: Sized;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read(&self, range: BytesRange) -> Result<Cow<'_, [u8]>>;
+    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [T]>>;
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
         ranges: impl IntoIterator<Item = BytesRange>,
-        callback: impl FnMut(usize, &[u8]) -> Result<()>,
+        callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
@@ -27,12 +30,12 @@ pub trait UniversalRead {
     fn clear_ram_cache(&self) -> Result<()>;
 }
 
-pub trait UniversalWrite {
-    fn write(&mut self, offset: ByteOffset, data: &[u8]) -> Result<()>;
+pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
+    fn write(&mut self, offset: ByteOffset, data: &[T]) -> Result<()>;
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [u8])>,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> Result<()>;
 
     fn flusher(&self) -> Flusher;
@@ -44,6 +47,8 @@ pub struct OpenOptions {
     /// How many parallel requests to the disk we can do.
     /// If `None`, the use implementation-specific default.
     pub disk_parallel: Option<usize>,
+    /// Populate RAM cache on open, if applicable for this implementation.
+    pub populate: Option<bool>,
 }
 
 impl Default for OpenOptions {
@@ -51,12 +56,17 @@ impl Default for OpenOptions {
         Self {
             need_sequential: true,
             disk_parallel: None,
+            populate: None,
         }
     }
 }
 
 pub type ByteOffset = u64;
-pub type BytesRange = (u64, u64);
+
+pub struct BytesRange {
+    pub start: ByteOffset,
+    pub length: u64,
+}
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 pub type Result<T, E = UniversalIoError> = std::result::Result<T, E>;
