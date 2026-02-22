@@ -5,7 +5,9 @@ use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
 };
-use crate::universal_io::{BytesRange, OpenOptions, UniversalIoError, UniversalRead};
+use crate::universal_io::{
+    ByteOffset, BytesRange, Flusher, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
+};
 
 pub struct MmapUniversal<T: Copy + 'static> {
     path: PathBuf,
@@ -113,6 +115,44 @@ where
     fn clear_ram_cache(&self) -> crate::universal_io::Result<()> {
         crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
+    }
+}
+
+impl<T> UniversalWrite<T> for MmapUniversal<T>
+where
+    T: Copy + 'static,
+{
+    fn write(&mut self, offset: ByteOffset, data: &[T]) -> crate::universal_io::Result<()> {
+        let mmap_slice: &mut [T] = &mut self.mmap;
+        let data_length = mmap_slice.len();
+        let start = offset as usize;
+        let end = start + data.len();
+
+        let target = mmap_slice
+            .get_mut(start..end)
+            .ok_or(UniversalIoError::OutOfBounds {
+                start: offset,
+                end: offset + data.len() as u64,
+                data_length,
+            })?;
+
+        target.copy_from_slice(data);
+        Ok(())
+    }
+
+    fn write_batch<'a>(
+        &mut self,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+    ) -> crate::universal_io::Result<()> {
+        for (offset, data) in offset_data {
+            self.write(offset, data)?;
+        }
+        Ok(())
+    }
+
+    fn flusher(&self) -> Flusher {
+        let inner = self.mmap.flusher();
+        Box::new(move || Ok(inner()?)) // Converts error type to UniversalIoError
     }
 }
 
