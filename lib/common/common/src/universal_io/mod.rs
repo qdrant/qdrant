@@ -77,7 +77,7 @@ pub enum UniversalIoError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Mmap(#[from] crate::mmap::Error),
-    #[error("Byte range {start}..{end} is out of bounds (data size: {data_length} bytes)")]
+    #[error("Data range {start}..{end} is out of bounds (data size: {data_length} elements)")]
     OutOfBounds {
         start: u64,
         end: u64,
