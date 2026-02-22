@@ -402,7 +402,7 @@ impl Anonymize for WebApiTelemetry {
             .responses_per_collection
             .iter()
             .map(|(collection, endpoints)| {
-                let collection_name = collection.clone();
+                let collection_name = collection.anonymize();
                 let anonymized_endpoints = endpoints
                     .iter()
                     .map(|(endpoint, statuses)| {
@@ -432,7 +432,7 @@ impl Anonymize for GrpcTelemetry {
             .responses_per_collection
             .iter()
             .map(|(collection, endpoints)| {
-                let collection_name = collection.clone();
+                let collection_name = collection.anonymize();
                 let anonymized_endpoints = endpoints
                     .iter()
                     .map(|(endpoint, statuses)| {
@@ -447,5 +447,81 @@ impl Anonymize for GrpcTelemetry {
             responses,
             responses_per_collection,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use segment::common::anonymize::Anonymize;
+    use segment::common::operation_time_statistics::OperationDurationStatistics;
+
+    use super::{GrpcTelemetry, WebApiTelemetry};
+
+    #[test]
+    fn webapi_anonymize_obfuscates_collection_name_keys() {
+        let collection = "sensitive_collection".to_string();
+        let endpoint = "POST /collections/{name}/points".to_string();
+
+        let mut telemetry = WebApiTelemetry::default();
+        telemetry.responses_per_collection.insert(
+            collection.clone(),
+            HashMap::from([(
+                endpoint.clone(),
+                HashMap::from([(200_u16, OperationDurationStatistics::default())]),
+            )]),
+        );
+
+        let anonymized = telemetry.anonymize();
+        let anonymized_collection = collection.anonymize();
+
+        assert_ne!(collection, anonymized_collection);
+        assert!(
+            !anonymized
+                .responses_per_collection
+                .contains_key(&collection)
+        );
+        assert!(
+            anonymized
+                .responses_per_collection
+                .contains_key(&anonymized_collection)
+        );
+        assert!(
+            anonymized.responses_per_collection[&anonymized_collection].contains_key(&endpoint)
+        );
+    }
+
+    #[test]
+    fn grpc_anonymize_obfuscates_collection_name_keys() {
+        let collection = "sensitive_collection_grpc".to_string();
+        let endpoint = "/qdrant.Points/Search".to_string();
+
+        let mut telemetry = GrpcTelemetry::default();
+        telemetry.responses_per_collection.insert(
+            collection.clone(),
+            HashMap::from([(
+                endpoint.clone(),
+                HashMap::from([(0_i32, OperationDurationStatistics::default())]),
+            )]),
+        );
+
+        let anonymized = telemetry.anonymize();
+        let anonymized_collection = collection.anonymize();
+
+        assert_ne!(collection, anonymized_collection);
+        assert!(
+            !anonymized
+                .responses_per_collection
+                .contains_key(&collection)
+        );
+        assert!(
+            anonymized
+                .responses_per_collection
+                .contains_key(&anonymized_collection)
+        );
+        assert!(
+            anonymized.responses_per_collection[&anonymized_collection].contains_key(&endpoint)
+        );
     }
 }
