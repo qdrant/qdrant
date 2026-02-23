@@ -98,7 +98,7 @@ byteorder = { workspace = true }
 tap = { workspace = true }
 zerocopy = { workspace = true }
 vaporetto = { version = "0.6.5" }
-rust-stemmers = { git = "https://github.com/qdrant/rust-stemmers.git", tag = "v1.2.1" }
+rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 sysinfo = "0.38"
 charabia = { version = "0.9.7", default-features = false, features = [
     "greek",

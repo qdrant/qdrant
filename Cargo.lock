@@ -5511,6 +5511,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qdrant-rust-stemmers"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e61bd348ee10767d59d65d47ced0861921e8bb3ef0823aab63cc16c6c0f6d756"
+dependencies = [
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "quantization"
 version = "0.1.0"
 dependencies = [
@@ -6149,15 +6159,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-stemmers"
-version = "1.2.1"
-source = "git+https://github.com/qdrant/rust-stemmers.git?tag=v1.2.1#aee4c73b4012230b1163bf82d086cbf4b3f1102e"
-dependencies = [
- "serde",
- "serde_derive",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6619,6 +6620,7 @@ dependencies = [
  "pprof",
  "procfs",
  "proptest",
+ "qdrant-rust-stemmers",
  "quantization",
  "rand 0.9.2",
  "rand_distr",
@@ -6627,7 +6629,6 @@ dependencies = [
  "roaring",
  "rocksdb",
  "rstest",
- "rust-stemmers",
  "schemars 0.8.22",
  "seahash",
  "segment",
