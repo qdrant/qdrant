@@ -134,11 +134,14 @@ impl Bitmask {
         dir.join(BITMASK_NAME)
     }
 
-    pub fn flush(&self) -> Result<()> {
-        self.bitslice.flusher()()?;
-        self.regions_gaps.flush()?;
-
-        Ok(())
+    pub fn flusher(&self) -> impl FnOnce() -> Result<()> + Send + use<> {
+        let bitslice_flusher = self.bitslice.flusher();
+        let gaps_flusher = self.regions_gaps.flusher();
+        move || {
+            bitslice_flusher()?;
+            gaps_flusher()?;
+            Ok(())
+        }
     }
 
     /// Compute the size of the storage in bytes.

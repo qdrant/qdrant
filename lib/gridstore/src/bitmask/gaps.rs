@@ -2,7 +2,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::fs::clear_disk_cache;
-use common::mmap::{Advice, AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
+use common::mmap::{
+    Advice, AdviceSetting, MmapFlusher, MmapSlice, create_and_ensure_length, open_write_mmap,
+};
 use itertools::Itertools;
 
 use super::{RegionId, StorageConfig};
@@ -126,8 +128,8 @@ impl BitmaskGaps {
         })
     }
 
-    pub fn flush(&self) -> Result<()> {
-        Ok(self.mmap_slice.flusher()()?)
+    pub fn flusher(&self) -> MmapFlusher {
+        self.mmap_slice.flusher()
     }
 
     /// Extends the mmap file to fit the new regions
