@@ -244,7 +244,7 @@ indicatif = { version = "0.18.4", features = ["rayon"] }
 integer-encoding = "4.1.0"
 itertools = "0.14.0"
 log = "0.4.29"
-memmap2 = "0.9.9"
+memmap2 = "0.9.10"
 mockito = "1.7"
 nix = { version = "0.31", features = ["fs", "feature"] }
 num-traits = "0.2.19"
