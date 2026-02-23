@@ -268,7 +268,7 @@ reqwest = { version = "0.13.2", default-features = false, features = [
     "json",
     "http2",
     "stream",
-    "rustls-no-provider",
+    "rustls",
     "blocking",
 ] }
 rstest = { version = "0.26.1", default-features = false }

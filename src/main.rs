@@ -139,6 +139,13 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Install ring as the default rustls CryptoProvider before any TLS code runs.
+    // Required because both `ring` and `aws-lc-rs` features are enabled on rustls
+    // (via transitive dependencies), and rustls cannot auto-select when both are present.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default CryptoProvider");
+
     let args = Args::parse();
 
     // Run backtrace collector, expected to used by `rstack` crate
