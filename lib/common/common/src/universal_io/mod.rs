@@ -45,7 +45,7 @@ pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
 pub struct OpenOptions {
     pub need_sequential: bool,
     /// How many parallel requests to the disk we can do.
-    /// If `None`, the use implementation-specific default.
+    /// If `None`, then use implementation-specific default.
     pub disk_parallel: Option<usize>,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Option<bool>,
@@ -63,6 +63,7 @@ impl Default for OpenOptions {
 
 pub type ByteOffset = u64;
 
+#[derive(Copy, Clone, Debug)]
 pub struct BytesRange {
     pub start: ByteOffset,
     pub length: u64,

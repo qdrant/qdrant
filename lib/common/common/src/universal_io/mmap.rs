@@ -67,8 +67,8 @@ where
         let data_range = data_slice
             .get(start..end)
             .ok_or(UniversalIoError::OutOfBounds {
-                start: range.start,
-                end: range.start + range.length,
+                start: start as u64,
+                end: end as u64,
                 data_length: data_slice.len(),
             })?;
 
@@ -90,8 +90,8 @@ where
             let data_range = data_slice
                 .get(start..end)
                 .ok_or(UniversalIoError::OutOfBounds {
-                    start: range.start,
-                    end: range.start + range.length,
+                    start: start as u64,
+                    end: end as u64,
                     data_length,
                 })?;
 
