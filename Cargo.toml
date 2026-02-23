@@ -203,7 +203,7 @@ actix-web-validator = "7.0.0"
 actix-web = { version = "4.12.1", features = ["rustls-0_23", "actix-tls"] }
 actix-files = "0.6.10"
 ahash = { version = "0.8.11", features = ["serde"] }
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 async-trait = "0.1.89"
 atomicwrites = "0.4.4"
 bincode = "1.3.3" # no upgrade because 2.0.x is much slower https://github.com/qdrant/qdrant/pull/6134
