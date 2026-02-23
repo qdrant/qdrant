@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -106,14 +107,14 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             | VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseVolatile(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
-                    assert_eq!(orig, vec);
+                    assert_eq!(Cow::Borrowed(orig), vec);
                 }
             }
             VectorStorageEnum::MultiDenseVolatileByte(_)
             | VectorStorageEnum::MultiDenseVolatileHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
-                    assert_eq!(orig, vec);
+                    assert_eq!(Cow::Borrowed(orig), vec);
                 }
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(_)

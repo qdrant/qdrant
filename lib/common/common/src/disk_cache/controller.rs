@@ -56,9 +56,6 @@ pub struct CacheController {
     pub(super) cache_mmap: memmap2::MmapRaw,
 }
 
-#[derive(Debug)]
-pub struct CacherFd(Arc<CacheController>, FileId);
-
 impl CacheController {
     /// Create a new cache instance.
     pub fn new(cache_path: &Path, size_bytes: u64) -> io::Result<Arc<CacheController>> {
@@ -290,21 +287,5 @@ impl quick_cache::Lifecycle<BlockId, BlockOffset> for BlocksLifecycle {
             None => (),
             Some((_, off)) => self.unused_blocks.lock().push(off),
         }
-    }
-}
-
-impl CacherFd {
-    /// Read file chunks.
-    pub fn read(&self, buf: &mut [u8], offset: u64) -> io::Result<()> {
-        match self.0.files.read().get(&self.1) {
-            Some(f) => f.read_exact_at(buf, offset),
-            None => Err(io::Error::other("unexpected error")),
-        }
-    }
-}
-
-impl Drop for CacherFd {
-    fn drop(&mut self) {
-        // self.0.files.lock().remove(&self.1);
     }
 }

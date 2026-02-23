@@ -431,7 +431,10 @@ mod tests {
             let links: Vec<_> = if let Some(vectors) = vectors {
                 let (base_vector, iter) = right.links_with_vectors(point_id, level);
                 if level == 0 {
-                    assert_eq!(&base_vector, &*vectors.get_base_vector(point_id).unwrap());
+                    assert_eq!(
+                        &base_vector,
+                        &vectors.get_base_vector(point_id).unwrap().as_slice()
+                    );
                 } else {
                     assert!(base_vector.is_empty());
                 }
