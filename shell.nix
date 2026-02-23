@@ -46,12 +46,12 @@ mkShell {
     pkgs.npins # used in tools/nix/update.py
     pkgs.python3 # used in ./tests, ./tools, lib/edge
     pkgs.sccache # mentioned in shellHook
+    pkgs.unzip # used in tools/sync-web-ui.sh
     pkgs.uv # used in tests
     pkgs.vulkan-tools # mentioned in .github/workflows/rust-gpu.yml
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
-    pkgs.unzip # used in tools/sync-web-ui.sh
   ];
 
   # Fix for tikv-jemalloc-sys
