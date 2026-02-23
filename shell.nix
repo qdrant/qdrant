@@ -51,6 +51,7 @@ mkShell {
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
+    pkgs.unzip # used in tools/sync-web-ui.sh
   ];
 
   # Fix for tikv-jemalloc-sys
