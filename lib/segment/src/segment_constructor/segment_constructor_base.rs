@@ -121,21 +121,18 @@ fn open_mmap_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                madvise,
                 populate,
             ),
             VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                madvise,
                 populate,
             ),
             VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
-                madvise,
                 populate,
             ),
         }

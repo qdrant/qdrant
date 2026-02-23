@@ -54,7 +54,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         deleted_path: &Path,
         dim: usize,
         with_async_io: bool,
-        _madvise: AdviceSetting,
         populate: bool,
     ) -> OperationResult<Self> {
         // Allocate/open vectors file
@@ -112,7 +111,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         })
     }
 
-/// Generic implementation available for any byte-addressed storage backend.
     pub fn has_async_reader(&self) -> bool {
         self.uring_reader.is_some()
     }
