@@ -141,7 +141,9 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
 ///
 /// Uses TLS settings as configured in configuration by user.
 pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
-    let config = ServerConfig::builder();
+    let config = ServerConfig::builder_with_provider(Arc::new(crypto::ring::default_provider()))
+        .with_safe_default_protocol_versions()
+        .map_err(|err| Error::Sign(err))?;
     let tls_config = settings
         .tls
         .clone()
