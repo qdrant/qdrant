@@ -10,6 +10,7 @@ use fs_err as fs;
 use fs_err::os::unix::fs::FileExt;
 #[cfg(target_os = "linux")]
 use fs_err::os::unix::fs::OpenOptionsExt;
+use memmap2::MmapRaw;
 use parking_lot::{Mutex, RwLock};
 use quick_cache::UnitWeighter;
 use quick_cache::sync::GuardResult;
@@ -51,11 +52,8 @@ pub struct CacheController {
     /// It is hooked up to the `cache` so it can free up blocks on eviction.
     pub(super) blocks_lifecycle: BlocksLifecycle,
 
-    /// Cache file, aka hot storage. (file descriptor)
-    pub(super) cache_file: fs::File,
-
     /// Cache file, aka hot storage. (mmap)
-    pub(super) cache_mmap: memmap2::Mmap,
+    pub(super) cache_mmap: memmap2::MmapRaw,
 }
 
 #[derive(Debug)]
@@ -76,7 +74,7 @@ impl CacheController {
 
         cache_file.set_len(size_bytes)?;
 
-        let cache_mmap = unsafe { memmap2::Mmap::map(&cache_file)? };
+        let cache_mmap = MmapRaw::map_raw(&cache_file)?;
 
         let unused_blocks = Arc::new(Mutex::new(
             (0..size_blocks as u32).rev().map(BlockOffset).collect(),
@@ -107,7 +105,6 @@ impl CacheController {
             file_id_counter: Mutex::new(FileId(0)),
             cache,
             blocks_lifecycle,
-            cache_file,
             cache_mmap,
         }))
     }
@@ -166,7 +163,13 @@ impl CacheController {
 
                 // TODO: Pin the block_id, track the lifetime of the borrow,
                 // then release the block_id when the borrow ends
-                Ok(Cow::Borrowed(&self.cache_mmap[range]))
+                let slice = unsafe {
+                    std::slice::from_raw_parts(
+                        self.cache_mmap.as_ptr().add(range.start),
+                        range.len(),
+                    )
+                };
+                Ok(Cow::Borrowed(slice))
             }
             // Cache miss.
             GuardResult::Guard(guard) => {
@@ -190,8 +193,15 @@ impl CacheController {
 
                 let allocated_offset = self.blocks_lifecycle.pop_unused_block();
 
-                self.cache_file
-                    .write_all_at(&buf, allocated_offset.bytes() as u64)?;
+                let offset = allocated_offset.bytes();
+                // SAFETY: non-overlapping regions are guaranteed by the block allocation logic;
+                // the insert guard prevent concurrent writes to the same block.
+                unsafe {
+                    self.cache_mmap
+                        .as_mut_ptr()
+                        .add(offset)
+                        .copy_from(buf.as_ptr(), BLOCK_SIZE);
+                }
 
                 // 3. Commit.
                 // ----------
