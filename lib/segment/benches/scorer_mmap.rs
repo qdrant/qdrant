@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::mmap::AdviceSetting;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::Rng;
 use rand::distr::StandardUniform;
@@ -36,8 +35,7 @@ fn init_mmap_vector_storage(
     populate: bool,
 ) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerEnum>>) {
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num)));
-    let mut storage =
-        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
+    let mut storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     let mut vectors = (0..num).map(|_id| {
         let vector = random_vector(dim);
         (CowVector::from(vector), false)
@@ -48,8 +46,7 @@ fn init_mmap_vector_storage(
 
     assert_eq!(storage.available_vector_count(), num);
     drop(storage);
-    let storage =
-        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
+    let storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     assert_eq!(storage.available_vector_count(), num);
     (storage, id_tracker)
 }

@@ -8,8 +8,8 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap;
-use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
+use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
 
@@ -20,7 +20,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
-use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
+use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::{AccessPattern, DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
@@ -36,7 +36,7 @@ const DELETED_PATH: &str = "deleted.dat";
 pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    mmap_store: Option<MmapDenseVectors<T>>,
+    vectors: Option<ImmutableDenseVectors<T, MmapUniversal<u8>>>,
     distance: Distance,
 }
 
@@ -44,7 +44,7 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) {
-        if let Some(mmap_store) = &self.mmap_store {
+        if let Some(mmap_store) = &self.vectors {
             mmap_store.populate();
         }
     }
@@ -61,7 +61,6 @@ pub fn open_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
@@ -69,7 +68,6 @@ pub fn open_memmap_vector_storage(
         dim,
         distance,
         get_async_scorer(),
-        madvise,
         populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmap(storage))
@@ -79,7 +77,6 @@ pub fn open_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl(
@@ -87,7 +84,6 @@ pub fn open_memmap_vector_storage_byte(
         dim,
         distance,
         get_async_scorer(),
-        madvise,
         populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmapByte(storage))
@@ -97,7 +93,6 @@ pub fn open_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
-    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl(
@@ -105,7 +100,6 @@ pub fn open_memmap_vector_storage_half(
         dim,
         distance,
         get_async_scorer(),
-        madvise,
         populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmapHalf(storage))
@@ -116,7 +110,6 @@ pub fn open_memmap_vector_storage_with_async_io(
     dim: usize,
     distance: Distance,
     with_async_io: bool,
-    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
@@ -124,7 +117,6 @@ pub fn open_memmap_vector_storage_with_async_io(
         dim,
         distance,
         with_async_io,
-        madvise,
         populate,
     )?;
     Ok(VectorStorageEnum::DenseMemmap(storage))
@@ -135,37 +127,30 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
     dim: usize,
     distance: Distance,
     with_async_io: bool,
-    madvise: AdviceSetting,
     populate: bool,
 ) -> OperationResult<Box<MemmapDenseVectorStorage<T>>> {
     fs::create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapDenseVectors::open(
-        &vectors_path,
-        &deleted_path,
-        dim,
-        with_async_io,
-        madvise,
-        populate,
-    )?;
+    let mmap_store =
+        ImmutableDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io, populate)?;
 
     Ok(Box::new(MemmapDenseVectorStorage {
         vectors_path,
         deleted_path,
-        mmap_store: Some(mmap_store),
+        vectors: Some(mmap_store),
         distance,
     }))
 }
 
 impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
-    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors<T> {
-        self.mmap_store.as_ref().unwrap()
+    pub fn get_mmap_vectors(&self) -> &ImmutableDenseVectors<T> {
+        self.vectors.as_ref().unwrap()
     }
 
     pub fn has_async_reader(&self) -> bool {
-        self.mmap_store
+        self.vectors
             .as_ref()
             .map(|x| x.has_async_reader())
             .unwrap_or(false)
@@ -174,11 +159,11 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().dim
+        self.vectors.as_ref().unwrap().dim
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
-        self.mmap_store
+        self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
@@ -186,7 +171,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
-        let mmap_store = self.mmap_store.as_ref().unwrap();
+        let mmap_store = self.vectors.as_ref().unwrap();
         mmap_store.for_each_in_batch(keys, f);
     }
 }
@@ -205,11 +190,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn total_vector_count(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().num_vectors
+        self.vectors.as_ref().unwrap().num_vectors
     }
 
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
-        self.mmap_store
+        self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
@@ -223,7 +208,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         mut callback: impl FnMut(PointOffsetType, CowVector<'_>),
     ) {
         // Create a result vec of the appropriate size
-        self.mmap_store
+        self.vectors
             .as_ref()
             .unwrap()
             .read_vectors_async(keys.into_iter(), |_pos, key, vector| {
@@ -234,7 +219,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        self.mmap_store
+        self.vectors
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
@@ -256,11 +241,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
-        let start_index = self.mmap_store.as_ref().unwrap().num_vectors as PointOffsetType;
+        let start_index = self.vectors.as_ref().unwrap().num_vectors as PointOffsetType;
         let mut end_index = start_index;
 
         let with_async_io = self
-            .mmap_store
+            .vectors
             .take()
             .map(|x| x.has_async_reader())
             .unwrap_or(get_async_scorer());
@@ -291,12 +276,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .sync_data()?;
 
         // Load store with updated files
-        self.mmap_store.replace(MmapDenseVectors::open(
+        self.vectors.replace(ImmutableDenseVectors::open(
             &self.vectors_path,
             &self.deleted_path,
             dim,
             with_async_io,
-            AdviceSetting::Global,
             false, // No need to populate
         )?);
 
@@ -304,7 +288,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         // We must do that in the updated store, and cannot do it in the previous loop. That is
         // because the file backing delete storage must be resized, and for that we'd need to know
         // the exact number of vectors beforehand. When opening the store it is done automatically.
-        let store = self.mmap_store.as_mut().unwrap();
+        let store = self.vectors.as_mut().unwrap();
         for id in deleted_ids {
             check_process_stopped(stopped)?;
             store.delete(id);
@@ -315,7 +299,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn flusher(&self) -> Flusher {
-        match &self.mmap_store {
+        match &self.vectors {
             Some(mmap_store) => {
                 let mmap_flusher = mmap_store.flusher();
                 Box::new(move || mmap_flusher().map_err(OperationError::from))
@@ -335,19 +319,19 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        Ok(self.mmap_store.as_mut().unwrap().delete(key))
+        Ok(self.vectors.as_mut().unwrap().delete(key))
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.mmap_store.as_ref().unwrap().is_deleted_vector(key)
+        self.vectors.as_ref().unwrap().is_deleted_vector(key)
     }
 
     fn deleted_vector_count(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().deleted_count
+        self.vectors.as_ref().unwrap().deleted_count
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.mmap_store.as_ref().unwrap().deleted_vector_bitslice()
+        self.vectors.as_ref().unwrap().deleted_vector_bitslice()
     }
 }
 
@@ -391,9 +375,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
-                .unwrap();
+        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
@@ -510,9 +492,7 @@ mod tests {
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = create_id_tracker_fixture(points.len());
-        let mut storage =
-            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
-                .unwrap();
+        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -638,9 +618,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let mut storage =
-            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
-                .unwrap();
+        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -714,9 +692,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
-                .unwrap();
+        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
@@ -789,9 +765,7 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let mut storage =
-            open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
-                .unwrap();
+        let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 

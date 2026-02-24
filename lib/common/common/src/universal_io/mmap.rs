@@ -9,6 +9,7 @@ use crate::universal_io::{
     ByteOffset, BytesRange, Flusher, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
 };
 
+#[derive(Debug)]
 pub struct MmapUniversal<T: Copy + 'static> {
     path: PathBuf,
     /// Main data mmap slice for read/write

@@ -1,18 +1,17 @@
+use std::borrow::Cow;
 use std::io::Write;
 use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
-use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap;
-use common::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapBitSlice, MmapFlusher,
-};
+use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
+use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{BytesRange, OpenOptions as UniversalOpenOptions, UniversalRead};
 use fs_err::{File, OpenOptions};
-use memmap2::Mmap;
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
@@ -30,22 +29,17 @@ const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
-/// Mem-mapped file for dense vectors
+/// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
+pub struct ImmutableDenseVectors<
+    T: PrimitiveVectorElement,
+    S: UniversalRead<u8> = MmapUniversal<u8>,
+> {
     pub dim: usize,
     pub num_vectors: usize,
-    /// Main vector data mmap for read/write
-    ///
-    /// Has an exact size to fit a header and `num_vectors` of vectors.
-    /// Best suited for random reads.
-    mmap: Arc<Mmap>,
-    /// Read-only mmap best suited for sequential reads
-    ///
-    /// `None` on platforms that do not support multiple memory maps to the same file.
-    /// Use [`mmap_seq`] utility function to access this mmap if available.
-    _mmap_seq: Option<Arc<Mmap>>,
-    /// Context for io_uring-base async IO
+    /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
+    storage: S,
+    /// Context for io_uring-based async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Option<Mutex<UringReader<T>>>,
     /// Memory mapped deletion flags
@@ -54,35 +48,32 @@ pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
+impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
         dim: usize,
         with_async_io: bool,
-        madvise: AdviceSetting,
         populate: bool,
     ) -> OperationResult<Self> {
-        // Allocate/open vectors mmap
+        // Allocate/open vectors file
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
-        let mmap = mmap::open_read_mmap(vectors_path, madvise, populate)
-            .describe("Open mmap for reading")?;
 
-        // Only open second mmap for sequential reads if supported
-        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
-            let mmap_seq = mmap::open_read_mmap(
-                vectors_path,
-                AdviceSetting::Advice(Advice::Sequential),
-                populate,
-            )
-            .describe("Open mmap for sequential reading")?;
-            Some(Arc::new(mmap_seq))
-        } else {
-            None
+        let file_len = fs_err::metadata(vectors_path)?.len() as usize;
+        let num_vectors = file_len.saturating_sub(HEADER_SIZE) / dim / size_of::<T>();
+
+        let options = UniversalOpenOptions {
+            need_sequential: true,
+            disk_parallel: None,
+            populate: Some(populate),
         };
-
-        let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<T>();
+        let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
+            crate::common::operation_error::OperationError::service_error(format!(
+                "Failed to open vector mmap at {}: {e}",
+                vectors_path.display()
+            ))
+        })?;
 
         // Allocate/open deleted mmap
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
@@ -110,11 +101,10 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             None
         };
 
-        Ok(MmapDenseVectors {
+        Ok(ImmutableDenseVectors {
             dim,
             num_vectors,
-            mmap: mmap.into(),
-            _mmap_seq: mmap_seq,
+            storage,
             uring_reader: uring_reader.map(Mutex::new),
             deleted,
             deleted_count,
@@ -129,6 +119,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         self.deleted.flusher()
     }
 
+    /// Returns the byte offset within the file at which the vector for `key` begins.
+    ///
+    /// File layout:
+    /// ```text
+    /// [HEADER_SIZE] [vector_0] [vector_1] ... [vector_N-1]
+    /// ```
+    /// Each vector occupies `dim * size_of::<T>()` bytes.
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<T>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
@@ -138,26 +135,37 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         Some(offset)
     }
 
+    /// Size in bytes of a single raw (packed) vector.
     pub fn raw_size(&self) -> usize {
         self.dim * size_of::<T>()
     }
 
-    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
-    #[inline]
-    fn mmap_seq(&self) -> Arc<Mmap> {
-        #[expect(clippy::used_underscore_binding)]
-        self._mmap_seq.clone().unwrap_or_else(|| self.mmap.clone())
-    }
-
-    fn raw_vector_offset<P: AccessPattern>(&self, offset: usize) -> &[T] {
-        let mmap = if P::IS_SEQUENTIAL {
-            &self.mmap_seq()
-        } else {
-            &self.mmap
+    /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
+    /// the byte slice as `&[T]`.
+    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> &[T] {
+        let range = BytesRange {
+            start: byte_offset as u64,
+            length: self.raw_size() as u64,
         };
-        let byte_slice = &mmap[offset..(offset + self.raw_size())];
-        let arr: &[T] = unsafe { transmute(byte_slice) };
-        &arr[0..self.dim]
+
+        let cow: Cow<'_, [u8]> = if P::IS_SEQUENTIAL {
+            self.storage.read::<true>(range)
+        } else {
+            self.storage.read::<false>(range)
+        }
+        .expect("vector read from storage failed");
+
+        match cow {
+            Cow::Borrowed(byte_slice) => {
+                let arr: &[T] = unsafe { transmute(byte_slice) };
+                &arr[0..self.dim]
+            }
+            Cow::Owned(_) => {
+                unimplemented!(
+                    "owned data access is not yet implemented. Mmap always returns slice."
+                )
+            }
+        }
     }
 
     /// Returns reference to vector data by key
@@ -176,7 +184,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
 
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
-        // then fetching and scoring in a single loop.
+        // than fetching and scoring in a single loop.
         let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
         let vectors = if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
@@ -253,14 +261,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     pub fn populate(&self) {
-        #[expect(clippy::used_underscore_binding)]
-        if let Some(mmap_seq) = &self._mmap_seq {
-            mmap_seq.populate();
+        if let Err(err) = self.storage.populate() {
+            log::error!("Failed to populate vector storage: {err}");
         }
     }
 }
 
-/// Ensure the given mmap file exists and is the given size
+/// Ensure the given mmap file exists and is the given size.
 ///
 /// # Arguments
 /// * `path`: path of the file.
