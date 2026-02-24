@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -514,10 +515,20 @@ pub async fn do_update_collection_cluster(
                 .shards_number
                 .unwrap_or(state.config.params.shard_number)
                 .get() as usize;
+
+            let default_replication_factor = if create_sharding_key.initial_state.is_some() {
+                // When initial_state is set (e.g. Partial), create a single replica per shard.
+                // Data must be transferred into the shard first before it can be replicated.
+                1
+            } else {
+                state.config.params.replication_factor.get()
+            };
+
             let replication_factor = create_sharding_key
                 .replication_factor
-                .unwrap_or(state.config.params.replication_factor)
-                .get() as usize;
+                .map(NonZeroU32::get)
+                .unwrap_or(default_replication_factor)
+                as usize;
 
             if let Some(initial_state) = create_sharding_key.initial_state {
                 match initial_state {
