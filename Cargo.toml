@@ -200,7 +200,7 @@ private_intra_doc_links = "allow"
 
 [workspace.dependencies]
 actix-web-validator = "7.0.0"
-actix-web = { version = "4.12.1", features = ["rustls-0_23", "actix-tls"] }
+actix-web = { version = "4.13.0", features = ["rustls-0_23", "actix-tls"] }
 actix-files = "0.6.10"
 ahash = { version = "0.8.11", features = ["serde"] }
 anyhow = "1.0.102"
