@@ -94,9 +94,19 @@ async fn test_hw_metrics_cancellation() {
             search_res.unwrap_err(),
             CollectionError::Timeout { description: _ }
         ));
+    }
 
-        // Wait until the cancellation is processed is finished
-        std::thread::sleep(Duration::from_millis(50));
+    // Cancellation and draining hardware counters is asynchronous on CI runners.
+    // Poll with a bounded timeout to avoid timing-sensitive flakes.
+    let wait_timeout = Duration::from_secs(2);
+    let poll_interval = Duration::from_millis(10);
+    let wait_started = std::time::Instant::now();
+    while outer_hw.get_cpu() == 0 {
+        assert!(
+            wait_started.elapsed() <= wait_timeout,
+            "Timeout waiting for cancellation metrics to be drained",
+        );
+        tokio::time::sleep(poll_interval).await;
     }
 
     assert!(outer_hw.get_cpu() > 0);
