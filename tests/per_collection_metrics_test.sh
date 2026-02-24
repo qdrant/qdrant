@@ -51,7 +51,7 @@ curl -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search" \
 
 # 4. Fetch metrics and verify
 echo "Fetching metrics..."
-METRICS=$(curl -s "http://$QDRANT_HOST/metrics")
+METRICS=$(curl -s --fail "http://$QDRANT_HOST/metrics")
 
 echo "Verifying per-collection metrics..."
 
