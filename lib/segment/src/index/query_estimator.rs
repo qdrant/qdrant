@@ -114,6 +114,18 @@ pub fn combine_min_should_estimations(
     min_count: usize,
     total: usize,
 ) -> CardinalityEstimation {
+    // Guard edge-cases to keep estimator semantics aligned with filter checker:
+    // - min_count == 0  => trivially satisfied for all points
+    // - min_count > N   => unsatisfiable
+    //
+    // Also prevents pathological allocation paths in combinations(min_count).
+    if min_count == 0 {
+        return CardinalityEstimation::exact(total);
+    }
+    if min_count > estimations.len() {
+        return CardinalityEstimation::exact(0);
+    }
+
     /*
     | First estimate cardinality of intersections and then combine the estimations
     | ex) min_count : 2, # of estimations : 4
@@ -469,6 +481,37 @@ mod tests {
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn combine_min_should_min_count_zero_returns_exact_total() {
+        let total = 1_000usize;
+        let estimations = vec![
+            CardinalityEstimation {
+                primary_clauses: vec![],
+                min: 10,
+                exp: 20,
+                max: 30,
+            },
+            CardinalityEstimation {
+                primary_clauses: vec![],
+                min: 50,
+                exp: 80,
+                max: 120,
+            },
+        ];
+
+        let estimation = combine_min_should_estimations(&estimations, 0, total);
+        assert_eq!(estimation, CardinalityEstimation::exact(total));
+    }
+
+    #[test]
+    fn combine_min_should_min_count_above_len_returns_exact_zero() {
+        let total = 1_000usize;
+        let estimations = vec![CardinalityEstimation::exact(10), CardinalityEstimation::exact(20)];
+
+        let estimation = combine_min_should_estimations(&estimations, estimations.len() + 1, total);
+        assert_eq!(estimation, CardinalityEstimation::exact(0));
     }
 
     #[test]
