@@ -269,10 +269,19 @@ impl Validate for grpc::FieldCondition {
                 "match",
                 ValidationError::new("At least one field condition must be specified"),
             );
-            Err(errors)
-        } else {
-            Ok(())
+            return Err(errors);
         }
+
+        if range.is_some() && integer_range.is_some() {
+            let mut errors = ValidationErrors::new();
+            errors.add(
+                "integer_range",
+                ValidationError::new("Fields `range` and `integer_range` are mutually exclusive"),
+            );
+            return Err(errors);
+        }
+
+        Ok(())
     }
 }
 
