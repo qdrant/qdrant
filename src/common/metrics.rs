@@ -377,7 +377,10 @@ impl CollectionsTelemetry {
                 .map(|uq| uq.length)
                 .sum();
 
-            update_queue_length.push(gauge(total_queue_length as f64, &[("id", &collection.id)]));
+            update_queue_length.push(gauge(
+                total_queue_length as f64,
+                &[("collection", &collection.id)],
+            ));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -715,7 +718,7 @@ impl MetricsProvider for GrpcTelemetry {
             }
         }
         for (collection_name, endpoints) in &self.per_collection_responses {
-            for (endpoint, stats) in endpoints {
+            for (endpoint, responses) in endpoints {
                 // Endpoint must be whitelisted
                 if GRPC_ENDPOINT_WHITELIST
                     .binary_search(&endpoint.as_str())
@@ -723,14 +726,17 @@ impl MetricsProvider for GrpcTelemetry {
                 {
                     continue;
                 }
-                builder.add(
-                    stats,
-                    &[
-                        ("endpoint", endpoint.as_str()),
-                        ("collection", collection_name),
-                    ],
-                    true,
-                );
+                for (status, stats) in responses {
+                    builder.add(
+                        stats,
+                        &[
+                            ("endpoint", endpoint.as_str()),
+                            ("status", &status.to_string()),
+                            ("collection", collection_name),
+                        ],
+                        true,
+                    );
+                }
             }
         }
         builder.build(prefix, "grpc", metrics);
