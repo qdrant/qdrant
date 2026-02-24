@@ -17,6 +17,7 @@ use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use fs_err as fs;
 use itertools::Itertools;
+use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
@@ -25,6 +26,7 @@ use segment::common::operation_time_statistics::{
 use segment::entry::NonAppendableSegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::types::PointIdType;
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
@@ -480,7 +482,15 @@ fn finish_optimization(
         writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
     }
 
-    drop(writable_segment_holder);
+    let read_segment_holder = RwLockWriteGuard::downgrade(writable_segment_holder);
+    // Can read, but can't yet write updates.
+
+    // ToDo: collect deferred points from proxies.
+    let deferred_points: Vec<PointIdType> = vec![];
+
+    read_segment_holder.deduplicate_points(&deferred_points, hw_counter)?;
+
+    drop(read_segment_holder);
     // Allow updates again
     drop(update_guard);
 
