@@ -246,6 +246,17 @@ service:
   # If missing - Same as storage.max_search_threads
   max_workers: 0
 
+  # Keep-alive timeout for incoming HTTP connections in seconds.
+  # Increase this in environments with connection pooling and bursty traffic to reduce
+  # reconnect churn and random transport disconnects.
+  http_keep_alive_timeout_sec: 5
+
+  # Timeout for reading HTTP request data from clients in seconds.
+  http_client_request_timeout_sec: 5
+
+  # Timeout for waiting on client disconnect in seconds.
+  http_client_disconnect_timeout_sec: 5
+
   # Host to bind the service on
   host: 0.0.0.0
 

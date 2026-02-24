@@ -9,6 +9,7 @@ pub mod web_ui;
 
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
@@ -169,7 +170,23 @@ pub fn init(
 
             app
         })
+        .keep_alive(Duration::from_secs(
+            settings.service.http_keep_alive_timeout_sec,
+        ))
+        .client_request_timeout(Duration::from_secs(
+            settings.service.http_client_request_timeout_sec,
+        ))
+        .client_disconnect_timeout(Duration::from_secs(
+            settings.service.http_client_disconnect_timeout_sec,
+        ))
         .workers(max_web_workers(&settings));
+
+        log::info!(
+            "REST transport settings: keep_alive={}s, client_request_timeout={}s, client_disconnect_timeout={}s",
+            settings.service.http_keep_alive_timeout_sec,
+            settings.service.http_client_request_timeout_sec,
+            settings.service.http_client_disconnect_timeout_sec,
+        );
 
         let port = settings.service.http_port;
         let bind_addr = format!("{}:{}", settings.service.host, port);
