@@ -1,6 +1,5 @@
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::SeedableRng as _;
@@ -55,14 +54,8 @@ fn test_async_raw_scorer(
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let mut storage = open_memmap_vector_storage_with_async_io(
-        dir.path(),
-        dim,
-        distance,
-        true,
-        AdviceSetting::Global,
-        false,
-    )?;
+    let mut storage =
+        open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true, false)?;
 
     let mut id_tracker = create_id_tracker_fixture(points);
 
