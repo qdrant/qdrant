@@ -3,6 +3,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
@@ -19,7 +20,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
+use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
 const CONFIG_FILENAME: &str = "config.json";
 
@@ -617,36 +618,22 @@ impl<V> Gridstore<V> {
                 return Err(GridstoreError::FlushCancelled);
             };
 
-            bitmask.read().flush()?;
-            for page in pages.read().iter() {
-                page.flush()?;
+            let bitmask_flusher = bitmask.read().flusher();
+            bitmask_flusher()?;
+
+            let page_flushers: Vec<_> = pages.read().iter().map(|p| p.flusher()).collect();
+            for flusher in page_flushers {
+                flusher()?;
             }
 
-            let old_pointers = tracker.write().write_pending(pending_updates);
-            tracker.read().flush()?;
+            let old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
+
             if old_pointers.is_empty() {
                 // Nothing to do flush here
                 return Ok(());
             }
 
-            // Update all free blocks in the bitmask
-            {
-                let mut bitmask_guard = bitmask.upgradable_read();
-                bitmask_guard.with_upgraded(|guard| {
-                    for (page_id, pointer_group) in
-                        &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
-                    {
-                        let local_ranges = pointer_group.map(|pointer| {
-                            let start = pointer.block_offset;
-                            let end = pointer.block_offset
-                                + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
-                            start as usize..end as usize
-                        });
-                        guard.mark_blocks_batch(page_id, local_ranges, false);
-                    }
-                });
-                bitmask_guard.flush()?;
-            }
+            Self::flush_free_blocks(&bitmask, old_pointers, block_size_bytes)?;
 
             // Keep the guard till the end of the flush to prevent concurrent drop/flushes
             drop(is_alive_flush_guard);
@@ -655,13 +642,54 @@ impl<V> Gridstore<V> {
         })
     }
 
+    /// Write pending updates to the tracker and flush it.
+    /// Returns the old pointers that were overwritten and need to be freed.
+    fn flush_tracker(
+        tracker: &Arc<RwLock<Tracker>>,
+        pending_updates: AHashMap<PointOffset, PointerUpdates>,
+    ) -> crate::Result<Vec<ValuePointer>> {
+        let (old_pointers, tracker_flusher) = {
+            let mut guard = tracker.write();
+            let old_pointers = guard.write_pending(pending_updates);
+            let flusher = guard.flusher();
+            (old_pointers, flusher)
+        };
+        tracker_flusher()?;
+        Ok(old_pointers)
+    }
+
+    /// Update all free blocks in the bitmask for old pointers and flush it.
+    fn flush_free_blocks(
+        bitmask: &Arc<RwLock<Bitmask>>,
+        old_pointers: Vec<ValuePointer>,
+        block_size_bytes: usize,
+    ) -> crate::Result<()> {
+        let bitmask_flusher = {
+            let mut guard = bitmask.write();
+            for (page_id, pointer_group) in
+                &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+            {
+                let local_ranges = pointer_group.map(|pointer| {
+                    let start = pointer.block_offset;
+                    let end = pointer.block_offset
+                        + Self::blocks_for_value(pointer.length as usize, block_size_bytes);
+                    start as usize..end as usize
+                });
+                guard.mark_blocks_batch(page_id, local_ranges, false);
+            }
+            guard.flusher()
+        };
+        bitmask_flusher()?;
+        Ok(())
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> std::io::Result<()> {
         for page in self.pages.read().iter() {
             page.populate();
         }
-        self.tracker.read().populate();
+        self.tracker.read().populate()?;
         self.bitmask.read().populate()?;
         Ok(())
     }

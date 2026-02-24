@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::path::Path;
 
-use edge::EdgeShard;
-use shard::facet::FacetRequestInternal;
+use qdrant_edge::EdgeShard;
+use qdrant_edge::shard::facet::FacetRequestInternal;
 
 const SNAPSHOT_PATH: &str = "./test_edge_facet/shard.snapshot";
 const DATA_DIR: &str = "./test_edge_facet/shard_data";
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("---- Test Facet with filter ----");
-    use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
+    use qdrant_edge::segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         "color".try_into().unwrap(),

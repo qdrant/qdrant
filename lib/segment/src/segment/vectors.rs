@@ -5,6 +5,7 @@ use common::iterator_ext::IteratorExt;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::VectorInternal;
+use crate::id_tracker::IdTracker;
 use crate::segment::Segment;
 use crate::types::{PointIdType, VectorName};
 

@@ -11,8 +11,8 @@ use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, Ve
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
+use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectors;
 use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
-use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::query::NaiveFeedbackQuery;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
@@ -28,14 +28,17 @@ pub fn new<'a>(
 
 pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<TVector = [VectorElementType]>> {
     query_scorer: TQueryScorer,
-    storage: &'a MmapDenseVectors<VectorElementType>,
+    storage: &'a ImmutableDenseVectors<VectorElementType>,
 }
 
 impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
 where
     TQueryScorer: QueryScorer<TVector = [VectorElementType]>,
 {
-    fn new(query_scorer: TQueryScorer, storage: &'a MmapDenseVectors<VectorElementType>) -> Self {
+    fn new(
+        query_scorer: TQueryScorer,
+        storage: &'a ImmutableDenseVectors<VectorElementType>,
+    ) -> Self {
         Self {
             query_scorer,
             storage,

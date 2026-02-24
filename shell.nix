@@ -35,6 +35,7 @@ mkShell {
     pkgs.rustPlatform.bindgenHook # for bindgen deps
 
     # For tests and tools
+    pkgs.ast-grep # used in lib/edge/publish/amalgamate.py
     pkgs.cargo-nextest # mentioned in .github/workflows/rust.yml
     pkgs.ccache # mentioned in shellHook
     pkgs.curl # used in ./tests
@@ -46,6 +47,7 @@ mkShell {
     pkgs.npins # used in tools/nix/update.py
     pkgs.python3 # used in ./tests, ./tools, lib/edge
     pkgs.sccache # mentioned in shellHook
+    pkgs.unzip # used in tools/sync-web-ui.sh
     pkgs.uv # used in tests
     pkgs.vulkan-tools # mentioned in .github/workflows/rust-gpu.yml
     pkgs.wget # used in tests/storage-compat

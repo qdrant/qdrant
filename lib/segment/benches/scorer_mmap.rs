@@ -3,14 +3,13 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::mmap::AdviceSetting;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::Rng;
 use rand::distr::StandardUniform;
 use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::id_tracker::IdTrackerSS;
+use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use segment::id_tracker::{IdTracker, IdTrackerEnum};
 use segment::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use segment::types::Distance;
 use segment::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
@@ -34,10 +33,9 @@ fn init_mmap_vector_storage(
     num: usize,
     dist: Distance,
     populate: bool,
-) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
-    let mut storage =
-        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
+) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerEnum>>) {
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num)));
+    let mut storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     let mut vectors = (0..num).map(|_id| {
         let vector = random_vector(dim);
         (CowVector::from(vector), false)
@@ -48,8 +46,7 @@ fn init_mmap_vector_storage(
 
     assert_eq!(storage.available_vector_count(), num);
     drop(storage);
-    let storage =
-        open_memmap_vector_storage(path, dim, dist, AdviceSetting::Global, populate).unwrap();
+    let storage = open_memmap_vector_storage(path, dim, dist, populate).unwrap();
     assert_eq!(storage.available_vector_count(), num);
     (storage, id_tracker)
 }

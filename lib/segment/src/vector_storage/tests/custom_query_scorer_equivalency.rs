@@ -4,8 +4,6 @@ use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-#[cfg(target_os = "linux")]
-use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -15,9 +13,9 @@ use rstest::rstest;
 
 use super::utils::sampler;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
-use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use crate::fixtures::query_fixtures::QueryVariant;
-use crate::id_tracker::id_tracker_base::IdTracker;
+use crate::id_tracker::IdTracker;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
@@ -63,15 +61,7 @@ fn ram_storage(_dir: &Path) -> VectorStorageEnum {
 
 #[cfg(target_os = "linux")]
 fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
-    open_memmap_vector_storage_with_async_io(
-        dir,
-        DIMS,
-        DISTANCE,
-        true,
-        AdviceSetting::Global,
-        false,
-    )
-    .unwrap()
+    open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true, false).unwrap()
 }
 
 fn scalar_u8() -> WithQuantization {
@@ -141,7 +131,7 @@ fn scoring_equivalency(
         &mut gen_sampler(&mut rng.clone()),
     )?;
 
-    let mut id_tracker = FixtureIdTracker::new(NUM_POINTS);
+    let mut id_tracker = create_id_tracker_fixture(NUM_POINTS);
     super::utils::delete_random_vectors(
         &mut rng,
         &mut raw_storage,

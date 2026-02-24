@@ -24,6 +24,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{NamedVectorsOwned, SegmentRecord};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use crate::id_tracker::IdTracker;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;

@@ -5,6 +5,7 @@ use common::iterator_ext::IteratorExt;
 
 use super::Segment;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
+use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::types::{Filter, PointIdType};
@@ -106,7 +107,7 @@ impl Segment {
         let ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
-                &*id_tracker,
+                &id_tracker,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

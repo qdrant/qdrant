@@ -11,7 +11,7 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
+use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::fixtures::payload_fixtures::{FLT_KEY, INT_KEY};
 use segment::index::PayloadIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
@@ -63,7 +63,7 @@ fn range_filtering(c: &mut Criterion) {
     }
 
     let payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
     let mut index = StructPayloadIndex::open(
         payload_storage.clone(),

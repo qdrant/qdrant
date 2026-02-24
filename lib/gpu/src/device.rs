@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::{CString, c_char};
 use std::sync::Arc;
 
 use ash::vk;
@@ -225,7 +225,7 @@ impl Device {
             vk_physical_device.vk_physical_device,
             &extensions_cstr,
         )?;
-        let extension_names_raw: Vec<*const i8> = extensions_cstr
+        let extension_names_raw: Vec<*const c_char> = extensions_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();

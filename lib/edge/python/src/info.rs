@@ -4,7 +4,7 @@ use std::mem;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use edge::info::ShardInfo;
+use edge::ShardInfo;
 use pyo3::prelude::*;
 use segment::json_path::JsonPath;
 use segment::types::PayloadIndexInfo;

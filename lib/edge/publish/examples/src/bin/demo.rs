@@ -2,22 +2,22 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use edge::EdgeShard;
-use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
-use segment::types::{
+use qdrant_edge::EdgeShard;
+use qdrant_edge::segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
+use qdrant_edge::segment::types::{
     Distance, ExtendedPointId, Payload, PayloadStorageType, SegmentConfig, VectorDataConfig,
     VectorStorageType, WithPayloadInterface, WithVector,
 };
+use qdrant_edge::shard::count::CountRequestInternal;
+use qdrant_edge::shard::facet::FacetRequestInternal;
+use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
+use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
+use qdrant_edge::shard::operations::point_ops::PointStructPersisted;
+use qdrant_edge::shard::query::query_enum::QueryEnum;
+use qdrant_edge::shard::query::{ScoringQuery, ShardQueryRequest};
+use qdrant_edge::shard::scroll::ScrollRequestInternal;
 use serde_json::{Value, json};
-use shard::count::CountRequestInternal;
-use shard::facet::FacetRequestInternal;
-use shard::operations::CollectionUpdateOperations::PointOperation;
-use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::UpsertPoints;
-use shard::operations::point_ops::PointStructPersisted;
-use shard::query::query_enum::QueryEnum;
-use shard::query::{ScoringQuery, ShardQueryRequest};
-use shard::scroll::ScrollRequestInternal;
 
 const DATA_DIR: &str = "./qdrant-edge-data";
 const VECTOR_NAME: &str = "example-vector";
