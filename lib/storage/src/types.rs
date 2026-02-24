@@ -56,10 +56,20 @@ pub struct PerformanceConfig {
     pub async_scorer: Option<bool>,
     #[serde(default, flatten)]
     pub load_concurrency: LoadConcurrencyConfig,
+    #[validate(nested)]
+    #[serde(default)]
+    pub disk_cache: Option<DiskCacheConfig>,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
     DEFAULT_IO_SHARD_TRANSFER_LIMIT
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Validate)]
+pub struct DiskCacheConfig {
+    #[validate(custom(function = validate_path))]
+    pub file: PathBuf,
+    pub size_mb: u64,
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config

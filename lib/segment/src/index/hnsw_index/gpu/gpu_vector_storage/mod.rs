@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::mmap::MmapChunkView;
 use common::types::PointOffsetType;
 use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
@@ -348,7 +349,10 @@ impl GpuVectorStorage {
             quantized_storage.get_quantized_vector(0).len(),
             (0..quantized_storage.vectors_count()).map(|id| {
                 let vector = quantized_storage.get_quantized_vector(id as PointOffsetType);
-                Cow::Borrowed(vector)
+                match vector {
+                    MmapChunkView::Slice(slice) => Cow::Borrowed(slice),
+                    MmapChunkView::Box(boxed) => Cow::Owned(boxed.into_vec()),
+                }
             }),
             Some(GpuQuantization::new_pq(device, quantized_storage)?),
             multivectors,
@@ -371,7 +375,10 @@ impl GpuVectorStorage {
             num_vectors,
             quantized_storage.get_quantized_vector(0).len(),
             (0..quantized_storage.vectors_count()).map(|id| {
-                Cow::Borrowed(quantized_storage.get_quantized_vector(id as PointOffsetType))
+                match quantized_storage.get_quantized_vector(id as PointOffsetType) {
+                    MmapChunkView::Slice(slice) => Cow::Borrowed(slice),
+                    MmapChunkView::Box(boxed) => Cow::Owned(boxed.into_vec()),
+                }
             }),
             Some(GpuQuantization::new_bq(device, quantized_storage)),
             multivectors,
@@ -501,9 +508,8 @@ impl GpuVectorStorage {
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
-                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense::<Random>(id as PointOffsetType),
-                    ))
+                    let vector = vector_storage.get_dense::<Random>(id as PointOffsetType);
+                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(&vector))
                 }),
                 None,
                 None,
@@ -529,9 +535,8 @@ impl GpuVectorStorage {
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
-                    VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense::<Random>(id as PointOffsetType),
-                    ))
+                    let vector = vector_storage.get_dense::<Random>(id as PointOffsetType);
+                    VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(&vector))
                 }),
                 None,
                 None,
@@ -551,8 +556,13 @@ impl GpuVectorStorage {
             vector_storage.total_vector_count(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
-            (0..vector_storage.total_vector_count())
-                .map(|id| Cow::Borrowed(vector_storage.get_dense::<Random>(id as PointOffsetType))),
+            (0..vector_storage.total_vector_count()).map(|id| {
+                let vector = vector_storage.get_dense::<Random>(id as PointOffsetType);
+                match vector {
+                    MmapChunkView::Slice(slice) => Cow::Borrowed(slice),
+                    MmapChunkView::Box(boxed) => Cow::Owned(boxed.into_vec()),
+                }
+            }),
             None,
             None,
             stopped,
@@ -578,9 +588,9 @@ impl GpuVectorStorage {
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
-                vector_storage.iterate_inner_vectors().map(|vector| {
-                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(vector))
-                }),
+                vector_storage
+                    .iterate_inner_vectors()
+                    .map(|vector| VectorElementTypeHalf::slice_from_float_cow(vector)),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -612,7 +622,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 vector_storage
                     .iterate_inner_vectors()
-                    .map(|vector| VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(vector))),
+                    .map(VectorElementTypeHalf::slice_to_float_cow),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -637,7 +647,7 @@ impl GpuVectorStorage {
                 .sum(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
-            vector_storage.iterate_inner_vectors().map(Cow::Borrowed),
+            vector_storage.iterate_inner_vectors(),
             None,
             Some(GpuMultivectors::new_multidense(device, vector_storage)?),
             stopped,

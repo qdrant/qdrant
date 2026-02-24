@@ -87,7 +87,7 @@ impl<
         let stored = self.vector_storage.get_dense::<Random>(idx);
         self.hardware_counter.vector_io_read().incr();
 
-        self.score(stored)
+        self.score(&stored)
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {

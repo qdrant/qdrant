@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
@@ -222,8 +223,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.data
             .get::<Random>(idx as VectorOffsetType)
-            .and_then(|offsets| offsets.first())
-            .cloned()
+            .map(|offsets| offsets.first().copied().unwrap_or_default())
             .unwrap_or_default()
     }
 
@@ -384,7 +384,7 @@ where
     fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
-            flattened_vectors: query,
+            flattened_vectors: Cow::Borrowed(query),
         };
         multi_vector
             .multi_vectors()
@@ -439,7 +439,7 @@ where
     ) -> std::io::Result<()> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
-            flattened_vectors: vector,
+            flattened_vectors: Cow::Borrowed(vector),
         };
 
         let inner_vectors_count = self.quantized_storage.vectors_count() as PointOffsetType;

@@ -100,7 +100,7 @@ impl<
             score_multi::<TElement, TMetric>(
                 self.vector_storage.multi_vector_config(),
                 TypedMultiDenseVectorRef::from(example),
-                against,
+                against.clone(),
             )
         })
     }
@@ -129,7 +129,7 @@ impl<
         debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
         debug_assert_eq!(ids.len(), scores.len());
 
-        let mut vectors = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let mut vectors = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = self
             .vector_storage
             .get_batch_multi(ids, &mut vectors[..ids.len()]);
@@ -141,7 +141,7 @@ impl<
             .incr_delta(total_loaded_vectors);
 
         for idx in 0..ids.len() {
-            scores[idx] = self.score_ref(vectors[idx]);
+            scores[idx] = self.score_ref(vectors[idx].clone());
         }
     }
 

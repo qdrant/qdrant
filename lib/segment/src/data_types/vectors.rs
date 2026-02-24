@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::mem;
@@ -92,7 +93,7 @@ impl VectorInternal {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
     Sparse(&'a SparseVector),
@@ -129,7 +130,7 @@ impl<'a> TryFrom<VectorRef<'a>> for TypedMultiDenseVectorRef<'a, f32> {
     fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
         match value {
             VectorRef::Dense(d) => Ok(TypedMultiDenseVectorRef {
-                flattened_vectors: d,
+                flattened_vectors: Cow::Borrowed(d),
                 dim: d.len(),
             }),
             VectorRef::Sparse(_v) => Err(OperationError::WrongSparse),
@@ -414,23 +415,23 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TypedMultiDenseVectorRef<'a, T> {
-    pub flattened_vectors: &'a [T],
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedMultiDenseVectorRef<'a, T: Clone> {
+    pub flattened_vectors: Cow<'a, [T]>,
     pub dim: usize,
 }
 
 impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
     /// Slices the multi vector into the underlying individual vectors
-    pub fn multi_vectors(self) -> impl Iterator<Item = &'a [T]> {
+    pub fn multi_vectors(&self) -> impl Iterator<Item = &[T]> {
         self.flattened_vectors.chunks_exact(self.dim)
     }
 
-    pub fn is_empty(self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.flattened_vectors.is_empty()
     }
 
-    pub fn vectors_count(self) -> usize {
+    pub fn vectors_count(&self) -> usize {
         self.flattened_vectors.len() / self.dim
     }
 
@@ -441,7 +442,7 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `TypedMultiDenseVector`
     pub fn to_owned(self) -> TypedMultiDenseVector<T> {
         TypedMultiDenseVector {
-            flattened_vectors: self.flattened_vectors.to_owned(),
+            flattened_vectors: self.flattened_vectors.into_owned(),
             dim: self.dim,
         }
     }
@@ -452,7 +453,7 @@ impl<'a, T: PrimitiveVectorElement> From<&'a TypedMultiDenseVector<T>>
 {
     fn from(val: &'a TypedMultiDenseVector<T>) -> Self {
         TypedMultiDenseVectorRef {
-            flattened_vectors: &val.flattened_vectors,
+            flattened_vectors: Cow::Borrowed(&val.flattened_vectors),
             dim: val.dim,
         }
     }

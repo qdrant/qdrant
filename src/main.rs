@@ -38,6 +38,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use storage::types::DiskCacheConfig;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -178,6 +179,18 @@ fn main() -> anyhow::Result<()> {
             .async_scorer
             .unwrap_or_default(),
     );
+    if let Some(disk_cache) = settings.storage.performance.disk_cache.as_ref() {
+        #[cfg(unix)]
+        {
+            let DiskCacheConfig { file, size_mb } = disk_cache;
+            ::common::disk_cache::CacheController::initialize_global(file, *size_mb * 1024 * 1024);
+        }
+        #[cfg(not(unix))]
+        {
+            _ = disk_cache;
+            log::warn!("Disk cache is enabled, but not supported on this platform");
+        }
+    }
     welcome(&settings);
 
     // If audit logging is enabled, but failed to initialize,

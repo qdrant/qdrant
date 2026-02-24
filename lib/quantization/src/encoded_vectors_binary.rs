@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::atomic_save_json;
-use common::mmap::MmapFlusher;
+use common::mmap::{MmapChunkView, MmapFlusher};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use common::typelevel::True;
@@ -803,7 +803,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> MmapChunkView<'_, u8> {
         self.encoded_vectors.get_vector_data(i as _)
     }
 
@@ -823,7 +823,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         // For internal queries we use the same encoding as for storage
         EncodedQueryBQ::Binary(EncodedBinVector {
             encoded_vector: bytemuck::cast_slice::<u8, TBitsStoreType>(
-                self.get_quantized_vector(point_id),
+                &self.get_quantized_vector(point_id),
             )
             .to_vec(),
         })
@@ -857,7 +857,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
     ) -> f32 {
         let vector_data = self.encoded_vectors.get_vector_data(i);
 
-        self.score_bytes(True, query, vector_data, hw_counter)
+        self.score_bytes(True, query, &vector_data, hw_counter)
     }
 
     fn score_internal(
@@ -875,10 +875,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
-        let vector_data_usize_1 = unsafe { transmute_from_u8_to_slice(vector_data_1) };
+        let vector_data_usize_1 = unsafe { transmute_from_u8_to_slice(&vector_data_1) };
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
-        let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(vector_data_2) };
+        let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(&vector_data_2) };
 
         hw_counter
             .cpu_counter()
@@ -899,7 +899,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         Some(EncodedQueryBQ::Binary(EncodedBinVector {
             // TODO Safety
             encoded_vector: unsafe {
-                transmute_from_u8_to_slice(self.encoded_vectors.get_vector_data(id)).to_vec()
+                transmute_from_u8_to_slice(&self.encoded_vectors.get_vector_data(id)).to_vec()
             },
         }))
     }

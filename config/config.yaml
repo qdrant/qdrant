@@ -101,6 +101,10 @@ storage:
     # Maximum number of segments to load concurrently when loading a local shard.
     #max_concurrent_segment_loads: 8
 
+    #disk_cache:
+    #  file: /foo/bar
+    #  size_mb: 1234
+
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     deleted_threshold: 0.2

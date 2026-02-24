@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::{Madviseable, MmapFlusher, advice};
+use common::mmap::{Madviseable, MmapChunkView, MmapFlusher, advice};
 use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::OpenOptions;
@@ -62,10 +62,10 @@ impl QuantizedMmapStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> MmapChunkView<'_, u8> {
         let start = self.quantized_vector_size.get() * index as usize;
         let end = self.quantized_vector_size.get() * (index + 1) as usize;
-        self.mmap.get(start..end).unwrap_or(&[])
+        MmapChunkView::Slice(self.mmap.get(start..end).unwrap_or(&[]))
     }
 
     fn upsert_vector(

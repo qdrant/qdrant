@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
@@ -135,7 +136,7 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.dim);
-        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
+        let multivector_size_in_bytes = std::mem::size_of_val(&*multi_vector.flattened_vectors);
         if multivector_size_in_bytes >= CHUNK_SIZE {
             return Err(OperationError::service_error(format!(
                 "Cannot insert multi vector of size {multivector_size_in_bytes} to the vector storage. It's too large, maximum size is {CHUNK_SIZE}.",
@@ -160,13 +161,13 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
             }
             self.vectors.insert_many(
                 metadata.start,
-                multi_vector.flattened_vectors,
+                &multi_vector.flattened_vectors,
                 multi_vector.vectors_count(),
             )?;
         } else {
             self.vectors.insert_many(
                 metadata.start,
-                multi_vector.flattened_vectors,
+                &multi_vector.flattened_vectors,
                 multi_vector.vectors_count(),
             )?;
         }
@@ -198,16 +199,17 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
                 .get_many(metadata.start, metadata.inner_vectors_count)
                 .unwrap_or_else(|| panic!("Vectors does not contain data for {metadata:?}"));
             TypedMultiDenseVectorRef {
-                flattened_vectors,
+                flattened_vectors: Cow::Borrowed(flattened_vectors),
                 dim: self.dim,
             }
         })
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
-            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start + i))
+            (0..metadata.inner_vectors_count)
+                .map(|i| Cow::Borrowed(self.vectors.get(metadata.start + i)))
         })
     }
 

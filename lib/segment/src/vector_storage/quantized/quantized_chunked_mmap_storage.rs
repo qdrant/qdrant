@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap::{Advice, AdviceSetting, MmapFlusher};
+use common::mmap::{Advice, AdviceSetting, MmapChunkView, MmapFlusher};
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
@@ -34,7 +34,7 @@ impl QuantizedChunkedMmapStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> MmapChunkView<'_, u8> {
         self.data
             .get::<Random>(index as VectorOffsetType)
             .unwrap_or_default()
