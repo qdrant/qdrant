@@ -1,3 +1,4 @@
+pub mod elements_io;
 pub mod mmap;
 
 use std::borrow::Cow;
@@ -5,18 +6,18 @@ use std::path::Path;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead<T: Copy + 'static> {
+pub trait UniversalRead {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Self: Sized;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [T]>>;
+    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [u8]>>;
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
         ranges: impl IntoIterator<Item = BytesRange>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
+        callback: impl FnMut(usize, &[u8]) -> Result<()>,
     ) -> Result<()>;
 
     /// Fill RAM cache with related data, if applicable for this implementation.
@@ -30,12 +31,12 @@ pub trait UniversalRead<T: Copy + 'static> {
     fn clear_ram_cache(&self) -> Result<()>;
 }
 
-pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
-    fn write(&mut self, offset: ByteOffset, data: &[T]) -> Result<()>;
+pub trait UniversalWrite: UniversalRead {
+    fn write(&mut self, offset: ByteOffset, data: &[u8]) -> Result<()>;
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [u8])>,
     ) -> Result<()>;
 
     fn flusher(&self) -> Flusher;
@@ -78,7 +79,7 @@ pub enum UniversalIoError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Mmap(#[from] crate::mmap::Error),
-    #[error("Data range {start}..{end} is out of bounds (data size: {data_length} elements)")]
+    #[error("Data range {start}..{end} is out of bounds (data size: {data_length} bytes)")]
     OutOfBounds {
         start: u64,
         end: u64,

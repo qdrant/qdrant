@@ -175,6 +175,34 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 
 /// # Safety
 ///
+/// `data` must have correct alignment for `T` and contain correct bit patterns for the type `T`.
+pub unsafe fn transmute_from_bytes_to_vec<T>(data: Vec<u8>) -> Vec<T> {
+    debug_assert_eq!(data.len() % size_of::<T>(), 0);
+
+    debug_assert_eq!(
+        data.as_ptr().align_offset(align_of::<T>()),
+        0,
+        "transmuting byte vector {:p} into vector of {}: \
+         required alignment is {} bytes, \
+         byte vector misaligned by {} bytes",
+        data.as_ptr(),
+        std::any::type_name::<T>(),
+        align_of::<T>(),
+        data.as_ptr().align_offset(align_of::<T>()),
+    );
+
+    let len = data.len() / size_of::<T>();
+    let ptr = data.as_ptr().cast::<T>();
+    let capacity = data.capacity() / size_of::<T>();
+
+    // We need to forget the original vector to avoid double free
+    std::mem::forget(data);
+
+    unsafe { Vec::from_raw_parts(ptr as *mut T, len, capacity) }
+}
+
+/// # Safety
+///
 /// T must be a type with stable representation (POD type, Option with niche optimization, etc).
 #[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {

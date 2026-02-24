@@ -5,26 +5,24 @@ use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
 };
+use crate::universal_io::elements_io::UniversalElementRead;
 use crate::universal_io::{
     ByteOffset, BytesRange, Flusher, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
 };
 
-pub struct MmapUniversal<T: Copy + 'static> {
+pub struct MmapUniversal {
     path: PathBuf,
     /// Main data mmap slice for read/write
     ///
     /// Best suited for random reads.
-    mmap: MmapSlice<T>,
+    mmap: MmapSlice<u8>,
     /// Read-only mmap slice best suited for sequential reads
     ///
     /// `None` on platforms that do not support multiple memory maps to the same file.
-    mmap_seq: Option<MmapSliceReadOnly<T>>,
+    mmap_seq: Option<MmapSliceReadOnly<u8>>,
 }
 
-impl<T> UniversalRead<T> for MmapUniversal<T>
-where
-    T: Copy + 'static,
-{
+impl UniversalRead for MmapUniversal {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> crate::universal_io::Result<Self>
     where
         Self: Sized,
@@ -59,7 +57,7 @@ where
     fn read<const SEQUENTIAL: bool>(
         &self,
         range: BytesRange,
-    ) -> crate::universal_io::Result<Cow<'_, [T]>> {
+    ) -> crate::universal_io::Result<Cow<'_, [u8]>> {
         let data_slice = self.as_slice::<SEQUENTIAL>();
         let start = range.start as usize;
         let end = start + range.length as usize;
@@ -78,7 +76,7 @@ where
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
         ranges: impl IntoIterator<Item = BytesRange>,
-        mut callback: impl FnMut(usize, &[T]) -> crate::universal_io::Result<()>,
+        mut callback: impl FnMut(usize, &[u8]) -> crate::universal_io::Result<()>,
     ) -> crate::universal_io::Result<()> {
         let data_slice = self.as_slice::<SEQUENTIAL>();
         let data_length = data_slice.len();
@@ -118,12 +116,9 @@ where
     }
 }
 
-impl<T> UniversalWrite<T> for MmapUniversal<T>
-where
-    T: Copy + 'static,
-{
-    fn write(&mut self, offset: ByteOffset, data: &[T]) -> crate::universal_io::Result<()> {
-        let mmap_slice: &mut [T] = &mut self.mmap;
+impl UniversalWrite for MmapUniversal {
+    fn write(&mut self, offset: ByteOffset, data: &[u8]) -> crate::universal_io::Result<()> {
+        let mmap_slice: &mut [u8] = &mut self.mmap;
         let data_length = mmap_slice.len();
         let start = offset as usize;
         let end = start + data.len();
@@ -142,7 +137,7 @@ where
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [u8])>,
     ) -> crate::universal_io::Result<()> {
         for (offset, data) in offset_data {
             self.write(offset, data)?;
@@ -156,15 +151,15 @@ where
     }
 }
 
-impl<T: Copy + 'static> MmapUniversal<T> {
-    fn as_seq_slice(&self) -> &[T] {
+impl MmapUniversal {
+    fn as_seq_slice(&self) -> &[u8] {
         self.mmap_seq
             .as_ref()
             .map(|m| m.as_ref())
             .unwrap_or(self.mmap.as_ref())
     }
 
-    fn as_slice<const SEQUENTIAL: bool>(&self) -> &[T] {
+    fn as_slice<const SEQUENTIAL: bool>(&self) -> &[u8] {
         if SEQUENTIAL {
             self.as_seq_slice()
         } else {
@@ -172,3 +167,5 @@ impl<T: Copy + 'static> MmapUniversal<T> {
         }
     }
 }
+
+impl<T: Copy + 'static> UniversalElementRead<T> for MmapUniversal {}
