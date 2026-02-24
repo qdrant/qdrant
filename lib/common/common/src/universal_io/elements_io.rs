@@ -1,7 +1,6 @@
-use std::borrow::Cow;
-
 use crate::mmap;
 use crate::universal_io::UniversalIoError;
+use std::borrow::Cow;
 
 pub type ElementsOffset = u64;
 

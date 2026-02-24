@@ -5,6 +5,7 @@ use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
 };
+use crate::universal_io::elements_io::UniversalElementRead;
 use crate::universal_io::{
     ByteOffset, BytesRange, Flusher, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
 };
@@ -166,3 +167,5 @@ impl MmapUniversal {
         }
     }
 }
+
+impl<T: Copy + 'static> UniversalElementRead<T> for MmapUniversal {}
