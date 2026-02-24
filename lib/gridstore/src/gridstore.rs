@@ -4,13 +4,6 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::Result;
-use crate::bitmask::Bitmask;
-use crate::blob::Blob;
-use crate::config::{Compression, StorageConfig, StorageOptions};
-use crate::error::GridstoreError;
-use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -22,6 +15,14 @@ use fs_err::File;
 use itertools::{Either, Itertools};
 use lz4_flex::compress_prepend_size;
 use parking_lot::RwLock;
+
+use crate::Result;
+use crate::bitmask::Bitmask;
+use crate::blob::Blob;
+use crate::config::{Compression, StorageConfig, StorageOptions};
+use crate::error::GridstoreError;
+use crate::page::Page;
+use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
 
 const CONFIG_FILENAME: &str = "config.json";
 

@@ -1,10 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::json_path::JsonPath;
-use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use fs_err as fs;
@@ -12,6 +7,12 @@ use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
 use itertools::Either;
 use serde_json::Value;
+
+use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::json_path::JsonPath;
+use crate::payload_storage::PayloadStorage;
+use crate::types::{Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
 
