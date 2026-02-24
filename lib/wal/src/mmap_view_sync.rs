@@ -19,7 +19,7 @@ pub struct MmapViewSync {
 }
 
 impl MmapViewSync {
-    #[cfg_attr(target_os = "macos", expect(clippy::unused_self))]
+    #[cfg_attr(not(target_os = "linux"), expect(clippy::unused_self))]
     pub fn close(&self) {
         #[cfg(target_os = "linux")]
         unsafe {
