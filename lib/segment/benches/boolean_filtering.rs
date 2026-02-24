@@ -7,7 +7,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::fixtures::payload_context_fixture::{
-    FixtureIdTracker, create_payload_storage_fixture, create_plain_payload_index,
+    create_id_tracker_fixture, create_payload_storage_fixture, create_plain_payload_index,
     create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::BOOL_KEY;
@@ -103,7 +103,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     let payload_storage = Arc::new(AtomicRefCell::new(
         create_payload_storage_fixture(NUM_POINTS, seed).into(),
     ));
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
     let hw_counter = HardwareCounterCell::new();
 

@@ -10,8 +10,8 @@ use rand::Rng;
 use rand::distr::StandardUniform;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::id_tracker::IdTrackerSS;
+use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
+use segment::id_tracker::{IdTracker, IdTrackerEnum};
 use segment::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
 use segment::types::{Distance, VectorStorageDatatype};
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
@@ -32,9 +32,9 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
+) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerEnum>>) {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(num)));
     let mut storage = open_simple_dense_vector_storage(
         VectorStorageDatatype::Float32,
         db,

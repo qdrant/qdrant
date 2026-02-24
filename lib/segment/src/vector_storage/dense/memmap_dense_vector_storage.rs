@@ -362,7 +362,6 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
-    use atomic_refcell::AtomicRefCell;
     use common::counter::hardware_counter::HardwareCounterCell;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
@@ -371,8 +370,8 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::{DenseVector, QueryVector};
-    use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-    use crate::id_tracker::id_tracker_base::IdTracker;
+    use crate::fixtures::payload_context_fixture::create_id_tracker_fixture;
+    use crate::id_tracker::IdTracker;
     use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
@@ -392,11 +391,10 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
-        let mut borrowed_id_tracker = id_tracker.borrow_mut();
+        let mut id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
         let files = storage.files();
@@ -438,7 +436,7 @@ mod tests {
 
         assert_eq!(points[1], vector);
 
-        borrowed_id_tracker.drop(PointIdType::NumId(2)).unwrap();
+        id_tracker.drop(PointIdType::NumId(2)).unwrap();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -461,14 +459,14 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 5);
 
-        let stored_ids: Vec<PointOffsetType> = borrowed_id_tracker.iter_internal().collect();
+        let stored_ids: Vec<PointOffsetType> = id_tracker.iter_internal().collect();
 
         assert_eq!(stored_ids, [0, 1, 3, 4]);
 
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             2,
         );
         let res = searcher
@@ -485,7 +483,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             &[points[2].as_slice().into()],
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             2,
         );
         let res = searcher
@@ -511,11 +509,10 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+        let id_tracker = create_id_tracker_fixture(points.len());
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
-        let borrowed_id_tracker = id_tracker.borrow_mut();
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -559,7 +556,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             5,
         );
 
@@ -589,7 +586,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -616,7 +613,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -641,11 +638,10 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
-        let borrowed_id_tracker = id_tracker.borrow_mut();
+        let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -681,7 +677,7 @@ mod tests {
         let searcher = BatchFilteredSearcher::new_for_test(
             std::slice::from_ref(&query),
             &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             5,
         );
         let closest = searcher
@@ -718,11 +714,10 @@ mod tests {
             vec![1.0, 1.0, 0.0, 1.0],
             vec![1.0, 0.0, 0.0, 0.0],
         ];
-        let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let mut storage =
             open_memmap_vector_storage(dir.path(), 4, Distance::Dot, AdviceSetting::Global, false)
                 .unwrap();
-        let borrowed_id_tracker = id_tracker.borrow_mut();
+        let id_tracker = create_id_tracker_fixture(points.len());
 
         let hw_counter = HardwareCounterCell::new();
 
@@ -747,11 +742,8 @@ mod tests {
         let vector = vec![-1.0, -1.0, -1.0, -1.0];
         let query = vector.as_slice().into();
 
-        let mut scorer = FilteredScorer::new_for_test(
-            query,
-            &storage,
-            borrowed_id_tracker.deleted_point_bitslice(),
-        );
+        let mut scorer =
+            FilteredScorer::new_for_test(query, &storage, id_tracker.deleted_point_bitslice());
 
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer

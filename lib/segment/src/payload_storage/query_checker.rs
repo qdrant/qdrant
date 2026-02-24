@@ -10,7 +10,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -114,7 +114,7 @@ where
 
 pub fn check_payload<'a, R>(
     get_payload: Box<dyn Fn() -> OwnedPayloadRef<'a> + 'a>,
-    id_tracker: Option<&IdTrackerSS>,
+    id_tracker: Option<&IdTrackerEnum>,
     vector_storages: &HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     query: &Filter,
     point_id: PointOffsetType,
@@ -237,7 +237,7 @@ where
 #[cfg(feature = "testing")]
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     empty_payload: Payload,
 }
@@ -246,7 +246,7 @@ pub struct SimpleConditionChecker {
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     ) -> Self {
         SimpleConditionChecker {
@@ -331,8 +331,8 @@ mod tests {
     use ordered_float::OrderedFloat;
 
     use super::*;
-    use crate::id_tracker::IdTracker;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+    use crate::id_tracker::{IdTracker, IdTrackerEnum};
     use crate::json_path::JsonPath;
     use crate::payload_json;
     use crate::payload_storage::PayloadStorage;
@@ -373,7 +373,9 @@ mod tests {
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),
-            Arc::new(AtomicRefCell::new(id_tracker)),
+            Arc::new(AtomicRefCell::new(IdTrackerEnum::InMemoryIdTracker(
+                id_tracker,
+            ))),
             HashMap::new(),
         );
 

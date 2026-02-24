@@ -25,7 +25,7 @@ use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -44,7 +44,7 @@ pub const USE_COMPRESSED: bool = true;
 #[derive(Debug)]
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     path: PathBuf,
@@ -61,7 +61,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         self.config
     }
 
-    pub fn id_tracker(&self) -> &Arc<AtomicRefCell<IdTrackerSS>> {
+    pub fn id_tracker(&self) -> &Arc<AtomicRefCell<IdTrackerEnum>> {
         &self.id_tracker
     }
 
@@ -80,7 +80,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
 pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
     pub config: SparseIndexConfig,
-    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub path: &'a Path,
@@ -193,7 +193,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 
     fn build_inverted_index(
-        id_tracker: &AtomicRefCell<IdTrackerSS>,
+        id_tracker: &AtomicRefCell<IdTrackerEnum>,
         vector_storage: &AtomicRefCell<VectorStorageEnum>,
         path: &Path,
         stopped: &AtomicBool,

@@ -5,6 +5,7 @@ use common::iterator_ext::IteratorExt;
 use rand::seq::{IteratorRandom, SliceRandom};
 
 use super::Segment;
+use crate::id_tracker::IdTracker;
 use crate::index::PayloadIndex;
 use crate::types::{Filter, PointIdType};
 
@@ -23,7 +24,7 @@ impl Segment {
         let ids_iterator = payload_index
             .iter_filtered_points(
                 condition,
-                &*id_tracker,
+                &id_tracker,
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,

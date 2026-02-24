@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use self::version_tracker::VersionTracker;
 use crate::common::operation_error::SegmentFailedState;
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::IdTrackerEnum;
 use crate::index::VectorIndexEnum;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -79,7 +79,7 @@ pub struct Segment {
     pub segment_path: PathBuf,
     pub version_tracker: VersionTracker,
     /// Component for mapping external ids to internal and also keeping track of point versions
-    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,

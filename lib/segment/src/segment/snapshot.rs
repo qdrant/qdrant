@@ -13,6 +13,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::manifest::{FileVersion, SegmentManifest};
 use crate::entry::NonAppendableSegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
+use crate::id_tracker::IdTracker;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};

@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
+use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::index::PayloadIndex;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::json_path::JsonPath;
@@ -71,7 +71,7 @@ fn test_filtering_context_consistency() {
     }
 
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
     let mut index = StructPayloadIndex::open(
         wrapped_payload_storage,

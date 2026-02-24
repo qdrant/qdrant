@@ -13,7 +13,7 @@ use half::f16;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-use segment::fixtures::payload_context_fixture::FixtureIdTracker;
+use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::index::VectorIndex;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
@@ -45,7 +45,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let index_dir = Builder::new().prefix("index_dir").tempdir().unwrap();
 
     // setup
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_VECTORS)));
+    let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_VECTORS)));
     let payload_storage = InMemoryPayloadStorage::default();
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let payload_index = StructPayloadIndex::open(

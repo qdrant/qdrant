@@ -23,7 +23,7 @@ use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexTyp
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
-use crate::id_tracker::IdTrackerSS;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -82,7 +82,7 @@ pub struct StructPayloadIndex {
     /// Payload storage
     pub(super) payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Used for `has_id` condition and estimating cardinality
-    pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     /// Vector storages for each field, used for `has_vector` condition
     pub(super) vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
@@ -301,7 +301,7 @@ impl StructPayloadIndex {
 
     pub fn open(
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
         is_appendable: bool,
@@ -616,7 +616,7 @@ impl StructPayloadIndex {
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
-        id_tracker: &'a IdTrackerSS,
+        id_tracker: &'a IdTrackerEnum,
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
@@ -959,7 +959,7 @@ impl PayloadIndex for StructPayloadIndex {
         let id_tracker = self.id_tracker.borrow();
         self.iter_filtered_points(
             filter,
-            &*id_tracker,
+            &id_tracker,
             &query_cardinality,
             hw_counter,
             is_stopped,
