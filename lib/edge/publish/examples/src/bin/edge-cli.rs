@@ -8,6 +8,6 @@ fn main() -> anyhow::Result<()> {
         .try_into()
         .map_err(|args| anyhow::format_err!("unexpected arguments {args:?}"))?;
 
-    let _edge_shard = edge::EdgeShard::load(Path::new(&edge_shard_path), None)?;
+    let _edge_shard = qdrant_edge::EdgeShard::load(Path::new(&edge_shard_path), None)?;
     Ok(())
 }

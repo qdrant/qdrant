@@ -35,6 +35,7 @@ mkShell {
     pkgs.rustPlatform.bindgenHook # for bindgen deps
 
     # For tests and tools
+    pkgs.ast-grep # used in lib/edge/publish/amalgamate.py
     pkgs.cargo-nextest # mentioned in .github/workflows/rust.yml
     pkgs.ccache # mentioned in shellHook
     pkgs.curl # used in ./tests

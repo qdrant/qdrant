@@ -1,12 +1,12 @@
-pub mod count;
-pub mod facet;
-pub mod info;
-pub mod query;
-pub mod retrieve;
-pub mod scroll;
-pub mod search;
-pub mod snapshots;
-pub mod update;
+mod count;
+mod facet;
+mod info;
+mod query;
+mod retrieve;
+mod scroll;
+mod search;
+mod snapshots;
+mod update;
 
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
+pub use info::ShardInfo;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;

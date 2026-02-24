@@ -18,7 +18,3 @@ pub mod json_path;
 pub mod types;
 pub mod utils;
 pub mod vector_storage;
-
-#[macro_use]
-extern crate num_derive;
-extern crate core;
