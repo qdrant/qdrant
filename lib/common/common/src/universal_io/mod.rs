@@ -1,4 +1,5 @@
 pub mod mmap;
+pub mod elements_io;
 
 use std::borrow::Cow;
 use std::path::Path;

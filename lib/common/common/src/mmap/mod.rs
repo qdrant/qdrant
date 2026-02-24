@@ -14,5 +14,6 @@ pub use ops::{
 };
 #[expect(deprecated, reason = "Re-exports of deprecated items")]
 pub use ops::{
-    transmute_from_u8, transmute_from_u8_to_slice, transmute_to_u8, transmute_to_u8_slice,
+    transmute_from_bytes_to_vec, transmute_from_u8, transmute_from_u8_to_slice, transmute_to_u8,
+    transmute_to_u8_slice,
 };
