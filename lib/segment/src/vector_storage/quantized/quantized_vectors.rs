@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -660,11 +661,22 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
-            PrimitiveVectorElement::quantization_preprocess(
-                quantization_config,
-                distance,
-                vector_storage.get_dense::<Sequential>(i),
-            )
+            match vector_storage.get_dense::<Sequential>(i) {
+                Cow::Borrowed(slice) => PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    slice,
+                ),
+                Cow::Owned(vec) => Cow::Owned(
+                    // TODO: Preprocess without reallocating
+                    PrimitiveVectorElement::quantization_preprocess(
+                        quantization_config,
+                        distance,
+                        &vec,
+                    )
+                    .into_owned(),
+                ),
+            }
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
 

@@ -80,10 +80,12 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
         self.vectors.dim()
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
-        self.vectors
-            .get::<P>(key as VectorOffsetType)
-            .expect("mmap vector not found")
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+        Cow::Borrowed(
+            self.vectors
+                .get::<P>(key as VectorOffsetType)
+                .expect("mmap vector not found"),
+        )
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {

@@ -131,7 +131,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
                         if vector.len() != vectors_layout.base.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }
-                        writer.write_all(vector)?;
+                        writer.write_all(&vector)?;
                         offset += vector.len();
                     }
 
@@ -156,7 +156,7 @@ pub fn serialize_graph_links<W: Write + Seek>(
                         if vector.len() != vectors_layout.link.size() {
                             return Err(OperationError::service_error("Vector size mismatch"));
                         }
-                        writer.write_all(vector)?;
+                        writer.write_all(&vector)?;
                         offset += vector.len();
                     }
 

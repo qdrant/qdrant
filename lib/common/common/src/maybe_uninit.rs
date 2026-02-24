@@ -1,4 +1,5 @@
 use std::mem::{MaybeUninit, transmute};
+use std::ops::{Deref, DerefMut};
 
 /// [`MaybeUninit::fill_from`] backported to stable.
 ///
@@ -30,4 +31,38 @@ pub fn maybe_uninit_fill_from<I: IntoIterator>(
         unsafe { transmute::<&mut [MaybeUninit<I::Item>], &mut [I::Item]>(initted) },
         remainder,
     )
+}
+
+/// Wrapper around [`maybe_uninit_fill_from`] that doesn't leak on drop.
+#[inline(always)]
+pub fn maybe_uninit_fill_from_with_drop<I: IntoIterator>(
+    this: &mut [MaybeUninit<I::Item>],
+    it: I,
+) -> (RefDropper<'_, [I::Item]>, &mut [MaybeUninit<I::Item>]) {
+    let (initted, remainder) = maybe_uninit_fill_from(this, it);
+    (RefDropper(initted), remainder)
+}
+
+pub struct RefDropper<'a, T: ?Sized>(&'a mut T);
+
+impl<'a, T: ?Sized> Deref for RefDropper<'a, T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T: ?Sized> DerefMut for RefDropper<'a, T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T: ?Sized> Drop for RefDropper<'a, T> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe { std::ptr::drop_in_place(self.0) }
+    }
 }

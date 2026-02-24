@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use bytemuck::Pod;
 use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ where
     Self: Copy + Clone + Default + Send + Sync + 'static,
     Self: Serialize + for<'a> Deserialize<'a>,
     Self: FromBytes + Immutable + IntoBytes + KnownLayout,
+    Self: Pod,
 {
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 
