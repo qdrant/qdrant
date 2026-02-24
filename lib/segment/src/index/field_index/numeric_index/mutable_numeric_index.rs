@@ -448,7 +448,7 @@ where
             }
             // We cannot store empty value, then delete instead
             Storage::Gridstore(store) if values.is_empty() => {
-                store.delete_value(idx);
+                store.delete_value(idx)?;
             }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
@@ -482,7 +482,7 @@ where
                     .transpose()?;
             }
             Storage::Gridstore(store) => {
-                store.delete_value(idx);
+                store.delete_value(idx)?;
             }
         }
 

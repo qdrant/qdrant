@@ -1,18 +1,8 @@
 use std::cmp::min;
 use std::io::BufReader;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
-use common::fs::atomic_save_json;
-use common::is_alive_lock::IsAliveLock;
-use fs_err as fs;
-use fs_err::File;
-use itertools::Itertools;
-use lz4_flex::compress_prepend_size;
-use parking_lot::RwLock;
 
 use crate::Result;
 use crate::bitmask::Bitmask;
@@ -21,6 +11,17 @@ use crate::config::{Compression, StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
+use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::referenced_counter::HwMetricRefCounter;
+use common::fs::atomic_save_json;
+use common::is_alive_lock::IsAliveLock;
+use common::universal_io::mmap::MmapUniversal;
+use fs_err as fs;
+use fs_err::File;
+use itertools::{Either, Itertools};
+use lz4_flex::compress_prepend_size;
+use parking_lot::RwLock;
 
 const CONFIG_FILENAME: &str = "config.json";
 
@@ -38,7 +39,7 @@ pub struct Gridstore<V> {
     /// Stored in a separate file
     pub(super) tracker: Arc<RwLock<Tracker>>,
     /// Mapping from page_id -> mmap page
-    pub(super) pages: Arc<RwLock<Vec<Page>>>,
+    pub(super) pages: Arc<RwLock<Vec<Page<MmapUniversal<u8>>>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -158,7 +159,7 @@ impl<V: Blob> Gridstore<V> {
         // create first page to be covered by the bitmask
         let new_page_id = storage.next_page_id();
         let path = storage.page_path(new_page_id);
-        let page = Page::new(&path, storage.config.page_size_bytes)?;
+        let page = Page::<MmapUniversal<u8>>::new(&path, storage.config.page_size_bytes)?;
         storage.pages.write().push(page);
 
         // lastly, write config to disk to use as a signal that the storage has been created correctly
@@ -206,7 +207,7 @@ impl<V: Blob> Gridstore<V> {
         let mut pages = storage.pages.write();
         for page_id in 0..num_pages as PageId {
             let page_path = storage.page_path(page_id);
-            let page = Page::open(&page_path)?;
+            let page = Page::<MmapUniversal<u8>>::open(&page_path)?;
             pages.push(page);
         }
         drop(pages);
@@ -231,7 +232,7 @@ impl<V: Blob> Gridstore<V> {
         start_page_id: PageId,
         mut block_offset: BlockOffset,
         mut length: u32,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>> {
         let mut raw_sections = Vec::with_capacity(length as usize);
 
         let pages = self.pages.read();
@@ -241,9 +242,9 @@ impl<V: Blob> Gridstore<V> {
                 block_offset,
                 length,
                 self.config.block_size_bytes,
-            );
+            )?;
 
-            raw_sections.extend(raw);
+            raw_sections.extend(raw.deref());
 
             if unread_bytes == 0 {
                 break;
@@ -253,7 +254,7 @@ impl<V: Blob> Gridstore<V> {
             length = unread_bytes as u32;
         }
 
-        raw_sections
+        Ok(raw_sections)
     }
 
     /// Get the value for a given point offset
@@ -266,20 +267,23 @@ impl<V: Blob> Gridstore<V> {
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
-    ) -> Option<V> {
-        let ValuePointer {
+    ) -> Result<Option<V>> {
+        let Some(ValuePointer {
             page_id,
             block_offset,
             length,
-        } = self.get_pointer(point_offset)?;
+        }) = self.get_pointer(point_offset)
+        else {
+            return Ok(None);
+        };
 
-        let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length);
+        let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
-        Some(value)
+        Ok(Some(value))
     }
 
     /// Create a new page and return its id.
@@ -290,7 +294,7 @@ impl<V: Blob> Gridstore<V> {
     fn create_new_page(&mut self) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = self.page_path(new_page_id);
-        let page = Page::new(&path, self.config.page_size_bytes)?;
+        let page = Page::<MmapUniversal<u8>>::new(&path, self.config.page_size_bytes)?;
         self.pages.write().push(page);
 
         self.bitmask.write().cover_new_page()?;
@@ -344,7 +348,7 @@ impl<V: Blob> Gridstore<V> {
         value: &[u8],
         start_page_id: PageId,
         mut block_offset: BlockOffset,
-    ) {
+    ) -> Result<()> {
         let value_size = value.len();
 
         // Track the number of bytes that still need to be written
@@ -356,14 +360,15 @@ impl<V: Blob> Gridstore<V> {
 
             let range = (value_size - unwritten_tail)..;
             unwritten_tail =
-                page.write_value(block_offset, &value[range], self.config.block_size_bytes);
-
+                page.write_value(block_offset, &value[range], self.config.block_size_bytes)?;
             if unwritten_tail == 0 {
                 break;
             }
 
             block_offset = 0;
         }
+
+        Ok(())
     }
 
     /// Put a value in the storage.
@@ -434,7 +439,7 @@ impl<V: Blob> Gridstore<V> {
             self.find_or_create_available_blocks(required_blocks)?;
 
         // insert into a new cell, considering that it can span more than one page
-        self.write_into_pages(&comp_value, start_page_id, block_offset);
+        self.write_into_pages(&comp_value, start_page_id, block_offset)?;
 
         // mark new cell as used in the bitmask
         self.bitmask
@@ -458,17 +463,20 @@ impl<V: Blob> Gridstore<V> {
     /// Returns None if the point_offset, page, or value was not found
     ///
     /// Returns the deleted value otherwise
-    pub fn delete_value(&mut self, point_offset: PointOffset) -> Option<V> {
-        let ValuePointer {
+    pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
+        let Some(ValuePointer {
             page_id,
             block_offset,
             length,
-        } = self.tracker.write().unset(point_offset)?;
-        let raw = self.read_from_pages::<false>(page_id, block_offset, length);
+        }) = self.tracker.write().unset(point_offset)
+        else {
+            return Ok(None);
+        };
+        let raw = self.read_from_pages::<false>(page_id, block_offset, length)?;
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
-        Some(value)
+        Ok(Some(value))
     }
 
     /// Clear the storage, going back to the initial state
@@ -530,7 +538,7 @@ impl<V: Blob> Gridstore<V> {
         &self,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), E>
+    ) -> std::result::Result<(), Either<E, GridstoreError>>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
     {
@@ -569,13 +577,15 @@ impl<V: Blob> Gridstore<V> {
                     length,
                 } = pointer;
 
-                let raw = self.read_from_pages::<true>(page_id, block_offset, length);
+                let raw = self
+                    .read_from_pages::<true>(page_id, block_offset, length)
+                    .map_err(Either::Right)?;
 
                 hw_counter.incr_delta(raw.len());
 
                 let decompressed = self.decompress(raw);
                 let value = V::from_bytes(&decompressed);
-                if !callback(point_offset, value)? {
+                if !callback(point_offset, value).map_err(Either::Left)? {
                     return Ok(());
                 }
             }
@@ -685,9 +695,9 @@ impl<V> Gridstore<V> {
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) -> std::io::Result<()> {
+    pub fn populate(&self) -> Result<()> {
         for page in self.pages.read().iter() {
-            page.populate();
+            page.populate()?;
         }
         self.tracker.read().populate()?;
         self.bitmask.read().populate()?;
@@ -729,7 +739,7 @@ mod tests {
     fn test_empty_payload_storage() {
         let hw_counter = HardwareCounterCell::new();
         let (_dir, storage) = empty_storage();
-        let payload = storage.get_value::<false>(0, &hw_counter);
+        let payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(payload.is_none());
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
@@ -748,7 +758,7 @@ mod tests {
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
         let hw_counter = HardwareCounterCell::new();
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), Payload::default());
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -776,7 +786,7 @@ mod tests {
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
         let hw_counter = HardwareCounterCell::new();
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -833,7 +843,9 @@ mod tests {
                 .put_value(*point_offset, payload, hw_counter_ref)
                 .unwrap();
 
-            let stored_payload = storage.get_value::<false>(*point_offset, &hw_counter);
+            let stored_payload = storage
+                .get_value::<false>(*point_offset, &hw_counter)
+                .unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(&stored_payload.unwrap(), payload);
         }
@@ -841,7 +853,9 @@ mod tests {
         // read randomly
         payloads.shuffle(rng);
         for (point_offset, payload) in payloads.iter() {
-            let stored_payload = storage.get_value::<false>(*point_offset, &hw_counter);
+            let stored_payload = storage
+                .get_value::<false>(*point_offset, &hw_counter)
+                .unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload.clone());
         }
@@ -866,17 +880,17 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert_eq!(stored_payload, Some(payload));
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
         // delete payload
-        let deleted = storage.delete_value(0);
+        let deleted = storage.delete_value(0).unwrap();
         assert_eq!(deleted, stored_payload);
         assert_eq!(storage.pages.read().len(), 1);
 
         // get payload again
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_none());
         storage.flusher()().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
@@ -905,7 +919,7 @@ mod tests {
                 assert_eq!(page_mapping.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };
@@ -939,9 +953,13 @@ mod tests {
 
         // Let's write it near the end
         let block_offset = DEFAULT_REGION_SIZE_BLOCKS - 10;
-        storage.write_into_pages(&value, 0, block_offset as u32);
+        storage
+            .write_into_pages(&value, 0, block_offset as u32)
+            .unwrap();
 
-        let read_value = storage.read_from_pages::<false>(0, block_offset as u32, value_len as u32);
+        let read_value = storage
+            .read_from_pages::<false>(0, block_offset as u32, value_len as u32)
+            .unwrap();
         assert_eq!(value, read_value);
     }
 
@@ -1072,7 +1090,7 @@ mod tests {
                 }
                 Operation::Delete(point_offset) => {
                     log::debug!("op:{i} DELETE offset:{point_offset}");
-                    let old1 = storage.delete_value(point_offset);
+                    let old1 = storage.delete_value(point_offset).unwrap();
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
                         old1, old2,
@@ -1081,8 +1099,12 @@ mod tests {
                 }
                 Operation::Get(point_offset) => {
                     log::debug!("op:{i} GET offset:{point_offset}");
-                    let v1_seq = storage.get_value::<true>(point_offset, &hw_counter);
-                    let v1_rand = storage.get_value::<false>(point_offset, &hw_counter);
+                    let v1_seq = storage
+                        .get_value::<true>(point_offset, &hw_counter)
+                        .unwrap();
+                    let v1_rand = storage
+                        .get_value::<false>(point_offset, &hw_counter)
+                        .unwrap();
                     let v2 = model_hashmap.get(&point_offset).cloned();
                     assert_eq!(
                         v1_seq, v2,
@@ -1145,7 +1167,9 @@ mod tests {
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+            let stored_payload = storage
+                .get_value::<false>(point_offset, &hw_counter)
+                .unwrap();
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(
                 stored_payload.as_ref(),
@@ -1170,7 +1194,9 @@ mod tests {
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+            let stored_payload = storage
+                .get_value::<false>(point_offset, &hw_counter)
+                .unwrap();
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(
                 stored_payload.as_ref(),
@@ -1214,7 +1240,7 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -1228,11 +1254,16 @@ mod tests {
 
         {
             // delete payload
-            let deleted = storage.delete_value(0);
+            let deleted = storage.delete_value(0).unwrap();
             assert!(deleted.is_some());
             assert_eq!(storage.pages.read().len(), 2);
 
-            assert!(storage.get_value::<false>(0, &hw_counter).is_none());
+            assert!(
+                storage
+                    .get_value::<false>(0, &hw_counter)
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 
@@ -1258,7 +1289,7 @@ mod tests {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, 0); // first cell
 
-            let stored_payload = storage.get_value::<false>(0, &hw_counter);
+            let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
 
@@ -1270,7 +1301,7 @@ mod tests {
         let storage = Gridstore::<Payload>::open(path).unwrap();
         assert_eq!(storage.pages.read().len(), 1);
 
-        let stored_payload = storage.get_value::<false>(0, &hw_counter);
+        let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
     }
@@ -1329,9 +1360,11 @@ mod tests {
                 let storage_index = row_index as u32 + right_shift_offset;
                 let first = storage
                     .get_value::<false>(storage_index, &hw_counter)
+                    .unwrap()
                     .unwrap();
                 let second = storage
                     .get_value::<false>(storage_index + EXPECTED_LEN as u32, &hw_counter)
+                    .unwrap()
                     .unwrap();
                 // assert the two payloads are equal
                 assert_eq!(first, second);
@@ -1382,7 +1415,10 @@ mod tests {
         // loop from the end to the beginning to avoid overwriting
         let offset: u32 = 1;
         for i in (0..EXPECTED_LEN).rev() {
-            let payload = storage.get_value::<false>(i as u32, &hw_counter).unwrap();
+            let payload = storage
+                .get_value::<false>(i as u32, &hw_counter)
+                .unwrap()
+                .unwrap();
             // move first write to the right
             storage
                 .put_value(i as u32 + offset, &payload, hw_counter_ref)
@@ -1465,6 +1501,7 @@ mod tests {
         let get_payload = |storage: &Gridstore<Payload>| {
             storage
                 .get_value::<false>(0, &hw_counter)
+                .expect("no io error")
                 .expect("offset exists")
                 .0
                 .get("key")
@@ -1490,7 +1527,7 @@ mod tests {
                 assert_eq!(page_mapping.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };
@@ -1555,7 +1592,8 @@ mod tests {
         let get_payload = |storage: &Gridstore<Payload>| {
             Some(
                 storage
-                    .get_value::<false>(0, &hw_counter)?
+                    .get_value::<false>(0, &hw_counter)
+                    .unwrap()?
                     .0
                     .get("key")
                     .expect("key exists")
@@ -1581,7 +1619,7 @@ mod tests {
                 assert_eq!(page_mapping.block_offset, expected_block_offset);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value::<false>(0, &hw_counter);
+                let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };
@@ -1597,7 +1635,7 @@ mod tests {
         put_payload(&mut storage, "value 3", 2);
         assert_eq!(get_payload(&storage).unwrap(), "value 3");
 
-        storage.delete_value(0);
+        storage.delete_value(0).unwrap();
         assert!(get_payload(&storage).is_none());
 
         // Flush, storage is still open so we expect the point not to exist
@@ -1616,7 +1654,7 @@ mod tests {
 
         flusher().unwrap();
 
-        storage.delete_value(0);
+        storage.delete_value(0).unwrap();
         assert!(get_payload(&storage).is_none());
 
         storage.flusher()().unwrap();
@@ -1661,7 +1699,7 @@ mod tests {
 
         let flusher_1_value_5 = storage.flusher();
 
-        storage.delete_value(0);
+        storage.delete_value(0).unwrap();
         assert!(get_payload(&storage).is_none());
 
         let flusher_2_delete = storage.flusher();
@@ -1736,7 +1774,9 @@ mod tests {
                 assert_eq!(storage.pages.read().len(), 1);
 
                 let hw_counter = HardwareCounterCell::new();
-                let stored_payload = storage.get_value::<false>(point_offset, &hw_counter);
+                let stored_payload = storage
+                    .get_value::<false>(point_offset, &hw_counter)
+                    .unwrap();
                 assert!(stored_payload.is_some());
                 assert_eq!(stored_payload.unwrap(), payload);
             };

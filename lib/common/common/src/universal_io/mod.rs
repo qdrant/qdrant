@@ -19,6 +19,12 @@ pub trait UniversalRead<T: Copy + 'static> {
         callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()>;
 
+    fn len(&self) -> Result<u64>;
+
+    fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
+    }
+
     /// Fill RAM cache with related data, if applicable for this implementation.
     ///
     /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.

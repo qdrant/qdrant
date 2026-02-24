@@ -278,7 +278,7 @@ where
                 }
             }
             Storage::Gridstore(store) => {
-                store.delete_value(idx);
+                store.delete_value(idx)?;
             }
         }
 

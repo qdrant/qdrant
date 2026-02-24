@@ -89,7 +89,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..storage.max_point_offset() {
-                let res = storage.get_value::<false>(i, &hw_counter).unwrap();
+                let res = storage.get_value::<false>(i, &hw_counter).unwrap().unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
         });

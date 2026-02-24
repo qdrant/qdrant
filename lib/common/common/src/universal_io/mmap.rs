@@ -102,6 +102,10 @@ where
         Ok(())
     }
 
+    fn len(&self) -> crate::universal_io::Result<u64> {
+        Ok(self.mmap.len() as u64)
+    }
+
     fn populate(&self) -> crate::universal_io::Result<()> {
         if let Some(mmap_seq) = &self.mmap_seq {
             mmap_seq.populate()?;
