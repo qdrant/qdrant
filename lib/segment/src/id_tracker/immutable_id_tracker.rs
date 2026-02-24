@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::atomic_bitvec::prelude::BitVec;
@@ -23,7 +24,7 @@ use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker, PointMappingsRefEnum};
-use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
+use crate::types::{AtomicSeqNumberType, ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
 pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
@@ -279,7 +280,7 @@ impl ImmutableIdTracker {
 
     pub fn new(
         path: &Path,
-        internal_to_version: &[SeqNumberType],
+        internal_to_version: &[AtomicSeqNumberType],
         mappings: CompressedPointMappings,
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
@@ -324,8 +325,12 @@ impl ImmutableIdTracker {
             )?)?
         };
 
-        internal_to_version_wrapper[..internal_to_version.len()]
-            .copy_from_slice(internal_to_version);
+        for (dst, src) in internal_to_version_wrapper[..internal_to_version.len()]
+            .iter_mut()
+            .zip(internal_to_version)
+        {
+            *dst = src.load(AtomicOrdering::Acquire)
+        }
         let internal_to_version = CompressedVersions::from_slice(&internal_to_version_wrapper);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
@@ -365,6 +370,11 @@ impl ImmutableIdTracker {
 
     pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
         base.join(MAPPINGS_FILE_NAME)
+    }
+
+    fn set_internal_deleted(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        let version = DELETED_POINT_VERSION;
+        self.set_internal_version(internal_id, version)
     }
 }
 
@@ -423,7 +433,7 @@ impl IdTracker for ImmutableIdTracker {
 
         if let Some(internal_id) = internal_id {
             self.deleted_wrapper.set(internal_id as usize, true);
-            self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+            self.set_internal_deleted(internal_id)?;
         }
 
         Ok(())
@@ -435,7 +445,7 @@ impl IdTracker for ImmutableIdTracker {
         }
 
         self.deleted_wrapper.set(internal_id as usize, true);
-        self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
+        self.set_internal_deleted(internal_id)?;
 
         Ok(())
     }

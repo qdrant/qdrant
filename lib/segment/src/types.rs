@@ -8,6 +8,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use ahash::AHashSet;
 use common::stable_hash::StableHash;
@@ -51,6 +52,7 @@ pub type PayloadKeyType = JsonPath;
 pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
 /// Sequential number of modification, applied to segment
 pub type SeqNumberType = u64;
+pub type AtomicSeqNumberType = AtomicU64;
 /// Type of float point payload
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
