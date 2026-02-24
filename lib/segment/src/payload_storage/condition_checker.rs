@@ -238,12 +238,23 @@ impl ValueChecker for Range<IntPayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
             Value::Number(num) => {
-                // Try to compare as integer first for precision, fall back to f64
+                // Try to compare as integer first for precision
                 if let Some(int_val) = num.as_i64() {
                     self.check_range(int_val)
                 } else {
+                    // Fall back to f64, but only accept values that are integral
+                    // and within i64 bounds to avoid lossy truncation
                     num.as_f64()
-                        .map(|number| number as IntPayloadType)
+                        .and_then(|number| {
+                            if number.fract() == 0.0
+                                && number >= i64::MIN as f64
+                                && number <= i64::MAX as f64
+                            {
+                                Some(number as IntPayloadType)
+                            } else {
+                                None
+                            }
+                        })
                         .map(|number| self.check_range(number))
                         .unwrap_or(false)
                 }

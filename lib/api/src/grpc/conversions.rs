@@ -31,12 +31,13 @@ use uuid::Uuid;
 use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
-    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition, IntegerRange,
-    KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, StartFrom,
-    StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
-    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
+    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
+    IntegerRange, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
+    ShardKeySelector, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    StrictModeSparse, StrictModeSparseConfig, UuidIndexParams, VectorsOutput, WithLookup,
+    raw_query, start_from,
 };
 use super::stemming_algorithm::StemmingParams;
 use super::{Expression, Formula, RecoQuery, SnowballParams, StemmingAlgorithm, Usage};
@@ -2000,7 +2001,7 @@ impl From<IntegerRange> for segment::types::Range<IntPayloadType> {
 
 impl From<IntegerRange> for segment::types::RangeInterface {
     fn from(value: IntegerRange) -> Self {
-        Self::Integer(value.into())
+        Self::Integer(segment::types::Range::from(value))
     }
 }
 
