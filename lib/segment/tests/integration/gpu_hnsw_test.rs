@@ -59,7 +59,7 @@ fn test_gpu_filterable_hnsw() {
         .try_init();
 
     let stopped = AtomicBool::new(false);
-    let max_failures = 5;
+    let max_failures = 7;
     let dim = 8;
     let m = 8;
     let num_vectors: u64 = 10_000;

@@ -1,16 +1,11 @@
 //! Unit tests for GPU vector storage, covering f32, f16, u8 dense/multivectors with SQ, BQ, PQ.
 
-use std::path::Path;
-
 use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rocksdb::DB;
 use rstest::rstest;
 
 use super::*;
-use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorRef};
 use crate::fixtures::index_fixtures::random_vector;
 use crate::fixtures::payload_fixtures::random_dense_byte_vector;
@@ -20,13 +15,13 @@ use crate::types::{
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, ScalarQuantization,
     ScalarQuantizationConfig,
 };
-use crate::vector_storage::dense::simple_dense_vector_storage::{
-    open_simple_dense_byte_vector_storage, open_simple_dense_full_vector_storage,
-    open_simple_dense_half_vector_storage,
+use crate::vector_storage::dense::volatile_dense_vector_storage::{
+    new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
+    new_volatile_dense_vector_storage,
 };
-use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
-    open_simple_multi_dense_vector_storage_byte, open_simple_multi_dense_vector_storage_full,
-    open_simple_multi_dense_vector_storage_half,
+use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::{
+    new_volatile_multi_dense_vector_storage, new_volatile_multi_dense_vector_storage_byte,
+    new_volatile_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
 use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, new_raw_scorer_for_test};
@@ -521,45 +516,40 @@ fn get_precision(storage_type: TestStorageType, dim: usize, distance: Distance) 
 }
 
 fn create_vector_storage(
-    path: &Path,
     storage_type: TestStorageType,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
-    let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
     match storage_type {
         TestStorageType::Dense(TestElementType::Float32) => {
-            create_vector_storage_f32(db, num_vectors, dim, distance)
+            create_vector_storage_f32(num_vectors, dim, distance)
         }
         TestStorageType::Dense(TestElementType::Float16) => {
-            create_vector_storage_f16(db, num_vectors, dim, distance)
+            create_vector_storage_f16(num_vectors, dim, distance)
         }
         TestStorageType::Dense(TestElementType::Uint8) => {
-            create_vector_storage_u8(db, num_vectors, dim, distance)
+            create_vector_storage_u8(num_vectors, dim, distance)
         }
         TestStorageType::Multi(TestElementType::Float32) => {
-            create_vector_storage_f32_multi(db, num_vectors, dim, distance)
+            create_vector_storage_f32_multi(num_vectors, dim, distance)
         }
         TestStorageType::Multi(TestElementType::Float16) => {
-            create_vector_storage_f16_multi(db, num_vectors, dim, distance)
+            create_vector_storage_f16_multi(num_vectors, dim, distance)
         }
         TestStorageType::Multi(TestElementType::Uint8) => {
-            create_vector_storage_u8_multi(db, num_vectors, dim, distance)
+            create_vector_storage_u8_multi(num_vectors, dim, distance)
         }
     }
 }
 
 fn create_vector_storage_f32(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
-    let mut vector_storage =
-        open_simple_dense_full_vector_storage(db, DB_VECTOR_CF, dim, distance, &false.into())
-            .unwrap();
+    let mut vector_storage = new_volatile_dense_vector_storage(dim, distance);
     for i in 0..num_vectors {
         let vec = random_vector(&mut rnd, dim);
         let vec = distance.preprocess_vector::<VectorElementType>(vec);
@@ -572,15 +562,12 @@ fn create_vector_storage_f32(
 }
 
 fn create_vector_storage_f16(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
-    let mut vector_storage =
-        open_simple_dense_half_vector_storage(db, DB_VECTOR_CF, dim, distance, &false.into())
-            .unwrap();
+    let mut vector_storage = new_volatile_dense_half_vector_storage(dim, distance);
     for i in 0..num_vectors {
         let vec = random_vector(&mut rnd, dim);
         let vec = distance.preprocess_vector::<VectorElementTypeHalf>(vec);
@@ -593,15 +580,12 @@ fn create_vector_storage_f16(
 }
 
 fn create_vector_storage_u8(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
-    let mut vector_storage =
-        open_simple_dense_byte_vector_storage(db, DB_VECTOR_CF, dim, distance, &false.into())
-            .unwrap();
+    let mut vector_storage = new_volatile_dense_byte_vector_storage(dim, distance);
     for i in 0..num_vectors {
         let vec = random_dense_byte_vector(&mut rnd, dim);
         let vec = distance.preprocess_vector::<VectorElementTypeByte>(vec);
@@ -614,22 +598,14 @@ fn create_vector_storage_u8(
 }
 
 fn create_vector_storage_f32_multi(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
     let multivector_config = Default::default();
-    let mut vector_storage = open_simple_multi_dense_vector_storage_full(
-        db,
-        DB_VECTOR_CF,
-        dim,
-        distance,
-        multivector_config,
-        &false.into(),
-    )
-    .unwrap();
+    let mut vector_storage =
+        new_volatile_multi_dense_vector_storage(dim, distance, multivector_config);
     for i in 0..num_vectors {
         let mut vectors = vec![];
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
@@ -648,22 +624,14 @@ fn create_vector_storage_f32_multi(
 }
 
 fn create_vector_storage_f16_multi(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
     let multivector_config = Default::default();
-    let mut vector_storage = open_simple_multi_dense_vector_storage_half(
-        db,
-        DB_VECTOR_CF,
-        dim,
-        distance,
-        multivector_config,
-        &false.into(),
-    )
-    .unwrap();
+    let mut vector_storage =
+        new_volatile_multi_dense_vector_storage_half(dim, distance, multivector_config);
     for i in 0..num_vectors {
         let mut vectors = vec![];
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
@@ -682,22 +650,14 @@ fn create_vector_storage_f16_multi(
 }
 
 fn create_vector_storage_u8_multi(
-    db: Arc<RwLock<DB>>,
     num_vectors: usize,
     dim: usize,
     distance: Distance,
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
     let multivector_config = Default::default();
-    let mut vector_storage = open_simple_multi_dense_vector_storage_byte(
-        db,
-        DB_VECTOR_CF,
-        dim,
-        distance,
-        multivector_config,
-        &false.into(),
-    )
-    .unwrap();
+    let mut vector_storage =
+        new_volatile_multi_dense_vector_storage_byte(dim, distance, multivector_config);
     for i in 0..num_vectors {
         let mut vectors = vec![];
         let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
@@ -730,7 +690,7 @@ fn test_gpu_vector_storage_impl(
     let test_point_id: PointOffsetType = 0;
 
     let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-    let storage = create_vector_storage(dir.path(), storage_type, num_vectors, dim, distance);
+    let storage = create_vector_storage(storage_type, num_vectors, dim, distance);
 
     let quantized_vectors = quantization_config.as_ref().map(|quantization_config| {
         QuantizedVectors::create(
