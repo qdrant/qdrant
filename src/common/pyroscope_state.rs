@@ -17,6 +17,18 @@ pub mod pyro {
         fn build_agent(
             config: &PyroscopeConfig,
         ) -> Result<PyroscopeAgent<PyroscopeAgentRunning>, PyroscopeError> {
+            // pprof uses tempfile::NamedTempFile which respects TMPDIR.
+            // Qdrant's clear_all_tmp_directories() deletes TMPDIR on startup,
+            // so we must ensure it exists before the profiler tries to create temp files.
+            if let Ok(tmpdir) = std::env::var("TMPDIR") {
+                let path = std::path::Path::new(&tmpdir);
+                if !path.exists() {
+                    if let Err(err) = std::fs::create_dir_all(path) {
+                        log::warn!("Failed to create TMPDIR {tmpdir}: {err}");
+                    }
+                }
+            }
+
             let pprof_config = PprofConfig {
                 sample_rate: config.sampling_rate.unwrap_or(100),
             };
