@@ -246,23 +246,6 @@ service:
   # If missing - Same as storage.max_search_threads
   max_workers: 0
 
-  # Keep-alive timeout for incoming HTTP connections in seconds.
-  # Increase this in environments with connection pooling and bursty traffic to reduce
-  # reconnect churn and random transport disconnects.
-  http_keep_alive_timeout_sec: 5
-
-  # Timeout for reading HTTP request data from clients in seconds.
-  # Increase this for large uploads, slow client uplinks, or proxy-buffered traffic
-  # to avoid premature request read timeouts.
-  # Trade-off: higher values reduce false timeouts, but keep worker resources busy longer.
-  http_client_request_timeout_sec: 5
-
-  # Timeout for waiting on client disconnect in seconds.
-  # Increase this for high-latency/lossy networks, long-lived client processing, or
-  # connection pooling setups where disconnect detection can be delayed.
-  # Trade-off: higher values reduce false disconnects, but tie up server resources longer.
-  http_client_disconnect_timeout_sec: 5
-
   # Host to bind the service on
   host: 0.0.0.0
 
