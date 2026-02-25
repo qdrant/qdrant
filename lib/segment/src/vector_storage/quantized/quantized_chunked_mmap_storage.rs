@@ -5,7 +5,7 @@ use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
-use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{Random, VectorOffsetType};
 
 pub struct QuantizedChunkedMmapStorage {
