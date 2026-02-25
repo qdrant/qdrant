@@ -607,6 +607,7 @@ impl LocalShard {
                 vector_data: vector_params.clone(),
                 sparse_vector_data: sparse_vector_params.clone(),
                 payload_storage_type: config.params.payload_storage_type(),
+                indexing_threshold_kb: config.optimizer_config.get_deferred_segment_threshold_kb(),
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))

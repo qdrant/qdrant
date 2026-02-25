@@ -36,7 +36,7 @@ mod tests {
     use crate::config::CollectionParams;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
-    use crate::optimizers_builder::build_segment_optimizer_config;
+    use crate::optimizers_builder::{OptimizersConfig, build_segment_optimizer_config};
 
     const VECTOR1_NAME: &VectorName = "vector1";
     const VECTOR2_NAME: &VectorName = "vector2";
@@ -52,8 +52,13 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> IndexingOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let optimizers_config = OptimizersConfig::fixture();
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            &optimizers_config,
+        );
         shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
             default_segments_number,
             thresholds_config,
@@ -77,8 +82,13 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> VacuumOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let optimizers_config = OptimizersConfig::fixture();
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            &optimizers_config,
+        );
         shard::optimizers::vacuum_optimizer::VacuumOptimizer::new(
             deleted_threshold,
             min_vectors_number,

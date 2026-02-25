@@ -42,7 +42,7 @@ mod tests {
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::operations::{CreateIndex, FieldIndexOperations};
-    use crate::optimizers_builder::build_segment_optimizer_config;
+    use crate::optimizers_builder::{OptimizersConfig, build_segment_optimizer_config};
 
     #[allow(clippy::too_many_arguments)]
     fn new_indexing_optimizer(
@@ -55,8 +55,13 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> IndexingOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let optimizers_config = OptimizersConfig::fixture();
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            &optimizers_config,
+        );
         shard::optimizers::indexing_optimizer::IndexingOptimizer::new(
             default_segments_number,
             thresholds_config,
@@ -77,8 +82,13 @@ mod tests {
         hnsw_global_config: HnswGlobalConfig,
         quantization_config: Option<QuantizationConfig>,
     ) -> ConfigMismatchOptimizer {
-        let segment_config =
-            build_segment_optimizer_config(&collection_params, &hnsw_config, &quantization_config);
+        let optimizers_config = OptimizersConfig::fixture();
+        let segment_config = build_segment_optimizer_config(
+            &collection_params,
+            &hnsw_config,
+            &quantization_config,
+            &optimizers_config,
+        );
         shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer::new(
             thresholds_config,
             segments_path,

@@ -24,6 +24,7 @@ pub struct SegmentOptimizerConfig {
     pub base_sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     pub dense_vector: HashMap<VectorNameBuf, DenseVectorOptimizerConfig>,
     pub sparse_vector: HashMap<VectorNameBuf, SparseVectorOptimizerConfig>,
+    pub indexing_threshold_kb: Option<usize>,
 }
 
 impl SegmentOptimizerConfig {
@@ -32,6 +33,7 @@ impl SegmentOptimizerConfig {
             vector_data: self.base_vector_data.clone(),
             sparse_vector_data: self.base_sparse_vector_data.clone(),
             payload_storage_type: self.payload_storage_type,
+            indexing_threshold_kb: self.indexing_threshold_kb,
         }
     }
 }

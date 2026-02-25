@@ -226,6 +226,7 @@ fn test_multivector_quantization_hnsw(
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        indexing_threshold_kb: None,
     };
 
     let int_key = "int";

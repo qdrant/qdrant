@@ -1377,6 +1377,9 @@ pub struct SegmentConfig {
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexing_threshold_kb: Option<usize>,
 }
 
 impl SegmentConfig {
@@ -1449,6 +1452,7 @@ impl SegmentConfig {
             vector_data: _,
             sparse_vector_data: _,
             payload_storage_type: _,
+            indexing_threshold_kb: _,
         } = self;
 
         let is_vector_config_compatible = is_map_compatible(

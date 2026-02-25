@@ -76,6 +76,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
             payload_storage_type: old_segment
                 .payload_storage_type
                 .unwrap_or(default_storage_type),
+            indexing_threshold_kb: None,
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::optimizers_builder::build_segment_optimizer_config;
+use crate::optimizers_builder::{OptimizersConfig, build_segment_optimizer_config};
 
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -234,8 +234,13 @@ pub(crate) fn get_merge_optimizer(
         ..CollectionParams::empty()
     };
     let hnsw_config = Default::default();
-    let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
+    let optimizers_config = OptimizersConfig::fixture();
+    let segment_config = build_segment_optimizer_config(
+        &collection_params,
+        &hnsw_config,
+        &Default::default(),
+        &optimizers_config,
+    );
 
     MergeOptimizer::new(
         5,
@@ -262,8 +267,13 @@ pub(crate) fn get_indexing_optimizer(
         ..CollectionParams::empty()
     };
     let hnsw_config = Default::default();
-    let segment_config =
-        build_segment_optimizer_config(&collection_params, &hnsw_config, &Default::default());
+    let optimizers_config = OptimizersConfig::fixture();
+    let segment_config = build_segment_optimizer_config(
+        &collection_params,
+        &hnsw_config,
+        &Default::default(),
+        &optimizers_config,
+    );
 
     IndexingOptimizer::new(
         2,

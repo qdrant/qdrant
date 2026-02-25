@@ -274,6 +274,7 @@ impl TestSegments {
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+            indexing_threshold_kb: None,
         };
         assert_eq!(conf.is_appendable(), appendable);
         conf

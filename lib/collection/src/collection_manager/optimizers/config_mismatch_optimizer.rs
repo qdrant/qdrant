@@ -80,6 +80,7 @@ mod tests {
                 .keys()
                 .map(|name| (name.clone(), SparseVectorOptimizerConfig { on_disk: None }))
                 .collect(),
+            indexing_threshold_kb: None,
         }
     }
 

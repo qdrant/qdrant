@@ -70,6 +70,7 @@ mod tests {
             base_sparse_vector_data: segment.segment_config.sparse_vector_data.clone(),
             dense_vector,
             sparse_vector: Default::default(),
+            indexing_threshold_kb: None,
         }
     }
 

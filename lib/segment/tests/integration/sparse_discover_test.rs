@@ -134,6 +134,7 @@ fn sparse_index_discover_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        indexing_threshold_kb: None,
     };
     let dense_config = SegmentConfig {
         vector_data: HashMap::from([(
@@ -150,6 +151,7 @@ fn sparse_index_discover_test() {
         )]),
         payload_storage_type: Default::default(),
         sparse_vector_data: Default::default(),
+        indexing_threshold_kb: None,
     };
 
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
@@ -275,6 +277,7 @@ fn sparse_index_hardware_measurement_test() {
             },
         )]),
         payload_storage_type: Default::default(),
+        indexing_threshold_kb: None,
     };
 
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();

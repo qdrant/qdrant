@@ -325,6 +325,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
         )]),
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
+        indexing_threshold_kb: None,
     };
 
     let mut builder = SegmentBuilder::new(

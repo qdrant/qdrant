@@ -319,7 +319,7 @@ impl CollectionConfigInternal {
 
     pub fn to_base_segment_config(&self) -> SegmentConfig {
         self.params
-            .to_base_segment_config(self.quantization_config.as_ref())
+            .to_base_segment_config(self.quantization_config.as_ref(), &self.optimizer_config)
     }
 }
 
@@ -612,6 +612,7 @@ impl CollectionParams {
     pub fn to_base_segment_config(
         &self,
         collection_quantization: Option<&QuantizationConfig>,
+        optimizers_config: &OptimizersConfig,
     ) -> SegmentConfig {
         let vector_data = self.to_base_vector_data(collection_quantization);
         let sparse_vector_data = self.to_sparse_vector_data();
@@ -621,6 +622,7 @@ impl CollectionParams {
             vector_data,
             sparse_vector_data,
             payload_storage_type,
+            indexing_threshold_kb: optimizers_config.get_deferred_segment_threshold_kb(),
         }
     }
 }

@@ -39,6 +39,7 @@ impl PyEdgeConfig {
                 sparse_vector_data.unwrap_or_default(),
             ),
             payload_storage_type: PayloadStorageType::Mmap,
+            indexing_threshold_kb: None,
         })
     }
 
@@ -69,6 +70,7 @@ impl PyEdgeConfig {
             vector_data: _,
             sparse_vector_data: _,
             payload_storage_type: _,
+            indexing_threshold_kb: _,
         } = self.0;
     }
 }

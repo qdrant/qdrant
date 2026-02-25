@@ -450,6 +450,9 @@ impl UpdateWorkers {
                 .into_iter()
                 .filter_map(|segment_id| segments_read.get(segment_id))
                 .all(|segment| {
+                    // TODO: if we have deferred segment, we might want to continue growing it's size.
+                    // It means, we dont need to create a new appendable segment and continue filling the existing one,
+                    // even if it's already over the threshold.
                     let max_vector_size_bytes = segment
                         .get()
                         .read()

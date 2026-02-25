@@ -135,6 +135,11 @@ impl OptimizersConfig {
         }
     }
 
+    pub fn get_deferred_segment_threshold_kb(&self) -> Option<usize> {
+        self.prevent_unoptimized
+            .map(|_| self.get_indexing_threshold_kb())
+    }
+
     pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
         let indexing_threshold_kb = self.get_indexing_threshold_kb();
 
@@ -176,6 +181,7 @@ pub fn build_segment_optimizer_config(
     collection_params: &CollectionParams,
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
+    optimizers_config: &OptimizersConfig,
 ) -> SegmentOptimizerConfig {
     let dense_vector = collection_params
         .vectors
@@ -220,6 +226,7 @@ pub fn build_segment_optimizer_config(
         base_sparse_vector_data: collection_params.to_sparse_vector_data(),
         dense_vector,
         sparse_vector,
+        indexing_threshold_kb: optimizers_config.get_deferred_segment_threshold_kb(),
     }
 }
 
@@ -235,8 +242,12 @@ pub fn build_optimizers(
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
-    let segment_config =
-        build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
+    let segment_config = build_segment_optimizer_config(
+        collection_params,
+        hnsw_config,
+        quantization_config,
+        optimizers_config,
+    );
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
