@@ -189,7 +189,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         };
 
         for (i, vec) in vectors.iter().enumerate() {
-            f(i, &vec);
+            f(i, vec);
         }
     }
 
