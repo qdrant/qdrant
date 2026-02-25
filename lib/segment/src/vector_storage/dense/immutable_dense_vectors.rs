@@ -67,6 +67,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             need_sequential: true,
             disk_parallel: None,
             populate: Some(populate),
+            advice: None,
         };
         let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
