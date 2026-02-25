@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::PointOffsetType;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]

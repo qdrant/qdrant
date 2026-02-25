@@ -6,9 +6,9 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
+use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -400,7 +400,7 @@ impl LocalShard {
             ))
         })?;
 
-        let mut rng = StdRng::from_os_rng();
+        let mut rng = rand::make_rng::<StdRng>();
         let mut random_points = HashSet::with_capacity(limit);
 
         // Randomly sample points in two stages

@@ -5,7 +5,7 @@ use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::in_memory_id_tracker::InMemoryIdTracker;
 use super::mutable_id_tracker::MutableIdTracker;

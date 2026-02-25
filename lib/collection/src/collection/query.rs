@@ -5,7 +5,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
-use rand::Rng;
+use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
