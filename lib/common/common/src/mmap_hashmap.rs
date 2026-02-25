@@ -11,7 +11,7 @@ use fs_err::File;
 use memmap2::Mmap;
 use ph::fmph::Function;
 #[cfg(any(test, feature = "testing"))]
-use rand::Rng as _;
+use rand::RngExt;
 #[cfg(any(test, feature = "testing"))]
 use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};

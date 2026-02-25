@@ -19,7 +19,7 @@ use ndarray::{ArrayView2, Axis};
 use ndarray_npy::ViewNpyExt;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
-use rand::{Rng, SeedableRng as _};
+use rand::{Rng, RngExt, SeedableRng as _};
 use rayon::iter::{
     IndexedParallelIterator as _, IntoParallelIterator as _, IntoParallelRefIterator,
     ParallelIterator,

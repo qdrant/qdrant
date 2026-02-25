@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorRef};
 use crate::index::hnsw_index::graph_links::StorageGraphLinksVectors;

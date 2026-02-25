@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use crc::{CRC_32_ISCSI, Crc};
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::RngCore;
+use rand::Rng;
 
 pub const CASTAGNOLI: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 

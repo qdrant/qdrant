@@ -13,7 +13,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,

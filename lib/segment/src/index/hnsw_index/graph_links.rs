@@ -346,7 +346,7 @@ pub(super) fn normalize_links(m: usize, mut links: Vec<PointOffsetType>) -> Vec<
 #[cfg(test)]
 mod tests {
     use common::fs::atomic_save;
-    use rand::Rng;
+    use rand::RngExt;
     use rstest::rstest;
     use tempfile::Builder;
 

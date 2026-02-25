@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::{env, process};
 
-use rand::RngCore;
+use rand::Rng;
 use tempfile::Builder;
 use wal::test_utils::EntryGenerator;
 

@@ -615,7 +615,7 @@ fn minimum_bounding_rectangle_for_boundary(boundary: &LineString) -> GeoBounding
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     use super::*;
     use crate::types::test_utils::{build_polygon, build_polygon_with_interiors};

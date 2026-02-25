@@ -8,7 +8,7 @@ use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
 use segment::entry::entry_point::SegmentEntry;

@@ -389,7 +389,7 @@ pub trait InvertedIndex {
 mod tests {
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use rand::Rng;
+    use rand::RngExt;
     use rand::seq::SliceRandom;
     use rstest::rstest;
 

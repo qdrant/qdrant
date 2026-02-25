@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use rand::Rng;
+use rand::RngExt;
 use rand::rngs::ThreadRng;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;

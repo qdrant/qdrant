@@ -11,7 +11,7 @@ use common::bitpacking::make_bitmask;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 #[cfg(test)]
-use rand::Rng as _;
+use rand::RngExt;
 use rand::distr::Distribution;
 #[cfg(test)]
 use rand::rngs::StdRng;

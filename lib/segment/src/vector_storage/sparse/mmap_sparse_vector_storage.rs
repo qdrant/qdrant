@@ -331,7 +331,7 @@ mod test {
 
     use common::counter::hardware_counter::HardwareCounterCell;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use sparse::common::sparse_vector;
     use sparse::common::sparse_vector_fixture::random_sparse_vector;
     use tempfile::Builder;

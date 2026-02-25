@@ -486,7 +486,7 @@ mod tests {
     use std::collections::HashSet;
 
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
 
     use super::*;

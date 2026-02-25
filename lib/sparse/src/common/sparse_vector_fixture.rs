@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::common::sparse_vector::SparseVector;
 

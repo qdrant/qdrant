@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::{Builder, TempDir};

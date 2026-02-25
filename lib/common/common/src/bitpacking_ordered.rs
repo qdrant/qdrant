@@ -295,6 +295,8 @@ pub fn gen_test_sequence(rng: &mut impl rand::Rng, max_delta: u64, len: usize) -
     let mut last = 0u64;
     (0..len)
         .map(|_| {
+            use rand::RngExt;
+
             last = last.checked_add(rng.random_range(0..=max_delta)).unwrap();
             last
         })
@@ -306,7 +308,7 @@ mod tests {
     use std::iter::{once, once_with};
 
     use rand::rngs::StdRng;
-    use rand::{Rng as _, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     use super::*;
 

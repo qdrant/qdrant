@@ -5,7 +5,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use rand::rngs::ThreadRng;
-use rand::{RngCore, rng};
+use rand::{Rng, rng};
 use segment::data_types::vectors::{NamedQuery, VectorInternal, VectorStructInternal};
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;

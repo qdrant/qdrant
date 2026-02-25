@@ -4,7 +4,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
 use itertools::Itertools;
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::Uniform;
 use rand::rngs::ThreadRng;
 use segment::data_types::vectors::DenseVector;

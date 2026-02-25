@@ -216,7 +216,7 @@ impl ExactSizeIterator for PackedLinksIterator<'_> {}
 mod tests {
     use itertools::Itertools as _;
     use rand::rngs::StdRng;
-    use rand::{Rng as _, SeedableRng as _};
+    use rand::{RngExt, SeedableRng as _};
     use rstest::rstest;
 
     use super::*;

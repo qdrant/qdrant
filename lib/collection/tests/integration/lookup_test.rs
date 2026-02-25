@@ -13,7 +13,7 @@ use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
-use rand::{self, Rng, SeedableRng};
+use rand::{self, RngExt, SeedableRng};
 use rstest::*;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::payload_json;

@@ -8,7 +8,7 @@ mod tests {
     use quantization::encoded_vectors_binary::{
         BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
     };
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use strum::IntoEnumIterator;
 
     use crate::metrics::dot_similarity;

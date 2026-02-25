@@ -9,7 +9,7 @@ use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
 use ordered_float::OrderedFloat;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, DenseVector, QueryVector, only_default_vector,

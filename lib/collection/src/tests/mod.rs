@@ -21,7 +21,7 @@ use common::save_on_disk::SaveOnDisk;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::Mutex;
-use rand::Rng;
+use rand::RngExt;
 use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
