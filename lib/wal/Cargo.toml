@@ -16,7 +16,6 @@ workspace = true
 [dependencies]
 byteorder = { workspace = true }
 crc32c = "0.6.8"
-crossbeam-channel = "0.5.15"
 fs4 = { workspace = true }
 fs-err = { workspace = true }
 log = { workspace = true }
