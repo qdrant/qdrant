@@ -1,15 +1,19 @@
+use std::borrow::Cow;
 use std::cmp::max;
 use std::io::BufReader;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::maybe_uninit::maybe_uninit_fill_from;
-use common::mmap::chunked::{chunk_name, create_chunk, read_mmaps};
 use common::mmap::{
-    Advice, AdviceSetting, MmapType, UniversalMmapChunk, create_and_ensure_length, open_write_mmap,
+    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
+    open_write_mmap,
 };
+use common::universal_io::{BytesRange, OpenOptions, UniversalIoError, UniversalWrite};
 use fs_err as fs;
 use fs_err::File;
 use memmap2::MmapMut;
@@ -24,6 +28,9 @@ use crate::vector_storage::{AccessPattern, VectorOffset, VectorOffsetType};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
+
+const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
+const MMAP_CHUNKS_PATTERN_END: &str = ".mmap"; // TODO: rename for other storages?
 
 #[repr(C)]
 pub struct Status {
@@ -40,14 +47,15 @@ struct ChunkedMmapConfig {
 }
 
 #[derive(Debug)]
-pub struct ChunkedMmapVectors<T: Sized + 'static> {
+pub struct ChunkedVectors<T: Copy + Sized + 'static, S: UniversalWrite<T>> {
     config: ChunkedMmapConfig,
     status: MmapType<Status>,
-    chunks: Vec<UniversalMmapChunk<T>>,
+    chunks: Vec<S>,
     directory: PathBuf,
+    _vector_element_type: PhantomData<T>,
 }
 
-impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
+impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -138,12 +146,13 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let status = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim, populate)?;
-        let chunks = read_mmaps(directory, populate.unwrap_or_default(), advice)?;
+        let chunks = read_chunks(directory, advice, populate.unwrap_or_default())?;
         let vectors = Self {
             status,
             config,
             chunks,
             directory: directory.to_owned(),
+            _vector_element_type: PhantomData,
         };
         Ok(vectors)
     }
@@ -227,7 +236,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
         let chunk = &mut self.chunks[chunk_idx];
 
-        chunk.as_mut_slice()[chunk_offset..chunk_offset + vectors.len()].copy_from_slice(vectors);
+        chunk.write(chunk_offset as u64, vectors)?;
 
         hw_counter
             .vector_io_write_counter()
@@ -265,7 +274,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         start_key: VectorOffsetType,
         count: usize,
         force_sequential: bool,
-    ) -> Option<&[T]> {
+    ) -> Option<Cow<'_, [T]>> {
         let start_key: usize = start_key.as_();
         let chunk_idx = self.get_chunk_index(start_key);
         if chunk_idx >= self.chunks.len() {
@@ -276,12 +285,23 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let chunk_offset = self.get_chunk_offset(start_key);
         let chunk_end = chunk_offset + block_size_elements;
         let chunk = &self.chunks[chunk_idx];
-        if chunk_end > chunk.len() {
-            None
-        } else if force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4 {
-            Some(&chunk.as_seq_slice()[chunk_offset..chunk_end])
+
+        if chunk_end > self.config.chunk_size_vectors {
+            return None;
+        }
+
+        let range = BytesRange {
+            start: chunk_offset as u64,
+            length: block_size_elements as u64,
+        };
+
+        let use_sequential =
+            force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4;
+
+        if use_sequential {
+            chunk.read::<true>(range).ok()
         } else {
-            Some(&chunk.as_slice()[chunk_offset..chunk_end])
+            chunk.read::<false>(range).ok()
         }
     }
 
@@ -292,7 +312,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
         // then fetching and scoring in a single loop.
-        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = maybe_uninit_fill_from(
             &mut vectors_buffer,
             keys.iter().map(|&key| {
@@ -303,7 +323,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         .0;
 
         for (i, vec) in vectors.iter().enumerate() {
-            f(i, vec);
+            f(i, vec.as_ref());
         }
     }
 
@@ -336,12 +356,16 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     #[inline]
-    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<&[T]> {
+    pub fn get<P: AccessPattern>(&self, key: VectorOffsetType) -> Option<Cow<'_, [T]>> {
         self.get_many_impl(key, 1, P::IS_SEQUENTIAL)
     }
 
     #[inline]
-    pub fn get_many<P: AccessPattern>(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+    pub fn get_many<P: AccessPattern>(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+    ) -> Option<Cow<'_, [T]>> {
         self.get_many_impl(key, count, P::IS_SEQUENTIAL)
     }
 
@@ -365,10 +389,91 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 }
 
+/// Checks if the file name matches the pattern for mmap chunks
+/// Return ID from the file name if it matches, None otherwise
+fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
+    file_name
+        .strip_prefix(MMAP_CHUNKS_PATTERN_START)
+        .and_then(|file_name| file_name.strip_suffix(MMAP_CHUNKS_PATTERN_END))
+        .and_then(|file_name| file_name.parse::<usize>().ok())
+}
+
+pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
+    directory: &Path,
+    advice: AdviceSetting,
+    populate: bool,
+) -> Result<Vec<S>, common::universal_io::UniversalIoError> {
+    let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            let chunk_id = path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .and_then(check_mmap_file_name_pattern);
+
+            if let Some(chunk_id) = chunk_id {
+                chunks_files.insert(chunk_id, path);
+            }
+        }
+    }
+
+    let num_chunks = chunks_files.len();
+    let mut result = Vec::with_capacity(num_chunks);
+    for chunk_id in 0..num_chunks {
+        let chunk_path = chunks_files.remove(&chunk_id).ok_or_else(|| {
+            UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Missing chunk {chunk_id} in {}", directory.display(),),
+            ))
+        })?;
+
+        let chunk = S::open(
+            &chunk_path,
+            OpenOptions {
+                need_sequential: *MULTI_MMAP_IS_SUPPORTED,
+                disk_parallel: None,
+                populate: Some(populate),
+                advice: Some(advice),
+            },
+        )?;
+
+        result.push(chunk);
+    }
+    Ok(result)
+}
+
+pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
+    directory.join(format!(
+        "{MMAP_CHUNKS_PATTERN_START}{chunk_id}{MMAP_CHUNKS_PATTERN_END}",
+    ))
+}
+
+pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
+    directory: &Path,
+    chunk_id: usize,
+    chunk_length_bytes: usize,
+) -> Result<S, UniversalIoError> {
+    let chunk_file_path = chunk_name(directory, chunk_id);
+    create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
+
+    S::open(
+        &chunk_file_path,
+        OpenOptions {
+            need_sequential: *MULTI_MMAP_IS_SUPPORTED,
+            disk_parallel: None,
+            populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
+            advice: None
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
 
+    use common::universal_io::mmap::MmapUniversal;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
     use tempfile::Builder;
@@ -391,9 +496,8 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true))
-                    .unwrap();
+            let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapUniversal<VectorElementType>> =
+                ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

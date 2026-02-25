@@ -7,6 +7,7 @@ use std::time::Duration;
 use atomicwrites::Error as AtomicIoError;
 use common::fs::FileStorageError;
 use common::mmap::Error as MmapError;
+use common::universal_io::UniversalIoError;
 use gridstore::error::GridstoreError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
@@ -160,6 +161,16 @@ impl From<FileStorageError> for OperationError {
 impl From<MmapError> for OperationError {
     fn from(err: MmapError) -> Self {
         Self::service_error(err.to_string())
+    }
+}
+
+impl From<UniversalIoError> for OperationError {
+    fn from(err: UniversalIoError) -> Self {
+        match err {
+            UniversalIoError::Io(io_err) => OperationError::from(io_err),
+            UniversalIoError::Mmap(error) => OperationError::from(error),
+            UniversalIoError::OutOfBounds { .. } => OperationError::service_error(err.to_string()),
+        }
     }
 }
 

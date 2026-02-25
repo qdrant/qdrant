@@ -1,11 +1,9 @@
 pub mod advice;
-pub mod chunked;
 mod mmap_readonly;
 mod mmap_rw;
 mod ops;
 
 pub use advice::{Advice, AdviceSetting, Madviseable};
-pub use chunked::UniversalMmapChunk;
 pub use mmap_readonly::{MmapSliceReadOnly, MmapTypeReadOnly};
 pub use mmap_rw::{Error, MmapBitSlice, MmapFlusher, MmapSlice, MmapType};
 pub use ops::{
