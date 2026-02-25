@@ -269,14 +269,15 @@ impl<V: Blob> Gridstore<V> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        let Some(ValuePointer {
+        let Some(pointer) = self.get_pointer(point_offset) else {
+            return Ok(None);
+        };
+
+        let ValuePointer {
             page_id,
             block_offset,
             length,
-        }) = self.get_pointer(point_offset)
-        else {
-            return Ok(None);
-        };
+        } = pointer;
 
         let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
@@ -465,14 +466,16 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Returns the deleted value otherwise
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        let Some(ValuePointer {
+        let Some(pointer) = self.tracker.write().unset(point_offset) else {
+            return Ok(None);
+        };
+
+        let ValuePointer {
             page_id,
             block_offset,
             length,
-        }) = self.tracker.write().unset(point_offset)
-        else {
-            return Ok(None);
-        };
+        } = pointer;
+
         let raw = self.read_from_pages::<false>(page_id, block_offset, length)?;
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
