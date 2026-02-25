@@ -436,9 +436,6 @@ mod test {
 
     #[tokio::test]
     async fn test_bm25_end_to_end() {
-        // reqwest 0.13 "rustls-no-provider" requires an explicit provider
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let mut rng = StdRng::seed_from_u64(42);
 
         // Test without any BM25

@@ -230,9 +230,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_and_unpack_tar() {
-        // reqwest 0.13 "rustls-no-provider" requires an explicit provider
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/test-shard.snapshot")
