@@ -23,7 +23,7 @@ use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexTyp
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
-use crate::id_tracker::{IdTracker, IdTrackerEnum, PointMappingsRefEnum};
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -617,13 +617,12 @@ impl StructPayloadIndex {
         &'a self,
         filter: &'a Filter,
         id_tracker: &'a IdTrackerEnum,
-        point_mappings: &'a PointMappingsRefEnum,
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = point_mappings.iter_internal();
+            let full_scan_iterator = id_tracker.iter_internal();
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
@@ -672,8 +671,7 @@ impl StructPayloadIndex {
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
-            let id_tracker_iterator = point_mappings.iter_internal();
-
+            let id_tracker_iterator = id_tracker.iter_internal();
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)
                 .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
@@ -958,11 +956,9 @@ impl PayloadIndex for StructPayloadIndex {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter);
         let id_tracker = self.id_tracker.borrow();
-        let point_mappings = id_tracker.point_mappings();
         self.iter_filtered_points(
             filter,
             &id_tracker,
-            &point_mappings,
             &query_cardinality,
             hw_counter,
             is_stopped,

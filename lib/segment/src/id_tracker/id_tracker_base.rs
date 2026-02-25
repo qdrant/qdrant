@@ -129,6 +129,26 @@ pub trait IdTracker: fmt::Debug {
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_>;
 
+    fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        Box::new(
+            self.deleted_point_bitslice()
+                .iter_zeros()
+                .map(|idx| idx as PointOffsetType),
+        )
+    }
+
+    /// Iterate over internal IDs (offsets), excluding soft deleted points
+    /// and flagged items from `exclude_bitslice`.
+    fn iter_internal_excluding<'a>(
+        &'a self,
+        exclude_bitslice: &'a BitSlice,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        let iter = self.iter_internal();
+        Box::new(
+            iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
+        )
+    }
+
     /// Finds inconsistencies between id mapping and versions storage.
     /// It might happen that point doesn't have version due to un-flushed WAL.
     /// This method makes those points usable again.
@@ -152,7 +172,7 @@ pub trait IdTracker: fmt::Debug {
             }
         }
 
-        for internal_id in self.point_mappings().iter_internal() {
+        for internal_id in self.iter_internal() {
             if self.internal_version(internal_id).is_none() {
                 if let Some(external_id) = self.external_id(internal_id) {
                     to_remove.push(external_id);
@@ -200,17 +220,6 @@ impl<'a> PointMappingsRefEnum<'a> {
         }
     }
 
-    /// Iterate over internal IDs (offsets).
-    ///
-    /// Excludes soft deleted points.
-    // TODO move to `IdTracker` as it requires only length
-    pub fn iter_internal(&'a self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
-        }
-    }
-
     /// Iterate starting from a given ID.
     ///
     /// Excludes soft deleted points.
@@ -232,21 +241,6 @@ impl<'a> PointMappingsRefEnum<'a> {
             PointMappingsRefEnum::Plain(m) => m.iter_random(),
             PointMappingsRefEnum::Compressed(m) => m.iter_random(),
         }
-    }
-
-    /// Iterate over internal IDs (offsets), excluding soft deleted points
-    /// and flagged items from `exclude_bitslice`.
-    pub fn iter_internal_excluding(
-        &'a self,
-        exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let iter: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
-            PointMappingsRefEnum::Plain(m) => m.iter_internal(),
-            PointMappingsRefEnum::Compressed(m) => m.iter_internal(),
-        };
-        Box::new(
-            iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
-        )
     }
 }
 

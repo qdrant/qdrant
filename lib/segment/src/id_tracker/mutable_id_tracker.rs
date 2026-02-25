@@ -1136,7 +1136,7 @@ pub(super) mod tests {
     fn test_all_points_have_version() {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let id_tracker = make_mutable_tracker(segment_dir.path());
-        for i in id_tracker.point_mappings().iter_internal() {
+        for i in id_tracker.iter_internal() {
             assert!(id_tracker.internal_version(i).is_some());
         }
     }

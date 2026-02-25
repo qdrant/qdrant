@@ -35,7 +35,6 @@ impl Segment {
 
         let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
-            let point_mappings = id_tracker.point_mappings();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
             let percentage_filtered = filter_cardinality.exp as f64 / available_points as f64;
@@ -55,7 +54,6 @@ impl Segment {
                     .iter_filtered_points(
                         filter,
                         &id_tracker,
-                        &point_mappings,
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
@@ -130,14 +128,12 @@ impl Segment {
 
         let values = if let Some(filter) = filter {
             let id_tracker = self.id_tracker.borrow();
-            let point_mappings = id_tracker.point_mappings();
             let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
             payload_index
                 .iter_filtered_points(
                     filter,
                     &id_tracker,
-                    &point_mappings,
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,

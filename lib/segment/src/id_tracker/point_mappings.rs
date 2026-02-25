@@ -375,13 +375,6 @@ impl<'a> PointMappingsReadHolder<'a> {
         Box::new(iter_num.chain(iter_uuid))
     }
 
-    pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            (0..self.mappings_state.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
-        )
-    }
-
     #[cfg(test)]
     pub(crate) fn iter_internal_raw(
         &self,
