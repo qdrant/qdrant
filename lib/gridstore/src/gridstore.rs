@@ -12,7 +12,7 @@ use common::is_alive_lock::IsAliveLock;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use fs_err::File;
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use parking_lot::RwLock;
 
@@ -539,9 +539,10 @@ impl<V: Blob> Gridstore<V> {
         &self,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), Either<E, GridstoreError>>
+    ) -> std::result::Result<(), E>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+        E: From<GridstoreError>,
     {
         const BUFFER_SIZE: usize = 128;
         let max_point_offset = self.max_point_offset();
@@ -578,15 +579,13 @@ impl<V: Blob> Gridstore<V> {
                     length,
                 } = pointer;
 
-                let raw = self
-                    .read_from_pages::<true>(page_id, block_offset, length)
-                    .map_err(Either::Right)?;
+                let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
 
                 hw_counter.incr_delta(raw.len());
 
                 let decompressed = self.decompress(raw);
                 let value = V::from_bytes(&decompressed);
-                if !callback(point_offset, value).map_err(Either::Left)? {
+                if !callback(point_offset, value)? {
                     return Ok(());
                 }
             }
