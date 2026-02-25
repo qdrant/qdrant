@@ -1,4 +1,5 @@
 use common::mmap;
+use common::universal_io::UniversalIoError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum GridstoreError {
@@ -6,6 +7,8 @@ pub enum GridstoreError {
     Mmap(#[from] mmap::Error),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    #[error("{0}")]
+    UniversalIo(#[from] UniversalIoError),
     #[error("{0}")]
     SerdeJson(#[from] serde_json::error::Error),
     #[error("Service error: {description}")]

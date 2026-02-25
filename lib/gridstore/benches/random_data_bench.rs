@@ -26,7 +26,7 @@ pub fn random_data_bench(c: &mut Criterion) {
         let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..PAYLOAD_COUNT {
-                let res = storage.get_value::<false>(i, &hw_counter);
+                let res = storage.get_value::<false>(i, &hw_counter).unwrap();
                 assert!(res.is_some());
             }
         });

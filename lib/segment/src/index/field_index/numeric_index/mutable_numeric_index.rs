@@ -8,6 +8,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::config::StorageOptions;
+use gridstore::error::GridstoreError;
 use gridstore::{Blob, Gridstore};
 #[cfg(feature = "rocksdb")]
 use parking_lot::RwLock;
@@ -329,7 +330,7 @@ where
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
         store
-            .iter::<_, ()>(
+            .iter::<_, GridstoreError>(
                 |idx, values: Vec<T>| {
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
@@ -448,7 +449,7 @@ where
             }
             // We cannot store empty value, then delete instead
             Storage::Gridstore(store) if values.is_empty() => {
-                store.delete_value(idx);
+                store.delete_value(idx)?;
             }
             Storage::Gridstore(store) => {
                 let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
@@ -482,7 +483,7 @@ where
                     .transpose()?;
             }
             Storage::Gridstore(store) => {
-                store.delete_value(idx);
+                store.delete_value(idx)?;
             }
         }
 

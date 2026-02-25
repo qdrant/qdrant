@@ -148,7 +148,7 @@ impl MmapSparseVectorStorage {
             )?;
         } else {
             // delete vector
-            self.storage.delete_value(key);
+            self.storage.delete_value(key)?;
         }
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
@@ -184,10 +184,10 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     ) -> OperationResult<Option<SparseVector>> {
         let result = if P::IS_SEQUENTIAL {
             self.storage
-                .get_value::<true>(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
+                .get_value::<true>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
         } else {
             self.storage
-                .get_value::<false>(key, &HardwareCounterCell::disposable())
+                .get_value::<false>(key, &HardwareCounterCell::disposable())?
         };
         result.map(SparseVector::try_from).transpose()
     }

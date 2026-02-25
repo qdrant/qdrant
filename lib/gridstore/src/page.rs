@@ -1,101 +1,66 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::fs::clear_disk_cache;
-use common::mmap::{
-    Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable, MmapFlusher, MmapSlice,
-    create_and_ensure_length, open_read_mmap, open_write_mmap,
-};
+use common::mmap::create_and_ensure_length;
+use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{BytesRange, Flusher, UniversalRead, UniversalWrite};
 use fs_err as fs;
-use memmap2::Mmap;
 
 use crate::Result;
 use crate::error::GridstoreError;
 use crate::tracker::BlockOffset;
 
 #[derive(Debug)]
-pub(crate) struct Page {
+pub(crate) struct Page<S: UniversalWrite<u8>> {
     path: PathBuf,
-    /// Main data mmap for read/write
-    ///
-    /// Best suited for random reads.
-    mmap: MmapSlice<u8>,
-    /// Read-only mmap best suited for sequential reads
-    ///
-    /// `None` on platforms that do not support multiple memory maps to the same file.
-    /// Use [`mmap_seq`] utility function to access this mmap if available.
-    _mmap_seq: Option<Mmap>,
+    file_access: S,
 }
 
-impl Page {
-    pub(crate) fn flusher(&self) -> MmapFlusher {
-        self.mmap.flusher()
+impl<S: UniversalWrite<u8>> Page<S> {
+    pub(crate) fn flusher(&self) -> Flusher {
+        self.file_access.flusher()
     }
 
     /// Create a new page at the given path
-    pub fn new(path: &Path, size: usize) -> Result<Page> {
+    pub fn new(path: &Path, size: usize) -> Result<Page<MmapUniversal<u8>>> {
         create_and_ensure_length(path, size)?;
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
-        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap)? };
 
-        // Only open second mmap for sequential reads if supported
-        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
-            Some(open_read_mmap(
-                path,
-                AdviceSetting::from(Advice::Sequential),
-                false,
-            )?)
-        } else {
-            None
-        };
+        let file_access = MmapUniversal::open(
+            path,
+            common::universal_io::OpenOptions {
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Some(false),
+            },
+        )?;
 
         let path = path.to_path_buf();
 
-        Ok(Page {
-            path,
-            mmap,
-            _mmap_seq: mmap_seq,
-        })
+        Ok(Page { path, file_access })
     }
 
     /// Open an existing page at the given path
     /// If the file does not exist, return None
-    pub fn open(path: &Path) -> Result<Page> {
+    pub fn open(path: &Path) -> Result<Page<MmapUniversal<u8>>> {
         if !path.exists() {
             return Err(GridstoreError::service_error(format!(
                 "Page file does not exist: {}",
                 path.display()
             )));
         }
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)?;
-        let mmap = unsafe { MmapSlice::<u8>::try_from(mmap)? };
 
-        // Only open second mmap for sequential reads if supported
-        let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED {
-            Some(open_read_mmap(
-                path,
-                AdviceSetting::from(Advice::Sequential),
-                false,
-            )?)
-        } else {
-            None
-        };
+        let file_access = MmapUniversal::open(
+            path,
+            common::universal_io::OpenOptions {
+                need_sequential: true,
+                disk_parallel: None,
+                populate: Some(false),
+            },
+        )?;
 
         let path = path.to_path_buf();
-        Ok(Page {
-            path,
-            mmap,
-            _mmap_seq: mmap_seq,
-        })
-    }
-
-    /// Helper to get a slice suited for sequential reads if available, otherwise use the main mmap
-    #[inline]
-    fn mmap_seq(&self) -> &[u8] {
-        #[expect(clippy::used_underscore_binding)]
-        self._mmap_seq
-            .as_ref()
-            .map(|m| m.as_ref())
-            .unwrap_or(&self.mmap)
+        Ok(Page { path, file_access })
     }
 
     /// Write a value into the page
@@ -111,21 +76,22 @@ impl Page {
         block_offset: u32,
         value: &[u8],
         block_size_bytes: usize,
-    ) -> usize {
+    ) -> Result<usize> {
         // The size of the data cell containing the value
         let value_size = value.len();
 
         let value_start = block_offset as usize * block_size_bytes;
 
         let value_end = value_start + value_size;
+        let page_len = self.file_access.len()? as usize;
+
         // only write what fits in the page
-        let unwritten_tail = value_end.saturating_sub(self.mmap.len());
+        let unwritten_tail = value_end.saturating_sub(page_len);
 
-        // set value region
-        self.mmap[value_start..value_end - unwritten_tail]
-            .copy_from_slice(&value[..value_size - unwritten_tail]);
+        self.file_access
+            .write(value_start as u64, &value[..value_size - unwritten_tail])?;
 
-        unwritten_tail
+        Ok(unwritten_tail)
     }
 
     /// Read a value from the page
@@ -147,59 +113,51 @@ impl Page {
         block_offset: BlockOffset,
         length: u32,
         block_size_bytes: usize,
-    ) -> (&[u8], usize) {
-        if READ_SEQUENTIAL {
-            Self::read_value_with_generic_storage(
-                self.mmap_seq(),
-                block_offset,
-                length,
-                block_size_bytes,
-            )
-        } else {
-            Self::read_value_with_generic_storage(
-                &self.mmap,
-                block_offset,
-                length,
-                block_size_bytes,
-            )
-        }
+    ) -> Result<(Cow<'_, [u8]>, u64)> {
+        Self::read_value_with_generic_storage::<READ_SEQUENTIAL>(
+            &self.file_access,
+            block_offset,
+            length,
+            block_size_bytes,
+        )
     }
 
-    fn read_value_with_generic_storage(
-        mmap: &[u8],
+    fn read_value_with_generic_storage<const SEQUENTIAL: bool>(
+        file_access: &impl UniversalRead<u8>,
         block_offset: BlockOffset,
         length: u32,
         block_size_bytes: usize,
-    ) -> (&[u8], usize) {
-        let value_start = block_offset as usize * block_size_bytes;
+    ) -> Result<(Cow<'_, [u8]>, u64)> {
+        let value_start = u64::from(block_offset) * block_size_bytes as u64;
 
-        let mmap_len = mmap.len();
+        let page_len = file_access.len()?;
 
-        assert!(value_start < mmap_len);
+        assert!(value_start < page_len);
 
-        let value_end = value_start + length as usize;
+        let value_end = value_start + u64::from(length);
 
-        let unread_tail = value_end.saturating_sub(mmap_len);
+        let unread_tail = value_end.saturating_sub(page_len);
 
-        // read value region
-        (&mmap[value_start..value_end - unread_tail], unread_tail)
+        let data = file_access.read::<SEQUENTIAL>(BytesRange {
+            start: value_start,
+            length: (value_end - value_start) - unread_tail,
+        })?;
+
+        Ok((data, unread_tail))
     }
 
     /// Delete the page from the filesystem.
     #[allow(dead_code)]
     pub fn delete_page(self) {
-        #[expect(clippy::used_underscore_binding)]
-        drop((self.mmap, self._mmap_seq));
+        drop(self.file_access);
         fs::remove_file(&self.path).unwrap();
     }
 
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
-    pub fn populate(&self) {
-        #[expect(clippy::used_underscore_binding)]
-        if let Some(mmap_seq) = &self._mmap_seq {
-            mmap_seq.populate();
-        }
+    pub fn populate(&self) -> Result<()> {
+        self.file_access.populate()?;
+        Ok(())
     }
 
     /// Drop disk cache.
