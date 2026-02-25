@@ -97,7 +97,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     }
 
     /// Panics if key is not found
-    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T> {
+    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T> {
         self.get_multi_opt::<P>(key).expect("vector not found")
     }
 
@@ -105,7 +105,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<'_, T>> {
+    ) -> Option<CowMultiVector<'_, T>> {
         self.offsets
             .get::<P>(key as VectorOffsetType)
             .and_then(|mmap_offset| {
@@ -115,9 +115,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
                     mmap_offset.count as usize,
                 )
             })
-            .map(|flattened_vectors| TypedMultiDenseVectorRef {
-                flattened_vectors,
-                dim: self.vectors.dim(),
+            .map(|flattened_vectors| {
+                CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+                    flattened_vectors,
+                    dim: self.vectors.dim(),
+                })
             })
     }
 
@@ -175,9 +177,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.get_multi_opt::<P>(key).map(|multi_dense_vector| {
-            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
-                multi_dense_vector,
-            )))
+            CowVector::MultiDense(T::into_float_multivector(multi_dense_vector))
         })
     }
 
