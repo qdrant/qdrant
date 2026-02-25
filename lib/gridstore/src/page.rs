@@ -29,6 +29,7 @@ impl Page<MmapUniversal<u8>> {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
+                advice: None,
             },
         )?;
 
@@ -53,6 +54,7 @@ impl Page<MmapUniversal<u8>> {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
+                advice: None,
             },
         )?;
 

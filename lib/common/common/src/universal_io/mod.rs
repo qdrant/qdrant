@@ -3,6 +3,8 @@ pub mod mmap;
 use std::borrow::Cow;
 use std::path::Path;
 
+use crate::mmap::AdviceSetting;
+
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
 pub trait UniversalRead<T: Copy + 'static> {
@@ -55,6 +57,8 @@ pub struct OpenOptions {
     pub disk_parallel: Option<usize>,
     /// Populate RAM cache on open, if applicable for this implementation.
     pub populate: Option<bool>,
+    /// Use specific mmap advice.
+    pub advice: Option<AdviceSetting>,
 }
 
 impl Default for OpenOptions {
@@ -63,6 +67,7 @@ impl Default for OpenOptions {
             need_sequential: true,
             disk_parallel: None,
             populate: None,
+            advice: None,
         }
     }
 }

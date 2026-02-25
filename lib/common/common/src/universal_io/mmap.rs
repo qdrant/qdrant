@@ -35,10 +35,11 @@ where
             need_sequential,
             disk_parallel: _,
             populate,
+            advice,
         } = options;
 
         let mmap_file = path.as_ref();
-        let advice = AdviceSetting::Global;
+        let advice = advice.unwrap_or(AdviceSetting::Global);
 
         let mmap = open_write_mmap(mmap_file, advice, populate.unwrap_or_default())?;
         let mmap = unsafe { MmapSlice::try_from(mmap) }?;
