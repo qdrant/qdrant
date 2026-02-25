@@ -322,7 +322,7 @@ version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
 dependencies = [
- "gimli",
+ "gimli 0.32.3",
 ]
 
 [[package]]
@@ -744,7 +744,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "miniz_oxide",
- "object",
+ "object 0.37.3",
  "rustc-demangle",
  "windows-link 0.2.1",
 ]
@@ -1323,7 +1323,7 @@ dependencies = [
  "fs_extra",
  "itertools 0.14.0",
  "log",
- "memmap2",
+ "memmap2 0.9.10",
  "nix 0.31.1",
  "num-traits",
  "num_cpus",
@@ -2182,6 +2182,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
 name = "fastant"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2427,6 +2433,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6577b05a7ffad0db555aedf00bfe52af818220fc4c1c3a7a12520896fc38627"
 dependencies = [
  "tokio",
+]
+
+[[package]]
+name = "framehop"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09a5a3f0acb82df800ca3aa50c0d60d286c5d13d4cfc3114b3a9663f13b032fe"
+dependencies = [
+ "arrayvec 0.7.6",
+ "cfg-if",
+ "fallible-iterator",
+ "gimli 0.31.1",
+ "macho-unwind-info",
+ "pe-unwind-info",
 ]
 
 [[package]]
@@ -2735,6 +2755,16 @@ dependencies = [
 
 [[package]]
 name = "gimli"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
+dependencies = [
+ "fallible-iterator",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
@@ -2804,7 +2834,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "lz4_flex",
- "memmap2",
+ "memmap2 0.9.10",
  "parking_lot",
  "proptest",
  "rand 0.10.0",
@@ -3183,7 +3213,6 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -3429,7 +3458,7 @@ checksum = "e01b7cb6ca682a621e7cda1c358c9724b53a7b4409be9be1dd443b7f3a26f998"
 dependencies = [
  "include-flate-codegen",
  "include-flate-compress",
- "libflate 2.2.1",
+ "libflate",
  "zstd",
 ]
 
@@ -3440,7 +3469,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f49bf5274aebe468d6e6eba14a977eaf1efa481dc173f361020de70c1c48050"
 dependencies = [
  "include-flate-compress",
- "libflate 2.2.1",
+ "libflate",
  "proc-macro-error",
  "proc-macro2",
  "quote",
@@ -3454,7 +3483,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eae6a40e716bcd5931f5dbb79cd921512a4f647e2e9413fded3171fca3824dbc"
 dependencies = [
- "libflate 2.2.1",
+ "libflate",
  "zstd",
 ]
 
@@ -3801,17 +3830,6 @@ checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 
 [[package]]
 name = "libflate"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ff4ae71b685bbad2f2f391fe74f6b7659a34871c08b210fdc039e43bee07d18"
-dependencies = [
- "adler32",
- "crc32fast",
- "libflate_lz77 1.2.0",
-]
-
-[[package]]
-name = "libflate"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3248b8d211bd23a104a42d81b4fa8bb8ac4a3b75e7a43d85d2c9ccb6179cd74"
@@ -3820,16 +3838,7 @@ dependencies = [
  "core2",
  "crc32fast",
  "dary_heap",
- "libflate_lz77 2.2.0",
-]
-
-[[package]]
-name = "libflate_lz77"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a52d3a8bfc85f250440e4424db7d857e241a3aebbbe301f3eb606ab15c39acbf"
-dependencies = [
- "rle-decode-fast",
+ "libflate_lz77",
 ]
 
 [[package]]
@@ -4001,6 +4010,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
 
 [[package]]
+name = "macho-unwind-info"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb4bdc8b0ce69932332cf76d24af69c3a155242af95c226b2ab6c2e371ed1149"
+dependencies = [
+ "thiserror 2.0.18",
+ "zerocopy",
+ "zerocopy-derive",
+]
+
+[[package]]
 name = "macro_rules_attribute"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4081,6 +4101,15 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+
+[[package]]
+name = "memmap2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memmap2"
@@ -4257,17 +4286,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
 dependencies = [
  "bitflags 1.3.2",
- "cfg-if",
- "libc",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.11.0",
  "cfg-if",
  "libc",
 ]
@@ -4465,6 +4483,16 @@ dependencies = [
 
 [[package]]
 name = "object"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21158b2c33aa6d4561f1c0a6ea283ca92bc54802a93b263e910746d679a7eb53"
+dependencies = [
+ "flate2",
+ "memchr",
+]
+
+[[package]]
+name = "object"
 version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
@@ -4638,6 +4666,19 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
+
+[[package]]
+name = "pe-unwind-info"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "500fa4cdeacd98997c5865e3d0d1cb8fe7e9d7d75ecc775e07989a433a9a9a59"
+dependencies = [
+ "arrayvec 0.7.6",
+ "bitflags 2.11.0",
+ "thiserror 2.0.18",
+ "zerocopy",
+ "zerocopy-derive",
+]
 
 [[package]]
 name = "pem"
@@ -4923,10 +4964,13 @@ dependencies = [
  "backtrace",
  "cfg-if",
  "findshlibs",
+ "framehop",
  "inferno",
  "libc",
  "log",
+ "memmap2 0.5.10",
  "nix 0.26.4",
+ "object 0.29.0",
  "once_cell",
  "prost 0.12.6",
  "prost-build 0.12.6",
@@ -4934,26 +4978,6 @@ dependencies = [
  "sha2",
  "smallvec",
  "spin 0.10.0",
- "symbolic-demangle",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "pprof2"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8961ed0a916b512e565f8070eb0dfa05773dd140160b45ac9a5ad339b557adeb"
-dependencies = [
- "backtrace",
- "cfg-if",
- "findshlibs",
- "libc",
- "log",
- "nix 0.27.1",
- "once_cell",
- "parking_lot",
- "smallvec",
  "symbolic-demangle",
  "tempfile",
  "thiserror 2.0.18",
@@ -5408,18 +5432,17 @@ dependencies = [
 
 [[package]]
 name = "pyroscope"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3a5f63b0d2727095db59045e6a0ef3259b28b90d481ae88f0e3d866d0234ce8"
+version = "0.5.9"
+source = "git+https://github.com/grafana/pyroscope-rs?tag=lib-0.5.9#5a060b4ade591058a2613a0a34976fae7bbc4691"
 dependencies = [
  "libc",
- "libflate 1.4.0",
+ "libflate",
  "log",
  "names",
- "prost 0.11.9",
- "reqwest 0.12.28",
+ "prost 0.14.3",
+ "reqwest 0.13.2",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "url",
  "winapi",
 ]
@@ -5427,11 +5450,10 @@ dependencies = [
 [[package]]
 name = "pyroscope_pprofrs"
 version = "0.2.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50da7a8950c542357de489aa9ee628f46322b1beaac1f4fa3313bcdebe85b4ea"
+source = "git+https://github.com/grafana/pyroscope-rs?tag=lib-0.5.9#5a060b4ade591058a2613a0a34976fae7bbc4691"
 dependencies = [
  "log",
- "pprof2",
+ "pprof",
  "pyroscope",
 ]
 
@@ -5977,7 +5999,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "h2 0.4.13",
@@ -6010,7 +6031,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
- "webpki-roots",
 ]
 
 [[package]]
@@ -6041,6 +6061,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -6675,7 +6696,7 @@ dependencies = [
  "log",
  "macro_rules_attribute",
  "macros",
- "memmap2",
+ "memmap2 0.9.10",
  "ndarray",
  "ndarray-npy",
  "nom 8.0.0",
@@ -7201,7 +7222,7 @@ dependencies = [
  "indicatif",
  "itertools 0.14.0",
  "log",
- "memmap2",
+ "memmap2 0.9.10",
  "ordered-float 5.1.0",
  "parking_lot",
  "pprof",
@@ -7365,7 +7386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "751a2823d606b5d0a7616499e4130a516ebd01a44f39811be2b9600936509c23"
 dependencies = [
  "debugid",
- "memmap2",
+ "memmap2 0.9.10",
  "stable_deref_trait",
  "uuid",
 ]
@@ -8348,7 +8369,7 @@ dependencies = [
  "fs4",
  "hdrhistogram",
  "log",
- "memmap2",
+ "memmap2 0.9.10",
  "quickcheck",
  "rand 0.10.0",
  "rand_distr",
@@ -8551,15 +8572,6 @@ name = "webpki-root-certs"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "804f18a4ac2676ffb4e8b5b5fa9ae38af06df08162314f96a68d2a363e21a8ca"
-dependencies = [
- "rustls-pki-types",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
 dependencies = [
  "rustls-pki-types",
 ]

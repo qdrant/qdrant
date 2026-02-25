@@ -1,7 +1,8 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
 
-    use pyroscope::pyroscope::PyroscopeAgentRunning;
+    use pyroscope::backend::BackendConfig;
+    use pyroscope::pyroscope::{PyroscopeAgentBuilder, PyroscopeAgentRunning};
     use pyroscope::{PyroscopeAgent, PyroscopeError};
     use pyroscope_pprofrs::{PprofConfig, pprof_backend};
 
@@ -16,16 +17,29 @@ pub mod pyro {
         fn build_agent(
             config: &PyroscopeConfig,
         ) -> Result<PyroscopeAgent<PyroscopeAgentRunning>, PyroscopeError> {
-            let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
-            let backend_impl = pprof_backend(pprof_config);
+            // pprof uses tempfile::NamedTempFile which respects TMPDIR.
+            // Qdrant's clear_all_tmp_directories() deletes TMPDIR on startup,
+            // so we must ensure it exists before the profiler tries to create temp files.
+            if let Ok(tmpdir) = std::env::var("TMPDIR") {
+                let path = std::path::Path::new(&tmpdir);
+                if !path.exists()
+                    && let Err(err) = fs_err::create_dir_all(path)
+                {
+                    log::warn!("Failed to create TMPDIR {tmpdir}: {err}");
+                }
+            }
+
+            let pprof_config = PprofConfig {
+                sample_rate: config.sampling_rate.unwrap_or(100),
+            };
+            let backend_impl = pprof_backend(pprof_config, BackendConfig::default());
 
             log::info!(
                 "Starting pyroscope agent with identifier {}",
                 &config.identifier
             );
             // TODO: Add more tags like peerId and peerUrl
-            let agent = PyroscopeAgent::builder(config.url.clone(), "qdrant".to_string())
-                .backend(backend_impl)
+            let agent = PyroscopeAgentBuilder::new(config.url.clone(), "qdrant", backend_impl)
                 .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
                 .build()?;
             let running_agent = agent.start()?;
