@@ -77,7 +77,7 @@ pub trait GraphLinksVectors {
 
     /// Link vectors will be included for each link per point.
     /// The layout of each vector must correspond to [`VectorLayout::link`].
-    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>>;
+    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
 
     /// Get the layout of base and link vectors.
     fn vectors_layout(&self) -> GraphLinksVectorsLayout;
@@ -128,10 +128,8 @@ impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
     }
 
     /// Note: unlike base vectors, link vectors are written in a random order.
-    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
-        Ok(Cow::Borrowed(
-            self.quantized_vectors.get_quantized_vector(point_id),
-        ))
+    fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+        Ok(self.quantized_vectors.get_quantized_vector(point_id))
     }
 
     fn vectors_layout(&self) -> GraphLinksVectorsLayout {
@@ -387,8 +385,8 @@ mod tests {
             Ok(Cow::Borrowed(&self.base_vectors[point_id as usize]))
         }
 
-        fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
-            Ok(Cow::Borrowed(&self.link_vectors[point_id as usize]))
+        fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+            Ok(&self.link_vectors[point_id as usize])
         }
 
         fn vectors_layout(&self) -> GraphLinksVectorsLayout {
@@ -436,7 +434,7 @@ mod tests {
                     assert!(base_vector.is_empty());
                 }
                 iter.map(|(link, bytes)| {
-                    assert_eq!(bytes, vectors.get_link_vector(link).unwrap().as_ref());
+                    assert_eq!(bytes, vectors.get_link_vector(link).unwrap());
                     link
                 })
                 .collect()
