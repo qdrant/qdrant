@@ -139,6 +139,13 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Install ring as the default rustls CryptoProvider.
+    // reqwest 0.13 "rustls" feature pulls in aws-lc-rs; we install ring
+    // explicitly to use the same provider as before.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default CryptoProvider");
+
     let args = Args::parse();
 
     // Run backtrace collector, expected to used by `rstack` crate
