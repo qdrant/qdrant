@@ -573,6 +573,7 @@ impl GpuVectorStorage {
                     .map(|id| {
                         vector_storage
                             .get_multi::<Random>(id as PointOffsetType)
+                            .as_ref()
                             .vectors_count()
                     })
                     .sum(),
@@ -605,6 +606,7 @@ impl GpuVectorStorage {
                     .map(|id| {
                         vector_storage
                             .get_multi::<Random>(id as PointOffsetType)
+                            .as_ref()
                             .vectors_count()
                     })
                     .sum(),
@@ -632,6 +634,7 @@ impl GpuVectorStorage {
                 .map(|id| {
                     vector_storage
                         .get_multi::<Random>(id as PointOffsetType)
+                        .as_ref()
                         .vectors_count()
                 })
                 .sum(),

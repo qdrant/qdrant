@@ -767,7 +767,12 @@ impl QuantizedVectors {
             Self::construct_vector_parameters(distance, dim, inner_vectors_count, storage_type);
 
         let offsets = (0..vectors_count as PointOffsetType)
-            .map(|idx| vector_storage.get_multi::<Random>(idx).vectors_count() as PointOffsetType)
+            .map(|idx| {
+                vector_storage
+                    .get_multi::<Random>(idx)
+                    .as_ref()
+                    .vectors_count() as PointOffsetType
+            })
             .scan(0, |offset_acc, multi_vector_len| {
                 let offset = *offset_acc;
                 *offset_acc += multi_vector_len;
