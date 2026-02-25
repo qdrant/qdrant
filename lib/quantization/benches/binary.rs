@@ -9,7 +9,7 @@ use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParamete
 use quantization::encoded_vectors_binary::{
     EncodedQueryBQ, EncodedVectorsBin, Encoding, QueryEncoding,
 };
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
     let n = f32::signum(rng.random_range(-1.0..1.0));

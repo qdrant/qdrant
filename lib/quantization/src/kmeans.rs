@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use rand::Rng;
+use rand::RngExt;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 

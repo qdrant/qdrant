@@ -94,7 +94,7 @@ pub fn delta_unpack(data: &[u8]) -> Vec<u64> {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 

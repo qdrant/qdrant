@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use rand::Rng;
+use rand::RngExt;
 
 #[derive(Debug)]
 struct ItemWithStats<T: Clone> {

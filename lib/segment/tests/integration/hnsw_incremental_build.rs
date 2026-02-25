@@ -10,7 +10,7 @@ use common::progress_tracker::ProgressTracker;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
-use rand::{Rng, SeedableRng as _};
+use rand::{Rng, RngExt, SeedableRng as _};
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorElementType, only_default_vector,
 };

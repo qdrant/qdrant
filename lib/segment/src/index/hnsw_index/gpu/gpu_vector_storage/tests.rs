@@ -2,7 +2,7 @@
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::*;

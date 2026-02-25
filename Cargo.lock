@@ -489,7 +489,7 @@ dependencies = [
  "prost 0.12.6",
  "prost-build 0.12.6",
  "prost-wkt-types",
- "rand 0.9.2",
+ "rand 0.10.0",
  "schemars 0.8.22",
  "segment",
  "serde",
@@ -1059,6 +1059,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chacha20"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "rand_core 0.10.0",
+]
+
+[[package]]
 name = "charabia"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1231,7 +1242,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "proptest",
- "rand 0.9.2",
+ "rand 0.10.0",
  "ringbuffer",
  "rmp-serde",
  "rstest",
@@ -1319,7 +1330,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "parking_lot",
  "ph",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rstest",
  "schemars 0.8.22",
  "self_cell",
@@ -1514,6 +1525,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpufeatures"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,7 +1691,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "curve25519-dalek-derive",
  "digest",
  "fiat-crypto",
@@ -2003,7 +2023,7 @@ dependencies = [
  "log",
  "ordered-float 5.1.0",
  "parking_lot",
- "rand 0.9.2",
+ "rand 0.10.0",
  "segment",
  "serde_json",
  "shard",
@@ -2787,7 +2807,7 @@ dependencies = [
  "memmap2",
  "parking_lot",
  "proptest",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rocksdb",
  "rstest",
  "serde",
@@ -4874,7 +4894,7 @@ version = "0.0.0"
 dependencies = [
  "bitpacking",
  "common",
- "rand 0.9.2",
+ "rand 0.10.0",
  "zerocopy",
 ]
 
@@ -5457,7 +5477,7 @@ dependencies = [
  "pyroscope_pprofrs",
  "raft",
  "raft-proto",
- "rand 0.9.2",
+ "rand 0.10.0",
  "reqwest 0.13.2",
  "rstack-self",
  "rustls 0.23.37",
@@ -5544,7 +5564,7 @@ dependencies = [
  "parking_lot",
  "permutation_iterator",
  "quantization",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rand_distr",
  "rayon",
  "rstest",
@@ -5747,6 +5767,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
 dependencies = [
+ "chacha20",
  "getrandom 0.4.1",
  "rand_core 0.10.0",
 ]
@@ -5817,12 +5838,12 @@ checksum = "0c8d0fd677905edcbeedbf2edb6494d676f0e98d54d5cf9bda0b061cb8fb8aba"
 
 [[package]]
 name = "rand_distr"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8615d50dcf34fa31f7ab52692afec947c4dd0ab803cc87cb3b0b4570ff7463"
+checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
- "rand 0.9.2",
+ "rand 0.10.0",
 ]
 
 [[package]]
@@ -6669,7 +6690,7 @@ dependencies = [
  "proptest",
  "qdrant-rust-stemmers",
  "quantization",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rand_distr",
  "rayon",
  "rmp-serde",
@@ -6912,7 +6933,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest",
 ]
 
@@ -6923,7 +6944,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest",
 ]
 
@@ -6967,7 +6988,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "parking_lot",
  "proptest",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rmp-serde",
  "rstest",
  "schemars 0.8.22",
@@ -7185,7 +7206,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "parking_lot",
  "pprof",
- "rand 0.9.2",
+ "rand 0.10.0",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -7258,7 +7279,7 @@ dependencies = [
  "prost 0.11.9",
  "protobuf",
  "raft",
- "rand 0.9.2",
+ "rand 0.10.0",
  "reqwest 0.13.2",
  "schemars 0.8.22",
  "segment",
@@ -8040,7 +8061,7 @@ dependencies = [
  "itertools 0.14.0",
  "parking_lot",
  "quick_cache",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rand_distr",
  "rayon",
  "schnellru",
@@ -8331,7 +8352,7 @@ dependencies = [
  "log",
  "memmap2",
  "quickcheck",
- "rand 0.9.2",
+ "rand 0.10.0",
  "rand_distr",
  "regex",
  "rustix 1.1.3",

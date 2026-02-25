@@ -11,8 +11,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
-use rand::Rng;
 use rand::distr::Uniform;
+use rand::{Rng, RngExt};
 
 use super::HnswM;
 use super::graph_layers::GraphLayerData;

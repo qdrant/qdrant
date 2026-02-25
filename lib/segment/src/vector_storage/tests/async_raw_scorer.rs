@@ -82,7 +82,7 @@ fn test_async_raw_scorer(
 }
 
 fn insert_random_vectors(
-    rng: &mut impl rand::Rng,
+    rng: &mut impl rand::RngExt,
     dim: usize,
     storage: &mut VectorStorageEnum,
     vectors: usize,
@@ -91,7 +91,7 @@ fn insert_random_vectors(
 }
 
 fn test_random_score(
-    mut rng: impl rand::Rng,
+    mut rng: impl rand::RngExt,
     dim: usize,
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
@@ -110,7 +110,7 @@ fn test_random_score(
     )?;
 
     let points = rng.random_range(1..storage.total_vector_count());
-    let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
+    let points = (0..storage.total_vector_count() as _).sample(&mut rng, points);
 
     let res = scorer.score_points(&mut points.clone(), 0).collect_vec();
     let async_res = async_scorer

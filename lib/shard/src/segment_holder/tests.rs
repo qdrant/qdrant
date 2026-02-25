@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use rand::Rng;
+use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::json_path::JsonPath;
 use segment::payload_json;

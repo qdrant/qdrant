@@ -6,7 +6,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::StandardUniform;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};

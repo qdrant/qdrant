@@ -7,7 +7,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
 use fs_err::File;
 use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
-use rand::Rng;
+use rand::RngExt;
 use serde_json::Value;
 
 /// Insert CSV data into the storage

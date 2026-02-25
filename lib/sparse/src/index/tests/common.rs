@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use common::types::PointOffsetType;
-use rand::SeedableRng;
+use rand::{RngExt, SeedableRng};
 use tempfile::TempDir;
 
 use crate::common::scores_memory_pool::{PooledScoresHandle, ScoresMemoryPool};

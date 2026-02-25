@@ -4,7 +4,7 @@ mod prof;
 use std::collections::{BTreeMap, HashMap};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

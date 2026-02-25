@@ -5,7 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use segment::fixtures::payload_context_fixture::{
     create_id_tracker_fixture, create_payload_storage_fixture, create_plain_payload_index,
     create_struct_payload_index,

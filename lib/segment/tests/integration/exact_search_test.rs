@@ -9,7 +9,7 @@ use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use rand::Rng;
+use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};

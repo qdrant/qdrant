@@ -6,7 +6,7 @@ mod tests {
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rstest::rstest;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};

@@ -1,8 +1,7 @@
 use std::{env, fmt};
 
 use log::info;
-use rand;
-use rand::{Rng, SeedableRng};
+use rand::{self, RngExt, SeedableRng};
 use rand_distr::{Distribution, StandardUniform};
 
 use crate::segment;

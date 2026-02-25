@@ -284,7 +284,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use sparse::common::sparse_vector_fixture::random_sparse_vector;
     use tempfile::Builder;
 

@@ -728,6 +728,7 @@ mod test {
     use std::io::ErrorKind;
     use std::path::Path;
 
+    use rand::Rng;
     use tempfile::{Builder, TempDir};
 
     use super::{Segment, padding};
@@ -981,8 +982,6 @@ mod test {
     }
 
     use std::hash::Hasher;
-
-    use rand::RngCore;
 
     #[test]
     fn test_crc32c() {

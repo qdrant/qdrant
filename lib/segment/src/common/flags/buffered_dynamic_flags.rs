@@ -121,7 +121,7 @@ mod tests {
 
     use common::types::PointOffsetType;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     use crate::common::flags::buffered_dynamic_flags::BufferedDynamicFlags;
     use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;

@@ -264,7 +264,7 @@ fn estimate_quantile_from_slice(observations: &mut [NotNan<f64>], quantile: f64)
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_distr::{Poisson, StandardNormal, StudentT};
 
     use super::*;

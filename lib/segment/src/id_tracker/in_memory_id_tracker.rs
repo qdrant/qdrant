@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 #[cfg(test)]
-use rand::Rng as _;
+use rand::RngExt;
 #[cfg(test)]
 use rand::rngs::StdRng;
 

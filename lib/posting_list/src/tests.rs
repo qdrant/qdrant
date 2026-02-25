@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use common::types::PointOffsetType;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 
 use crate::{CHUNK_LEN, PostingBuilder, PostingList, PostingValue, UnsizedHandler, UnsizedValue};
 

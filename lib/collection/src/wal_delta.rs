@@ -304,7 +304,7 @@ mod tests {
     use rand::prelude::SliceRandom;
     use rand::rngs::StdRng;
     use rand::seq::IndexedRandom;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rstest::rstest;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::wal::SerdeWal;

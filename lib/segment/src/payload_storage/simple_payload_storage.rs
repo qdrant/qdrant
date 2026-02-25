@@ -79,7 +79,7 @@ impl SimplePayloadStorage {
 mod tests {
     use rand::distr::SampleString;
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_distr::Alphanumeric;
     use tempfile::Builder;
 

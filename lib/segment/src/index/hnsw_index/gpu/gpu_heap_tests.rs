@@ -5,7 +5,7 @@ use std::collections::{BinaryHeap, HashMap};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

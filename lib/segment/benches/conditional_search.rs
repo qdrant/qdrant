@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::fixtures::payload_context_fixture::{
     create_plain_payload_index, create_struct_payload_index,
 };

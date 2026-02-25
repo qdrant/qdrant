@@ -205,7 +205,7 @@ fn take_random_vectors<'a>(
 #[cfg(test)]
 mod tests {
     use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rstest::rstest;
 
     use super::*;

@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::common::operation_error::OperationResult;
 use segment::index::field_index::numeric_index::mmap_numeric_index::MmapNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;

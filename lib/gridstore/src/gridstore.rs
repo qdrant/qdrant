@@ -714,7 +714,7 @@ mod tests {
     use rand::distr::Uniform;
     use rand::prelude::Distribution;
     use rand::seq::SliceRandom;
-    use rand::{Rng, SeedableRng};
+    use rand::{Rng, RngExt};
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -820,7 +820,7 @@ mod tests {
     fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
         let (_dir, mut storage) = empty_storage();
 
-        let rng = &mut rand::rngs::SmallRng::from_os_rng();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
         let mut payloads = (0..num_payloads)
             .map(|point_offset| (point_offset, random_payload(rng, payload_size_factor)))
@@ -1017,7 +1017,7 @@ mod tests {
 
         let (dir, mut storage) = empty_storage_sized(page_size, compression);
 
-        let rng = &mut rand::rngs::SmallRng::from_os_rng();
+        let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
 
         let mut model_hashmap = AHashMap::with_capacity(max_point_offset as usize);
 
@@ -1199,7 +1199,7 @@ mod tests {
         let huge_payload_size = 1024 * 1024 * 50; // 50MB
 
         let distr = Uniform::new('a', 'z').unwrap();
-        let rng = rand::rngs::SmallRng::from_os_rng();
+        let rng = rand::make_rng::<rand::rngs::SmallRng>();
 
         let huge_value =
             serde_json::Value::String(distr.sample_iter(rng).take(huge_payload_size).collect());
@@ -1407,7 +1407,7 @@ mod tests {
 
     #[test]
     fn test_payload_compression() {
-        let payload = random_payload(&mut rand::rngs::SmallRng::from_os_rng(), 2);
+        let payload = random_payload(&mut rand::make_rng::<rand::rngs::SmallRng>(), 2);
         let payload_bytes = payload.to_bytes();
         let compressed = compress_lz4(&payload_bytes);
         let decompressed = decompress_lz4(&compressed);

@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::fixtures::payload_fixtures::random_multi_vector;

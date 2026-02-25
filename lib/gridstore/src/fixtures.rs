@@ -1,5 +1,5 @@
-use rand::Rng;
 use rand::distr::{Distribution, Uniform};
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use tempfile::{Builder, TempDir};

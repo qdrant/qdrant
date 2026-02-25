@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use segment::id_tracker::IdTracker;
 use segment::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use segment::types::ExtendedPointId;

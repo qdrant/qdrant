@@ -207,7 +207,7 @@ mod tests {
     use num_traits::{ConstOne, ConstZero, PrimInt, Unsigned};
     use rand::distr::uniform::SampleUniform;
     use rand::rngs::StdRng;
-    use rand::{Rng as _, SeedableRng as _};
+    use rand::{RngExt, SeedableRng as _};
 
     use super::*;
 

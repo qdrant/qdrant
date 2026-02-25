@@ -110,7 +110,7 @@ mod tests {
     use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
     use crate::types::SeqNumberType;
