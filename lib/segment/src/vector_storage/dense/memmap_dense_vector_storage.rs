@@ -162,7 +162,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.vectors.as_ref().unwrap().dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> std::borrow::Cow<'_, [T]> {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         self.vectors
             .as_ref()
             .unwrap()

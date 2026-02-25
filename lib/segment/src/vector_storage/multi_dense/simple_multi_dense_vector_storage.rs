@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
@@ -20,8 +21,8 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
+use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     AccessPattern, MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
@@ -43,7 +44,7 @@ pub struct SimpleMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     /// Keep vectors in memory
-    vectors: ChunkedVectors<T>,
+    vectors: VolatileChunkedVectors<T>,
     vectors_metadata: Vec<MultiVectorMetadata>,
     db_wrapper: DatabaseColumnWrapper,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -168,7 +169,7 @@ fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<SimpleMultiDenseVectorStorage<T>> {
-    let mut vectors = ChunkedVectors::new(dim);
+    let mut vectors = VolatileChunkedVectors::new(dim);
     let mut vectors_metadata = Vec::<MultiVectorMetadata>::new();
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
@@ -358,10 +359,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         })
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
-            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start + i))
+            (0..metadata.inner_vectors_count)
+                .map(|i| Cow::Borrowed(self.vectors.get(metadata.start + i)))
         })
     }
 

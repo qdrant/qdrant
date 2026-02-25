@@ -7,6 +7,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
+use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -27,7 +28,7 @@ const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedMmapVectors<T>,
+    vectors: ChunkedVectors<T, MmapUniversal<T>>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -81,11 +82,9 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
     }
 
     fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
-        Cow::Borrowed(
-            self.vectors
-                .get::<P>(key as VectorOffsetType)
-                .expect("mmap vector not found"),
-        )
+        self.vectors
+            .get::<P>(key as VectorOffsetType)
+            .expect("mmap vector not found")
     }
 
     fn for_each_in_dense_batch<F: FnMut(usize, &[T])>(&self, keys: &[PointOffsetType], f: F) {
@@ -113,14 +112,14 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> CowVector<'_> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
             .expect("Vector not found")
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
         self.vectors
             .get::<P>(key as VectorOffsetType)
-            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice)))
     }
 
     fn insert_vector(
@@ -250,7 +249,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();

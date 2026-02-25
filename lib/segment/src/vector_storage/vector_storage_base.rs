@@ -237,7 +237,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
         let iter = keys.iter().map(|key| self.get_multi::<Random>(*key));
         maybe_uninit_fill_from(vectors, iter).0
     }
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;

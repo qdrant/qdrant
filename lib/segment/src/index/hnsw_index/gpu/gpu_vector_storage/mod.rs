@@ -346,10 +346,8 @@ impl GpuVectorStorage {
             quantized_storage.vectors_count(),
             num_vectors,
             quantized_storage.get_quantized_vector(0).len(),
-            (0..quantized_storage.vectors_count()).map(|id| {
-                let vector = quantized_storage.get_quantized_vector(id as PointOffsetType);
-                Cow::Borrowed(vector)
-            }),
+            (0..quantized_storage.vectors_count())
+                .map(|id| quantized_storage.get_quantized_vector(id as PointOffsetType)),
             Some(GpuQuantization::new_pq(device, quantized_storage)?),
             multivectors,
             stopped,
@@ -370,9 +368,8 @@ impl GpuVectorStorage {
             quantized_storage.vectors_count(),
             num_vectors,
             quantized_storage.get_quantized_vector(0).len(),
-            (0..quantized_storage.vectors_count()).map(|id| {
-                Cow::Borrowed(quantized_storage.get_quantized_vector(id as PointOffsetType))
-            }),
+            (0..quantized_storage.vectors_count())
+                .map(|id| quantized_storage.get_quantized_vector(id as PointOffsetType)),
             Some(GpuQuantization::new_bq(device, quantized_storage)),
             multivectors,
             stopped,
@@ -579,9 +576,9 @@ impl GpuVectorStorage {
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
-                vector_storage.iterate_inner_vectors().map(|vector| {
-                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(vector))
-                }),
+                vector_storage
+                    .iterate_inner_vectors()
+                    .map(|vector| VectorElementTypeHalf::slice_from_float_cow(vector)),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -614,7 +611,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 vector_storage
                     .iterate_inner_vectors()
-                    .map(|vector| VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(vector))),
+                    .map(|vector| VectorElementTypeHalf::slice_to_float_cow(vector)),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -640,7 +637,7 @@ impl GpuVectorStorage {
                 .sum(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
-            vector_storage.iterate_inner_vectors().map(Cow::Borrowed),
+            vector_storage.iterate_inner_vectors(),
             None,
             Some(GpuMultivectors::new_multidense(device, vector_storage)?),
             stopped,

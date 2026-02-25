@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 #[cfg(feature = "testing")]
 use std::io::{Read, Write};
 #[cfg(feature = "testing")]
@@ -17,7 +18,7 @@ use fs_err as fs;
 use fs_err::File;
 
 pub trait EncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8];
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
 
     fn is_on_disk(&self) -> bool;
 
@@ -85,7 +86,7 @@ impl TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorage for TestEncodedStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         let start = self
             .quantized_vector_size
             .get()
@@ -94,7 +95,8 @@ impl EncodedStorage for TestEncodedStorage {
             .quantized_vector_size
             .get()
             .saturating_mul(index as usize + 1);
-        self.data.get(start..end).unwrap_or(&[])
+
+        Cow::Borrowed(self.data.get(start..end).unwrap_or(&[]))
     }
 
     fn upsert_vector(

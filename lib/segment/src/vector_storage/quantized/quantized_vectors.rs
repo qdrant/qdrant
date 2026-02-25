@@ -267,7 +267,7 @@ impl QuantizedVectors {
         }
     }
 
-    pub fn get_quantized_vector(&self, id: PointOffsetType) -> &[u8] {
+    pub fn get_quantized_vector(&self, id: PointOffsetType) -> Cow<'_, [u8]> {
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(storage) => storage.get_quantized_vector(id),
             QuantizedVectorStorage::ScalarMmap(storage) => storage.get_quantized_vector(id),
@@ -756,8 +756,21 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors = vector_storage.iterate_inner_vectors().map(|v| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, v)
+        let vectors = vector_storage.iterate_inner_vectors().map(|v| match v {
+            Cow::Borrowed(slice) => PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                distance,
+                slice,
+            ),
+            // TODO: avoid reallocation by accepting Cow in quantization_preprocess
+            Cow::Owned(vec) => Cow::Owned(
+                PrimitiveVectorElement::quantization_preprocess(
+                    quantization_config,
+                    distance,
+                    &vec,
+                )
+                .into_owned(),
+            ),
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();

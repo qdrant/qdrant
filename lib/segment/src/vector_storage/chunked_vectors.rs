@@ -464,7 +464,7 @@ pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             disk_parallel: None,
             populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
-            advice: None
+            advice: None,
         },
     )
 }
@@ -496,8 +496,10 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapUniversal<VectorElementType>> =
-                ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
+            let mut chunked_mmap: ChunkedVectors<
+                VectorElementType,
+                MmapUniversal<VectorElementType>,
+            > = ChunkedVectors::open(dir.path(), dim, AdviceSetting::Global, Some(true)).unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec, &hw_counter).unwrap();

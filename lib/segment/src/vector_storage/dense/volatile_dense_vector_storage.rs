@@ -26,7 +26,7 @@ use crate::vector_storage::{
 pub struct VolatileDenseVectorStorage<T: PrimitiveVectorElement> {
     dim: usize,
     distance: Distance,
-    vectors: ChunkedVectors<T>,
+    vectors: VolatileChunkedVectors<T>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
@@ -52,7 +52,7 @@ impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
         Self {
             dim,
             distance,
-            vectors: ChunkedVectors::new(dim),
+            vectors: VolatileChunkedVectors::new(dim),
             deleted: BitVec::new(),
             deleted_count: 0,
         }

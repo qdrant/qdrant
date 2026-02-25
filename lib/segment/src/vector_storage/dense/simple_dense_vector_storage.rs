@@ -20,8 +20,8 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
+use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     AccessPattern, DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
@@ -33,7 +33,7 @@ type StoredDenseVector<T> = StoredRecord<Vec<T>>;
 pub struct SimpleDenseVectorStorage<T: PrimitiveVectorElement> {
     dim: usize,
     distance: Distance,
-    vectors: ChunkedVectors<T>,
+    vectors: VolatileChunkedVectors<T>,
     db_wrapper: DatabaseColumnWrapper,
     update_buffer: StoredDenseVector<T>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
@@ -49,7 +49,7 @@ fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     distance: Distance,
     stopped: &AtomicBool,
 ) -> OperationResult<SimpleDenseVectorStorage<T>> {
-    let mut vectors = ChunkedVectors::new(dim);
+    let mut vectors = VolatileChunkedVectors::new(dim);
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
