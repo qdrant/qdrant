@@ -36,6 +36,18 @@ pub struct ServiceConfig {
 
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
+    /// Keep-alive timeout for incoming HTTP connections in seconds.
+    #[serde(default = "default_http_keep_alive_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub http_keep_alive_timeout_sec: u64,
+    /// Timeout for reading HTTP request data from clients in seconds.
+    #[serde(default = "default_http_client_request_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub http_client_request_timeout_sec: u64,
+    /// Timeout for client disconnect handling in seconds.
+    #[serde(default = "default_http_client_disconnect_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub http_client_disconnect_timeout_sec: u64,
     #[serde(default = "default_cors")]
     pub enable_cors: bool,
     #[serde(default)]
@@ -404,6 +416,18 @@ const fn default_cors() -> bool {
     true
 }
 
+const fn default_http_keep_alive_timeout_sec() -> u64 {
+    5
+}
+
+const fn default_http_client_request_timeout_sec() -> u64 {
+    5
+}
+
+const fn default_http_client_disconnect_timeout_sec() -> u64 {
+    5
+}
+
 const fn default_timeout_ms() -> u64 {
     DEFAULT_GRPC_TIMEOUT.as_millis() as u64
 }
@@ -477,12 +501,27 @@ mod tests {
     /// Ensure we can successfully deserialize into [`Settings`] with just the default configuration.
     #[test]
     fn test_default_config() {
-        Config::builder()
+        let config = Config::builder()
             .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml))
             .build()
             .expect("failed to build default config")
             .try_deserialize::<Settings>()
-            .expect("failed to deserialize default config")
+            .expect("failed to deserialize default config");
+
+        assert_eq!(
+            config.service.http_keep_alive_timeout_sec,
+            default_http_keep_alive_timeout_sec()
+        );
+        assert_eq!(
+            config.service.http_client_request_timeout_sec,
+            default_http_client_request_timeout_sec()
+        );
+        assert_eq!(
+            config.service.http_client_disconnect_timeout_sec,
+            default_http_client_disconnect_timeout_sec()
+        );
+
+        config
             .validate()
             .expect("failed to validate default config");
     }
@@ -547,5 +586,66 @@ mod tests {
 
         // Ensure our custom config is the most important
         assert_eq!(config.service.http_port, 9999);
+        assert_eq!(
+            config.service.http_keep_alive_timeout_sec,
+            default_http_keep_alive_timeout_sec()
+        );
+        assert_eq!(
+            config.service.http_client_request_timeout_sec,
+            default_http_client_request_timeout_sec()
+        );
+        assert_eq!(
+            config.service.http_client_disconnect_timeout_sec,
+            default_http_client_disconnect_timeout_sec()
+        );
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn test_custom_http_transport_config() {
+        let path = "config/custom_http_transport.yaml";
+
+        {
+            fs::create_dir("config").unwrap();
+            let mut custom = fs::File::create(path).unwrap();
+            write!(
+                &mut custom,
+                "service:\n    http_keep_alive_timeout_sec: 120\n    http_client_request_timeout_sec: 45\n    http_client_disconnect_timeout_sec: 60"
+            )
+            .unwrap();
+            custom.flush().unwrap();
+        }
+
+        let config = Settings::new(Some(path.into())).unwrap();
+        config
+            .validate()
+            .expect("custom HTTP transport timeouts must pass validation");
+
+        assert_eq!(config.service.http_keep_alive_timeout_sec, 120);
+        assert_eq!(config.service.http_client_request_timeout_sec, 45);
+        assert_eq!(config.service.http_client_disconnect_timeout_sec, 60);
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn test_invalid_http_transport_config() {
+        let path = "config/invalid_http_transport.yaml";
+
+        {
+            fs::create_dir("config").unwrap();
+            let mut custom = fs::File::create(path).unwrap();
+            write!(
+                &mut custom,
+                "service:\n    http_keep_alive_timeout_sec: 0\n    http_client_request_timeout_sec: 0\n    http_client_disconnect_timeout_sec: 0"
+            )
+            .unwrap();
+            custom.flush().unwrap();
+        }
+
+        let config = Settings::new(Some(path.into())).unwrap();
+        assert!(
+            config.validate().is_err(),
+            "zero timeout values must fail validation"
+        );
     }
 }
