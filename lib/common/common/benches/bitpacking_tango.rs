@@ -7,7 +7,7 @@ use common::bitpacking_links::iterate_packed_links;
 use common::bitpacking_ordered;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
-use rand::{Rng as _, SeedableRng as _};
+use rand::{RngExt, SeedableRng as _};
 use tango_bench::{
     Bencher, Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
 };

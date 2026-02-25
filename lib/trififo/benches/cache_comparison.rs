@@ -24,7 +24,7 @@ use parking_lot::Mutex;
 use quick_cache::sync::Cache as QuickCache;
 use rand::distr::Distribution;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_distr::Zipf;
 use rayon::prelude::*;
 use schnellru::{ByLength, LruMap};

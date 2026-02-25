@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use common::iterator_ext::IteratorExt;
 use common::iterator_ext::stoppable_iter::StoppableIter;
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 
 fn bench_atomic_stop(c: &mut Criterion) {
     // Generate random number from 1 to 1_000_000

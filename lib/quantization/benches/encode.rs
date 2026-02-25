@@ -5,7 +5,7 @@ use permutation_iterator::Permutor;
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
-use rand::Rng;
+use rand::RngExt;
 
 fn encode_dot_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("encode dot");

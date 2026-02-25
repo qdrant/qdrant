@@ -4,7 +4,7 @@ use bitvec::vec::BitVec;
 use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
-use rand::Rng;
+use rand::RngExt;
 
 pub fn bench_bitmask_ops(c: &mut Criterion) {
     let distr = rand::distr::StandardUniform;

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{empty_storage, random_payload};
-use rand::Rng;
+use rand::RngExt;
 
 pub fn flush_bench(c: &mut Criterion) {
     let prepopulation_size = 10_000;

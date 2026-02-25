@@ -5,7 +5,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_pq::EncodedVectorsPQ;
-use rand::Rng;
+use rand::RngExt;
 
 fn encode_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("encode");

@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use segment::common::operation_error::check_process_stopped;
 use tempfile::tempdir;

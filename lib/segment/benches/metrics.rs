@@ -4,7 +4,7 @@ mod prof;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
 use segment::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
