@@ -622,11 +622,18 @@ mod test {
 
     use fs_err as fs;
     use log::trace;
-    use quickcheck::TestResult;
+    use quickcheck::{QuickCheck, TestResult};
     use tempfile::Builder;
 
     use super::{Wal, WalOptions};
     use crate::test_utils::EntryGenerator;
+
+    /// Windows has very slow IO
+    #[cfg(target_os = "windows")]
+    const QC_TESTS: u64 = 10;
+
+    #[cfg(not(target_os = "windows"))]
+    const QC_TESTS: u64 = 100;
 
     fn init_logger() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -785,7 +792,9 @@ mod test {
             TestResult::passed()
         }
 
-        quickcheck::quickcheck(wal as fn(u8) -> TestResult);
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(wal as fn(u8) -> TestResult);
     }
 
     #[test]
@@ -825,7 +834,9 @@ mod test {
             TestResult::passed()
         }
 
-        quickcheck::quickcheck(check as fn(u8) -> TestResult)
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(check as fn(u8) -> TestResult)
     }
 
     #[test]
@@ -853,7 +864,9 @@ mod test {
             TestResult::from_bool(wal.num_entries() == 0)
         }
 
-        quickcheck::quickcheck(check as fn(u8) -> TestResult)
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(check as fn(u8) -> TestResult)
     }
 
     /// Check that the Wal will read previously written entries.
@@ -913,7 +926,9 @@ mod test {
             TestResult::passed()
         }
 
-        quickcheck::quickcheck(wal as fn(u8) -> TestResult);
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(wal as fn(u8) -> TestResult);
     }
 
     #[test]
@@ -956,7 +971,9 @@ mod test {
             TestResult::from_bool(wal.entry(u64::from(truncate)).is_none())
         }
 
-        quickcheck::quickcheck(truncate as fn(u8, u8) -> TestResult);
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(truncate as fn(u8, u8) -> TestResult);
     }
 
     #[test]
@@ -1012,7 +1029,9 @@ mod test {
                 num_entries <= entry_count && num_entries >= entry_count - until && retained,
             )
         }
-        quickcheck::quickcheck(prefix_truncate as fn(u8, u8, NonZeroU8) -> TestResult);
+        QuickCheck::new()
+            .tests(QC_TESTS)
+            .quickcheck(prefix_truncate as fn(u8, u8, NonZeroU8) -> TestResult);
     }
 
     #[test]
