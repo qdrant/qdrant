@@ -33,12 +33,14 @@ pub fn maybe_uninit_fill_from<I: IntoIterator>(
     )
 }
 
+pub type InitUninit<'a, T> = (RefDropper<'a, [T]>, &'a mut [MaybeUninit<T>]);
+
 /// Wrapper around [`maybe_uninit_fill_from`] that doesn't leak on drop.
 #[inline(always)]
 pub fn maybe_uninit_fill_from_with_drop<I: IntoIterator>(
     this: &mut [MaybeUninit<I::Item>],
     it: I,
-) -> (RefDropper<'_, [I::Item]>, &mut [MaybeUninit<I::Item>]) {
+) -> InitUninit<'_, I::Item> {
     let (initted, remainder) = maybe_uninit_fill_from(this, it);
     (RefDropper(initted), remainder)
 }
