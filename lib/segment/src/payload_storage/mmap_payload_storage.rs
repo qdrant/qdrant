@@ -5,7 +5,6 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use gridstore::config::StorageOptions;
 use gridstore::{Blob, Gridstore};
-use itertools::Either;
 use serde_json::Value;
 
 use crate::common::Flusher;
@@ -224,21 +223,10 @@ impl PayloadStorage for MmapPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        match self.storage.iter(
-            |point_id, payload| {
-                callback(point_id, &payload).map_err(|e|
-                    // TODO return proper error
-                    std::io::Error::other(
-                        e.to_string(),
-                    ))
-            },
+        self.storage.iter(
+            |point_id, payload| callback(point_id, &payload),
             hw_counter.ref_payload_io_read_counter(),
-        ) {
-            Ok(_) => {}
-            Err(Either::Left(err)) => return Err(OperationError::from(err)),
-            Err(Either::Right(err)) => return Err(OperationError::from(err)),
-        }
-        Ok(())
+        )
     }
 
     fn files(&self) -> Vec<PathBuf> {
