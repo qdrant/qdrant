@@ -7,7 +7,7 @@ use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]
-pub struct ChunkedVectors<T> {
+pub struct VolatileChunkedVectors<T> {
     /// Vector's dimension.
     ///
     /// Each vector will consume `size_of::<T>() * dim` bytes.
@@ -19,7 +19,7 @@ pub struct ChunkedVectors<T> {
     chunks: Vec<Vec<T>>,
 }
 
-impl<T: Copy + Clone + Default> ChunkedVectors<T> {
+impl<T: Copy + Clone + Default> VolatileChunkedVectors<T> {
     pub fn new(dim: usize) -> Self {
         assert_ne!(dim, 0, "The vector's dimension cannot be 0");
         let vector_size = dim * mem::size_of::<T>();
@@ -166,7 +166,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     }
 }
 
-impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {
+impl<T: Clone> TrySetCapacityExact for VolatileChunkedVectors<T> {
     fn try_set_capacity_exact(&mut self, capacity: usize) -> Result<(), TryReserveError> {
         let num_chunks = capacity.div_ceil(self.chunk_capacity);
         let last_chunk_idx = capacity / self.chunk_capacity;
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_chunked_vectors_with_skipped_chunks() {
-        let mut vectors = ChunkedVectors::new(3);
+        let mut vectors = VolatileChunkedVectors::new(3);
         assert_eq!(vectors.get_opt(0), None);
 
         vectors.insert(0, &[1, 2, 3]).unwrap();
