@@ -358,7 +358,7 @@ mod tests {
 
     use itertools::Itertools;
     use rand::rngs::StdRng;
-    use rand::{RngCore, SeedableRng};
+    use rand::{Rng, SeedableRng};
     use serde::de::DeserializeOwned;
     use tempfile::Builder;
 

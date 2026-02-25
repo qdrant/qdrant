@@ -402,7 +402,7 @@ mod test {
     use api::rest::Bm25Config;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use serde_json::{Value, json};
 
     use super::*;

@@ -3,9 +3,9 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools as _;
+use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
-use rand::{Rng as _, SeedableRng as _};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::*;
@@ -280,7 +280,7 @@ impl EdgeShard {
             ))
         })?;
 
-        let mut rng = StdRng::from_os_rng();
+        let mut rng = rand::make_rng::<StdRng>();
         let mut random_point_ids = HashSet::with_capacity(limit);
 
         // Randomly sample points in two stages

@@ -575,7 +575,7 @@ mod tests {
     use std::iter;
 
     use rand::rngs::{SmallRng, StdRng};
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use tempfile::{Builder, NamedTempFile};
 
     use super::*;

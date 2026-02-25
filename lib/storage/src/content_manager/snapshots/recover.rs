@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use collection::collection::Collection;
 use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
 use collection::common::sha_256::hashes_equal;
@@ -237,6 +239,18 @@ async fn _do_recover_from_snapshot(
         ReplicaState::Partial
     };
 
+    let local_states_before_recovery: HashMap<_, _> = state
+        .shards
+        .iter()
+        .filter_map(|(&shard_id, shard_info)| {
+            shard_info
+                .replicas
+                .get(&this_peer_id)
+                .copied()
+                .map(|replica_state| (shard_id, replica_state))
+        })
+        .collect();
+
     // Deactivate collection local shards during recovery
     for (shard_id, shard_info) in &state.shards {
         let local_shard_state = shard_info.replicas.get(&this_peer_id);
@@ -283,6 +297,33 @@ async fn _do_recover_from_snapshot(
 
         if !recovered {
             log::debug!("Shard {shard_id} is not in snapshot");
+
+            // This peer may have been switched into recovery state before restore. If the snapshot
+            // does not contain local data for this shard, revert to previous state so the replica
+            // is not left stuck in `Partial`/`ManualRecovery`.
+            if let Some(previous_state) = local_states_before_recovery.get(shard_id).copied()
+                && previous_state != recovery_state
+            {
+                if toc.is_distributed() {
+                    toc.send_set_replica_state_proposal(
+                        collection_pass.to_string(),
+                        this_peer_id,
+                        *shard_id,
+                        previous_state,
+                        Some(recovery_state),
+                    )?;
+                } else {
+                    collection
+                        .set_shard_replica_state(
+                            *shard_id,
+                            this_peer_id,
+                            previous_state,
+                            Some(recovery_state),
+                        )
+                        .await?;
+                }
+            }
+
             continue;
         }
 

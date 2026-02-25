@@ -6,7 +6,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use tempfile::Builder;
 

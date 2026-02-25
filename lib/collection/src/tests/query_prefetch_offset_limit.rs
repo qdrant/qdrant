@@ -5,7 +5,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
 use shard::query::query_enum::QueryEnum;

@@ -3,7 +3,7 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use tokio::select;
 use tonic::codegen::InterceptedService;
 use tonic::service::Interceptor;

@@ -6,7 +6,7 @@ use ahash::AHashMap;
 use api::rest::OrderByInterface;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,

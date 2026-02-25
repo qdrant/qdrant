@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use segment::fixtures::payload_fixtures::random_filter;
 use segment::fixtures::segment_fixtures::random_segment;
 use tempfile::Builder;

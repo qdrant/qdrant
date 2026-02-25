@@ -240,7 +240,7 @@ pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> Sco
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 

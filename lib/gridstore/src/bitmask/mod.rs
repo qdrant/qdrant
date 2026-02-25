@@ -555,7 +555,7 @@ mod tests {
     use bitvec::bits;
     use bitvec::vec::BitVec;
     use proptest::prelude::*;
-    use rand::{Rng, rng};
+    use rand::{RngExt, rng};
 
     use crate::config::{DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
 

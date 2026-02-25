@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::utils::sampler;
@@ -128,7 +128,7 @@ fn scoring_equivalency(
         DIMS,
         &mut raw_storage,
         NUM_POINTS,
-        &mut gen_sampler(&mut rng.clone()),
+        &mut gen_sampler(&mut rng),
     )?;
 
     let mut id_tracker = create_id_tracker_fixture(NUM_POINTS);
@@ -184,8 +184,7 @@ fn scoring_equivalency(
             HardwareCounterCell::new(),
         )?;
 
-        let points =
-            (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
+        let points = (0..other_storage.total_vector_count() as _).sample(&mut rng, SAMPLE_SIZE);
 
         let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
         let other_scores = other_scorer

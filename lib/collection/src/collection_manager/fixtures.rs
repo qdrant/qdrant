@@ -3,7 +3,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use rand::Rng;
+use rand::RngExt;
 use rand::rngs::ThreadRng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;

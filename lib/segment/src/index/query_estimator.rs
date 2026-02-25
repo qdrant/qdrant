@@ -109,11 +109,21 @@ pub fn combine_should_estimations(
     }
 }
 
+/// Estimate cardinality for `min_should` (at least `min_count` conditions).
+///
+/// Returns zero immediately when `min_count` exceeds the number of
+/// estimations, which matches filter semantics and avoids generating
+/// impossible combinations.
 pub fn combine_min_should_estimations(
     estimations: &[CardinalityEstimation],
     min_count: usize,
     total: usize,
 ) -> CardinalityEstimation {
+    // Prevent pathological allocation paths in combinations(min_count)
+    if min_count > estimations.len() {
+        return CardinalityEstimation::exact(0);
+    }
+
     /*
     | First estimate cardinality of intersections and then combine the estimations
     | ex) min_count : 2, # of estimations : 4
@@ -469,6 +479,18 @@ mod tests {
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn combine_min_should_min_count_above_len_returns_exact_zero() {
+        let total = 1_000usize;
+        let estimations = vec![
+            CardinalityEstimation::exact(10),
+            CardinalityEstimation::exact(20),
+        ];
+
+        let estimation = combine_min_should_estimations(&estimations, estimations.len() + 1, total);
+        assert_eq!(estimation, CardinalityEstimation::exact(0));
     }
 
     #[test]

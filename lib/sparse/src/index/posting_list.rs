@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_random_delete() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand::seq::SliceRandom;
         let mut rng = rand::rng();
         for _ in 0..1000 {

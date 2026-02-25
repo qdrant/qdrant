@@ -4,7 +4,7 @@ use std::collections::Bound::{Excluded, Included, Unbounded};
 
 use itertools::Itertools;
 use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_distr::StandardNormal;
 use serde::Serialize;
 use serde::de::DeserializeOwned;

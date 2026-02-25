@@ -6,7 +6,7 @@ use std::cell::LazyCell;
 use common::iterator_ext::IteratorExt as _;
 use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
-use rand::{Rng, rng};
+use rand::{RngExt, rng};
 use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::SearchAlgorithm;
 use segment::spaces::metric::Metric;

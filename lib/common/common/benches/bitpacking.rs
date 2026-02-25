@@ -6,7 +6,7 @@ use common::bitpacking_ordered;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
-use rand::{Rng as _, SeedableRng as _};
+use rand::{RngExt, SeedableRng as _};
 use zerocopy::IntoBytes;
 
 pub fn bench_bitpacking(c: &mut Criterion) {

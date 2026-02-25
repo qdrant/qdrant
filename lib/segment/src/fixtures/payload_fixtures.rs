@@ -4,9 +4,9 @@ use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use rand::Rng;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::seq::IndexedRandom;
+use rand::{Rng, RngExt};
 use serde_json::{Value, json};
 
 use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, VectorElementType};
