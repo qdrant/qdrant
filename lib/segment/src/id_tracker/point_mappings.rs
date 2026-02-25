@@ -30,7 +30,7 @@ pub struct PointMappings {
     /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
     /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
-    deleted: BitVec,
+    pub(crate) deleted: BitVec,
     mappings_state: RwLock<PointMappingsState>,
 }
 

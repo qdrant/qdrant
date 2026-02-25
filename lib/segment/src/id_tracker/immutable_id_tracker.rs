@@ -502,6 +502,10 @@ impl IdTracker for ImmutableIdTracker {
     fn immutable_files(&self) -> Vec<PathBuf> {
         vec![Self::mappings_file_path(&self.path)]
     }
+
+    fn deleted_point_bitslice(&self) -> &common::atomic_bitvec::BitSlice {
+        self.mappings.deleted()
+    }
 }
 
 #[cfg(test)]

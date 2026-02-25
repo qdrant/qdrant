@@ -175,6 +175,9 @@ pub trait IdTracker: fmt::Debug {
     fn immutable_files(&self) -> Vec<PathBuf> {
         Vec::new()
     }
+
+    // TODO no lock needed, move to PointMappings
+    fn deleted_point_bitslice(&self) -> &BitSlice;
 }
 
 /// Enum holding a reference to point mappings from an ID tracker.
@@ -200,6 +203,7 @@ impl<'a> PointMappingsRefEnum<'a> {
     /// Iterate over internal IDs (offsets).
     ///
     /// Excludes soft deleted points.
+    // TODO move to `IdTracker` as it requires only length
     pub fn iter_internal(&'a self) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match self {
             PointMappingsRefEnum::Plain(m) => m.iter_internal(),
@@ -243,16 +247,6 @@ impl<'a> PointMappingsRefEnum<'a> {
         Box::new(
             iter.filter(move |point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
         )
-    }
-
-    // TODO no lock needed, move to PointMappings
-    pub fn deleted_point_bitslice(&'a self) -> &'a BitSlice {
-        match self {
-            PointMappingsRefEnum::Plain(points_mappings) => points_mappings.deleted,
-            PointMappingsRefEnum::Compressed(compressed_point_mappings) => {
-                compressed_point_mappings.deleted()
-            }
-        }
     }
 }
 
@@ -494,6 +488,16 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.immutable_files(),
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.immutable_files(),
+        }
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
 }

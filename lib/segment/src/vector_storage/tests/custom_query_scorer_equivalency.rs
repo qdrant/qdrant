@@ -169,12 +169,10 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &gen_sampler);
 
-        let point_mappings = id_tracker.point_mappings();
-
         let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,
-            point_mappings.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
         );
 
         let mut other_scorer = FilteredScorer::new(
@@ -182,7 +180,7 @@ fn scoring_equivalency(
             &other_storage,
             quantized_vectors.as_ref(),
             None,
-            point_mappings.deleted_point_bitslice(),
+            id_tracker.deleted_point_bitslice(),
             HardwareCounterCell::new(),
         )?;
 

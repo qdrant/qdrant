@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering as AtomicOrdering;
 
+use common::atomic_bitvec::BitSlice;
 use common::types::PointOffsetType;
 #[cfg(test)]
 use rand::RngExt;
@@ -178,6 +179,10 @@ impl IdTracker for InMemoryIdTracker {
     fn files(&self) -> Vec<PathBuf> {
         debug_assert!(false, "InMemoryIdTracker should not be persisted");
         vec![]
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        &self.mappings.deleted
     }
 }
 

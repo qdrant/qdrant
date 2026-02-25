@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::atomic_bitvec::BitSlice;
 use common::atomic_bitvec::prelude::BitVec;
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
@@ -183,7 +184,7 @@ impl MutableIdTracker {
         Ok(Self {
             segment_path,
             internal_to_version,
-            mappings: mappings.into(),
+            mappings,
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
@@ -418,6 +419,10 @@ impl IdTracker for MutableIdTracker {
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         Self::segment_files(&self.segment_path)
+    }
+
+    fn deleted_point_bitslice(&self) -> &BitSlice {
+        &self.mappings.deleted
     }
 }
 
@@ -1580,6 +1585,10 @@ pub(super) mod tests {
         assert_eq!(fs::metadata(&path).unwrap().len(), 29);
 
         let versions = load_versions(&path).unwrap();
+        let versions: Vec<_> = versions
+            .iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect();
         assert_eq!(versions, vec![10, 20, 30]);
 
         // File must NOT be truncated by load (read-only operation)
@@ -1612,6 +1621,11 @@ pub(super) mod tests {
         assert_eq!(file_len % VERSION_ELEMENT_SIZE, 0);
 
         let versions = load_versions(&path).unwrap();
+        let versions: Vec<_> = versions
+            .iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect();
+
         assert_eq!(versions.len(), 2);
         assert_eq!(versions[0], 10); // untouched
         assert_eq!(versions[1], 99); // updated
@@ -1631,6 +1645,10 @@ pub(super) mod tests {
         store_version_changes(&path, &changes).unwrap();
 
         let versions = load_versions(&path).unwrap();
+        let versions: Vec<_> = versions
+            .iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect();
         assert_eq!(versions, vec![100, 200]);
 
         // Now write at internal_id=5, leaving a gap at 2,3,4
@@ -1639,6 +1657,11 @@ pub(super) mod tests {
         store_version_changes(&path, &changes).unwrap();
 
         let versions = load_versions(&path).unwrap();
+        let versions: Vec<_> = versions
+            .iter()
+            .map(|cell| cell.load(AtomicOrdering::Relaxed))
+            .collect();
+
         assert_eq!(versions.len(), 6);
         assert_eq!(versions[0], 100);
         assert_eq!(versions[1], 200);

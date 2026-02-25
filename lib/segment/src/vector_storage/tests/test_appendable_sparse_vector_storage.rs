@@ -77,12 +77,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         positives: vec![vector.into()],
         negatives: vec![],
     });
-    let point_mappings = id_tracker.point_mappings();
     // Because nearest search for raw scorer is incorrect,
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        point_mappings.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(),
         5,
     );
     let closest = searcher
@@ -171,11 +170,10 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         positives: vec![vector.into()],
         negatives: vec![],
     });
-    let point_mappings = id_tracker.point_mappings();
     let searcher = BatchFilteredSearcher::new_for_test(
         &[query_vector],
         storage,
-        point_mappings.deleted_point_bitslice(),
+        id_tracker.deleted_point_bitslice(),
         5,
     );
     let results = searcher
