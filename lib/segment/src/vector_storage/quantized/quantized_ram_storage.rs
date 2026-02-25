@@ -11,7 +11,7 @@ use fs_err::File;
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 
 #[derive(Debug)]
 pub struct QuantizedRamStorage {

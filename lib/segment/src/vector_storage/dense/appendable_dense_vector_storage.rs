@@ -17,7 +17,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
-use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
     AccessPattern, DenseVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
