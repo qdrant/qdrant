@@ -15,6 +15,7 @@ use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_multipart::form::MultipartFormConfig;
 use actix_multipart::form::tempfile::TempFileConfig;
+use actix_web::http::KeepAlive;
 use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, error, get, web};
 use actix_web_extras::middleware::Condition as ConditionEx;
@@ -170,9 +171,9 @@ pub fn init(
 
             app
         })
-        .keep_alive(Duration::from_secs(
+        .keep_alive(KeepAlive::from(Duration::from_secs(
             settings.service.http_keep_alive_timeout_sec,
-        ))
+        )))
         .client_request_timeout(Duration::from_secs(
             settings.service.http_client_request_timeout_sec,
         ))

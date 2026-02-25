@@ -617,6 +617,9 @@ mod tests {
         }
 
         let config = Settings::new(Some(path.into())).unwrap();
+        config
+            .validate()
+            .expect("custom HTTP transport timeouts must pass validation");
 
         assert_eq!(config.service.http_keep_alive_timeout_sec, 120);
         assert_eq!(config.service.http_client_request_timeout_sec, 45);
