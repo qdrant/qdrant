@@ -139,9 +139,10 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Install ring as the default rustls CryptoProvider before any TLS code runs.
-    // Required because both `ring` and `aws-lc-rs` features are enabled on rustls
-    // (via transitive dependencies), and rustls cannot auto-select when both are present.
+    // Install ring as the default rustls CryptoProvider.
+    // reqwest 0.13 with "rustls-no-provider" doesn't compile aws-lc-rs
+    // but it also does not bundle a provider,
+    // so we must install one before any TLS client is built.
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install default CryptoProvider");
