@@ -2,12 +2,12 @@ use std::path::PathBuf;
 use std::sync::atomic::Ordering as AtomicOrdering;
 
 use common::types::PointOffsetType;
-use parking_lot::RwLock;
 #[cfg(test)]
 use rand::RngExt;
 #[cfg(test)]
 use rand::rngs::StdRng;
 
+use super::point_mappings::PointMappingsReadHolder;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::point_mappings::PointMappings;
@@ -18,7 +18,7 @@ use crate::types::{AtomicSeqNumberType, PointIdType, SeqNumberType};
 #[derive(Debug, Default)]
 pub struct InMemoryIdTracker {
     internal_to_version: Vec<AtomicSeqNumberType>,
-    mappings: RwLock<PointMappings>,
+    mappings: PointMappings,
 }
 
 impl InMemoryIdTracker {
@@ -27,7 +27,7 @@ impl InMemoryIdTracker {
     }
 
     pub fn into_internal(self) -> (Vec<AtomicSeqNumberType>, PointMappings) {
-        (self.internal_to_version, self.mappings.into_inner())
+        (self.internal_to_version, self.mappings)
     }
 
     /// Generate a random [`InMemoryIdTracker`].
@@ -39,7 +39,7 @@ impl InMemoryIdTracker {
             internal_to_version: (0..size)
                 .map(|_| AtomicSeqNumberType::new(rand.random()))
                 .collect(),
-            mappings: RwLock::new(mappings),
+            mappings,
         };
 
         // Delete points after creating the id tracker completely to maintain consistency.
@@ -57,6 +57,10 @@ impl InMemoryIdTracker {
         {
             internal_version_cell.store(version, AtomicOrdering::Release);
         }
+    }
+
+    pub fn read(&self) -> PointMappingsReadHolder<'_> {
+        self.mappings.read()
     }
 }
 
@@ -99,7 +103,7 @@ impl IdTracker for InMemoryIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        let _replaced_internal_id = self.mappings.get_mut().set_link(external_id, internal_id);
+        let _replaced_internal_id = self.mappings.set_link(external_id, internal_id);
         Ok(())
     }
 
@@ -108,15 +112,17 @@ impl IdTracker for InMemoryIdTracker {
         if let Some(internal_id) = self.internal_id(external_id) {
             self.set_internal_deleted(internal_id);
         }
-        self.mappings.get_mut().drop(external_id);
+        self.mappings.drop(external_id);
         Ok(())
     }
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
-        if let Some(external_id) = self.mappings.get_mut().external_id(internal_id) {
-            self.mappings.get_mut().drop(external_id);
-            self.set_internal_deleted(internal_id);
+        let read_state = self.mappings.read();
+        if let Some(external_id) = read_state.external_id(internal_id) {
+            drop(read_state);
+
+            self.mappings.drop(external_id);
         }
         Ok(())
     }
@@ -215,9 +221,13 @@ mod test {
             // Assert the dropped point's version has been set to `DELETED_POINT_VERSION`.
             assert_eq!(
                 id_tracker.internal_version(internal_id).unwrap(),
-                DELETED_POINT_VERSION
+                DELETED_POINT_VERSION,
+                "{internal_id} of [{available_point_id}, {deleted_point_id}] at\n {id_tracker:#?}",
             );
-            assert!(id_tracker.external_id(internal_id).is_none());
+            assert!(
+                id_tracker.external_id(internal_id).is_none(),
+                "{internal_id} of [{available_point_id}, {deleted_point_id}] at\n {id_tracker:#?}"
+            );
         }
     }
 }

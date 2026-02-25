@@ -12,10 +12,10 @@ use common::is_alive_lock::IsAliveLock;
 use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use uuid::Uuid;
 
-use super::point_mappings::FileEndianess;
+use super::point_mappings::{FileEndianess, PointMappingsReadHolder};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
@@ -101,7 +101,7 @@ impl MappingChangeType {
 pub struct MutableIdTracker {
     segment_path: PathBuf,
     internal_to_version: Vec<AtomicSeqNumberType>,
-    pub(super) mappings: RwLock<PointMappings>,
+    pub(super) mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
     pending_versions: Arc<Mutex<BTreeMap<PointOffsetType, SeqNumberType>>>,
@@ -161,17 +161,20 @@ impl MutableIdTracker {
             vec![]
         };
 
-        // Compare internal point mappings and versions count, report warning if we don't
-        debug_assert!(
-            mappings.total_point_count() >= internal_to_version.len(),
-            "can never have more versions than internal point mappings",
-        );
-        if mappings.total_point_count() != internal_to_version.len() {
-            log::warn!(
-                "Mutable ID tracker mappings and versions count mismatch, could have been partially flushed, assuming automatic recovery by WAL ({} mappings, {} versions)",
-                mappings.total_point_count(),
-                internal_to_version.len(),
+        {
+            let mappings_state = mappings.read();
+            // Compare internal point mappings and versions count, report warning if we don't
+            debug_assert!(
+                mappings_state.total_point_count() >= internal_to_version.len(),
+                "can never have more versions than internal point mappings",
             );
+            if mappings_state.total_point_count() != internal_to_version.len() {
+                log::warn!(
+                    "Mutable ID tracker mappings and versions count mismatch, could have been partially flushed, assuming automatic recovery by WAL ({} mappings, {} versions)",
+                    mappings_state.total_point_count(),
+                    internal_to_version.len(),
+                );
+            }
         }
 
         #[cfg(debug_assertions)]
@@ -202,6 +205,10 @@ impl MutableIdTracker {
         {
             internal_version_cell.store(version, AtomicOrdering::Release);
         }
+    }
+
+    pub fn read(&self) -> PointMappingsReadHolder<'_> {
+        self.mappings.read()
     }
 }
 
@@ -236,6 +243,7 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
+    // TODO make the lock explicit?
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         self.mappings.read().internal_id(&external_id)
     }
@@ -249,7 +257,7 @@ impl IdTracker for MutableIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        self.mappings.get_mut().set_link(external_id, internal_id);
+        self.mappings.set_link(external_id, internal_id);
         self.pending_mappings
             .lock()
             .push(MappingChange::Insert(external_id, internal_id));
@@ -257,7 +265,7 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = self.mappings.get_mut().drop(external_id);
+        let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
             .push(MappingChange::Delete(external_id));
@@ -268,9 +276,11 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        let mappings = self.mappings.get_mut();
-        if let Some(external_id) = mappings.external_id(internal_id) {
-            mappings.drop(external_id);
+        let read_state = self.mappings.read();
+        if let Some(external_id) = read_state.external_id(internal_id) {
+            drop(read_state);
+
+            self.mappings.drop(external_id);
             self.pending_mappings
                 .lock()
                 .push(MappingChange::Delete(external_id));
@@ -1020,10 +1030,7 @@ pub(super) mod tests {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (old_mappings, old_versions) = {
             let id_tracker = make_mutable_tracker(segment_dir.path());
-            (
-                id_tracker.mappings.into_inner(),
-                id_tracker.internal_to_version,
-            )
+            (id_tracker.mappings, id_tracker.internal_to_version)
         };
 
         let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
@@ -1045,7 +1052,7 @@ pub(super) mod tests {
             );
         }
 
-        assert_eq!(old_mappings, *loaded_id_tracker.mappings.read());
+        assert_eq!(old_mappings.read(), loaded_id_tracker.mappings.read());
 
         loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
     }
@@ -1182,7 +1189,7 @@ pub(super) mod tests {
             id_tracker.drop(point_to_delete).unwrap();
             id_tracker.mapping_flusher()().unwrap();
             id_tracker.versions_flusher()().unwrap();
-            id_tracker.mappings.into_inner()
+            id_tracker.mappings
         };
 
         // Point should still be gone
@@ -1190,6 +1197,7 @@ pub(super) mod tests {
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
 
         old_mappings
+            .read()
             .iter_internal_raw()
             .zip(id_tracker.mappings.read().iter_internal_raw())
             .for_each(
@@ -1232,7 +1240,7 @@ pub(super) mod tests {
     fn test_point_mappings_deserializing_special() {
         // Empty reader creates empty mappings
         let buf = Cursor::new(b"");
-        assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
+        assert_eq!(read_mappings(buf).unwrap().read().total_point_count(), 0);
 
         // Corrupt if reading invalid type byte
         let buf = Cursor::new(b"\x00");
@@ -1248,13 +1256,14 @@ pub(super) mod tests {
 
         // Empty if change is not fully written
         let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00");
-        assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
+        assert_eq!(read_mappings(buf).unwrap().read().total_point_count(), 0);
 
         // Exactly one entry
         let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00");
         assert_eq!(
             read_mappings(buf)
                 .unwrap()
+                .read()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1271,8 +1280,8 @@ pub(super) mod tests {
         // Exactly one entry and an incomplete second one
         let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00");
         let mappings = read_mappings(buf).unwrap();
-        assert_eq!(mappings.total_point_count(), 1);
-        assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+        assert_eq!(mappings.read().total_point_count(), 1);
+        assert_eq!(mappings.read().internal_id(&PointIdType::NumId(1)), Some(0));
     }
 
     /// Test that `operation_size` returns the correct size
@@ -1334,6 +1343,7 @@ pub(super) mod tests {
             load_mappings(&mappings_path)
                 .unwrap()
                 .0
+                .read()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1350,6 +1360,7 @@ pub(super) mod tests {
             load_mappings(&mappings_path)
                 .unwrap()
                 .0
+                .read()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1366,6 +1377,7 @@ pub(super) mod tests {
             load_mappings(&mappings_path)
                 .unwrap()
                 .0
+                .read()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1381,6 +1393,7 @@ pub(super) mod tests {
             load_mappings(&mappings_path)
                 .unwrap()
                 .0
+                .read()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -1391,7 +1404,7 @@ pub(super) mod tests {
         let mut id_tracker = InMemoryIdTracker::new();
 
         for value in TEST_POINTS.iter() {
-            let internal_id = id_tracker.total_point_count() as PointOffsetType;
+            let internal_id = id_tracker.read().total_point_count() as PointOffsetType;
             id_tracker.set_link(*value, internal_id).unwrap();
             id_tracker
                 .set_internal_version(internal_id, DEFAULT_VERSION)
@@ -1406,7 +1419,7 @@ pub(super) mod tests {
             MutableIdTracker::open(path).expect("failed to open mutable ID tracker");
 
         for value in TEST_POINTS.iter() {
-            let internal_id = id_tracker.total_point_count() as PointOffsetType;
+            let internal_id = id_tracker.read().total_point_count() as PointOffsetType;
             id_tracker.set_link(*value, internal_id).unwrap();
             id_tracker
                 .set_internal_version(internal_id, DEFAULT_VERSION)
@@ -1434,8 +1447,8 @@ pub(super) mod tests {
             mutable_id_tracker.available_point_count(),
         );
         assert_eq!(
-            in_memory_id_tracker.total_point_count(),
-            mutable_id_tracker.total_point_count(),
+            in_memory_id_tracker.read().total_point_count(),
+            mutable_id_tracker.read().total_point_count(),
         );
 
         for (internal, external) in TEST_POINTS.iter().enumerate() {

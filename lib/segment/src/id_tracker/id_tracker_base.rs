@@ -6,17 +6,16 @@ use common::atomic_bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
 use common::guards::NestedGuard;
 use common::types::PointOffsetType;
-use parking_lot::RwLockReadGuard;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
 use super::in_memory_id_tracker::InMemoryIdTracker;
 use super::mutable_id_tracker::MutableIdTracker;
+use super::point_mappings::PointMappingsReadHolder;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
-use crate::id_tracker::point_mappings::PointMappings;
 #[cfg(feature = "rocksdb")]
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
@@ -183,7 +182,7 @@ pub trait IdTracker: fmt::Debug {
 /// Provides iteration methods over external/internal IDs without requiring
 /// the `IdTracker` trait to return boxed iterators.
 pub enum PointMappingsRefEnum<'a> {
-    Plain(RwLockReadGuard<'a, PointMappings>),
+    Plain(PointMappingsReadHolder<'a>),
     Compressed(&'a CompressedPointMappings),
 }
 
@@ -246,9 +245,10 @@ impl<'a> PointMappingsRefEnum<'a> {
         )
     }
 
+    // TODO no lock needed, move to PointMappings
     pub fn deleted_point_bitslice(&'a self) -> &'a BitSlice {
         match self {
-            PointMappingsRefEnum::Plain(points_mappings) => points_mappings.deleted(),
+            PointMappingsRefEnum::Plain(points_mappings) => points_mappings.deleted,
             PointMappingsRefEnum::Compressed(compressed_point_mappings) => {
                 compressed_point_mappings.deleted()
             }
