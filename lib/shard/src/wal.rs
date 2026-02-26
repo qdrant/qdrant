@@ -339,10 +339,12 @@ fn read_first_index_file(path: &Path) -> Result<Option<u64>> {
                 path.display()
             ))),
         },
-        _ => Err(WalError::InitWalError(format!(
-            "failed to parse first-index file {}: expected JSON object with ack_index",
-            path.display()
-        ))),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Err(WalError::InitWalError(format!(
+                "failed to parse first-index file {}: expected JSON object with ack_index",
+                path.display()
+            )))
+        }
     }
 }
 
