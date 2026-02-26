@@ -355,6 +355,7 @@ impl UpdateWorkers {
 
             // Track optimizer status
             let new_segment_uuid = Uuid::new_v4();
+
             let (tracker, progress) =
                 Tracker::start(optimizer.name(), new_segment_uuid, segment_infos);
             let tracker_handle = tracker.handle();
@@ -471,6 +472,7 @@ impl UpdateWorkers {
                 segments_path,
                 Some(segment_config.base_segment_config()),
                 payload_index_schema,
+                thresholds_config.deferred_threshold,
                 true,
             )?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);

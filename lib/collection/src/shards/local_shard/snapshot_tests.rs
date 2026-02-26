@@ -47,6 +47,7 @@ fn test_snapshot_all() {
         segments_dir.path(),
         None,
         schema,
+        None,
         temp_dir.path(),
         &tar,
         SnapshotFormat::Regular,

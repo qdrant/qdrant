@@ -237,7 +237,7 @@ fn test_byte_storage_binary_quantization_hnsw(
 
     let int_key = "int";
 
-    let mut segment_byte = build_segment(dir_byte.path(), &config_byte, true).unwrap();
+    let mut segment_byte = build_segment(dir_byte.path(), &config_byte, None, true).unwrap();
     // check that `segment_byte` uses byte or half storage
     {
         let borrowed_storage = segment_byte.vector_data[DEFAULT_VECTOR_NAME]

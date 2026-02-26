@@ -152,8 +152,8 @@ fn sparse_index_discover_test() {
         sparse_vector_data: Default::default(),
     };
 
-    let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
-    let mut dense_segment = build_segment(dir.path(), &dense_config, true).unwrap();
+    let mut sparse_segment = build_segment(dir.path(), &sparse_config, None, true).unwrap();
+    let mut dense_segment = build_segment(dir.path(), &dense_config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -277,7 +277,7 @@ fn sparse_index_hardware_measurement_test() {
         payload_storage_type: Default::default(),
     };
 
-    let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
+    let mut sparse_segment = build_segment(dir.path(), &sparse_config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

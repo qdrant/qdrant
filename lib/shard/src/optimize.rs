@@ -153,6 +153,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     factory: &F,
     input_segments: &[LockedSegment], // Segments to optimize/merge into one
     output_segment_uuid: Uuid,        // The UUID of the resulting optimized segment
+    deferred_threshold: Option<usize>, // If set, the optimized segment will be created with deferred internal ids, which allows to defer internal id assignment until the threshold is reached. This can speed up optimization of segments with large number of points.
     proxies: &[LockedSegment],
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
@@ -283,6 +284,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let mut optimized_segment = segment_builder.build(
         segments_path,
         output_segment_uuid,
+        deferred_threshold,
         indexing_permit,
         stopped,
         &mut rng,
@@ -348,6 +350,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     factory: &F,
     optimizing_segments: Vec<LockedSegment>,
     output_segment_uuid: Uuid,
+    deferred_threshold: Option<usize>,
     proxies: &[LockedSegment],
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
@@ -364,6 +367,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
         factory,
         &optimizing_segments,
         output_segment_uuid,
+        deferred_threshold,
         proxies,
         permit,
         resource_budget,
@@ -590,6 +594,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     segment_holder: LockedSegmentHolder,
     input_segment_ids: Vec<SegmentId>,
     output_segment_uuid: Uuid,
+    deferred_threshold: Option<usize>,
     paths: &OptimizationPaths,
     permit: ResourcePermit,
     resource_budget: ResourceBudget,
@@ -712,6 +717,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         factory,
         input_segments,
         output_segment_uuid,
+        deferred_threshold,
         &locked_proxies,
         permit,
         resource_budget,

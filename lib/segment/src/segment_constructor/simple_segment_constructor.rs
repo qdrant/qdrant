@@ -42,6 +42,7 @@ pub fn build_simple_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        None,
         true,
     )
 }
@@ -70,6 +71,7 @@ pub fn build_simple_segment_with_payload_storage(
             sparse_vector_data: Default::default(),
             payload_storage_type,
         },
+        None,
         true,
     )
 }
@@ -113,6 +115,7 @@ pub fn build_multivec_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
+        None,
         true,
     )
 }

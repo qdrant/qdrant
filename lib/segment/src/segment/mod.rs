@@ -22,6 +22,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
 use common::storage_version::StorageVersion;
+use common::types::PointOffsetType;
 use parking_lot::Mutex;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
@@ -93,6 +94,9 @@ pub struct Segment {
     pub error_status: Option<SegmentFailedState>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
+
+    deferred_threshold: Option<usize>,
+    pub(crate) deferred_internal_id: Option<PointOffsetType>,
 }
 
 pub struct VectorData {

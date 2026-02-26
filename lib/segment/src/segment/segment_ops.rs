@@ -652,6 +652,15 @@ impl Segment {
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
+
+    pub(crate) fn update_deferred_internal_id(&mut self) {
+        if !self.is_appendable() || self.config().vector_data.is_empty() {
+            self.deferred_internal_id = None;
+            return;
+        }
+
+        todo!()
+    }
 }
 
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {

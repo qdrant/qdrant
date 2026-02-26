@@ -126,4 +126,5 @@ pub struct OptimizerThresholds {
     pub max_segment_size_kb: usize,
     pub memmap_threshold_kb: usize,
     pub indexing_threshold_kb: usize,
+    pub deferred_threshold: Option<usize>,
 }

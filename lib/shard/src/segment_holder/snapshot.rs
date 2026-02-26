@@ -36,6 +36,7 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        deferred_threshold: Option<usize>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
         SegmentId,
@@ -50,6 +51,7 @@ impl SegmentHolder {
             segments_path,
             segment_config,
             payload_index_schema,
+            deferred_threshold,
             false,
         )?;
 

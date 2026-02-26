@@ -358,6 +358,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     let res = builder.build(
         dir.path(),
         Uuid::new_v4(),
+        None,
         permit,
         &stopped,
         &mut rng,

@@ -599,7 +599,7 @@ fn sparse_vector_index_persistence_test() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -636,7 +636,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path, Uuid::nil(), &stopped).unwrap();
+    let segment = load_segment(&path, Uuid::nil(), None, &stopped).unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,
@@ -771,7 +771,7 @@ fn sparse_vector_test_large_index() {
         )]),
         payload_storage_type: Default::default(),
     };
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment = build_segment(dir.path(), &config, None, true).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

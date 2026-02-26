@@ -466,6 +466,7 @@ impl SegmentBuilder {
         self.build(
             segments_path,
             Uuid::new_v4(),
+            None,
             ResourcePermit::dummy(num_rayon_threads(0) as u32),
             &AtomicBool::new(false),
             &mut rand::rng(),
@@ -480,6 +481,7 @@ impl SegmentBuilder {
         self,
         segments_path: &Path,
         segment_uuid: Uuid,
+        deferred_threshold: Option<usize>,
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
@@ -723,7 +725,8 @@ impl SegmentBuilder {
         let destination_path = segments_path.join(segment_uuid.to_string());
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
-        load_segment(&destination_path, segment_uuid, stopped)
+
+        load_segment(&destination_path, segment_uuid, deferred_threshold, stopped)
     }
 
     fn update_quantization(
