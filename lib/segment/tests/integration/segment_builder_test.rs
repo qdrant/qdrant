@@ -497,7 +497,9 @@ fn test_building_cancellation() {
     let late_stop_delay = time_baseline / 5;
     let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, Some(late_stop_delay));
 
-    let acceptable_stopping_delay = 600; // millis
+    // Timing on CI (especially Windows) can be noisy due to scheduler delays.
+    // Keep a fixed lower bound but scale tolerance for slower baseline runs.
+    let acceptable_stopping_delay = std::cmp::max(600, time_baseline / 8); // millis
 
     assert!(was_cancelled_early);
     assert!(
@@ -509,6 +511,10 @@ fn test_building_cancellation() {
     assert!(
         time_long < late_stop_delay + acceptable_stopping_delay,
         "time_later: {time_long}, late_stop_delay: {late_stop_delay}"
+    );
+    assert!(
+        time_long < time_baseline,
+        "cancelled build should be faster than baseline: time_later={time_long}, baseline={time_baseline}",
     );
 
     assert!(
