@@ -119,6 +119,7 @@ impl IdTracker for InMemoryIdTracker {
 
     fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
+        self.set_internal_deleted(internal_id);
         let read_state = self.mappings.read();
         if let Some(external_id) = read_state.external_id(internal_id) {
             drop(read_state);
