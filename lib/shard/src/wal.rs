@@ -288,7 +288,7 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
 ///
 /// Returns:
 /// - `Ok(Some(ack_index))` for a valid `{"ack_index": <u64>}` payload,
-/// - `Ok(None)` for recoverable placeholder states (`null`, empty content, missing/null `ack_index`),
+/// - `Ok(None)` for recoverable placeholder states (`null`, empty content),
 /// - `Err(..)` for invalid payload shape/type.
 fn read_first_index_file(path: &Path) -> Result<Option<u64>> {
     let raw = fs_err::read_to_string(path).map_err(|err| {
@@ -327,13 +327,10 @@ fn read_first_index_file(path: &Path) -> Result<Option<u64>> {
                     ))
                 })
                 .map(Some),
-            Some(Value::Null) | None => {
-                log::warn!(
-                    "Ignoring first-index file at {} with null/missing ack_index, fallback to WAL bounds",
-                    path.display()
-                );
-                Ok(None)
-            }
+            Some(Value::Null) | None => Err(WalError::InitWalError(format!(
+                "failed to parse first-index file {}: ack_index is required and must be u64",
+                path.display()
+            ))),
             Some(_) => Err(WalError::InitWalError(format!(
                 "failed to parse first-index file {}: ack_index has invalid type",
                 path.display()
@@ -547,6 +544,34 @@ mod tests {
         let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
         assert!(
             err.to_string().contains("ack_index has invalid type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    /// Missing `ack_index` in object payload should fail WAL initialization.
+    fn test_wal_new_fails_on_missing_ack_index_in_object() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{}"#).unwrap();
+
+        let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ack_index is required and must be u64"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    /// Null `ack_index` in object payload should fail WAL initialization.
+    fn test_wal_new_fails_on_null_ack_index_in_object() {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{"ack_index":null}"#).unwrap();
+
+        let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ack_index is required and must be u64"),
             "unexpected error: {err}"
         );
     }
