@@ -39,11 +39,11 @@ pub trait UniversalRead<T: Copy + 'static> {
 }
 
 pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
-    fn write(&mut self, offset: ByteOffset, data: &[T]) -> Result<()>;
+    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()>;
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()>;
 
     fn flusher(&self) -> Flusher;
@@ -72,11 +72,11 @@ impl Default for OpenOptions {
     }
 }
 
-pub type ByteOffset = u64;
+pub type ElementOffset = u64;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ElementsRange {
-    pub start: ByteOffset,
+    pub start: ElementOffset,
     pub length: u64,
 }
 pub type Flusher = Box<dyn FnOnce() -> Result<()> + Send>;

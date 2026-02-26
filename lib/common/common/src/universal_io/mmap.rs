@@ -6,7 +6,7 @@ use crate::mmap::{
     open_write_mmap,
 };
 use crate::universal_io::{
-    ByteOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
+    ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
     UniversalWrite,
 };
 
@@ -126,7 +126,7 @@ impl<T> UniversalWrite<T> for MmapUniversal<T>
 where
     T: Copy + 'static,
 {
-    fn write(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()> {
         let mmap_slice: &mut [T] = &mut self.mmap;
         let data_length = mmap_slice.len();
         let start = offset as usize;
@@ -146,7 +146,7 @@ where
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()> {
         for (offset, data) in offset_data {
             self.write(offset, data)?;
