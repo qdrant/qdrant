@@ -99,7 +99,8 @@ impl<V: Blob> GridstoreReader<V> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.view().get_value::<READ_SEQUENTIAL>(point_offset, hw_counter)
+        self.view()
+            .get_value::<READ_SEQUENTIAL>(point_offset, hw_counter)
     }
 
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {

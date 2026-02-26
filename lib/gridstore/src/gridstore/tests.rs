@@ -403,9 +403,7 @@ fn test_behave_like_hashmap(
             Operation::FlushDelay(delay) => {
                 let mut flush_lock_guard = has_flusher_lock.lock();
                 if *flush_lock_guard {
-                    log::debug!(
-                        "op:{i} Skip flushing because a Flusher has already been created"
-                    );
+                    log::debug!("op:{i} Skip flushing because a Flusher has already been created");
                 } else {
                     log::debug!("op:{i} Scheduling flush in {delay:?}");
                     let flusher = storage.flusher();
@@ -417,10 +415,7 @@ fn test_behave_like_hashmap(
                         .spawn(move || {
                             thread::sleep(delay); // keep flusher alive while other operation are applied
                             let mut flush_lock_guard = flush_lock.lock();
-                            assert!(
-                                *flush_lock_guard,
-                                "there must be a flusher marked as alive"
-                            );
+                            assert!(*flush_lock_guard, "there must be a flusher marked as alive");
                             log::debug!("op:{i} STARTING FLUSH after waiting {delay:?}");
                             match flusher() {
                                 Ok(_) => log::debug!("op:{i} FLUSH DONE"),
@@ -626,10 +621,7 @@ fn test_with_real_hm_data() {
         point_offset
     }
 
-    fn storage_double_pass_is_consistent(
-        storage: &Gridstore<Payload>,
-        right_shift_offset: u32,
-    ) {
+    fn storage_double_pass_is_consistent(storage: &Gridstore<Payload>, right_shift_offset: u32) {
         let csv_path = dataset::Dataset::HMArticles
             .download()
             .expect("download should succeed");
@@ -1029,26 +1021,25 @@ fn test_skip_deferred_flush_after_clear() {
 
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
-    let put_payload =
-        |storage: &mut Gridstore<Payload>, point_offset: u32, payload_value: &str| {
-            let mut payload = Payload::default();
-            payload.0.insert(
-                "key".to_string(),
-                serde_json::Value::String(payload_value.to_string()),
-            );
+    let put_payload = |storage: &mut Gridstore<Payload>, point_offset: u32, payload_value: &str| {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String(payload_value.to_string()),
+        );
 
-            storage
-                .put_value(point_offset, &payload, hw_counter_ref)
-                .unwrap();
-            assert_eq!(storage.pages.read().len(), 1);
+        storage
+            .put_value(point_offset, &payload, hw_counter_ref)
+            .unwrap();
+        assert_eq!(storage.pages.read().len(), 1);
 
-            let hw_counter = HardwareCounterCell::new();
-            let stored_payload = storage
-                .get_value::<false>(point_offset, &hw_counter)
-                .unwrap();
-            assert!(stored_payload.is_some());
-            assert_eq!(stored_payload.unwrap(), payload);
-        };
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage
+            .get_value::<false>(point_offset, &hw_counter)
+            .unwrap();
+        assert!(stored_payload.is_some());
+        assert_eq!(stored_payload.unwrap(), payload);
+    };
 
     // Write enough new pointers so that they don't fit in the default tracker file size
     // On flush, the tracker file will be resized and reopened, significant for this test

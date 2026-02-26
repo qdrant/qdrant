@@ -3,9 +3,6 @@ mod reader;
 mod tests;
 pub(crate) mod view;
 
-pub use reader::GridstoreReader;
-pub use view::GridstoreView;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -18,6 +15,9 @@ use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::RwLock;
+use reader::CONFIG_FILENAME;
+pub use reader::GridstoreReader;
+pub use view::GridstoreView;
 
 use crate::Result;
 use crate::bitmask::Bitmask;
@@ -26,8 +26,6 @@ use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
-
-use reader::CONFIG_FILENAME;
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
@@ -52,10 +50,7 @@ pub struct Gridstore<V> {
 
 impl<V: Blob> Gridstore<V> {
     /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
-    fn with_view<R>(
-        &self,
-        f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R,
-    ) -> R {
+    fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
         f(GridstoreView::new(self.config, &tracker, &pages))
@@ -339,9 +334,8 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = pointer;
 
-        let raw = self.with_view(|view| {
-            view.read_from_pages::<false>(page_id, block_offset, length)
-        })?;
+        let raw =
+            self.with_view(|view| view.read_from_pages::<false>(page_id, block_offset, length))?;
         let decompressed = self.with_view(|view| view.decompress(raw));
         let value = V::from_bytes(&decompressed);
 
