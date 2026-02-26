@@ -12,7 +12,7 @@ use rand::{Rng, RngExt};
 use rstest::rstest;
 use tempfile::Builder;
 
-use super::reader::{compress_lz4, decompress_lz4};
+use super::view::{compress_lz4, decompress_lz4};
 use super::*;
 use crate::blob::Blob;
 use crate::config::{
@@ -243,7 +243,7 @@ fn test_write_across_pages() {
         .unwrap();
 
     let read_value = storage
-        .read_from_pages::<false>(0, block_offset as u32, value_len as u32)
+        .with_view(|view| view.read_from_pages::<false>(0, block_offset as u32, value_len as u32))
         .unwrap();
     assert_eq!(value, read_value);
 }

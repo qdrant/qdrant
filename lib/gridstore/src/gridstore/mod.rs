@@ -1,15 +1,16 @@
 mod reader;
-
 #[cfg(test)]
 mod tests;
+pub(crate) mod view;
 
 pub use reader::GridstoreReader;
+pub use view::GridstoreView;
 
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
 use common::is_alive_lock::IsAliveLock;
@@ -32,35 +33,55 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 
 /// Read-write storage for values of type `V`.
 ///
-/// Wraps [`GridstoreReader`] with write capabilities (bitmask allocation, flushing).
+/// Uses `Arc<RwLock<...>>` for pages and tracker to support concurrent flushing.
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
 pub struct Gridstore<V> {
-    reader: GridstoreReader<V>,
+    pub(super) config: StorageConfig,
+    pub(super) tracker: Arc<RwLock<Tracker>>,
+    pub(super) pages: Arc<RwLock<Vec<Page<MmapUniversal<u8>>>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    bitmask: Arc<RwLock<Bitmask>>,
+    pub(super) bitmask: Arc<RwLock<Bitmask>>,
+    pub(super) base_path: PathBuf,
+    pub(super) _value_type: std::marker::PhantomData<V>,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
     is_alive_flush_lock: IsAliveLock,
 }
 
-impl<V> Deref for Gridstore<V> {
-    type Target = GridstoreReader<V>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.reader
-    }
-}
-
 impl<V: Blob> Gridstore<V> {
+    /// Create a [`GridstoreView`] by locking pages and tracker, then call `f` with the view.
+    fn with_view<R>(
+        &self,
+        f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R,
+    ) -> R {
+        let pages = self.pages.read();
+        let tracker = self.tracker.read();
+        f(GridstoreView::new(self.config, &tracker, &pages))
+    }
+
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut paths = self.reader.files();
+        let tracker = self.tracker.read();
+        let num_pages = self.pages.read().len();
+
+        let mut paths = Vec::with_capacity(num_pages + 1);
+        for tracker_file in tracker.files() {
+            paths.push(tracker_file);
+        }
+        for page_id in 0..num_pages as PageId {
+            paths.push(self.page_path(page_id));
+        }
+        paths.push(self.base_path.join(CONFIG_FILENAME));
         for bitmask_file in self.bitmask.read().files() {
             paths.push(bitmask_file);
         }
         paths
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![self.base_path.join(CONFIG_FILENAME)]
     }
 
     /// Opens an existing storage, or initializes a new one.
@@ -101,13 +122,11 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = Bitmask::create(&base_path, config)?;
 
         let storage = Self {
-            reader: GridstoreReader {
-                tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
-                pages: Default::default(),
-                base_path,
-                config,
-                _value_type: std::marker::PhantomData,
-            },
+            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
+            pages: Default::default(),
+            base_path,
+            config,
+            _value_type: std::marker::PhantomData,
             bitmask: Arc::new(RwLock::new(bitmask)),
             is_alive_flush_lock: IsAliveLock::new(),
         };
@@ -127,14 +146,24 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
-        let (config, tracker) = GridstoreReader::<V>::read_config_and_tracker(&base_path)?;
+        let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
         let bitmask = Bitmask::open(&base_path, config)?;
         let num_pages = bitmask.infer_num_pages();
-        let reader = GridstoreReader::from_parts(base_path, config, tracker, num_pages)?;
+
+        let mut pages = Vec::with_capacity(num_pages);
+        for page_id in 0..num_pages as PageId {
+            let page_path = base_path.join(format!("page_{page_id}.dat"));
+            let page = Page::<MmapUniversal<u8>>::open(&page_path)?;
+            pages.push(page);
+        }
 
         Ok(Self {
-            reader,
+            config,
+            tracker: Arc::new(RwLock::new(tracker)),
+            pages: Arc::new(RwLock::new(pages)),
             bitmask: Arc::new(RwLock::new(bitmask)),
+            base_path,
+            _value_type: std::marker::PhantomData,
             is_alive_flush_lock: IsAliveLock::new(),
         })
     }
@@ -270,7 +299,7 @@ impl<V: Blob> Gridstore<V> {
         // so will never reuse such space, but data will not be corrupted.
 
         let value_bytes = value.to_bytes();
-        let comp_value = self.compress(value_bytes);
+        let comp_value = self.with_view(|view| view.compress(value_bytes));
         let value_size = comp_value.len();
 
         hw_counter.incr_delta(value_size);
@@ -310,8 +339,10 @@ impl<V: Blob> Gridstore<V> {
             length,
         } = pointer;
 
-        let raw = self.read_from_pages::<false>(page_id, block_offset, length)?;
-        let decompressed = self.decompress(raw);
+        let raw = self.with_view(|view| {
+            view.read_from_pages::<false>(page_id, block_offset, length)
+        })?;
+        let decompressed = self.with_view(|view| view.decompress(raw));
         let value = V::from_bytes(&decompressed);
 
         Ok(Some(value))
@@ -365,9 +396,45 @@ impl<V: Blob> Gridstore<V> {
     pub fn get_storage_size_bytes(&self) -> usize {
         self.bitmask.read().get_storage_size_bytes()
     }
+
+    pub fn get_value<const READ_SEQUENTIAL: bool>(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<Option<V>> {
+        self.with_view(|view| view.get_value::<READ_SEQUENTIAL>(point_offset, hw_counter))
+    }
+
+    pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+        self.tracker.read().get(point_offset)
+    }
+
+    pub fn max_point_offset(&self) -> PointOffset {
+        self.tracker.read().pointer_count()
+    }
+
+    pub fn iter<F, E>(
+        &self,
+        callback: F,
+        hw_counter: HwMetricRefCounter,
+    ) -> std::result::Result<(), E>
+    where
+        F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+        E: From<GridstoreError>,
+    {
+        self.with_view(|view| view.iter(callback, hw_counter))
+    }
 }
 
 impl<V> Gridstore<V> {
+    fn next_page_id(&self) -> PageId {
+        self.pages.read().len() as PageId
+    }
+
+    fn page_path(&self, page_id: u32) -> PathBuf {
+        self.base_path.join(format!("page_{page_id}.dat"))
+    }
+
     #[inline]
     fn blocks_for_value(value_size: usize, block_size: usize) -> u32 {
         value_size.div_ceil(block_size).try_into().unwrap()
@@ -459,14 +526,19 @@ impl<V> Gridstore<V> {
 
     /// Populate all pages, tracker, and bitmask in the mmap.
     pub fn populate(&self) -> Result<()> {
-        self.reader.populate()?;
+        for page in self.pages.read().iter() {
+            page.populate()?;
+        }
+        self.tracker.read().populate()?;
         self.bitmask.read().populate()?;
         Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> std::io::Result<()> {
-        self.reader.clear_cache()?;
+        for page in self.pages.read().iter() {
+            page.clear_cache()?;
+        }
         self.bitmask.read().clear_cache()?;
         Ok(())
     }
