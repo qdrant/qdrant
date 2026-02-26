@@ -399,6 +399,7 @@ impl<V: Blob> Gridstore<V> {
         self.with_view(|view| view.get_value::<READ_SEQUENTIAL>(point_offset, hw_counter))
     }
 
+    #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         self.tracker.read().get(point_offset)
     }
