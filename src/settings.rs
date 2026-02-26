@@ -643,6 +643,10 @@ mod tests {
             .expect("absolute custom config must pass validation");
 
         assert_eq!(config.service.http_port, 7666);
+        assert!(
+            config.load_errors.is_empty(),
+            "absolute custom config path should not emit load warnings"
+        );
     }
 
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
