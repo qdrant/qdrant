@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::borrow::Cow;
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
@@ -72,7 +73,7 @@ pub enum GraphLinksFormatParam<'a> {
 pub trait GraphLinksVectors {
     /// Base vectors will be included once per point on level 0.
     /// The layout of each vector must correspond to [`VectorLayout::base`].
-    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]>;
+    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>>;
 
     /// Link vectors will be included for each link per point.
     /// The layout of each vector must correspond to [`VectorLayout::link`].
@@ -116,7 +117,7 @@ impl<'a> StorageGraphLinksVectors<'a> {
 impl<'a> GraphLinksVectors for StorageGraphLinksVectors<'a> {
     /// Note: uses [`Sequential`] because [`serializer::serialize_graph_links`]
     /// traverses base vectors in a sequential order.
-    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
+    fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
         self.vector_storage
             .get_vector_bytes_opt::<Sequential>(point_id)
             .ok_or_else(|| {
@@ -380,8 +381,8 @@ mod tests {
     }
 
     impl GraphLinksVectors for TestGraphLinksVectors {
-        fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
-            Ok(&self.base_vectors[point_id as usize])
+        fn get_base_vector(&self, point_id: PointOffsetType) -> OperationResult<Cow<'_, [u8]>> {
+            Ok(Cow::Borrowed(&self.base_vectors[point_id as usize]))
         }
 
         fn get_link_vector(&self, point_id: PointOffsetType) -> OperationResult<&[u8]> {
@@ -425,7 +426,10 @@ mod tests {
             let links: Vec<_> = if let Some(vectors) = vectors {
                 let (base_vector, iter) = right.links_with_vectors(point_id, level);
                 if level == 0 {
-                    assert_eq!(base_vector, vectors.get_base_vector(point_id).unwrap());
+                    assert_eq!(
+                        base_vector,
+                        vectors.get_base_vector(point_id).unwrap().as_ref()
+                    );
                 } else {
                     assert!(base_vector.is_empty());
                 }

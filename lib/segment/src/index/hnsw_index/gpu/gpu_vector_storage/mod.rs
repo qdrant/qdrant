@@ -501,9 +501,9 @@ impl GpuVectorStorage {
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
-                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
+                    VectorElementTypeHalf::slice_from_float_cow(
                         vector_storage.get_dense::<Random>(id as PointOffsetType),
-                    ))
+                    )
                 }),
                 None,
                 None,
@@ -529,9 +529,9 @@ impl GpuVectorStorage {
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
-                    VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(
+                    VectorElementTypeHalf::slice_to_float_cow(
                         vector_storage.get_dense::<Random>(id as PointOffsetType),
-                    ))
+                    )
                 }),
                 None,
                 None,
@@ -552,7 +552,7 @@ impl GpuVectorStorage {
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
             (0..vector_storage.total_vector_count())
-                .map(|id| Cow::Borrowed(vector_storage.get_dense::<Random>(id as PointOffsetType))),
+                .map(|id| vector_storage.get_dense::<Random>(id as PointOffsetType)),
             None,
             None,
             stopped,

@@ -70,7 +70,7 @@ impl<
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
         self.hardware_counter.vector_io_read().incr();
-        TMetric::similarity(&self.query, self.vector_storage.get_dense::<Random>(idx))
+        TMetric::similarity(&self.query, &self.vector_storage.get_dense::<Random>(idx))
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
@@ -96,7 +96,7 @@ impl<
         self.hardware_counter.cpu_counter().incr();
         let v1 = self.vector_storage.get_dense::<Random>(point_a);
         let v2 = self.vector_storage.get_dense::<Random>(point_b);
-        TMetric::similarity(v1, v2)
+        TMetric::similarity(&v1, &v2)
     }
 
     type SupportsBytes = True;

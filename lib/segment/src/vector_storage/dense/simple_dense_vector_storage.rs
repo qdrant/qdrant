@@ -234,8 +234,8 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStora
         self.dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key as VectorOffsetType)
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
+        Cow::Borrowed(self.vectors.get(key as VectorOffsetType))
     }
 }
 

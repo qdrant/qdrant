@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::io::Write;
-use std::mem::{self, MaybeUninit, size_of, transmute};
+use std::mem::{self, MaybeUninit, size_of};
 use std::path::Path;
 
 use bitvec::prelude::BitSlice;
@@ -135,14 +135,14 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         Some(offset)
     }
 
-    /// Size in bytes of a single raw (packed) vector.
+    /// Size in bytes of a single vector.
     pub fn raw_size(&self) -> usize {
         self.dim * size_of::<T>()
     }
 
     /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
     /// the byte slice as `&[T]`.
-    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> &[T] {
+    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
         let range = BytesRange {
             start: byte_offset as u64,
             length: self.raw_size() as u64,
@@ -156,25 +156,18 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         .expect("vector read from storage failed");
 
         match cow {
-            Cow::Borrowed(byte_slice) => {
-                let arr: &[T] = unsafe { transmute(byte_slice) };
-                &arr[0..self.dim]
-            }
-            Cow::Owned(_) => {
-                unimplemented!(
-                    "owned data access is not yet implemented. Mmap always returns slice."
-                )
-            }
+            Cow::Borrowed(byte_slice) => Cow::Borrowed(bytemuck::cast_slice(byte_slice)),
+            Cow::Owned(byte_vec) => Cow::Owned(bytemuck::cast_vec(byte_vec)),
         }
     }
 
-    /// Returns reference to vector data by key
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
+    /// Returns vector data by key
+    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
         self.get_vector_opt::<P>(key).expect("vector not found")
     }
 
-    /// Returns an optional reference to vector data by key
-    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<&[T]> {
+    /// Returns an optional vector data by key
+    pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
         self.data_offset(key)
             .map(|offset| self.raw_vector_offset::<P>(offset))
     }
@@ -185,7 +178,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
         // The `f` is most likely a scorer function.
         // Fetching all vectors first then scoring them is more cache friendly
         // than fetching and scoring in a single loop.
-        let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+
+        let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = if is_read_with_prefetch_efficient(keys) {
             let iter = keys.iter().map(|key| self.get_vector::<Sequential>(*key));
             maybe_uninit_fill_from(&mut vectors_buffer, iter).0
@@ -229,7 +223,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     ) {
         for (idx, point) in points.enumerate() {
             let vector = self.get_vector::<Random>(point);
-            callback(idx, point, vector);
+            callback(idx, point, &vector);
         }
     }
 

@@ -162,7 +162,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.vectors.as_ref().unwrap().dim
     }
 
-    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense<P: AccessPattern>(&self, key: PointOffsetType) -> std::borrow::Cow<'_, [T]> {
         self.vectors
             .as_ref()
             .unwrap()
@@ -198,7 +198,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector.into()).into())
+            .map(|vector| T::slice_to_float_cow(vector).into())
             .expect("Vector not found")
     }
 
@@ -223,7 +223,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .as_ref()
             .unwrap()
             .get_vector_opt::<P>(key)
-            .map(|vector| T::slice_to_float_cow(vector.into()).into())
+            .map(|vector| T::slice_to_float_cow(vector).into())
     }
 
     fn insert_vector(
