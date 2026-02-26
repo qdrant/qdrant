@@ -167,6 +167,7 @@ fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
         },
         sparse_vector_data: HashMap::new(),
         payload_storage_type: PayloadStorageType::Mmap,
+        indexing_threshold_kb: None,
     };
 
     Ok(EdgeShard::load(Path::new(DATA_DIR), Some(config))?)
