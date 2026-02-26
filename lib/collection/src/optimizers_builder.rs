@@ -135,9 +135,13 @@ impl OptimizersConfig {
         }
     }
 
+    /// Returns the threshold for deferred points in KB. This threshold decides at which segment-size
+    /// newly inserted points will become `deferred` on insertions and cow operations.
+    ///
+    /// Since deferred segments are only enabled with the `prevent_unoptimized` config,
+    /// this function returns an option.
     pub fn get_deferred_segment_threshold_kb(&self) -> Option<usize> {
-        self.prevent_unoptimized
-            .map(|_| self.get_indexing_threshold_kb())
+        (self.prevent_unoptimized == Some(true)).then(|| self.get_indexing_threshold_kb())
     }
 
     pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
