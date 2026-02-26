@@ -12882,6 +12882,12 @@
           },
           "payload_storage_type": {
             "$ref": "#/components/schemas/PayloadStorageType"
+          },
+          "indexing_threshold_kb": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
