@@ -570,8 +570,13 @@ fn test_double_proxies() {
         .unwrap();
 
     let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
-        SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), &segment_config, schema)
-            .unwrap();
+        SegmentHolder::proxy_all_segments(
+            inner_segments_lock,
+            segments_dir.path(),
+            &segment_config,
+            schema,
+        )
+        .unwrap();
 
     let mut has_point = false;
     for (_proxy_id, proxy) in &outer_proxies {
