@@ -1383,6 +1383,10 @@ pub struct SegmentConfig {
 }
 
 impl SegmentConfig {
+    pub fn deferring_enabled(&self) -> bool {
+        self.indexing_threshold_kb.is_some()
+    }
+
     /// Helper to get vector specific quantization config.
     ///
     /// This grabs the quantization config for the given vector name if it exists.

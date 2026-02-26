@@ -443,6 +443,24 @@ impl UpdateWorkers {
         thresholds_config: &OptimizerThresholds,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
+        // We don't need to create a new appendable segment in deferred mode.
+        if segment_config.indexing_threshold_kb.is_some() {
+            let segments_read = segments.read();
+
+            // It is possible that 'prevent-unoptimized' has been enabled at a later point and we don't have any appendable segments
+            // that support deferring points. Therefore we have this additional check here. If we currently *don't* have any
+            // defer supporting appendable segment, we create a new one and don't early-return.
+            let has_defer_enabled_appendable = segments_read
+                .appendable_segments_ids()
+                .into_iter()
+                .filter_map(|segment_id| segments_read.get(segment_id))
+                .any(|i| i.get().read().config().deferring_enabled());
+
+            if has_defer_enabled_appendable {
+                return Ok(());
+            }
+        }
+
         let no_segment_with_capacity = {
             let segments_read = segments.read();
             segments_read
@@ -450,9 +468,6 @@ impl UpdateWorkers {
                 .into_iter()
                 .filter_map(|segment_id| segments_read.get(segment_id))
                 .all(|segment| {
-                    // TODO: if we have deferred segment, we might want to continue growing it's size.
-                    // It means, we dont need to create a new appendable segment and continue filling the existing one,
-                    // even if it's already over the threshold.
                     let max_vector_size_bytes = segment
                         .get()
                         .read()
