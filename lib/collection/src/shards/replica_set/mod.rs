@@ -324,25 +324,25 @@ impl ShardReplicaSet {
                 match res {
                     Ok(shard) => Shard::Local(shard),
                     Err(err) => {
-                        let tolerate_load_error = shared_storage_config
-                            .handle_collection_load_errors
-                            || is_storage_full_load_error(&err);
+                        let is_storage_full = is_storage_full_load_error(&err);
+                        let tolerate_load_error =
+                            shared_storage_config.handle_collection_load_errors || is_storage_full;
                         if !tolerate_load_error {
                             panic!("Failed to load local shard {shard_path:?}: {err}")
                         }
 
                         local_load_failure = true;
 
-                        if shared_storage_config.handle_collection_load_errors {
+                        if is_storage_full {
                             log::error!(
-                                "Failed to load local shard {shard_path:?}, \
-                                 initializing \"dummy\" shard instead: \
+                                "Failed to load local shard {shard_path:?} due to storage-full condition, \
+                                 initializing \"dummy\" shard instead to avoid restart loop: \
                                  {err}"
                             );
                         } else {
                             log::error!(
-                                "Failed to load local shard {shard_path:?} due to storage-full condition, \
-                                 initializing \"dummy\" shard instead to avoid restart loop: \
+                                "Failed to load local shard {shard_path:?}, \
+                                 initializing \"dummy\" shard instead: \
                                  {err}"
                             );
                         }
