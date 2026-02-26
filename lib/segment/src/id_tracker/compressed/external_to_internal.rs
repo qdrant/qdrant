@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::atomic_bitvec::prelude::BitVec;
 use common::types::PointOffsetType;
@@ -16,13 +17,36 @@ use crate::types::PointIdType;
 /// This structure doesn't require random insertions, so we can sort it once and then use binary search.
 ///
 /// There is, however, a requirement to remove elements, so we will use a BitVec to mark removed elements.
-#[derive(Clone, PartialEq, Default, Debug)]
+#[derive(Debug, Default)]
 pub struct CompressedExternalToInternal {
     num_ids: Vec<(u64, PointOffsetType)>,
     num_ids_removed: BitVec,
     uuids: Vec<(Uuid, PointOffsetType)>,
     uuids_removed: BitVec,
-    count_removed: usize,
+    count_removed: AtomicUsize,
+}
+
+impl Clone for CompressedExternalToInternal {
+    fn clone(&self) -> Self {
+        Self {
+            num_ids: self.num_ids.clone(),
+            num_ids_removed: self.num_ids_removed.clone(),
+            uuids: self.uuids.clone(),
+            uuids_removed: self.uuids_removed.clone(),
+            count_removed: AtomicUsize::new(self.count_removed.load(Ordering::Acquire)),
+        }
+    }
+}
+
+impl PartialEq for CompressedExternalToInternal {
+    fn eq(&self, other: &Self) -> bool {
+        self.num_ids == other.num_ids
+            && self.num_ids_removed == other.num_ids_removed
+            && self.uuids == other.uuids
+            && self.uuids_removed == other.uuids_removed
+            && self.count_removed.load(Ordering::Acquire)
+                == other.count_removed.load(Ordering::Acquire)
+    }
 }
 
 impl CompressedExternalToInternal {
@@ -42,22 +66,20 @@ impl CompressedExternalToInternal {
         let num_ids_removed = BitVec::repeat(false, num_ids.len());
         let uuids_removed = BitVec::repeat(false, uuids.len());
 
-        let num_removed = 0;
-
         Self {
             num_ids,
             num_ids_removed,
             uuids,
             uuids_removed,
-            count_removed: num_removed,
+            count_removed: AtomicUsize::new(0),
         }
     }
+
     pub fn from_maps(
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     ) -> Self {
         let mut num_ids: Vec<_> = external_to_internal_num.into_iter().collect();
-
         let mut uuids: Vec<_> = external_to_internal_uuid.into_iter().collect();
 
         num_ids.sort_unstable();
@@ -66,19 +88,17 @@ impl CompressedExternalToInternal {
         let num_ids_removed = BitVec::repeat(false, num_ids.len());
         let uuids_removed = BitVec::repeat(false, uuids.len());
 
-        let num_removed = 0;
-
         Self {
             num_ids,
             num_ids_removed,
             uuids,
             uuids_removed,
-            count_removed: num_removed,
+            count_removed: AtomicUsize::new(0),
         }
     }
 
     pub fn len(&self) -> usize {
-        self.num_ids.len() + self.uuids.len() - self.count_removed
+        self.num_ids.len() + self.uuids.len() - self.count_removed.load(Ordering::Acquire)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -112,7 +132,7 @@ impl CompressedExternalToInternal {
         }
     }
 
-    pub fn remove(&mut self, external_id: &PointIdType) -> Option<PointOffsetType> {
+    pub fn remove(&self, external_id: &PointIdType) -> Option<PointOffsetType> {
         match external_id {
             PointIdType::NumId(num) => {
                 let idx = self
@@ -122,8 +142,8 @@ impl CompressedExternalToInternal {
                 if self.num_ids_removed[idx] {
                     None
                 } else {
-                    self.num_ids_removed.set(idx, true);
-                    self.count_removed += 1;
+                    self.num_ids_removed.set_aliased(idx, true);
+                    self.count_removed.fetch_add(1, Ordering::AcqRel);
                     Some(self.num_ids[idx].1)
                 }
             }
@@ -135,8 +155,8 @@ impl CompressedExternalToInternal {
                 if self.uuids_removed[idx] {
                     None
                 } else {
-                    self.uuids_removed.set(idx, true);
-                    self.count_removed += 1;
+                    self.uuids_removed.set_aliased(idx, true);
+                    self.count_removed.fetch_add(1, Ordering::AcqRel);
                     Some(self.uuids[idx].1)
                 }
             }

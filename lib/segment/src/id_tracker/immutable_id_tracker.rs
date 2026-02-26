@@ -6,11 +6,13 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::atomic_bitvec::prelude::BitVec;
 use common::ext::BitSliceExt as _;
+use common::guards::NestedGuard;
 use common::mmap::{
     AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
 };
 use common::types::PointOffsetType;
 use fs_err::File;
+use parking_lot::RwLock;
 use uuid::Uuid;
 
 use crate::common::Flusher;
@@ -55,15 +57,42 @@ impl ExternalIdType {
 }
 
 #[derive(Debug)]
-pub struct ImmutableIdTracker {
-    path: PathBuf,
-
+struct ImmutableIdTrackerInner {
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
     internal_to_version: CompressedVersions,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
+}
 
+impl ImmutableIdTrackerInner {
+    fn set_internal_version(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        let has_version = self.internal_to_version.has(internal_id);
+        debug_assert!(
+            has_version,
+            "Can't extend version list in immutable tracker",
+        );
+        if has_version {
+            self.internal_to_version.set(internal_id, version);
+            self.internal_to_version_wrapper.set(internal_id, version);
+        }
+
+        Ok(())
+    }
+
+    fn set_internal_deleted(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+        self.set_internal_version(internal_id, DELETED_POINT_VERSION)
+    }
+}
+
+#[derive(Debug)]
+pub struct ImmutableIdTracker {
+    path: PathBuf,
     mappings: CompressedPointMappings,
+    inner: RwLock<ImmutableIdTrackerInner>,
 }
 
 impl ImmutableIdTracker {
@@ -271,10 +300,12 @@ impl ImmutableIdTracker {
 
         Ok(Self {
             path: segment_path.to_path_buf(),
-            deleted_wrapper,
-            internal_to_version_wrapper,
-            internal_to_version,
             mappings,
+            inner: RwLock::new(ImmutableIdTrackerInner {
+                deleted_wrapper,
+                internal_to_version_wrapper,
+                internal_to_version,
+            }),
         })
     }
 
@@ -348,15 +379,19 @@ impl ImmutableIdTracker {
         let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
-        deleted_wrapper.flusher()()?;
-        internal_to_version_wrapper.flusher()()?;
-
-        Ok(Self {
-            path: path.to_path_buf(),
+        let inner = ImmutableIdTrackerInner {
             deleted_wrapper,
             internal_to_version_wrapper,
             internal_to_version,
+        };
+
+        inner.deleted_wrapper.flusher()()?;
+        inner.internal_to_version_wrapper.flusher()()?;
+
+        Ok(Self {
+            path: path.to_path_buf(),
             mappings,
+            inner: RwLock::new(inner),
         })
     }
 
@@ -370,11 +405,6 @@ impl ImmutableIdTracker {
 
     pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
         base.join(MAPPINGS_FILE_NAME)
-    }
-
-    fn set_internal_deleted(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
-        let version = DELETED_POINT_VERSION;
-        self.set_internal_version(internal_id, version)
     }
 }
 
@@ -391,7 +421,7 @@ fn bitmap_mmap_size(number_of_elements: usize) -> usize {
 
 impl IdTracker for ImmutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id)
+        self.inner.read().internal_to_version.get(internal_id)
     }
 
     fn set_internal_version(
@@ -399,17 +429,9 @@ impl IdTracker for ImmutableIdTracker {
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        let has_version = self.internal_to_version.has(internal_id);
-        debug_assert!(
-            has_version,
-            "Can't extend version list in immutable tracker",
-        );
-        if has_version {
-            self.internal_to_version.set(internal_id, version);
-            self.internal_to_version_wrapper.set(internal_id, version);
-        }
-
-        Ok(())
+        self.inner
+            .write()
+            .set_internal_version(internal_id, version)
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
@@ -428,25 +450,23 @@ impl IdTracker for ImmutableIdTracker {
         panic!("Trying to call a mutating function (`set_link`) of an immutable id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(&self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
-
         if let Some(internal_id) = internal_id {
-            self.deleted_wrapper.set(internal_id as usize, true);
-            self.set_internal_deleted(internal_id)?;
+            let mut inner = self.inner.write();
+            inner.deleted_wrapper.set(internal_id as usize, true);
+            inner.set_internal_deleted(internal_id)?;
         }
-
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
-
-        self.deleted_wrapper.set(internal_id as usize, true);
-        self.set_internal_deleted(internal_id)?;
-
+        let mut inner = self.inner.write();
+        inner.deleted_wrapper.set(internal_id as usize, true);
+        inner.set_internal_deleted(internal_id)?;
         Ok(())
     }
 
@@ -457,12 +477,12 @@ impl IdTracker for ImmutableIdTracker {
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        self.inner.read().deleted_wrapper.flusher()
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
     fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version_wrapper.flusher()
+        self.inner.read().internal_to_version_wrapper.flusher()
     }
 
     fn total_point_count(&self) -> usize {
@@ -474,7 +494,7 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     fn deleted_point_count(&self) -> usize {
-        self.total_point_count() - self.available_point_count()
+        self.mappings.total_point_count() - self.mappings.available_point_count()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
@@ -488,7 +508,10 @@ impl IdTracker for ImmutableIdTracker {
     fn iter_internal_versions(
         &self,
     ) -> Box<dyn Iterator<Item = (PointOffsetType, SeqNumberType)> + '_> {
-        Box::new(self.internal_to_version.iter())
+        // Safety: the second argument reads only guarded value's nested fields.
+        unsafe {
+            Box::new(NestedGuard::new(self.inner.read(), |inner| &inner.internal_to_version).iter())
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -599,7 +622,9 @@ pub(super) mod test {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let (old_mappings, old_versions) = {
             let id_tracker = make_immutable_tracker(dir.path());
-            (id_tracker.mappings, id_tracker.internal_to_version)
+            let mappings = id_tracker.mappings;
+            let inner = id_tracker.inner.into_inner();
+            (mappings, inner.internal_to_version)
         };
 
         let loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
@@ -608,12 +633,12 @@ pub(super) mod test {
         // a multiple of `usize-width`.
         assert_eq!(
             old_versions.len(),
-            loaded_id_tracker.internal_to_version.len()
+            loaded_id_tracker.inner.read().internal_to_version.len()
         );
         for i in 0..old_versions.len() as u32 {
             assert_eq!(
                 old_versions.get(i),
-                loaded_id_tracker.internal_to_version.get(i),
+                loaded_id_tracker.inner.read().internal_to_version.get(i),
                 "Version mismatch at index {i}",
             );
         }
@@ -681,7 +706,7 @@ pub(super) mod test {
                 .unwrap_or(DEFAULT_VERSION);
 
             assert_eq!(
-                id_tracker.internal_to_version.get(internal_id),
+                id_tracker.inner.read().internal_to_version.get(internal_id),
                 Some(expect_version)
             );
 
@@ -982,7 +1007,7 @@ pub(super) mod test {
             );
         }
 
-        for (external_id, internal_id) in immutable_id_tracker.iter_from(None) {
+        for (external_id, internal_id) in immutable_id_tracker.point_mappings().iter_from(None) {
             assert_eq!(
                 simple_id_tracker.internal_version(internal_id).unwrap(),
                 immutable_id_tracker.internal_version(internal_id).unwrap()

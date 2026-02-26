@@ -95,11 +95,11 @@ impl CompressedPointMappings {
         self.internal_to_external.get(internal_id)
     }
 
-    pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
+    pub(crate) fn drop(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         let internal_id = self.external_to_internal.remove(&external_id);
 
         if let Some(internal_id) = &internal_id {
-            self.deleted.set(*internal_id as usize, true);
+            self.deleted.set_aliased(*internal_id as usize, true);
         }
 
         internal_id
