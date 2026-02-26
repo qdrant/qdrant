@@ -276,14 +276,16 @@ impl Settings {
         let env = env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
         let config_path_env = format!("config/{env}");
 
-        // Report error if main or env config files exist, report warning if not
-        // Check if main and env configuration file
-        load_errors.extend(
-            ["config/config", &config_path_env]
-                .into_iter()
-                .filter(|path| !config_exists(path))
-                .map(|path| LogMsg::Warn(format!("Config file not found: {path}"))),
-        );
+        // If user provides `--config-path`, missing default config files are expected.
+        // In that case only report explicit custom-path errors to avoid noisy false hints.
+        if custom_config_path.is_none() {
+            load_errors.extend(
+                ["config/config", &config_path_env]
+                    .into_iter()
+                    .filter(|path| !config_exists(path))
+                    .map(|path| LogMsg::Warn(format!("Config file not found: {path}"))),
+            );
+        }
 
         // Configuration builder: define different levels of configuration files
         let mut config = Config::builder()
@@ -598,6 +600,49 @@ mod tests {
             config.service.http_client_disconnect_timeout_sec,
             default_http_client_disconnect_timeout_sec()
         );
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn test_custom_config_without_default_files_has_no_spurious_load_errors() {
+        let path = "custom.yaml";
+
+        {
+            let mut custom = fs::File::create(path).unwrap();
+            write!(&mut custom, "service:\n    http_port: 7777").unwrap();
+            custom.flush().unwrap();
+        }
+
+        let config = Settings::new(Some(path.into())).unwrap();
+        config
+            .validate()
+            .expect("custom config must pass validation");
+
+        assert_eq!(config.service.http_port, 7777);
+        assert!(
+            config.load_errors.is_empty(),
+            "custom config path should not emit missing default config warnings"
+        );
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn test_absolute_custom_config_path_is_loaded() {
+        let path = "custom-absolute.yaml";
+
+        {
+            let mut custom = fs::File::create(path).unwrap();
+            write!(&mut custom, "service:\n    http_port: 7666").unwrap();
+            custom.flush().unwrap();
+        }
+
+        let absolute_path = fs::canonicalize(path).unwrap();
+        let config = Settings::new(Some(absolute_path.to_string_lossy().into_owned())).unwrap();
+        config
+            .validate()
+            .expect("absolute custom config must pass validation");
+
+        assert_eq!(config.service.http_port, 7666);
     }
 
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
