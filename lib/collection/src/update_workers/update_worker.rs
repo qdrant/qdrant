@@ -78,7 +78,6 @@ impl UpdateWorkers {
                 }) => {
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
-                    let segments_clone = segments.clone();
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
@@ -121,20 +120,8 @@ impl UpdateWorkers {
                         }
                     };
 
-                    let operation_result = Self::wait_for_optimization(
-                        prevent_unoptimized_threshold_kb,
-                        &segments_clone,
-                        optimization_handles.clone(),
-                        &mut optimization_finished_receiver,
-                    )
-                    .await;
-
-                    if let Err(err) = operation_result {
-                        send_feedback(sender, Err(err), op_num);
-                        continue;
-                    }
-
                     let wait = sender.is_some();
+                    let segments_clone = segments.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
@@ -149,6 +136,21 @@ impl UpdateWorkers {
                         )
                     })
                     .await;
+
+                    let segments_clone = segments.clone();
+                    let wait_result = Self::wait_for_optimization(
+                        wait,
+                        prevent_unoptimized_threshold_kb,
+                        &segments_clone,
+                        optimization_handles.clone(),
+                        &mut optimization_finished_receiver,
+                    )
+                    .await;
+
+                    if let Err(err) = wait_result {
+                        send_feedback(sender, Err(err), op_num);
+                        continue;
+                    }
 
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
@@ -196,6 +198,7 @@ impl UpdateWorkers {
     ///
     /// Returns when all segments are smaller that the optimization_threshold.
     async fn wait_for_optimization(
+        wait: bool,
         // Size of the unoptimized segment to be considered large enough for waiting.
         // If `None`, waiting is disabled.
         optimization_threshold_kb: Option<usize>,
@@ -203,6 +206,10 @@ impl UpdateWorkers {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
+        if !wait {
+            // No need to wait for deferred point
+            return Ok(());
+        }
         let Some(optimization_threshold_kb) = optimization_threshold_kb else {
             // Waiting is disabled
             return Ok(());
