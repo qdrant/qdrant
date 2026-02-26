@@ -86,12 +86,12 @@ impl EdgeShard {
     fn build_blocking_optimizers(&self) -> OperationResult<Vec<Arc<Optimizer>>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(EDGE_OPTIMIZER_TEMP_PATH);
-        self.reset_temp_segments_dir(&temp_segments_path)?;
+        Self::reset_temp_segments_dir(&temp_segments_path)?;
 
         let hnsw_config = HnswConfig::default();
         let hnsw_global_config = HnswGlobalConfig::default();
         let segment_optimizer_config = self.build_segment_optimizer_config(hnsw_config);
-        let threshold_config = self.default_optimizer_thresholds(hnsw_config);
+        let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
         let default_segments_number = default_segment_number();
 
         Ok(vec![
@@ -134,7 +134,7 @@ impl EdgeShard {
         ])
     }
 
-    fn default_optimizer_thresholds(&self, hnsw_config: HnswConfig) -> OptimizerThresholds {
+    fn default_optimizer_thresholds(hnsw_config: HnswConfig) -> OptimizerThresholds {
         let indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
         OptimizerThresholds {
             memmap_threshold_kb: usize::MAX,
@@ -228,7 +228,7 @@ impl EdgeShard {
         }
     }
 
-    fn reset_temp_segments_dir(&self, temp_segments_path: &std::path::Path) -> OperationResult<()> {
+    fn reset_temp_segments_dir(temp_segments_path: &std::path::Path) -> OperationResult<()> {
         if temp_segments_path.exists() {
             fs::remove_dir_all(temp_segments_path).map_err(|err| {
                 OperationError::service_error(format!(
