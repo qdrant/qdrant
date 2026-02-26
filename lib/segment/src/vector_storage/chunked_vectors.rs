@@ -13,7 +13,7 @@ use common::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
     open_write_mmap,
 };
-use common::universal_io::{BytesRange, OpenOptions, UniversalIoError, UniversalWrite};
+use common::universal_io::{ElementsRange, OpenOptions, UniversalIoError, UniversalWrite};
 use fs_err as fs;
 use fs_err::File;
 use memmap2::MmapMut;
@@ -290,7 +290,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             return None;
         }
 
-        let range = BytesRange {
+        let range = ElementsRange {
             start: element_offset as u64,
             length: elements_length as u64,
         };

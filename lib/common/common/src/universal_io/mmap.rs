@@ -6,7 +6,7 @@ use crate::mmap::{
     open_write_mmap,
 };
 use crate::universal_io::{
-    ByteOffset, BytesRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
+    ByteOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
     UniversalWrite,
 };
 
@@ -59,7 +59,7 @@ where
         })
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [T]>> {
+    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
         let data_slice = self.as_slice::<SEQUENTIAL>();
         let start = range.start as usize;
         let end = start + range.length as usize;
@@ -77,7 +77,7 @@ where
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
-        ranges: impl IntoIterator<Item = BytesRange>,
+        ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         let data_slice = self.as_slice::<SEQUENTIAL>();

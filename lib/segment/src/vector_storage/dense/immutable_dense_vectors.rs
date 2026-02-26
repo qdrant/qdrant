@@ -10,7 +10,7 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{BytesRange, OpenOptions as UniversalOpenOptions, UniversalRead};
+use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
 use fs_err::{File, OpenOptions};
 use parking_lot::Mutex;
 
@@ -144,7 +144,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
     /// Read one vector's worth of bytes from storage at `byte_offset` and reinterpret
     /// the byte slice as `&[T]`.
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
-        let range = BytesRange {
+        let range = ElementsRange {
             start: byte_offset as u64,
             length: self.raw_size() as u64,
         };

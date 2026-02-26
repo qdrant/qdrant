@@ -13,11 +13,11 @@ pub trait UniversalRead<T: Copy + 'static> {
         Self: Sized;
 
     /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [T]>>;
+    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
-        ranges: impl IntoIterator<Item = BytesRange>,
+        ranges: impl IntoIterator<Item = ElementsRange>,
         callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()>;
 
@@ -75,7 +75,7 @@ impl Default for OpenOptions {
 pub type ByteOffset = u64;
 
 #[derive(Copy, Clone, Debug)]
-pub struct BytesRange {
+pub struct ElementsRange {
     pub start: ByteOffset,
     pub length: u64,
 }
