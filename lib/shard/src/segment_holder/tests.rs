@@ -523,6 +523,8 @@ fn test_double_proxies() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment1 = build_segment_1(dir.path());
 
+    let segment_config = segment1.segment_config.clone();
+
     let mut holder = SegmentHolder::default();
 
     let locked_segment1 = LockedSegment::from(segment1);
@@ -546,7 +548,7 @@ fn test_double_proxies() {
         SegmentHolder::proxy_all_segments(
             holder.upgradable_read(),
             segments_dir.path(),
-            None,
+            &segment_config,
             schema.clone(),
         )
         .unwrap();
@@ -568,7 +570,7 @@ fn test_double_proxies() {
         .unwrap();
 
     let (outer_proxies, outer_tmp_segment, outer_segments_lock) =
-        SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), None, schema)
+        SegmentHolder::proxy_all_segments(inner_segments_lock, segments_dir.path(), &segment_config, schema)
             .unwrap();
 
     let mut has_point = false;

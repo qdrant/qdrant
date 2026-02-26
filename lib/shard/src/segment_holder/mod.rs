@@ -303,16 +303,6 @@ impl SegmentHolder {
             .collect()
     }
 
-    /// Get a random appendable segment
-    ///
-    /// If you want the smallest segment, use `random_appendable_segment_with_capacity` instead.
-    pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
-        let segment_ids: Vec<_> = self.appendable_segments_ids();
-        segment_ids
-            .choose(&mut rand::rng())
-            .and_then(|idx| self.appendable_segments.get(idx).cloned())
-    }
-
     /// Get the smallest appendable segment
     ///
     /// The returned segment likely has the most capacity for new points, which will help balance

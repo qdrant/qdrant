@@ -19,6 +19,8 @@ fn test_snapshot_all() {
     let segment1 = build_segment_1(dir.path());
     let segment2 = build_segment_2(dir.path());
 
+    let segment_config = segment1.segment_config.clone();
+
     let mut holder = SegmentHolder::default();
 
     let sid1 = holder.add_new(segment1);
@@ -45,7 +47,7 @@ fn test_snapshot_all() {
     snapshot_all_segments(
         holder.clone(),
         segments_dir.path(),
-        None,
+        &segment_config,
         schema,
         temp_dir.path(),
         &tar,
