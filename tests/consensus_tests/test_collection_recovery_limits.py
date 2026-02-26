@@ -195,7 +195,7 @@ def transfers_below_limit_or_done(peer_url, transfer_limit = 1):
 def all_collection_shards_are_active(peer_url, collection_name):
     try:
         info = get_collection_cluster_info(peer_url, collection_name)
-    except:
+    except Exception:
         return False
 
     remote_shards = info["remote_shards"]

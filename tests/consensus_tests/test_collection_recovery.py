@@ -55,7 +55,7 @@ def recover_raft_state(peer_url):
 def collection_recovered(peer_url, collection_name):
     try:
         info = get_collection_cluster_info(peer_url, collection_name)
-    except:
+    except Exception:
         return False
 
     local_shards = info["local_shards"]

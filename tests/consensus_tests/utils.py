@@ -747,7 +747,7 @@ def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
     try:
         r = requests.get(f"{peer_api_uri}{path}")
         return r.status_code == 200
-    except:
+    except Exception:
         return False
 
 
