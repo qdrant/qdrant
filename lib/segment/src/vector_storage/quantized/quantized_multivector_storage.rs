@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher, MmapSlice};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
+use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use memmap2::MmapMut;
 use quantization::EncodedVectors;
@@ -180,7 +181,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 }
 
 pub struct MultivectorOffsetsStorageChunkedMmap {
-    data: ChunkedMmapVectors<MultivectorOffset>,
+    data: ChunkedVectors<MultivectorOffset, MmapUniversal<MultivectorOffset>>,
 }
 
 impl MultivectorOffsetsStorageChunkedMmap {
@@ -204,7 +205,7 @@ impl MultivectorOffsetsStorageChunkedMmap {
         } else {
             AdviceSetting::Global
         };
-        let data = ChunkedMmapVectors::<MultivectorOffset>::open(
+        let data = ChunkedVectors::<MultivectorOffset, MmapUniversal<MultivectorOffset>>::open(
             path,
             1,
             advice,
@@ -222,8 +223,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.data
             .get::<Random>(idx as VectorOffsetType)
-            .and_then(|offsets| offsets.first())
-            .cloned()
+            .and_then(|offsets| offsets.as_ref().first().copied())
             .unwrap_or_default()
     }
 
@@ -232,7 +232,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedMmap {
     }
 
     fn flusher(&self) -> MmapFlusher {
-        let flusher = ChunkedMmapVectors::flusher(&self.data);
+        let flusher = ChunkedVectors::flusher(&self.data);
         Box::new(move || {
             flusher().map_err(|e| {
                 std::io::Error::other(format!("Failed to flush multivector offsets storage: {e}"))

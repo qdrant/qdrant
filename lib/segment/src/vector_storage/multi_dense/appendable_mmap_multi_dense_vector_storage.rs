@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -6,6 +7,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
+use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 
 use crate::common::Flusher;
@@ -14,9 +16,11 @@ use crate::common::flags::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
+use crate::data_types::vectors::{
+    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
-use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_full,
     open_appendable_memmap_vector_storage_half,
@@ -40,8 +44,8 @@ pub struct MultivectorMmapOffset {
 
 #[derive(Debug)]
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedMmapVectors<T>,
-    offsets: ChunkedMmapVectors<MultivectorMmapOffset>,
+    vectors: ChunkedVectors<T, MmapUniversal<T>>,
+    offsets: ChunkedVectors<MultivectorMmapOffset, MmapUniversal<MultivectorMmapOffset>>,
     /// Flags marking deleted vectors
     ///
     /// Structure grows dynamically, but may be smaller than actual number of vectors. Must not
@@ -115,26 +119,38 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
                     mmap_offset.count as usize,
                 )
             })
-            .map(|flattened_vectors| {
-                CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+            .map(|flattened_vectors| match flattened_vectors {
+                Cow::Borrowed(flattened_vectors) => {
+                    CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+                        flattened_vectors,
+                        dim: self.vectors.dim(),
+                    })
+                }
+                Cow::Owned(flattened_vectors) => CowMultiVector::Owned(TypedMultiDenseVector {
                     flattened_vectors,
                     dim: self.vectors.dim(),
-                })
+                }),
             })
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
-        (0..self.total_vector_count()).flat_map(|key| {
+        (0..self.total_vector_count()).flat_map(move |key| {
             let mmap_offset = self
                 .offsets
                 .get::<Sequential>(key as VectorOffsetType)
                 .unwrap()
                 .first()
+                .copied()
                 .unwrap();
-            (0..mmap_offset.count).map(|i| {
-                self.vectors
+            (0..mmap_offset.count).map(move |i| {
+                match self
+                    .vectors
                     .get::<Sequential>((mmap_offset.offset + i) as VectorOffsetType)
                     .unwrap()
+                {
+                    Cow::Borrowed(slice) => slice,
+                    Cow::Owned(_) => todo!("Mmap storages don't return owned variants"),
+                }
             })
         })
     }
@@ -450,8 +466,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, madvise, Some(populate))?;
-    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, madvise, Some(populate))?;
+    let vectors = ChunkedVectors::open(&vectors_path, dim, madvise, Some(populate))?;
+    let offsets = ChunkedVectors::open(&offsets_path, 1, madvise, Some(populate))?;
 
     let deleted = BitvecFlags::new(DynamicMmapFlags::open(&deleted_path, populate)?);
     let deleted_count = deleted.count_trues();

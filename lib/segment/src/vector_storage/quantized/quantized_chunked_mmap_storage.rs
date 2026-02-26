@@ -1,15 +1,17 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::{Advice, AdviceSetting, MmapFlusher};
 use common::types::PointOffsetType;
+use common::universal_io::mmap::MmapUniversal;
 
 use crate::common::operation_error::OperationResult;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{Random, VectorOffsetType};
 
 pub struct QuantizedChunkedMmapStorage {
-    data: ChunkedMmapVectors<u8>,
+    data: ChunkedVectors<u8, MmapUniversal<u8>>,
 }
 
 impl QuantizedChunkedMmapStorage {
@@ -19,7 +21,7 @@ impl QuantizedChunkedMmapStorage {
         } else {
             AdviceSetting::Global
         };
-        let data = ChunkedMmapVectors::<u8>::open(
+        let data = ChunkedVectors::<u8, MmapUniversal<u8>>::open(
             path,
             quantized_vector_size,
             advice,
@@ -35,9 +37,14 @@ impl QuantizedChunkedMmapStorage {
 
 impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        self.data
+        match self
+            .data
             .get::<Random>(index as VectorOffsetType)
             .unwrap_or_default()
+        {
+            Cow::Borrowed(slice) => slice,
+            Cow::Owned(_) => todo!("mmap storage never returns owned values"),
+        }
     }
 
     fn upsert_vector(
@@ -69,17 +76,17 @@ impl quantization::EncodedStorage for QuantizedChunkedMmapStorage {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        ChunkedMmapVectors::files(&self.data)
+        ChunkedVectors::files(&self.data)
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        ChunkedMmapVectors::immutable_files(&self.data)
+        ChunkedVectors::immutable_files(&self.data)
     }
 }
 
 #[allow(dead_code)]
 pub struct QuantizedChunkedMmapStorageBuilder {
-    data: ChunkedMmapVectors<u8>,
+    data: ChunkedVectors<u8, MmapUniversal<u8>>,
     hw_counter: HardwareCounterCell,
 }
 
@@ -91,7 +98,7 @@ impl QuantizedChunkedMmapStorageBuilder {
         } else {
             AdviceSetting::Global
         };
-        let data = ChunkedMmapVectors::<u8>::open(
+        let data = ChunkedVectors::<u8, MmapUniversal<u8>>::open(
             path,
             quantized_vector_size,
             advice,

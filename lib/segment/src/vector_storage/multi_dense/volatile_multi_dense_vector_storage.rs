@@ -14,8 +14,8 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::CHUNK_SIZE;
+use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 use crate::vector_storage::{
     AccessPattern, MultiVectorStorage, VectorOffsetType, VectorStorage, VectorStorageEnum,
 };
@@ -35,7 +35,7 @@ pub struct VolatileMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     /// Keep vectors in memory
-    vectors: ChunkedVectors<T>,
+    vectors: VolatileChunkedVectors<T>,
     vectors_metadata: Vec<MultiVectorMetadata>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
@@ -100,7 +100,7 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
             dim,
             distance,
             multi_vector_config,
-            vectors: ChunkedVectors::new(dim),
+            vectors: VolatileChunkedVectors::new(dim),
             vectors_metadata: vec![],
             deleted: BitVec::new(),
             deleted_count: 0,
