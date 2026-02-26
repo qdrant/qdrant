@@ -552,7 +552,7 @@ mod tests {
     /// Missing `ack_index` in object payload should fail WAL initialization.
     fn test_wal_new_fails_on_missing_ack_index_in_object() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{}"#).unwrap();
+        fs::write(dir.path().join(FIRST_INDEX_FILE), r"{}").unwrap();
 
         let err = SerdeWal::<TestRecord>::new(dir.path(), wal_options(1024 * 1024)).unwrap_err();
         assert!(
