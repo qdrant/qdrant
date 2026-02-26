@@ -284,6 +284,12 @@ impl<R: DeserializeOwned + Serialize> SerdeWal<R> {
     }
 }
 
+/// Read `first-index` state from disk.
+///
+/// Returns:
+/// - `Ok(Some(ack_index))` for a valid `{"ack_index": <u64>}` payload,
+/// - `Ok(None)` for recoverable placeholder states (`null`, empty content, missing/null `ack_index`),
+/// - `Err(..)` for invalid payload shape/type.
 fn read_first_index_file(path: &Path) -> Result<Option<u64>> {
     let raw = fs_err::read_to_string(path).map_err(|err| {
         WalError::InitWalError(format!(
@@ -398,6 +404,7 @@ mod tests {
         b: i32,
     }
 
+    /// Build test WAL options with deterministic retention.
     fn wal_options(capacity: usize) -> WalOptions {
         WalOptions {
             segment_capacity: capacity,
@@ -407,6 +414,7 @@ mod tests {
     }
 
     #[test]
+    /// Round-trip test for basic WAL write/read behavior.
     fn test_wal() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let capacity = 32 * 1024 * 1024;
@@ -478,6 +486,7 @@ mod tests {
     }
 
     #[test]
+    /// Truncation test for dropping WAL records from a given index.
     fn test_wal_drop() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let capacity = 32 * 1024 * 1024;
@@ -506,6 +515,7 @@ mod tests {
     }
 
     #[test]
+    /// `first-index` with `null` should be treated as recoverable state.
     fn test_wal_new_ignores_null_first_index_file() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         fs::write(dir.path().join(FIRST_INDEX_FILE), "null").unwrap();
@@ -516,6 +526,7 @@ mod tests {
     }
 
     #[test]
+    /// Empty `first-index` content should be treated as recoverable state.
     fn test_wal_new_ignores_empty_first_index_file() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         fs::write(dir.path().join(FIRST_INDEX_FILE), "  \n\t").unwrap();
@@ -526,6 +537,7 @@ mod tests {
     }
 
     #[test]
+    /// Invalid `ack_index` type should fail WAL initialization.
     fn test_wal_new_fails_on_invalid_first_index_shape() {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         fs::write(dir.path().join(FIRST_INDEX_FILE), r#"{"ack_index":"oops"}"#).unwrap();
