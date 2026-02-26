@@ -154,7 +154,7 @@ impl EdgeShard {
 
             segments.create_appendable_segment(
                 &segments_path,
-                config.clone(),
+                config,
                 Arc::new(payload_index_schema),
             )?;
 

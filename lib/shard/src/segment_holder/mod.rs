@@ -754,15 +754,11 @@ impl SegmentHolder {
     pub fn create_appendable_segment(
         &mut self,
         segments_path: &Path,
-        segment_config: SegmentConfig,
+        segment_config: &SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<LockedSegment> {
-        let segment = self.build_tmp_segment(
-            segments_path,
-            Some(segment_config),
-            payload_index_schema,
-            true,
-        )?;
+        let segment =
+            self.build_tmp_segment(segments_path, segment_config, payload_index_schema, true)?;
         self.add_new_locked(segment.clone());
         Ok(segment)
     }
@@ -787,29 +783,11 @@ impl SegmentHolder {
     pub fn build_tmp_segment(
         &self,
         segments_path: &Path,
-        segment_config: Option<SegmentConfig>,
+        segment_config: &SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
-        let config = match segment_config {
-            // Base config on collection params
-            Some(config) => config,
-
-            // Fall back: base config on existing appendable segment
-            None => self
-                .random_appendable_segment()
-                .ok_or_else(|| {
-                    OperationError::service_error(
-                        "No existing segment to source temporary segment configuration from",
-                    )
-                })?
-                .get()
-                .read()
-                .config()
-                .clone(),
-        };
-
-        let mut segment = build_segment(segments_path, &config, save_version)?;
+        let mut segment = build_segment(segments_path, segment_config, save_version)?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();

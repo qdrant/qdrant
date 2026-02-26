@@ -87,7 +87,7 @@ impl LocalShard {
                 snapshot_all_segments(
                     segments.clone(),
                     &segments_path,
-                    Some(segment_config),
+                    &segment_config,
                     payload_index_schema,
                     &temp_path,
                     &tar.descend(Path::new(SEGMENTS_PATH))?,
@@ -242,7 +242,7 @@ impl LocalShard {
 pub fn snapshot_all_segments(
     segments: LockedSegmentHolder,
     segments_path: &Path,
-    segment_config: Option<SegmentConfig>,
+    segment_config: &SegmentConfig,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     temp_dir: &Path,
     tar: &tar_ext::BuilderExt,
@@ -305,7 +305,7 @@ pub fn snapshot_all_segments(
 pub fn proxy_all_segments_and_apply<F>(
     segments: LockedSegmentHolder,
     segments_path: &Path,
-    segment_config: Option<SegmentConfig>,
+    segment_config: &SegmentConfig,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     mut operation: F,
 ) -> OperationResult<()>

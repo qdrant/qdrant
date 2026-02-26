@@ -487,7 +487,7 @@ impl LocalShard {
             let segment_config = collection_config.read().await.to_base_segment_config();
             segment_holder.create_appendable_segment(
                 &segments_path,
-                segment_config,
+                &segment_config,
                 payload_index_schema.clone(),
             )?;
         }

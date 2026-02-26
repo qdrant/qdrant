@@ -34,7 +34,7 @@ impl SegmentHolder {
     pub fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
-        segment_config: Option<SegmentConfig>,
+        segment_config: &SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,

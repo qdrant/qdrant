@@ -472,7 +472,7 @@ impl UpdateWorkers {
             let segments_guard = segments.upgradable_read();
             let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                Some(segment_config.base_segment_config()),
+                &segment_config.base_segment_config(),
                 payload_index_schema,
                 true,
             )?;
