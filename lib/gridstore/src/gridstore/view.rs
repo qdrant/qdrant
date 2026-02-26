@@ -75,7 +75,9 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
         for page_id in start_page_id.. {
             let page = &self.pages.get(page_id as usize).ok_or_else(|| {
-                GridstoreError::service_error("Expected existing page {page_id}, but wasn't found")
+                GridstoreError::service_error(format!(
+                    "Expected existing page {page_id}, but wasn't found"
+                ))
             })?;
 
             let (raw, unread_bytes) = page.read_value::<READ_SEQUENTIAL>(
