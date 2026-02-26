@@ -868,6 +868,15 @@ impl NonAppendableSegmentEntry for Segment {
             }
         }
     }
+
+    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+        let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id) else {
+            return false;
+        };
+        self.deferred_from_id
+            .map(|deferred_from| internal_id > deferred_from)
+            .unwrap_or(false)
+    }
 }
 
 impl SegmentEntry for Segment {

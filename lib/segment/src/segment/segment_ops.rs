@@ -55,6 +55,7 @@ impl Segment {
             vector_index.update_vector(internal_id, vector, hw_counter)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
+        self.handle_deferred_points(internal_id);
         Ok(())
     }
 
@@ -87,6 +88,7 @@ impl Segment {
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
             self.version_tracker.set_vector(&vector_name, Some(op_num));
         }
+        self.handle_deferred_points(internal_id);
         Ok(())
     }
 
@@ -112,6 +114,7 @@ impl Segment {
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+        self.handle_deferred_points(new_index);
         Ok(new_index)
     }
 
@@ -651,6 +654,35 @@ impl Segment {
     /// Returns list of IDs without mappings which should be removed from segment
     pub fn fix_id_tracker_inconsistencies(&mut self) -> OperationResult<Vec<PointOffsetType>> {
         self.id_tracker.borrow_mut().fix_inconsistencies()
+    }
+
+    /// Checks if the size of available vectors in any vector storage exceeds the indexing threshold.
+    fn storage_is_above_indexing_threshold(&self) -> bool {
+        if let Some(indexing_threshold_kb) = self.deferred_indexing_threshold_kb {
+            self.vector_data.keys().any(|vector_name| {
+                let storage_size_bytes = self
+                    .available_vectors_size_in_bytes(vector_name)
+                    .unwrap_or_default();
+
+                storage_size_bytes >= indexing_threshold_kb
+            })
+        } else {
+            false
+        }
+    }
+
+    /// Handles deferred points logic to trigger transition to deferred mode when the segment size exceeds the indexing threshold.
+    ///
+    /// Deferred mode can only be unset by the optimization process.
+    fn handle_deferred_points(&mut self, internal_id: PointOffsetType) {
+        if self.deferred_indexing_threshold_kb.is_none() {
+            return;
+        }
+
+        if self.deferred_from_id.is_none() && self.storage_is_above_indexing_threshold() {
+            // deferred mode needs to be enabled, but it is not yet, enable it from the next point
+            self.deferred_from_id = Some(internal_id)
+        }
     }
 }
 

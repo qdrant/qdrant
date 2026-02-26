@@ -380,6 +380,9 @@ impl SegmentHolder {
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
     ) {
+        // TODO account for deferred points
+        // - always keep last non-deferred version
+        // - keep deferred only if it is the last version
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
@@ -699,7 +702,11 @@ impl SegmentHolder {
                         appendable_write_segment
                             .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 
-                        write_segment.delete_point(op_num, point_id, hw_counter)?;
+                        // If the point is deferred in the original segment, we should not delete it,
+                        // because it is not visible for search and will be cleaned up later by the optimizer.
+                        if !appendable_write_segment.point_is_deferred(point_id) {
+                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                        }
 
                         Ok(true)
                     },

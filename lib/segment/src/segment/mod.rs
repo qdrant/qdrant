@@ -93,6 +93,11 @@ pub struct Segment {
     pub error_status: Option<SegmentFailedState>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
+    /// Indexing threshold in KiloBytes for deferred indexing mode.
+    /// Signal if deferred mode can be used.
+    pub deferred_indexing_threshold_kb: Option<usize>,
+    /// Signal if there are deferred points after `deferred_from_id`.
+    pub deferred_from_id: Option<u32>,
 }
 
 pub struct VectorData {

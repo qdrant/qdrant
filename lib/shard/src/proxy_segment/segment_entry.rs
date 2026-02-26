@@ -702,6 +702,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
             .read()
             .fill_query_context(query_context)
     }
+
+    fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+        self.wrapped_segment
+            .get()
+            .read()
+            .point_is_deferred(point_id)
+    }
 }
 
 impl SegmentEntry for ProxySegment {

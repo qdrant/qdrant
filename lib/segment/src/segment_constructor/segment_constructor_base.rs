@@ -644,6 +644,8 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
+        deferred_indexing_threshold_kb: None,
+        deferred_from_id: None,
     })
 }
 
