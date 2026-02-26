@@ -309,7 +309,7 @@ impl Segment {
             .borrow_mut()
             .clear_payload(internal_id, hw_counter)?;
 
-        self.id_tracker.borrow_mut().drop_internal(internal_id)?;
+        self.id_tracker.borrow().drop_internal(internal_id)?;
 
         // Before, we propagated point deletions to also delete its vectors. This turns
         // out to be problematic because this sometimes makes us lose vector data

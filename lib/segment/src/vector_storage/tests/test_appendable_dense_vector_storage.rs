@@ -209,7 +209,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 1.0, 0.0, 1.0],
         vec![1.0, 0.0, 0.0, 0.0],
     ];
-    let mut id_tracker = create_id_tracker_fixture(points.len());
+    let id_tracker = create_id_tracker_fixture(points.len());
 
     let hw_counter = HardwareCounterCell::new();
 

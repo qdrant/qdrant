@@ -62,11 +62,11 @@ pub trait IdTracker: fmt::Debug {
     ) -> OperationResult<()>;
 
     /// Drop mapping
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
+    fn drop(&self, external_id: PointIdType) -> OperationResult<()>;
 
     /// Same as `drop`, but by internal ID
     /// If mapping doesn't exist, still removes( unsets ) version.
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
+    fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()>;
 
     /// Get a reference to the point mappings, which provides iteration methods.
     fn point_mappings(&self) -> PointMappingsRefEnum<'_>;
@@ -349,7 +349,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(&self, external_id: PointIdType) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
@@ -359,7 +359,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),

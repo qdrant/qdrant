@@ -36,7 +36,7 @@ impl InMemoryIdTracker {
     pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
         let mappings = PointMappings::random_with_params(rand, size, bits_in_id);
 
-        let mut id_tracker = Self {
+        let id_tracker = Self {
             internal_to_version: (0..size)
                 .map(|_| AtomicSeqNumberType::new(rand.random()))
                 .collect(),
@@ -108,7 +108,7 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(&self, external_id: PointIdType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         if let Some(internal_id) = self.internal_id(external_id) {
             self.set_internal_deleted(internal_id);
@@ -117,7 +117,7 @@ impl IdTracker for InMemoryIdTracker {
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()> {
         // Unset version first because it still requires the mapping to exist
         let read_state = self.mappings.read();
         if let Some(external_id) = read_state.external_id(internal_id) {
@@ -200,7 +200,7 @@ mod test {
 
         // Create a random ID tracker with 32 points and half of them deleted.
         const ID_TRACKER_SIZE: u32 = 32;
-        let mut id_tracker =
+        let id_tracker =
             InMemoryIdTracker::random(&mut rand, ID_TRACKER_SIZE, ID_TRACKER_SIZE / 2, 10);
 
         // Find a deleted and a non-deleted point in the random id tracker.

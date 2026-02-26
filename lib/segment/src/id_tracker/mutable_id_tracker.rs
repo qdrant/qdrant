@@ -265,7 +265,7 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(&self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
@@ -276,7 +276,7 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(&self, internal_id: PointOffsetType) -> OperationResult<()> {
         let read_state = self.mappings.read();
         if let Some(external_id) = read_state.external_id(internal_id) {
             drop(read_state);
@@ -1038,7 +1038,7 @@ pub(super) mod tests {
             (id_tracker.mappings, id_tracker.internal_to_version)
         };
 
-        let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+        let loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
 
         assert_eq!(
             old_versions.len(),
@@ -1144,7 +1144,7 @@ pub(super) mod tests {
     #[test]
     fn test_point_deletion_correctness() {
         let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut id_tracker = make_mutable_tracker(segment_dir.path());
+        let id_tracker = make_mutable_tracker(segment_dir.path());
 
         let deleted_points = id_tracker.total_point_count() - id_tracker.available_point_count();
 
@@ -1186,7 +1186,7 @@ pub(super) mod tests {
         let point_to_delete = PointIdType::NumId(100);
 
         let old_mappings = {
-            let mut id_tracker = make_mutable_tracker(segment_dir.path());
+            let id_tracker = make_mutable_tracker(segment_dir.path());
             let intetrnal_id = id_tracker
                 .internal_id(point_to_delete)
                 .expect("Point to delete exists.");

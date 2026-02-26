@@ -376,7 +376,7 @@ mod tests {
             vec![1.0, 0.0, 0.0, 0.0],
         ];
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot, false).unwrap();
-        let mut id_tracker = create_id_tracker_fixture(points.len());
+        let id_tracker = create_id_tracker_fixture(points.len());
 
         // Assert this storage lists both the vector and deleted file
         let files = storage.files();

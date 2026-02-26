@@ -602,7 +602,7 @@ pub(super) mod test {
             (id_tracker.mappings, id_tracker.internal_to_version)
         };
 
-        let mut loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        let loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
 
         // We may extend the length of deleted bitvec as memory maps need to be aligned to
         // a multiple of `usize-width`.
@@ -705,7 +705,7 @@ pub(super) mod test {
     #[test]
     fn test_point_deletion_correctness() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let mut id_tracker = make_immutable_tracker(dir.path());
+        let id_tracker = make_immutable_tracker(dir.path());
 
         let deleted_points = id_tracker.total_point_count() - id_tracker.available_point_count();
 
@@ -747,7 +747,7 @@ pub(super) mod test {
         let point_to_delete = PointIdType::NumId(100);
 
         let old_mappings = {
-            let mut id_tracker = make_immutable_tracker(dir.path());
+            let id_tracker = make_immutable_tracker(dir.path());
             let intetrnal_id = id_tracker
                 .internal_id(point_to_delete)
                 .expect("Point to delete exists.");
@@ -918,7 +918,7 @@ pub(super) mod test {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-        let mut id_tracker = InMemoryIdTracker::new();
+        let id_tracker = InMemoryIdTracker::new();
         let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
 
         // Insert 100 random points into id_tracker
