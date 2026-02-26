@@ -39,7 +39,7 @@ impl<V: Blob> GridstoreReader<V> {
     ///
     /// Note: does not include bitmask files. Use [`super::Gridstore::files`] for the full list.
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut paths = Vec::with_capacity(self.pages.len() + 1);
+        let mut paths = Vec::with_capacity(self.pages.len() + 2);
         for tracker_file in self.tracker.files() {
             paths.push(tracker_file);
         }
@@ -50,35 +50,28 @@ impl<V: Blob> GridstoreReader<V> {
         paths
     }
 
-    pub fn immutable_files(&self) -> Vec<PathBuf> {
-        vec![self.base_path.join(CONFIG_FILENAME)]
-    }
-
     pub fn max_point_offset(&self) -> PointOffset {
         self.view().max_point_offset()
     }
 
     /// Open an existing read-only storage at the given path.
     ///
-    /// Infers page count by scanning for page files on disk (no bitmask needed).
+    /// Infers page count by scanning for page files on disk.
     pub fn open(base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = read_config_and_tracker(&base_path)?;
-        let num_pages = count_pages(&base_path);
-        Self::from_parts(base_path, config, tracker, num_pages)
-    }
 
-    /// Construct a reader from pre-opened components and load pages.
-    pub(super) fn from_parts(
-        base_path: PathBuf,
-        config: StorageConfig,
-        tracker: Tracker,
-        num_pages: usize,
-    ) -> Result<Self> {
-        let mut pages = Vec::with_capacity(num_pages);
-        for page_id in 0..num_pages as PageId {
+        let mut page_id = 0;
+        let mut pages = Vec::new();
+        loop {
             let page_path = base_path.join(format!("page_{page_id}.dat"));
+            if !page_path.exists() {
+                break;
+            }
+
             let page = Page::<MmapUniversal<u8>>::open(&page_path)?;
             pages.push(page);
+
+            page_id += 1;
         }
 
         Ok(Self {
@@ -166,12 +159,4 @@ pub(super) fn read_config_and_tracker(
     let tracker = Tracker::open(base_path)?;
 
     Ok((config, tracker))
-}
-
-fn count_pages(base_path: &std::path::Path) -> usize {
-    let mut count = 0;
-    while base_path.join(format!("page_{count}.dat")).exists() {
-        count += 1;
-    }
-    count
 }

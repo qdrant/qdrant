@@ -61,7 +61,7 @@ impl<V: Blob> Gridstore<V> {
         let tracker = self.tracker.read();
         let num_pages = self.pages.read().len();
 
-        let mut paths = Vec::with_capacity(num_pages + 1);
+        let mut paths = Vec::with_capacity(num_pages + 2);
         for tracker_file in tracker.files() {
             paths.push(tracker_file);
         }

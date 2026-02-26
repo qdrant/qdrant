@@ -74,7 +74,10 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         let mut raw_sections = Vec::with_capacity(length as usize);
 
         for page_id in start_page_id.. {
-            let page = &self.pages[page_id as usize];
+            let page = &self.pages.get(page_id as usize).ok_or_else(|| {
+                GridstoreError::service_error("Expected existing page {page_id}, but wasn't found")
+            })?;
+
             let (raw, unread_bytes) = page.read_value::<READ_SEQUENTIAL>(
                 block_offset,
                 length,
