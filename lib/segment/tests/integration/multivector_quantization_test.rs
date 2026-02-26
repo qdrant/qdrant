@@ -256,7 +256,7 @@ fn test_multivector_quantization_hnsw(
 
     segment
         .payload_index
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,

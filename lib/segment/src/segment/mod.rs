@@ -22,12 +22,12 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::is_alive_lock::IsAliveLock;
 use common::storage_version::StorageVersion;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 use uuid::Uuid;
 
-use self::version_tracker::VersionTracker;
+pub use self::version_tracker::VersionTracker;
 use crate::common::operation_error::SegmentFailedState;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::VectorIndexEnum;
@@ -69,7 +69,7 @@ pub struct Segment {
     pub initial_version: Option<SeqNumberType>,
     /// Latest update operation number, applied to this segment
     /// If None, there were no updates and segment is empty
-    pub version: Option<SeqNumberType>,
+    pub version: Arc<Mutex<Option<SeqNumberType>>>,
     /// Latest persisted version
     /// Locked structure on which we hold the lock during flush to prevent concurrent flushes
     pub persisted_version: Arc<Mutex<Option<SeqNumberType>>>,
@@ -77,11 +77,11 @@ pub struct Segment {
     pub is_alive_flush_lock: IsAliveLock,
     /// Path to the segment directory
     pub segment_path: PathBuf,
-    pub version_tracker: VersionTracker,
+    pub version_tracker: Arc<RwLock<VersionTracker>>,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_data: HashMap<VectorNameBuf, VectorData>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub payload_index: Arc<RwLock<StructPayloadIndex>>,
     pub payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,
@@ -90,7 +90,7 @@ pub struct Segment {
     pub segment_config: SegmentConfig,
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
-    pub error_status: Option<SegmentFailedState>,
+    pub error_status: RwLock<Option<SegmentFailedState>>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
 }
@@ -117,7 +117,7 @@ impl Drop for Segment {
             log::error!("Failed to clear cache of payload_storage: {e}");
         }
 
-        if let Err(e) = self.payload_index.borrow().clear_cache() {
+        if let Err(e) = self.payload_index.read().clear_cache() {
             log::error!("Failed to clear cache of payload_index: {e}");
         }
 

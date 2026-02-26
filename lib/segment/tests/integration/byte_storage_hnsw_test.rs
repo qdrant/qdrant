@@ -150,7 +150,7 @@ fn test_byte_storage_hnsw(
 
     segment_float
         .payload_index
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,
@@ -159,7 +159,7 @@ fn test_byte_storage_hnsw(
         .unwrap();
     segment_byte
         .payload_index
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,

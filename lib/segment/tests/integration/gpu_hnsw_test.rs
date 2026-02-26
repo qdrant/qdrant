@@ -115,7 +115,7 @@ fn test_gpu_filterable_hnsw() {
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
 
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,

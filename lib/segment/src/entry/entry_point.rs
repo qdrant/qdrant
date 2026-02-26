@@ -251,14 +251,14 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
 
     /// Delete field index, if exists
     fn delete_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool>;
 
     /// Delete field index, if exists and doesn't match the schema
     fn delete_field_index_if_incompatible(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: &PayloadFieldSchema,
@@ -275,7 +275,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
 
     /// Apply a built index. Returns whether it was actually applied or not.
     fn apply_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
         field_schema: PayloadFieldSchema,
@@ -284,7 +284,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
 
     /// Create index for a payload field, if not exists
     fn create_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: Option<&PayloadFieldSchema>,

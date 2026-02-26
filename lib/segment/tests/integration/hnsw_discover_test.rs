@@ -208,7 +208,7 @@ fn filtered_hnsw_discover_precision() {
 
     let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(keyword_key),
             PayloadSchemaType::Keyword,

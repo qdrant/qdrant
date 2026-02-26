@@ -397,14 +397,14 @@ fn sparse_vector_index_ram_filtered_search() {
     let hw_counter = HardwareCounterCell::new();
 
     // create payload field index
-    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().write();
     payload_index
         .set_indexed(&JsonPath::new(field_name), Keyword, &hw_counter)
         .unwrap();
     drop(payload_index);
 
     // assert payload field index created and empty
-    let payload_index = sparse_vector_index.payload_index().borrow();
+    let payload_index = sparse_vector_index.payload_index().read();
     let indexed_fields = payload_index.indexed_fields();
     assert_eq!(
         *indexed_fields.get(&JsonPath::new(field_name)).unwrap(),
@@ -420,7 +420,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let half_indexed_count = sparse_vector_index.indexed_vector_count() / 2;
     let payload = payload_json! {field_name: field_value};
     let hw_counter = HardwareCounterCell::new();
-    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().write();
     for idx in 0..half_indexed_count {
         payload_index
             .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
@@ -429,7 +429,7 @@ fn sparse_vector_index_ram_filtered_search() {
     drop(payload_index);
 
     // assert payload index updated
-    let payload_index = sparse_vector_index.payload_index().borrow();
+    let payload_index = sparse_vector_index.payload_index().read();
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
@@ -493,7 +493,7 @@ fn sparse_vector_index_plain_search() {
     let hw_counter = HardwareCounterCell::new();
 
     // add payload to all points
-    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().write();
     for idx in 0..NUM_VECTORS {
         payload_index
             .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)

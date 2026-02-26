@@ -90,7 +90,7 @@ pub struct HNSWIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    payload_index: Arc<parking_lot::RwLock<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
@@ -128,7 +128,7 @@ pub struct HnswIndexOpenArgs<'a> {
     pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub payload_index: Arc<parking_lot::RwLock<StructPayloadIndex>>,
     pub hnsw_config: HnswConfig,
 }
 
@@ -241,7 +241,7 @@ impl HNSWIndex {
         let id_tracker_ref = id_tracker.borrow();
         let vector_storage_ref = vector_storage.borrow();
         let quantized_vectors_ref = quantized_vectors.borrow();
-        let payload_index_ref = payload_index.borrow();
+        let payload_index_ref = payload_index.read();
 
         let total_vector_count = vector_storage_ref.total_vector_count();
 
@@ -1033,7 +1033,7 @@ impl HNSWIndex {
         let is_stopped = vector_query_context.is_stopped();
 
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
+        let payload_index = self.payload_index.read();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
 
@@ -1274,7 +1274,7 @@ impl HNSWIndex {
         let is_stopped = &vector_query_context.is_stopped();
 
         let id_tracker = self.id_tracker.borrow();
-        let payload_index = self.payload_index.borrow();
+        let payload_index = self.payload_index.read();
         let query_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let filtered_points = payload_index.iter_filtered_points(
@@ -1466,7 +1466,7 @@ impl VectorIndex for HNSWIndex {
                     );
                 }
 
-                let payload_index = self.payload_index.borrow();
+                let payload_index = self.payload_index.read();
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
                 let available_vector_count = vector_storage.available_vector_count();

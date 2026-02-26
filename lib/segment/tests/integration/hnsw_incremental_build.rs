@@ -146,7 +146,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
                 .vector_storage
                 .clone(),
             quantized_vectors: Default::default(),
-            payload_index: Arc::clone(&segment.payload_index),
+            payload_index: segment.payload_index.clone(),
             hnsw_config,
         },
         VectorIndexBuildArgs {
