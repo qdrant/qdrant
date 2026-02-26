@@ -281,22 +281,22 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             return None;
         }
 
-        let block_size_elements = count * self.config.dim;
-        let chunk_offset = self.get_chunk_offset(start_key);
-        let chunk_end = chunk_offset + block_size_elements;
+        let elements_length = count * self.config.dim;
+        let element_offset = self.get_chunk_offset(start_key);
+        let element_end = element_offset + elements_length;
         let chunk = &self.chunks[chunk_idx];
 
-        if chunk_end > self.config.chunk_size_vectors {
+        if element_end > self.config.chunk_size_vectors * self.config.dim {
             return None;
         }
 
         let range = BytesRange {
-            start: chunk_offset as u64,
-            length: block_size_elements as u64,
+            start: element_offset as u64,
+            length: elements_length as u64,
         };
 
         let use_sequential =
-            force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4;
+            force_sequential || elements_length * size_of::<T>() > PAGE_SIZE_BYTES * 4;
 
         if use_sequential {
             chunk.read::<true>(range).ok()
