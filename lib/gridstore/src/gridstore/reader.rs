@@ -32,7 +32,7 @@ pub struct GridstoreReader<V> {
 impl<V: Blob> GridstoreReader<V> {
     /// Create a [`GridstoreView`] borrowing this reader's data.
     pub fn view(&self) -> GridstoreView<'_, V, MmapUniversal<u8>> {
-        GridstoreView::new(self.config, &self.tracker, &self.pages)
+        GridstoreView::new(&self.config, &self.tracker, &self.pages)
     }
 
     /// List all files belonging to this reader (tracker, pages, config).

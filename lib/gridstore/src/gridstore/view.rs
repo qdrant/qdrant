@@ -31,14 +31,18 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
 pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
-    pub(super) config: StorageConfig,
+    pub(super) config: &'a StorageConfig,
     pub(super) tracker: &'a Tracker,
     pub(super) pages: &'a [Page<S>],
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
 impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
-    pub(crate) fn new(config: StorageConfig, tracker: &'a Tracker, pages: &'a [Page<S>]) -> Self {
+    pub(crate) fn new(
+        config: &'a StorageConfig,
+        tracker: &'a Tracker,
+        pages: &'a [Page<S>],
+    ) -> Self {
         Self {
             config,
             tracker,

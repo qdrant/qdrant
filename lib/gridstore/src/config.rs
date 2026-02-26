@@ -42,7 +42,7 @@ pub struct StorageOptions {
     pub compression: Option<Compression>,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StorageConfig {
     /// Size of a page in bytes
     ///
@@ -108,8 +108,8 @@ impl TryFrom<StorageOptions> for StorageConfig {
     }
 }
 
-impl From<StorageConfig> for StorageOptions {
-    fn from(config: StorageConfig) -> Self {
+impl From<&StorageConfig> for StorageOptions {
+    fn from(config: &StorageConfig) -> Self {
         Self {
             page_size_bytes: Some(config.page_size_bytes),
             block_size_bytes: Some(config.block_size_bytes),

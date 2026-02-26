@@ -53,7 +53,7 @@ impl<V: Blob> Gridstore<V> {
     fn with_view<R>(&self, f: impl FnOnce(GridstoreView<'_, V, MmapUniversal<u8>>) -> R) -> R {
         let pages = self.pages.read();
         let tracker = self.tracker.read();
-        f(GridstoreView::new(self.config, &tracker, &pages))
+        f(GridstoreView::new(&self.config, &tracker, &pages))
     }
 
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
@@ -114,7 +114,7 @@ impl<V: Blob> Gridstore<V> {
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
-        let bitmask = Bitmask::create(&base_path, config)?;
+        let bitmask = Bitmask::create(&base_path, config.clone())?;
 
         let storage = Self {
             tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
@@ -142,7 +142,7 @@ impl<V: Blob> Gridstore<V> {
     /// Uses the bitmask to infer page count for consistency with the write path.
     pub fn open(base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = reader::read_config_and_tracker(&base_path)?;
-        let bitmask = Bitmask::open(&base_path, config)?;
+        let bitmask = Bitmask::open(&base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
         let mut pages = Vec::with_capacity(num_pages);
@@ -346,7 +346,7 @@ impl<V: Blob> Gridstore<V> {
     ///
     /// Completely wipes the storage, and recreates it with a single empty page.
     pub fn clear(&mut self) -> Result<()> {
-        let create_options = StorageOptions::from(self.config);
+        let create_options = StorageOptions::from(&self.config);
         let base_path = self.base_path.clone();
 
         self.is_alive_flush_lock.blocking_mark_dead();
