@@ -355,7 +355,6 @@ impl UpdateWorkers {
 
             // Track optimizer status
             let new_segment_uuid = Uuid::new_v4();
-
             let (tracker, progress) =
                 Tracker::start(optimizer.name(), new_segment_uuid, segment_infos);
             let tracker_handle = tracker.handle();

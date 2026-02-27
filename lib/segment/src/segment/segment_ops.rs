@@ -682,9 +682,14 @@ impl Segment {
                         .is_some_and(|config| config.multivector_config.is_none())
                 })
                 .filter_map(|(_, vector_data)| -> Option<PointOffsetType> {
+                    // TODO: how to make is stable in case of vector by name insertion?
+                    // Is it a problem?
                     let storage = vector_data.vector_storage.borrow();
-                    let vector_size: NonZeroUsize =
-                        storage.get_vector_layout().ok()?.size().try_into().ok()?;
+                    let vector_size: NonZeroUsize = storage
+                        .get_vector_layout()
+                        .ok()
+                        .map(|layout| layout.size())
+                        .and_then(NonZeroUsize::new)?;
                     let deferred_internal_id = deferred_points_threshold_bytes
                         .get()
                         .div_ceil(vector_size.get());
