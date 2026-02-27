@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use bitvec::prelude::BitVec;
@@ -55,6 +56,7 @@ impl Segment {
             vector_index.update_vector(internal_id, vector, hw_counter)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
+        self.update_deferred_internal_id();
         Ok(())
     }
 
@@ -87,6 +89,7 @@ impl Segment {
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
             self.version_tracker.set_vector(&vector_name, Some(op_num));
         }
+        self.update_deferred_internal_id();
         Ok(())
     }
 
@@ -112,6 +115,7 @@ impl Segment {
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
+        self.update_deferred_internal_id();
         Ok(new_index)
     }
 
@@ -667,22 +671,30 @@ impl Segment {
         }
 
         if let Some(deferred_points_threshold_bytes) = self.deferred_points_threshold_bytes {
-            let is_deferred_reached = self
+            self.deferred_internal_id = self
                 .vector_data
-                .values()
-                //                .filter(|vector_data| vector_data.vector_index.borrow().is_index())
-                .any(|vector_data| {
-                    vector_data
-                    .vector_storage
-                    .borrow()
-                    .size_of_available_vectors_in_bytes() // use size_of_vectors_in_bytes, add it into vector storage
-                    >= deferred_points_threshold_bytes.get()
-                });
-
-            if is_deferred_reached {
-                // Need to calculate, no total_point_count
-                self.deferred_internal_id = Some(self.total_point_count() as PointOffsetType);
-            }
+                .iter()
+                .filter(|(vector_name, _)| {
+                    // Only consider vectors without multivector config
+                    self.segment_config
+                        .vector_data
+                        .get(vector_name.as_str())
+                        .is_some_and(|config| config.multivector_config.is_none())
+                })
+                .filter_map(|(_, vector_data)| -> Option<PointOffsetType> {
+                    let storage = vector_data.vector_storage.borrow();
+                    let vector_size: NonZeroUsize =
+                        storage.get_vector_layout().ok()?.size().try_into().ok()?;
+                    let deferred_internal_id = deferred_points_threshold_bytes
+                        .get()
+                        .div_ceil(vector_size.get());
+                    if deferred_internal_id < storage.total_vector_count() {
+                        Some(deferred_internal_id as PointOffsetType)
+                    } else {
+                        None
+                    }
+                })
+                .min();
         }
     }
 }
