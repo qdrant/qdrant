@@ -120,6 +120,12 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         dim: usize,
         populate: Option<bool>,
     ) -> OperationResult<ChunkedVectorsConfig> {
+        if dim == 0 {
+            return Err(OperationError::service_error(
+                "The vector's dimension cannot be 0",
+            ));
+        }
+
         let chunk_size_bytes = CHUNK_SIZE;
         let vector_size_bytes = dim * std::mem::size_of::<T>();
         let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
@@ -267,7 +273,11 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         Ok(new_id)
     }
 
-    // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
+    /// Returns `count` flattened vectors starting from `starting_key`.
+    ///
+    /// Returns `None` when:
+    /// - chunk boundary is crossed
+    /// - any section of `start_key..start_key + count` is out of bounds
     #[inline]
     fn get_many_impl(
         &self,
@@ -275,7 +285,10 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
         count: usize,
         force_sequential: bool,
     ) -> Option<Cow<'_, [T]>> {
-        let start_key: usize = start_key.as_();
+        if start_key.checked_add(count)? > self.status.len {
+            return None;
+        }
+
         let chunk_idx = self.get_chunk_index(start_key);
         if chunk_idx >= self.chunks.len() {
             return None;
