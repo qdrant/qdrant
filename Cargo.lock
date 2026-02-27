@@ -4964,18 +4964,39 @@ dependencies = [
  "backtrace",
  "cfg-if",
  "findshlibs",
- "framehop",
  "inferno",
+ "libc",
+ "log",
+ "nix 0.26.4",
+ "once_cell",
+ "prost 0.12.6",
+ "prost-build 0.12.6",
+ "prost-derive 0.12.6",
+ "sha2",
+ "smallvec",
+ "spin 0.10.0",
+ "symbolic-demangle",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "pprof-pyroscope-fork"
+version = "0.1500.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a81f1489b882945ce89a4c93dbb50b1bf31839188d3c83fb5e5eded6bad6ee2d"
+dependencies = [
+ "aligned-vec",
+ "backtrace",
+ "cfg-if",
+ "findshlibs",
+ "framehop",
  "libc",
  "log",
  "memmap2 0.5.10",
  "nix 0.26.4",
  "object 0.29.0",
  "once_cell",
- "prost 0.12.6",
- "prost-build 0.12.6",
- "prost-derive 0.12.6",
- "sha2",
  "smallvec",
  "spin 0.10.0",
  "symbolic-demangle",
@@ -5432,29 +5453,21 @@ dependencies = [
 
 [[package]]
 name = "pyroscope"
-version = "0.5.9"
-source = "git+https://github.com/grafana/pyroscope-rs?tag=lib-0.5.9#5a060b4ade591058a2613a0a34976fae7bbc4691"
+version = "1.0.1"
+source = "git+https://github.com/grafana/pyroscope-rs?tag=lib-1.0.1#6607a33fc58596ce8dc1725d772e8d2b06c17953"
 dependencies = [
+ "lazy_static",
  "libc",
  "libflate",
  "log",
  "names",
+ "pprof-pyroscope-fork",
  "prost 0.14.3",
  "reqwest 0.13.2",
  "serde_json",
  "thiserror 2.0.18",
  "url",
- "winapi",
-]
-
-[[package]]
-name = "pyroscope_pprofrs"
-version = "0.2.10"
-source = "git+https://github.com/grafana/pyroscope-rs?tag=lib-0.5.9#5a060b4ade591058a2613a0a34976fae7bbc4691"
-dependencies = [
- "log",
- "pprof",
- "pyroscope",
+ "uuid",
 ]
 
 [[package]]
@@ -5496,7 +5509,6 @@ dependencies = [
  "prometheus",
  "prost 0.11.9",
  "pyroscope",
- "pyroscope_pprofrs",
  "raft",
  "raft-proto",
  "rand 0.10.0",

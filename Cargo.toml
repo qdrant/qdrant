@@ -152,10 +152,9 @@ actix-web-extras = "0.1.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18.0", default-features = false }
 # Pyroscope integration
-# Using lib-0.5.9 tag for jemalloc signal-safety fix (pyroscope-rs#165):
-# pprof2 replaced with pprof 0.15 + framehop unwinder (no allocations in signal handler)
-pyroscope = { git = "https://github.com/grafana/pyroscope-rs", tag = "lib-0.5.9" }
-pyroscope_pprofrs = { git = "https://github.com/grafana/pyroscope-rs", tag = "lib-0.5.9" }
+# Using lib-1.0.1: pprof backend integrated into main crate, uses pprof-pyroscope-fork
+# with signal-safety fix (tikv/pprof-rs#282) — no allocations in signal handler
+pyroscope = { git = "https://github.com/grafana/pyroscope-rs", tag = "lib-1.0.1", features = ["backend-pprof-rs"] }
 # Backtrace
 rstack-self = { version = "0.3.0", optional = true }
 
