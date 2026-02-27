@@ -1,10 +1,9 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
 
-    use pyroscope::backend::BackendConfig;
+    use pyroscope::backend::{BackendConfig, PprofConfig, pprof_backend};
     use pyroscope::pyroscope::{PyroscopeAgentBuilder, PyroscopeAgentRunning};
     use pyroscope::{PyroscopeAgent, PyroscopeError};
-    use pyroscope_pprofrs::{PprofConfig, pprof_backend};
 
     use crate::common::debugger::PyroscopeConfig;
 
@@ -29,9 +28,8 @@ pub mod pyro {
                 }
             }
 
-            let pprof_config = PprofConfig {
-                sample_rate: config.sampling_rate.unwrap_or(100),
-            };
+            let sample_rate = config.sampling_rate.unwrap_or(100);
+            let pprof_config = PprofConfig { sample_rate };
             let backend_impl = pprof_backend(pprof_config, BackendConfig::default());
 
             log::info!(
@@ -39,9 +37,16 @@ pub mod pyro {
                 &config.identifier
             );
             // TODO: Add more tags like peerId and peerUrl
-            let agent = PyroscopeAgentBuilder::new(config.url.clone(), "qdrant", backend_impl)
-                .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
-                .build()?;
+            let agent = PyroscopeAgentBuilder::new(
+                config.url.clone(),
+                "qdrant",
+                sample_rate,
+                "pyroscope-rs",
+                env!("CARGO_PKG_VERSION"),
+                backend_impl,
+            )
+            .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
+            .build()?;
             let running_agent = agent.start()?;
 
             Ok(running_agent)
