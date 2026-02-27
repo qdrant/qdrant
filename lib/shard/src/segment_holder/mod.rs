@@ -5,7 +5,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
-use std::cmp::{max, min};
+use std::cmp::{Reverse, max, min};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
@@ -944,7 +944,7 @@ impl SegmentHolder {
             }
 
             // Sort points from highest to lowest version
-            points.sort_unstable_by_key(|p| p.version);
+            points.sort_unstable_by_key(|p| Reverse(p.version));
 
             // Keep the first point, remove all others which are older
             for &DedupPoint {
