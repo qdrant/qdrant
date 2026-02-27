@@ -8,7 +8,6 @@ use common::fs::{atomic_save_json, read_json};
 use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
-use num_traits::Zero;
 
 use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{
@@ -655,11 +654,8 @@ impl Segment {
     }
 
     pub fn has_deferred_points(&self) -> bool {
-        if let Some(deferred_internal_id) = self.deferred_internal_id {
-            (deferred_internal_id as usize) < self.total_point_count()
-        } else {
-            false
-        }
+        // Point is deferred if his internal ID >= deferred_internal_id
+        self.deferred_internal_id.is_some()
     }
 
     pub(crate) fn update_deferred_internal_id(&mut self) {
@@ -670,21 +666,21 @@ impl Segment {
             return;
         }
 
-        if let Some(deferred_threshold) = self.deferred_threshold {
-            // Corner case for zero threshold
-            if deferred_threshold.is_zero() {
-                return;
-            }
-
-            let is_deferred_reached = self.vector_data.values().any(|vector_data| {
-                vector_data
+        if let Some(deferred_points_threshold_bytes) = self.deferred_points_threshold_bytes {
+            let is_deferred_reached = self
+                .vector_data
+                .values()
+                //                .filter(|vector_data| vector_data.vector_index.borrow().is_index())
+                .any(|vector_data| {
+                    vector_data
                     .vector_storage
                     .borrow()
-                    .size_of_available_vectors_in_bytes()
-                    >= deferred_threshold
-            });
+                    .size_of_available_vectors_in_bytes() // use size_of_vectors_in_bytes, add it into vector storage
+                    >= deferred_points_threshold_bytes.get()
+                });
 
             if is_deferred_reached {
+                // Need to calculate, no total_point_count
                 self.deferred_internal_id = Some(self.total_point_count() as PointOffsetType);
             }
         }

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -36,7 +37,7 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        deferred_threshold: Option<usize>,
+        deferred_points_threshold_bytes: Option<NonZeroUsize>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
         SegmentId,
@@ -51,7 +52,7 @@ impl SegmentHolder {
             segments_path,
             segment_config,
             payload_index_schema,
-            deferred_threshold,
+            deferred_points_threshold_bytes,
             false,
         )?;
 

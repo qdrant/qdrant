@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -481,7 +482,7 @@ impl SegmentBuilder {
         self,
         segments_path: &Path,
         segment_uuid: Uuid,
-        deferred_threshold: Option<usize>,
+        deferred_points_threshold_bytes: Option<NonZeroUsize>,
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
@@ -726,7 +727,12 @@ impl SegmentBuilder {
         fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
-        load_segment(&destination_path, segment_uuid, deferred_threshold, stopped)
+        load_segment(
+            &destination_path,
+            segment_uuid,
+            deferred_points_threshold_bytes,
+            stopped,
+        )
     }
 
     fn update_quantization(

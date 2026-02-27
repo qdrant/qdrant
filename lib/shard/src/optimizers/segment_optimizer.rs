@@ -123,7 +123,7 @@ pub trait SegmentOptimizer: Sync {
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
             &config,
-            self.threshold_config().deferred_threshold,
+            self.threshold_config().deferred_points_threshold_bytes,
             save_version,
         )?))
     }
@@ -328,7 +328,7 @@ pub trait SegmentOptimizer: Sync {
             segment_holder,
             input_segment_ids,
             output_segment_uuid,
-            self.threshold_config().deferred_threshold,
+            self.threshold_config().deferred_points_threshold_bytes,
             &paths,
             permit,
             resource_budget,

@@ -8,6 +8,7 @@ mod tests;
 use std::cmp::{max, min};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -756,13 +757,13 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        deferred_threshold: Option<usize>,
+        deferred_points_threshold_bytes: Option<NonZeroUsize>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(
             segments_path,
             Some(segment_config),
             payload_index_schema,
-            deferred_threshold,
+            deferred_points_threshold_bytes,
             true,
         )?;
         self.add_new_locked(segment.clone());
@@ -791,7 +792,7 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        deferred_threshold: Option<usize>,
+        deferred_points_threshold_bytes: Option<NonZeroUsize>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
         let config = match segment_config {
@@ -812,7 +813,12 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment = build_segment(segments_path, &config, deferred_threshold, save_version)?;
+        let mut segment = build_segment(
+            segments_path,
+            &config,
+            deferred_points_threshold_bytes,
+            save_version,
+        )?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();

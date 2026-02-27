@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -458,7 +459,7 @@ fn create_segment(
     version: Option<SeqNumberType>,
     segment_path: &Path,
     uuid: Uuid,
-    deferred_threshold: Option<usize>,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     config: &SegmentConfig,
     stopped: &AtomicBool,
     create: bool,
@@ -646,7 +647,7 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        deferred_threshold,
+        deferred_points_threshold_bytes,
         deferred_internal_id: None,
     };
 
@@ -779,7 +780,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
 pub fn load_segment(
     path: &Path,
     uuid: Uuid,
-    deferred_threshold: Option<usize>,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
     let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
@@ -827,7 +828,7 @@ pub fn load_segment(
         segment_state.version,
         path,
         uuid,
-        deferred_threshold,
+        deferred_points_threshold_bytes,
         &segment_state.config,
         stopped,
         false,
@@ -863,7 +864,7 @@ pub fn load_segment(
 pub fn build_segment(
     segments_path: &Path,
     config: &SegmentConfig,
-    deferred_threshold: Option<usize>,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     ready: bool,
 ) -> OperationResult<Segment> {
     let uuid = Uuid::new_v4();
@@ -876,7 +877,7 @@ pub fn build_segment(
         None,
         &segment_path,
         uuid,
-        deferred_threshold,
+        deferred_points_threshold_bytes,
         config,
         &stopped,
         true,

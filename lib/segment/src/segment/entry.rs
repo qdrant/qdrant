@@ -898,6 +898,7 @@ impl SegmentEntry for Segment {
                     Ok((false, Some(new_index)))
                 }
             })?;
+        // move into insert_new_vectors and replace_all_vectors
         self.update_deferred_internal_id();
         Ok(result)
     }
@@ -922,6 +923,7 @@ impl SegmentEntry for Segment {
                         segment.update_vectors(internal_id, op_num, vectors, hw_counter)?;
                         Ok((true, Some(internal_id)))
                     })?;
+                // move into update_vectors
                 self.update_deferred_internal_id();
                 Ok(result)
             }

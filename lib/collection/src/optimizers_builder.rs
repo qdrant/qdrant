@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -149,7 +150,7 @@ impl OptimizersConfig {
             memmap_threshold_kb,
             indexing_threshold_kb,
             max_segment_size_kb: self.get_max_segment_size_in_kilobytes(num_indexing_threads),
-            deferred_threshold: self.get_deferred_threshold(),
+            deferred_points_threshold_bytes: self.get_deferred_points_threshold_bytes(),
         }
     }
 
@@ -161,9 +162,10 @@ impl OptimizersConfig {
         }
     }
 
-    pub fn get_deferred_threshold(&self) -> Option<usize> {
+    pub fn get_deferred_points_threshold_bytes(&self) -> Option<NonZeroUsize> {
         (self.prevent_unoptimized == Some(true))
             .then(|| self.get_indexing_threshold_kb().saturating_mul(BYTES_IN_KB))
+            .and_then(NonZeroUsize::new)
     }
 }
 

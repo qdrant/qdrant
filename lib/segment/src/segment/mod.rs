@@ -16,6 +16,7 @@ mod vectors;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -96,7 +97,7 @@ pub struct Segment {
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
     /// If set, shows that all points with internal id >= deferred_internal_id
     /// are not visible for read operations, but are already present in the segment.
-    pub(crate) deferred_threshold: Option<usize>,
+    pub(crate) deferred_points_threshold_bytes: Option<NonZeroUsize>,
     // Cached deferred internal id,
     // which is used for quick checks of point visibility without accessing vector storage.
     pub(crate) deferred_internal_id: Option<PointOffsetType>,
