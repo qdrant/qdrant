@@ -1,5 +1,4 @@
-use std::cmp::min;
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -142,57 +141,59 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
     /// Iterate over all the values in the storage.
     ///
-    /// Stops when the callback returns `Ok(false)`.
+    /// Stops when any of these conditions is true:
+    /// - the callback returns `Ok(false)`,
+    /// - it has iterated `max_iters` times
+    /// - there are no more results.
+    ///
+    /// ## Control Flow
+    /// Returns `Ok(Continue(next_offset))` if iteration can be continued starting from `next_offset`
+    ///  (i.e. `max_iters` was reached, but there are more results).
+    ///
+    /// Returns `Ok(Break())` when any of:
+    /// - `callback` returned false
+    /// - there are no more results.
+    ///
     pub fn iter<F, E>(
         &self,
+        from: PointOffset,
+        max_iters: usize,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), E>
+    ) -> std::result::Result<ControlFlow<(), PointOffset>, E>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        const BUFFER_SIZE: usize = 128;
-        let max_point_offset = self.max_point_offset();
+        let mut pointers_iter = self
+            .tracker
+            .iter_pointers(from)
+            .filter_map(|(point_offset, opt_pointer)| {
+                opt_pointer.map(|pointer| (point_offset, pointer))
+            })
+            .enumerate();
 
-        let mut from = 0;
-        let mut buffer = Vec::with_capacity(min(BUFFER_SIZE, max_point_offset as usize));
-
-        loop {
-            buffer.clear();
-            buffer.extend(
-                self.tracker
-                    .iter_pointers(from)
-                    .filter_map(|(point_offset, opt_pointer)| {
-                        opt_pointer.map(|pointer| (point_offset, pointer))
-                    })
-                    .take(BUFFER_SIZE),
-            );
-
-            if buffer.is_empty() {
-                break;
+        for (nth, (point_offset, pointer)) in pointers_iter.by_ref() {
+            if nth == max_iters {
+                return Ok(ControlFlow::Continue(point_offset));
             }
 
-            from = buffer.last().unwrap().0 + 1;
+            let ValuePointer {
+                page_id,
+                block_offset,
+                length,
+            } = pointer;
 
-            for &(point_offset, pointer) in &buffer {
-                let ValuePointer {
-                    page_id,
-                    block_offset,
-                    length,
-                } = pointer;
+            let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
 
-                let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
+            hw_counter.incr_delta(raw.len());
 
-                hw_counter.incr_delta(raw.len());
-
-                let decompressed = self.decompress(raw);
-                let value = V::from_bytes(&decompressed);
-                if !callback(point_offset, value)? {
-                    return Ok(());
-                }
+            let decompressed = self.decompress(raw);
+            let value = V::from_bytes(&decompressed);
+            if !callback(point_offset, value)? {
+                return Ok(ControlFlow::Break(()));
             }
         }
-        Ok(())
+        Ok(ControlFlow::Break(()))
     }
 }

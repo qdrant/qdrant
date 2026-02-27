@@ -1,4 +1,5 @@
 use std::io::BufReader;
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -105,7 +106,12 @@ impl<V: Blob> GridstoreReader<V> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        self.view().iter(callback, hw_counter)
+        let control_flow = self.view().iter(0, usize::MAX, callback, hw_counter)?;
+
+        // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
+        debug_assert!(matches!(control_flow, ControlFlow::Break(())));
+
+        Ok(())
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).
