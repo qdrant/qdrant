@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -146,27 +146,38 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     /// - it has iterated `max_iters` times
     /// - there are no more results.
     ///
-    /// Returns the last value returned by `callback`.
+    /// ## Control Flow
+    /// Returns `Ok(Continue(next_offset))` if iteration can be continued starting from `next_offset`
+    ///  (i.e. `max_iters` was reached, but there are more results).
+    ///
+    /// Returns `Ok(Break())` when any of:
+    /// - `callback` returned false
+    /// - there are no more results.
+    ///
     pub fn iter<F, E>(
         &self,
         from: PointOffset,
         max_iters: usize,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<bool, E>
+    ) -> std::result::Result<ControlFlow<(), PointOffset>, E>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let pointers_iter = self
+        let mut pointers_iter = self
             .tracker
             .iter_pointers(from)
             .filter_map(|(point_offset, opt_pointer)| {
                 opt_pointer.map(|pointer| (point_offset, pointer))
             })
-            .take(max_iters);
+            .enumerate();
 
-        for (point_offset, pointer) in pointers_iter {
+        for (nth, (point_offset, pointer)) in pointers_iter.by_ref() {
+            if nth == max_iters {
+                return Ok(ControlFlow::Continue(point_offset));
+            }
+
             let ValuePointer {
                 page_id,
                 block_offset,
@@ -180,10 +191,9 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
             if !callback(point_offset, value)? {
-                return Ok(false);
+                return Ok(ControlFlow::Break(()));
             }
         }
-
-        Ok(true)
+        Ok(ControlFlow::Break(()))
     }
 }

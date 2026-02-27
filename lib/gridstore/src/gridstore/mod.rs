@@ -3,6 +3,7 @@ mod reader;
 mod tests;
 pub(crate) mod view;
 
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -419,28 +420,13 @@ impl<V: Blob> Gridstore<V> {
     {
         const BATCH_SIZE: usize = 128;
 
-        let mut last_offset = 0;
         let mut from_offset = 0;
-
         // Iterate in batches to allow releasing read locks, see:
         // <https://github.com/qdrant/qdrant/pull/7983>
-        while self.with_view(|view| {
-            view.iter(
-                from_offset,
-                BATCH_SIZE,
-                |point_offset, value| {
-                    last_offset = point_offset;
-
-                    callback(point_offset, value)
-                },
-                hw_counter,
-            )
-        })? {
-            if last_offset == from_offset {
-                break;
-            }
-
-            from_offset = last_offset + 1;
+        while let ControlFlow::Continue(next_offset) =
+            self.with_view(|view| view.iter(from_offset, BATCH_SIZE, &mut callback, hw_counter))?
+        {
+            from_offset = next_offset;
         }
 
         Ok(())
