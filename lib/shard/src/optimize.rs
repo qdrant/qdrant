@@ -109,7 +109,7 @@ pub fn proxy_deleted_points(proxies: &[LockedSegment]) -> DeletedPoints {
             }
             LockedSegment::Proxy(proxy) => {
                 let proxy_read = proxy.read();
-                for (point_id, versions) in proxy_read.get_deleted_points() {
+                for (point_id, versions) in &*proxy_read.get_deleted_points() {
                     let entry = deleted_points.entry(*point_id).or_insert(*versions);
                     entry.operation_version =
                         entry.operation_version.max(versions.operation_version);
@@ -280,7 +280,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     drop(progress_wait_permit);
 
     let mut rng = rand::rng();
-    let mut optimized_segment = segment_builder.build(
+    let optimized_segment = segment_builder.build(
         segments_path,
         output_segment_uuid,
         indexing_permit,
@@ -396,7 +396,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
 fn finish_optimization(
     segment_holder: &LockedSegmentHolder,
     locked_proxies: Vec<LockedSegment>,
-    mut optimized_segment: Segment,
+    optimized_segment: Segment,
     already_remove_points: &DeletedPoints,
     proxy_ids: &[SegmentId],
     cow_segment_id_opt: Option<SegmentId>,

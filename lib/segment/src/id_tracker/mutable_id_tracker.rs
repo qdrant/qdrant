@@ -244,6 +244,16 @@ impl IdTracker for MutableIdTracker {
         Ok(())
     }
 
+    fn update_internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        self.internal_to_version[internal_id as usize].store(version, AtomicOrdering::Release);
+        self.pending_versions.lock().insert(internal_id, version);
+        Ok(())
+    }
+
     // TODO make the lock explicit?
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
         self.mappings.read().internal_id(&external_id)

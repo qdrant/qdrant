@@ -539,7 +539,7 @@ impl SegmentHolder {
         for (segment_id, points) in to_delete {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write();
+            let write_segment = segment_arc.read();
 
             for point_id in points {
                 if let Some(version) = write_segment.point_version(point_id) {
@@ -886,7 +886,7 @@ impl SegmentHolder {
                 move || {
                     let mut removed_points = 0;
                     let segment_arc = locked_segment.get();
-                    let mut write_segment = segment_arc.write();
+                    let write_segment = segment_arc.read();
 
                     let disposable_hw_counter = HardwareCounterCell::disposable();
 

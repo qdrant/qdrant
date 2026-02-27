@@ -9,7 +9,7 @@ use common::atomic_bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use segment::common::operation_error::OperationResult;
 use segment::types::*;
 
@@ -32,7 +32,7 @@ pub struct ProxySegment {
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
-    deleted_points: DeletedPoints,
+    deleted_points: RwLock<DeletedPoints>,
     wrapped_config: SegmentConfig,
 
     /// Version of the last change in this proxy, considering point deletes and payload index
@@ -64,7 +64,7 @@ impl ProxySegment {
             wrapped_segment: segment,
             deleted_mask,
             changed_indexes: RwLock::new(ProxyIndexChanges::default()),
-            deleted_points: AHashMap::new(),
+            deleted_points: RwLock::new(AHashMap::new()),
             wrapped_config,
             version: version.into(),
         }
@@ -116,13 +116,14 @@ impl ProxySegment {
     /// Updates the deleted mask with the given point offset
     /// Ensures that the mask is resized if necessary and returns false
     /// if either the mask or the point offset is missing (mask is not applicable)
-    fn set_deleted_offset(&mut self, point_offset: Option<PointOffsetType>) -> bool {
-        match (&mut self.deleted_mask, point_offset) {
+    fn set_deleted_offset(&self, point_offset: Option<PointOffsetType>) -> bool {
+        match (&self.deleted_mask, point_offset) {
             (Some(deleted_mask), Some(point_offset)) => {
-                if deleted_mask.len() <= point_offset as usize {
-                    deleted_mask.resize(point_offset as usize + 1, false);
-                }
-                deleted_mask.set(point_offset as usize, true);
+                // The bitmask is initialized with the copy of the original deleted mask, so resizing it is not expected.
+                // if deleted_mask.len() <= point_offset as usize {
+                //     deleted_mask.resize(point_offset as usize + 1, false);
+                // }
+                deleted_mask.set_aliased(point_offset as usize, true);
                 true
             }
             _ => false,
@@ -216,9 +217,10 @@ impl ProxySegment {
         // Propagate deleted points
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
-            if !self.deleted_points.is_empty() {
+            let mut deleted_points = self.deleted_points.upgradable_read();
+            if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (point_id, versions) in self.deleted_points.iter() {
+                    for (point_id, versions) in deleted_points.iter() {
                         // Note:
                         // Queued deletes may have an older version than what is currently in the
                         // wrapped segment. Such deletes are ignored because the point in the
@@ -233,7 +235,7 @@ impl ProxySegment {
                     }
                     OperationResult::Ok(())
                 })?;
-                self.deleted_points.clear();
+                deleted_points.with_upgraded(|deleted_points| deleted_points.clear());
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
@@ -244,11 +246,11 @@ impl ProxySegment {
         Ok(())
     }
 
-    pub fn get_deleted_points(&self) -> &DeletedPoints {
-        &self.deleted_points
+    pub fn get_deleted_points(&self) -> RwLockReadGuard<'_, DeletedPoints> {
+        self.deleted_points.read()
     }
 
-    pub fn get_index_changes(&self) -> parking_lot::RwLockReadGuard<'_, ProxyIndexChanges> {
+    pub fn get_index_changes(&self) -> RwLockReadGuard<'_, ProxyIndexChanges> {
         self.changed_indexes.read()
     }
 }

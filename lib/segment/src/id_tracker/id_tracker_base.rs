@@ -44,6 +44,12 @@ pub trait IdTracker: fmt::Debug {
         version: SeqNumberType,
     ) -> OperationResult<()>;
 
+    fn update_internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()>;
+
     /// Returns internal ID of the point, which is used inside this segment
     ///
     /// Excludes soft deleted points.
@@ -282,6 +288,28 @@ impl IdTracker for IdTrackerEnum {
             }
             #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
+        }
+    }
+
+    fn update_internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.update_internal_version(internal_id, version)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.update_internal_version(internal_id, version)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.update_internal_version(internal_id, version)
+            }
+            #[cfg(feature = "rocksdb")]
+            IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
+                id_tracker.update_internal_version(internal_id, version)
+            }
         }
     }
 

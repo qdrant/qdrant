@@ -72,6 +72,18 @@ impl IdTracker for InMemoryIdTracker {
             .map(|cell| cell.load(AtomicOrdering::Acquire))
     }
 
+    fn update_internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        if self.external_id(internal_id).is_some() {
+            self.internal_to_version[internal_id as usize].store(version, AtomicOrdering::Release);
+        }
+
+        Ok(())
+    }
+
     fn set_internal_version(
         &mut self,
         internal_id: PointOffsetType,

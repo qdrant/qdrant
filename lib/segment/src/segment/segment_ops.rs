@@ -190,6 +190,85 @@ impl Segment {
     ///
     /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
     pub(super) fn handle_point_version_and_failure<F>(
+        &self,
+        op_num: SeqNumberType,
+        op_point_offset: Option<PointOffsetType>,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+    {
+        let mut error_status_guard = self.error_status.upgradable_read();
+        if let Some(SegmentFailedState {
+            version: failed_version,
+            point_id: _failed_point_id,
+            error,
+        }) = &*error_status_guard
+        {
+            // Failed operations should not be skipped,
+            // fail if newer operation is attempted before proper recovery
+            if *failed_version < op_num {
+                return Err(OperationError::service_error(format!(
+                    "Not recovered from previous error: {error}"
+                )));
+            } // else: Re-try operation
+        }
+
+        let res = self.handle_point_version(op_num, op_point_offset, operation);
+
+        match get_service_error(&res) {
+            None => {
+                // Recover error state
+                match &*error_status_guard {
+                    None => {} // all good
+                    Some(error) => {
+                        let point_id = op_point_offset.and_then(|point_offset| {
+                            self.id_tracker.borrow().external_id(point_offset)
+                        });
+                        if error.point_id == point_id {
+                            // Fixed
+                            log::info!("Recovered from error: {}", error.error);
+                            error_status_guard.with_upgraded(|error_status| {
+                                *error_status = None;
+                            });
+                        }
+                    }
+                }
+            }
+            Some(error) => {
+                // ToDo: Recover previous segment state
+                log::error!(
+                    "Segment {:?} operation error: {error}",
+                    self.segment_path.as_path(),
+                );
+                let point_id = op_point_offset
+                    .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
+                error_status_guard.with_upgraded(|error_status| {
+                    *error_status = Some(SegmentFailedState {
+                        version: op_num,
+                        point_id,
+                        error,
+                    })
+                });
+            }
+        }
+        res
+    }
+
+    /// Operation wrapped, which handles previous and new errors in the segment, automatically
+    /// updates versions and skips operations if the point version is too old
+    ///
+    /// # Arguments
+    ///
+    /// * `op_num` - sequential operation of the current operation
+    /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
+    ///   Otherwise, it will be applied without version checks.
+    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside) and optionally new offset of the changed point.
+    ///
+    /// # Result
+    ///
+    /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
+    pub(super) fn handle_point_version_and_failure_mut<F>(
         &mut self,
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
@@ -213,7 +292,7 @@ impl Segment {
             } // else: Re-try operation
         }
 
-        let res = self.handle_point_version(op_num, op_point_offset, operation);
+        let res = self.handle_point_version_mut(op_num, op_point_offset, operation);
 
         match get_service_error(&res) {
             None => {
@@ -277,6 +356,42 @@ impl Segment {
     /// If current version is higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     pub(super) fn handle_point_version<F>(
+        &self,
+        op_num: SeqNumberType,
+        op_point_offset: Option<PointOffsetType>,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+    {
+        // If point does not exist or has lower version, ignore operation
+        if let Some(point_offset) = op_point_offset
+            && self
+                .id_tracker
+                .borrow()
+                .internal_version(point_offset)
+                .is_some_and(|current_version| current_version > op_num)
+        {
+            return Ok(false);
+        }
+
+        let (applied, internal_id) = operation(self)?;
+
+        self.bump_segment_version(op_num);
+        if let Some(internal_id) = internal_id {
+            self.id_tracker
+                .borrow()
+                .update_internal_version(internal_id, op_num)?;
+        }
+
+        Ok(applied)
+    }
+
+    /// Manage point version checking inside this segment, for point level operations
+    ///
+    /// If current version is higher than operation version - do not perform the operation
+    /// Update current version if operation successfully executed
+    pub(super) fn handle_point_version_mut<F>(
         &mut self,
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
@@ -309,7 +424,7 @@ impl Segment {
     }
 
     pub fn delete_point_internal(
-        &mut self,
+        &self,
         internal_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {

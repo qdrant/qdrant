@@ -322,7 +322,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     }
 
     fn delete_point(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,

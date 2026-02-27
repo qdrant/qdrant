@@ -430,6 +430,16 @@ impl IdTracker for ImmutableIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         self.inner
+            .get_mut()
+            .set_internal_version(internal_id, version)
+    }
+
+    fn update_internal_version(
+        &self,
+        internal_id: PointOffsetType,
+        version: SeqNumberType,
+    ) -> OperationResult<()> {
+        self.inner
             .write()
             .set_internal_version(internal_id, version)
     }

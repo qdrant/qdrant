@@ -53,6 +53,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         // into the write segment again.
         if self
             .deleted_points
+            .read()
             .get(&point_id)
             .is_some_and(|delete| wrapped_version <= delete.local_version)
         {
@@ -76,7 +77,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         // Some point might be deleted after temporary segment creation
         // We need to prevent them from being found by search request
         // That is why we need to pass additional filter for deleted points
-        let do_update_filter = !self.deleted_points.is_empty();
+        let do_update_filter = !self.deleted_points.read().is_empty();
         let wrapped_results = if do_update_filter {
             // If we are wrapping a segment with deleted points,
             // we can make this hack of replacing deleted_points of the wrapped_segment
@@ -100,7 +101,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             } else {
                 let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                     filter,
-                    self.deleted_points.keys().copied(),
+                    self.deleted_points.read().keys().copied(),
                 );
 
                 self.wrapped_segment.get().read().search_batch(
@@ -142,12 +143,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
             .rescore_with_formula(formula_ctx, hw_counter)?;
 
         let result = {
-            if self.deleted_points.is_empty() {
+            let deleted_points = self.deleted_points.read();
+            if deleted_points.is_empty() {
                 wrapped_results
             } else {
                 wrapped_results
                     .into_iter()
-                    .filter(|point| !self.deleted_points.contains_key(&point.id))
+                    .filter(|point| !deleted_points.contains_key(&point.id))
                     .collect()
             }
         };
@@ -161,7 +163,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        if self.deleted_points.contains_key(&point_id) {
+        if self.deleted_points.read().contains_key(&point_id) {
             Ok(None)
         } else {
             self.wrapped_segment
@@ -203,7 +205,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        if self.deleted_points.contains_key(&point_id) {
+        if self.deleted_points.read().contains_key(&point_id) {
             Ok(Payload::default())
         } else {
             self.wrapped_segment
@@ -221,10 +223,11 @@ impl NonAppendableSegmentEntry for ProxySegment {
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let deleted_points_guard = self.deleted_points.read();
         let filtered_point_ids: Vec<PointIdType> = point_ids
             .iter()
             .copied()
-            .filter(|id| !self.deleted_points.contains_key(id))
+            .filter(|id| !deleted_points_guard.contains_key(id))
             .collect();
         self.wrapped_segment.get().read().retrieve(
             &filtered_point_ids,
@@ -250,7 +253,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        if self.deleted_points.is_empty() {
+        let deleted_points_guard = self.deleted_points.read();
+        if deleted_points_guard.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -258,7 +262,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
-                self.deleted_points.keys().copied(),
+                deleted_points_guard.keys().copied(),
             );
             self.wrapped_segment.get().read().read_filtered(
                 offset,
@@ -278,7 +282,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
-        let read_points = if self.deleted_points.is_empty() {
+        let deleted_points_guard = self.deleted_points.read();
+        let read_points = if deleted_points_guard.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -286,7 +291,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
-                self.deleted_points.keys().copied(),
+                deleted_points_guard.keys().copied(),
             );
             self.wrapped_segment.get().read().read_ordered_filtered(
                 limit,
@@ -306,7 +311,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
-        if self.deleted_points.is_empty() {
+        let deleted_points_guard = self.deleted_points.read();
+        if deleted_points_guard.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -314,7 +320,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
-                self.deleted_points.keys().copied(),
+                deleted_points_guard.keys().copied(),
             );
             self.wrapped_segment.get().read().read_random_filtered(
                 limit,
@@ -328,12 +334,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let read_points = self.wrapped_segment.get().read().read_range(from, to);
-        if self.deleted_points.is_empty() {
+        let deleted_points_guard = self.deleted_points.read();
+        if deleted_points_guard.is_empty() {
             read_points
         } else {
             read_points
                 .into_iter()
-                .filter(|idx| !self.deleted_points.contains_key(idx))
+                .filter(|idx| !deleted_points_guard.contains_key(idx))
                 .collect()
         }
     }
@@ -359,7 +366,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        let hits = if self.deleted_points.is_empty() {
+        let deleted_points_guard = self.deleted_points.read();
+        let hits = if deleted_points_guard.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -367,7 +375,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 request.filter.as_ref(),
-                self.deleted_points.keys().copied(),
+                deleted_points_guard.keys().copied(),
             );
             let new_request = FacetParams {
                 filter: Some(wrapped_filter),
@@ -383,7 +391,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        !self.deleted_points.contains_key(&point_id)
+        !self.deleted_points.read().contains_key(&point_id)
             && self.wrapped_segment.get().read().has_point(point_id)
     }
 
@@ -392,13 +400,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn available_point_count(&self) -> usize {
-        let deleted_points_count = self.deleted_points.len();
+        let deleted_points_count = self.deleted_points.read().len();
         let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
         wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 
     fn deleted_point_count(&self) -> usize {
-        self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.len()
+        self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.read().len()
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
@@ -411,7 +419,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         let stored_points = wrapped_count;
         // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
         if stored_points > 0 {
-            let deleted_points_count = self.deleted_points.len();
+            let deleted_points_count = self.deleted_points.read().len();
             let available_points = stored_points.saturating_sub(deleted_points_count);
             Ok(
                 ((wrapped_size as u128) * available_points as u128 / stored_points as u128)
@@ -427,7 +435,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
-        let deleted_point_count = self.deleted_points.len();
+        let deleted_point_count = self.deleted_points.read().len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
@@ -478,7 +486,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
 
         let vector_name_count =
             self.config().vector_data.len() + self.config().sparse_vector_data.len();
-        let deleted_points_count = self.deleted_points.len();
+        let deleted_points_count = self.deleted_points.read().len();
 
         // This is a best estimate
         let num_vectors = wrapped_info
@@ -618,20 +626,23 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn delete_point(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         point_id: PointIdType,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
 
-        *self.version.get_mut() = cmp::max(*self.version.get_mut(), op_num);
+        {
+            let mut version_guard = self.version.lock();
+            *version_guard = cmp::max(*version_guard, op_num);
+        }
 
         let point_offset = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
-                    let prev = self.deleted_points.insert(
+                    let prev = self.deleted_points.write().insert(
                         point_id,
                         ProxyDeletedPoint {
                             local_version: op_num,
@@ -650,7 +661,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             }
             LockedSegment::Proxy(proxy) => {
                 if proxy.read().has_point(point_id) {
-                    let prev = self.deleted_points.insert(
+                    let prev = self.deleted_points.write().insert(
                         point_id,
                         ProxyDeletedPoint {
                             local_version: op_num,
