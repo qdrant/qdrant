@@ -8150,7 +8150,7 @@
             "nullable": true
           },
           "ascii_folding": {
-            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default: false.",
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"a\u00e7\u00e3o\" -> \"acao\"). Default: false.",
             "type": "boolean",
             "nullable": true
           },
@@ -9253,6 +9253,9 @@
             "$ref": "#/components/schemas/Range"
           },
           {
+            "$ref": "#/components/schemas/IntegerRange"
+          },
+          {
             "$ref": "#/components/schemas/DatetimeRange"
           }
         ]
@@ -9283,6 +9286,36 @@
             "description": "point.key <= range.lte",
             "type": "number",
             "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "IntegerRange": {
+        "description": "Range filter request",
+        "type": "object",
+        "properties": {
+          "lt": {
+            "description": "point.key < range.lt",
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "gt": {
+            "description": "point.key > range.gt",
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "gte": {
+            "description": "point.key >= range.gte",
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "lte": {
+            "description": "point.key <= range.lte",
+            "type": "integer",
+            "format": "int64",
             "nullable": true
           }
         }
@@ -11189,7 +11222,7 @@
             "nullable": true
           },
           "ascii_folding": {
-            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default is `false`.",
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"a\u00e7\u00e3o\" -> \"acao\"). Default is `false`.",
             "type": "boolean",
             "nullable": true
           },
