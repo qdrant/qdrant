@@ -412,7 +412,6 @@ impl ScoredPoint {
             vector: _,
         } = self;
 
-        // TODO: this is NOT efficient due to clone and may have a significant performance impact
         (*id, shard_key.clone(), *order_value)
     }
 }
