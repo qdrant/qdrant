@@ -354,6 +354,10 @@ impl NonAppendableSegmentEntry for Segment {
         self.id_tracker.borrow().deleted_point_count()
     }
 
+    fn total_point_count(&self) -> usize {
+        self.id_tracker.borrow().total_point_count()
+    }
+
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = self

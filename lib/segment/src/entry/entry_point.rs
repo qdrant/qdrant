@@ -194,6 +194,9 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
 
+    /// Number of total points, available and deleted
+    fn total_point_count(&self) -> usize;
+
     /// Size of all available vectors in storage
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 

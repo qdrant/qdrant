@@ -43,7 +43,7 @@ pub struct ProxySegment {
 
 impl ProxySegment {
     pub fn new(segment: LockedSegment) -> Self {
-        let deleted_mask = match &segment {
+        let mut deleted_mask = match &segment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_guard = raw_segment.read();
                 let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
@@ -59,6 +59,13 @@ impl ProxySegment {
             let read_segment = segment.get().read();
             (read_segment.config().clone(), read_segment.version())
         };
+
+        if let Some(delete_mask) = deleted_mask.as_mut() {
+            let count = segment.get().read().total_point_count();
+            if count > delete_mask.len() {
+                delete_mask.resize(count, false);
+            }
+        }
 
         ProxySegment {
             wrapped_segment: segment,

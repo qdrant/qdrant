@@ -409,6 +409,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().deleted_point_count() + self.deleted_points.read().len()
     }
 
+    fn total_point_count(&self) -> usize {
+        self.wrapped_segment.get().read().total_point_count()
+    }
+
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
