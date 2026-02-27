@@ -419,22 +419,29 @@ impl<V: Blob> Gridstore<V> {
     {
         const BATCH_SIZE: usize = 128;
 
-        let mut from = 0;
+        let mut last_offset = 0;
+        let mut from_offset = 0;
 
         // Iterate in batches to allow releasing read locks, see:
         // <https://github.com/qdrant/qdrant/pull/7983>
         while self.with_view(|view| {
             view.iter(
-                from,
+                from_offset,
                 BATCH_SIZE,
                 |point_offset, value| {
-                    from = point_offset + 1;
+                    last_offset = point_offset;
 
                     callback(point_offset, value)
                 },
                 hw_counter,
             )
-        })? {}
+        })? {
+            if last_offset == from_offset {
+                break;
+            }
+
+            from_offset = last_offset + 1;
+        }
 
         Ok(())
     }

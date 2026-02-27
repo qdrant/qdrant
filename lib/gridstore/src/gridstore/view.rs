@@ -141,7 +141,10 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
     /// Iterate over all the values in the storage.
     ///
-    /// Stops when the callback returns `Ok(false)`, it has iterated `count` times, or there are no more results.
+    /// Stops when any of these conditions is true:
+    /// - the callback returns `Ok(false)`,
+    /// - it has iterated `max_iters` times
+    /// - there are no more results.
     ///
     /// Returns the last value returned by `callback`.
     pub fn iter<F, E>(
