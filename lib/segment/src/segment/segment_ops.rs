@@ -682,8 +682,6 @@ impl Segment {
                         .is_some_and(|config| config.multivector_config.is_none())
                 })
                 .filter_map(|(_, vector_data)| -> Option<PointOffsetType> {
-                    // TODO: how to make is stable in case of vector by name insertion?
-                    // Is it a problem?
                     let storage = vector_data.vector_storage.borrow();
                     let vector_size: NonZeroUsize = storage
                         .get_vector_layout()
