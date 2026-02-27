@@ -215,6 +215,14 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         &self.multi_vector_config
     }
 
+    fn inner_vectors_count_up_to(&self, key: PointOffsetType) -> usize {
+        let key = (key as usize).min(self.vectors_metadata.len());
+        self.vectors_metadata[..key]
+            .iter()
+            .map(|m| m.inner_vectors_count)
+            .sum()
+    }
+
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         if self.total_vector_count() > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();

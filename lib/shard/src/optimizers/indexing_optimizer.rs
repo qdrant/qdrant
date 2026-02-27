@@ -83,7 +83,9 @@ impl IndexingOptimizer {
                     is_big_for_mmap && !is_on_disk
                 };
 
-                if optimize_for_index || optimize_for_mmap {
+                let has_deferred_points = segment.has_deferred_points();
+
+                if optimize_for_index || optimize_for_mmap || has_deferred_points {
                     return true;
                 }
             }

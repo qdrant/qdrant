@@ -653,13 +653,40 @@ impl Segment {
         self.id_tracker.borrow_mut().fix_inconsistencies()
     }
 
+    pub fn has_deferred_points(&self) -> bool {
+        if let Some(deferred_internal_id) = self.deferred_internal_id {
+            (deferred_internal_id as usize) < self.total_point_count()
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn update_deferred_internal_id(&mut self) {
-        if !self.is_appendable() || self.config().vector_data.is_empty() {
+        if self.deferred_internal_id.is_none()
+            || !self.is_appendable()
+            || self.config().vector_data.is_empty()
+        {
             self.deferred_internal_id = None;
             return;
         }
 
-        todo!()
+        if let Some(deferred_threshold) = self.deferred_threshold {
+            let deferred_id = self
+                .vector_data
+                .values()
+                .filter_map(|vector_data| {
+                    vector_data
+                        .vector_storage
+                        .borrow()
+                        .get_deferred_id(deferred_threshold)
+                })
+                .min();
+            if let Some(deferred_id) = deferred_id
+                && (deferred_id as usize) < self.total_point_count()
+            {
+                self.deferred_internal_id = Some(deferred_id);
+            }
+        }
     }
 }
 
