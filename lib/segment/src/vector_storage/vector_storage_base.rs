@@ -9,7 +9,6 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
-use num_traits::Zero;
 use sparse::common::sparse_vector::SparseVector;
 use zerocopy::IntoBytes;
 
@@ -208,17 +207,6 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
     }
-
-    /// Returns the point offset at which cumulative storage size reaches the threshold.
-    /// For dense storage, each vector has constant size, so simple division suffices.
-    fn get_deferred_id(&self, deferred_threshold: usize) -> Option<PointOffsetType> {
-        let size_per_vector = self.vector_dim() * std::mem::size_of::<T>();
-        if size_per_vector.is_zero() {
-            return Some(self.total_vector_count() as PointOffsetType);
-        }
-        let deferred_id = deferred_threshold / size_per_vector;
-        Some(deferred_id.min(self.total_vector_count()) as PointOffsetType)
-    }
 }
 
 pub trait SparseVectorStorage: VectorStorage {
@@ -250,41 +238,6 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;
-
-    /// Returns the cumulative count of inner vectors for points [0, key).
-    /// If key >= total_vector_count, returns total inner vectors count.
-    fn inner_vectors_count_up_to(&self, key: PointOffsetType) -> usize;
-
-    /// Returns the first point offset where cumulative byte size >= deferred_threshold.
-    /// Uses binary search over inner_vectors_count_up_to.
-    fn get_deferred_id(&self, deferred_threshold: usize) -> Option<PointOffsetType> {
-        let total = self.total_vector_count();
-        let bytes_per_inner_vector = self.vector_dim() * std::mem::size_of::<T>();
-        if total == 0 || bytes_per_inner_vector == 0 {
-            // No inner vectors, so no deferred points
-            return Some(total as PointOffsetType);
-        }
-
-        if self.inner_vectors_count_up_to(total as PointOffsetType - 1) * bytes_per_inner_vector
-            >= deferred_threshold
-        {
-            return Some(self.total_vector_count() as PointOffsetType);
-        }
-
-        let mut lo: usize = 0;
-        let mut hi: usize = total;
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            let cumulative_bytes =
-                self.inner_vectors_count_up_to(mid as PointOffsetType) * bytes_per_inner_vector;
-            if cumulative_bytes >= deferred_threshold {
-                hi = mid;
-            } else {
-                lo = mid + 1;
-            }
-        }
-        Some(lo as PointOffsetType)
-    }
 }
 
 #[derive(Debug)]
@@ -497,58 +450,6 @@ impl VectorStorageEnum {
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
                 v.size_of_available_vectors_in_bytes()
-            }
-        }
-    }
-
-    /// Returns the point offset at which cumulative storage size reaches the threshold.
-    /// Returns `None` for sparse storages (deferred points not supported).
-    pub fn get_deferred_id(&self, deferred_threshold: usize) -> Option<PointOffsetType> {
-        match self {
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimple(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleByte(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::DenseSimpleHalf(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseVolatile(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseMemmap(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.get_deferred_id(deferred_threshold)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.get_deferred_id(deferred_threshold)
-            }
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::SparseSimple(_) => None,
-            VectorStorageEnum::SparseVolatile(_) => None,
-            VectorStorageEnum::SparseMmap(_) => None,
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(feature = "rocksdb")]
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.get_deferred_id(deferred_threshold),
-            #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.get_deferred_id(deferred_threshold),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.get_deferred_id(deferred_threshold)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.get_deferred_id(deferred_threshold)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.get_deferred_id(deferred_threshold)
             }
         }
     }

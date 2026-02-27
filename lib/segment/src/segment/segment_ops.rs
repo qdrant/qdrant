@@ -8,6 +8,7 @@ use common::fs::{atomic_save_json, read_json};
 use common::tar_unpack::tar_unpack_file;
 use common::types::PointOffsetType;
 use fs_err as fs;
+use num_traits::Zero;
 
 use super::{SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment};
 use crate::common::operation_error::{
@@ -662,29 +663,29 @@ impl Segment {
     }
 
     pub(crate) fn update_deferred_internal_id(&mut self) {
-        if self.deferred_internal_id.is_none()
+        if self.deferred_internal_id.is_some()
             || !self.is_appendable()
             || self.config().vector_data.is_empty()
         {
-            self.deferred_internal_id = None;
             return;
         }
 
         if let Some(deferred_threshold) = self.deferred_threshold {
-            let deferred_id = self
-                .vector_data
-                .values()
-                .filter_map(|vector_data| {
-                    vector_data
-                        .vector_storage
-                        .borrow()
-                        .get_deferred_id(deferred_threshold)
-                })
-                .min();
-            if let Some(deferred_id) = deferred_id
-                && (deferred_id as usize) < self.total_point_count()
-            {
-                self.deferred_internal_id = Some(deferred_id);
+            // Corner case for zero threshold
+            if deferred_threshold.is_zero() {
+                return;
+            }
+
+            let is_deferred_reached = self.vector_data.values().any(|vector_data| {
+                vector_data
+                    .vector_storage
+                    .borrow()
+                    .size_of_available_vectors_in_bytes()
+                    >= deferred_threshold
+            });
+
+            if is_deferred_reached {
+                self.deferred_internal_id = Some(self.total_point_count() as PointOffsetType);
             }
         }
     }

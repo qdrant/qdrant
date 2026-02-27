@@ -141,18 +141,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         &self.multi_vector_config
     }
 
-    fn inner_vectors_count_up_to(&self, key: PointOffsetType) -> usize {
-        let key = (key as usize).min(self.offsets.len());
-        (0..key)
-            .map(|i| {
-                self.offsets
-                    .get::<Sequential>(i as VectorOffsetType)
-                    .map(|slice| slice.first().map_or(0, |o| o.count as usize))
-                    .unwrap_or(0)
-            })
-            .sum()
-    }
-
     fn size_of_available_vectors_in_bytes(&self) -> usize {
         if self.total_vector_count() > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
