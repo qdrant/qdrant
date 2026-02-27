@@ -895,7 +895,7 @@ impl SegmentHolder {
             .collect::<Vec<_>>()
     }
 
-    fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
+    pub fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
         struct DedupPoint {
             segment_id: SegmentId,
             point_id: PointIdType,
@@ -944,7 +944,7 @@ impl SegmentHolder {
             }
 
             // Sort points from highest to lowest version
-            points.sort_unstable_by(|a, b| b.version.cmp(&a.version));
+            points.sort_unstable_by_key(|p| p.version);
 
             // Keep the first point, remove all others which are older
             for &DedupPoint {
