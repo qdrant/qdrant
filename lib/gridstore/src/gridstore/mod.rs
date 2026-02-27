@@ -410,14 +410,33 @@ impl<V: Blob> Gridstore<V> {
 
     pub fn iter<F, E>(
         &self,
-        callback: F,
+        mut callback: F,
         hw_counter: HwMetricRefCounter,
     ) -> std::result::Result<(), E>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        self.with_view(|view| view.iter(callback, hw_counter))
+        const BATCH_SIZE: usize = 128;
+
+        let mut from = 0;
+
+        // Iterate in batches to allow releasing read locks, see:
+        // <https://github.com/qdrant/qdrant/pull/7983>
+        while self.with_view(|view| {
+            view.iter(
+                from,
+                BATCH_SIZE,
+                |point_offset, value| {
+                    from = point_offset + 1;
+
+                    callback(point_offset, value)
+                },
+                hw_counter,
+            )
+        })? {}
+
+        Ok(())
     }
 }
 

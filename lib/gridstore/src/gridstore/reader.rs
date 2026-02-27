@@ -105,7 +105,9 @@ impl<V: Blob> GridstoreReader<V> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        self.view().iter(callback, hw_counter)
+        self.view().iter(0, usize::MAX, callback, hw_counter)?;
+
+        Ok(())
     }
 
     /// Return the storage size in bytes (approximate: total page capacity).

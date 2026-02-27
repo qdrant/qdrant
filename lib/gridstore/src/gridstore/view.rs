@@ -1,4 +1,3 @@
-use std::cmp::min;
 use std::ops::Deref;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -142,57 +141,46 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
     /// Iterate over all the values in the storage.
     ///
-    /// Stops when the callback returns `Ok(false)`.
+    /// Stops when the callback returns `Ok(false)`, it has iterated `count` times, or there are no more results.
+    ///
+    /// Returns the last value returned by `callback`.
     pub fn iter<F, E>(
         &self,
+        from: PointOffset,
+        max_iters: usize,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
-    ) -> std::result::Result<(), E>
+    ) -> std::result::Result<bool, E>
     where
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        const BUFFER_SIZE: usize = 128;
-        let max_point_offset = self.max_point_offset();
+        let pointers_iter = self
+            .tracker
+            .iter_pointers(from)
+            .filter_map(|(point_offset, opt_pointer)| {
+                opt_pointer.map(|pointer| (point_offset, pointer))
+            })
+            .take(max_iters);
 
-        let mut from = 0;
-        let mut buffer = Vec::with_capacity(min(BUFFER_SIZE, max_point_offset as usize));
+        for (point_offset, pointer) in pointers_iter {
+            let ValuePointer {
+                page_id,
+                block_offset,
+                length,
+            } = pointer;
 
-        loop {
-            buffer.clear();
-            buffer.extend(
-                self.tracker
-                    .iter_pointers(from)
-                    .filter_map(|(point_offset, opt_pointer)| {
-                        opt_pointer.map(|pointer| (point_offset, pointer))
-                    })
-                    .take(BUFFER_SIZE),
-            );
+            let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
 
-            if buffer.is_empty() {
-                break;
-            }
+            hw_counter.incr_delta(raw.len());
 
-            from = buffer.last().unwrap().0 + 1;
-
-            for &(point_offset, pointer) in &buffer {
-                let ValuePointer {
-                    page_id,
-                    block_offset,
-                    length,
-                } = pointer;
-
-                let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
-
-                hw_counter.incr_delta(raw.len());
-
-                let decompressed = self.decompress(raw);
-                let value = V::from_bytes(&decompressed);
-                if !callback(point_offset, value)? {
-                    return Ok(());
-                }
+            let decompressed = self.decompress(raw);
+            let value = V::from_bytes(&decompressed);
+            if !callback(point_offset, value)? {
+                return Ok(false);
             }
         }
-        Ok(())
+
+        Ok(true)
     }
 }
