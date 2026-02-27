@@ -95,11 +95,13 @@ pub struct Segment {
     pub error_status: Option<SegmentFailedState>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
-    /// If set, shows that all points with internal id >= deferred_internal_id
-    /// are not visible for read operations, but are already present in the segment.
+    /// Deferred-points threshold in bytes propagated from optimizer config.
+    /// If `None`, deferred-points behavior is disabled for this segment.
     pub(crate) deferred_points_threshold_bytes: Option<NonZeroUsize>,
-    // Cached deferred internal id,
-    // which is used for quick checks of point visibility without accessing vector storage.
+    /// Cached deferred internal ID for fast visibility checks.
+    /// Points with internal id >= this value are hidden from reads.
+    /// It's `None` if deferred_points_threshold_bytes is `None` or if there are no deferred points.
+    /// Also `None` for non-appendable segments, as they don't accept new points and thus don't have deferred points.
     pub(crate) deferred_internal_id: Option<PointOffsetType>,
 }
 
