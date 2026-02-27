@@ -48,7 +48,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_avx(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -59,7 +59,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_sse(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -70,7 +70,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_neon(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_neon(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -84,7 +84,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_avx(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -95,7 +95,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_sse(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -106,7 +106,7 @@ fn encode_dot_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_neon(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_neon(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -153,7 +153,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_avx(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -164,7 +164,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_sse(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -175,7 +175,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_neon(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_neon(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -189,7 +189,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             let mut _s = 0.0;
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_avx(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_avx(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -200,7 +200,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_sse(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_sse(&encoded_query, &quantized_vector);
             }
         });
     });
@@ -211,7 +211,7 @@ fn encode_l1_bench(c: &mut Criterion) {
         b.iter(|| {
             for &i in &permutation {
                 let quantized_vector = i8_encoded.get_quantized_vector(i);
-                _s = i8_encoded.score_point_neon(&encoded_query, quantized_vector);
+                _s = i8_encoded.score_point_neon(&encoded_query, &quantized_vector);
             }
         });
     });

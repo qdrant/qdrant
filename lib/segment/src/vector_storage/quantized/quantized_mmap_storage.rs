@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
@@ -62,10 +63,10 @@ impl QuantizedMmapStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         let start = self.quantized_vector_size.get() * index as usize;
         let end = self.quantized_vector_size.get() * (index + 1) as usize;
-        self.mmap.get(start..end).unwrap_or(&[])
+        Cow::Borrowed(self.mmap.get(start..end).unwrap_or(&[]))
     }
 
     fn upsert_vector(

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::fs::clear_disk_cache;
 use common::mmap::create_and_ensure_length;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{BytesRange, Flusher, UniversalRead, UniversalWrite};
+use common::universal_io::{ElementsRange, Flusher, UniversalRead, UniversalWrite};
 use fs_err as fs;
 
 use crate::Result;
@@ -29,6 +29,7 @@ impl Page<MmapUniversal<u8>> {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
+                advice: None,
             },
         )?;
 
@@ -53,6 +54,7 @@ impl Page<MmapUniversal<u8>> {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
+                advice: None,
             },
         )?;
 
@@ -92,8 +94,7 @@ impl<S: UniversalRead<u8>> Page<S> {
         let value_end = value_start + u64::from(length);
 
         let unread_tail = value_end.saturating_sub(page_len);
-
-        let data = self.file_access.read::<READ_SEQUENTIAL>(BytesRange {
+        let data = self.file_access.read::<READ_SEQUENTIAL>(ElementsRange {
             start: value_start,
             length: (value_end - value_start) - unread_tail,
         })?;

@@ -49,7 +49,7 @@ mod tests {
 
         for (index, vector) in vector_data.iter().enumerate() {
             let quantized_vector = encoded.get_quantized_vector(index as u32);
-            let score = encoded.score_point_neon(&query_u8, quantized_vector);
+            let score = encoded.score_point_neon(&query_u8, &quantized_vector);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -93,7 +93,7 @@ mod tests {
 
         for (index, vector) in vector_data.iter().enumerate() {
             let quantized_vector = encoded.get_quantized_vector(index as u32);
-            let score = encoded.score_point_neon(&query_u8, quantized_vector);
+            let score = encoded.score_point_neon(&query_u8, &quantized_vector);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -137,7 +137,7 @@ mod tests {
 
         for (index, vector) in vector_data.iter().enumerate() {
             let quantized_vector = encoded.get_quantized_vector(index as u32);
-            let score = encoded.score_point_neon(&query_u8, quantized_vector);
+            let score = encoded.score_point_neon(&query_u8, &quantized_vector);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }

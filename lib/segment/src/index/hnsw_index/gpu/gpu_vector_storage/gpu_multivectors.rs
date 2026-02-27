@@ -90,6 +90,7 @@ impl GpuMultivectors {
                 .map(|id| {
                     vector_storage
                         .get_multi::<Random>(id as PointOffsetType)
+                        .as_ref()
                         .vectors_count()
                 })
                 // Map count of vectors to start and count of vectors in multivector.

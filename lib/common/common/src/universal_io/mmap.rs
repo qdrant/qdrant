@@ -6,7 +6,7 @@ use crate::mmap::{
     open_write_mmap,
 };
 use crate::universal_io::{
-    ByteOffset, BytesRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
+    ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
     UniversalWrite,
 };
 
@@ -35,10 +35,11 @@ where
             need_sequential,
             disk_parallel: _,
             populate,
+            advice,
         } = options;
 
         let mmap_file = path.as_ref();
-        let advice = AdviceSetting::Global;
+        let advice = advice.unwrap_or(AdviceSetting::Global);
 
         let mmap = open_write_mmap(mmap_file, advice, populate.unwrap_or_default())?;
         let mmap = unsafe { MmapSlice::try_from(mmap) }?;
@@ -58,7 +59,7 @@ where
         })
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: BytesRange) -> Result<Cow<'_, [T]>> {
+    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
         let data_slice = self.as_slice::<SEQUENTIAL>();
         let start = range.start as usize;
         let end = start + range.length as usize;
@@ -76,7 +77,7 @@ where
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
-        ranges: impl IntoIterator<Item = BytesRange>,
+        ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         let data_slice = self.as_slice::<SEQUENTIAL>();
@@ -125,7 +126,7 @@ impl<T> UniversalWrite<T> for MmapUniversal<T>
 where
     T: Copy + 'static,
 {
-    fn write(&mut self, offset: ByteOffset, data: &[T]) -> Result<()> {
+    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()> {
         let mmap_slice: &mut [T] = &mut self.mmap;
         let data_length = mmap_slice.len();
         let start = offset as usize;
@@ -145,7 +146,7 @@ where
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
+        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()> {
         for (offset, data) in offset_data {
             self.write(offset, data)?;

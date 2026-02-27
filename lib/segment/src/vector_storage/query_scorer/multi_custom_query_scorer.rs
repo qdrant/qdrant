@@ -120,28 +120,28 @@ impl<
         let stored = self.vector_storage.get_multi::<Random>(idx);
         self.hardware_counter
             .vector_io_read()
-            .incr_delta(stored.vectors_count());
+            .incr_delta(stored.as_ref().vectors_count());
 
-        self.score_ref(stored)
+        self.score_ref(stored.as_ref())
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
         debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
         debug_assert_eq!(ids.len(), scores.len());
 
-        let mut vectors = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let mut vectors = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
         let vectors = self
             .vector_storage
             .get_batch_multi(ids, &mut vectors[..ids.len()]);
 
-        let total_loaded_vectors: usize = vectors.iter().map(|v| v.vectors_count()).sum();
+        let total_loaded_vectors: usize = vectors.iter().map(|v| v.as_ref().vectors_count()).sum();
 
         self.hardware_counter
             .vector_io_read()
             .incr_delta(total_loaded_vectors);
 
         for idx in 0..ids.len() {
-            scores[idx] = self.score_ref(vectors[idx]);
+            scores[idx] = self.score_ref(vectors[idx].as_ref());
         }
     }
 

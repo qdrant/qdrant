@@ -24,11 +24,11 @@ use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use super::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::named_vectors::CowVector;
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
-    VectorElementTypeHalf, VectorInternal, VectorRef,
+    MultiDenseVectorInternal, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
+    VectorInternal, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
@@ -222,22 +222,22 @@ pub trait SparseVectorStorage: VectorStorage {
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
-    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<'_, T>;
+    fn get_multi<P: AccessPattern>(&self, key: PointOffsetType) -> CowMultiVector<'_, T>;
     fn get_multi_opt<P: AccessPattern>(
         &self,
         key: PointOffsetType,
-    ) -> Option<TypedMultiDenseVectorRef<'_, T>>;
+    ) -> Option<CowMultiVector<'_, T>>;
     fn get_batch_multi<'a>(
         &'a self,
         keys: &[PointOffsetType],
-        vectors: &'a mut [MaybeUninit<TypedMultiDenseVectorRef<'a, T>>],
-    ) -> &'a [TypedMultiDenseVectorRef<'a, T>] {
+        vectors: &'a mut [MaybeUninit<CowMultiVector<'a, T>>],
+    ) -> &'a [CowMultiVector<'a, T>] {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         let iter = keys.iter().map(|key| self.get_multi::<Random>(*key));
         maybe_uninit_fill_from(vectors, iter).0
     }
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 
     fn size_of_available_vectors_in_bytes(&self) -> usize;
