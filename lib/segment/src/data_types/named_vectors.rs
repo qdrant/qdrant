@@ -24,6 +24,16 @@ impl<TElement> CowMultiVector<'_, TElement>
 where
     TElement: PrimitiveVectorElement,
 {
+    pub fn as_ref(&self) -> TypedMultiDenseVectorRef<'_, TElement> {
+        match self {
+            CowMultiVector::Owned(owned) => TypedMultiDenseVectorRef {
+                flattened_vectors: &owned.flattened_vectors,
+                dim: owned.dim,
+            },
+            CowMultiVector::Borrowed(borrowed) => *borrowed,
+        }
+    }
+
     fn flattened_len(&self) -> usize {
         match self {
             CowMultiVector::Owned(typed_multi_dense_vector) => {

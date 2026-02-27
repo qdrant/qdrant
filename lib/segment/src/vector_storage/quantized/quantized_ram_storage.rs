@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
@@ -11,17 +12,17 @@ use fs_err::File;
 use crate::common::operation_error::OperationResult;
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::vector_storage::VectorOffsetType;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::volatile_chunked_vectors::VolatileChunkedVectors;
 
 #[derive(Debug)]
 pub struct QuantizedRamStorage {
-    vectors: ChunkedVectors<u8>,
+    vectors: VolatileChunkedVectors<u8>,
     path: PathBuf,
 }
 
 impl QuantizedRamStorage {
     pub fn from_file(path: &Path, quantized_vector_size: usize) -> std::io::Result<Self> {
-        let mut vectors = ChunkedVectors::<u8>::new(quantized_vector_size);
+        let mut vectors = VolatileChunkedVectors::<u8>::new(quantized_vector_size);
         let file = OneshotFile::open(path)?;
         let mut reader = BufReader::new(file);
         let mut buffer = vec![0u8; quantized_vector_size];
@@ -42,8 +43,8 @@ impl QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorage for QuantizedRamStorage {
-    fn get_vector_data(&self, index: PointOffsetType) -> &[u8] {
-        self.vectors.get(index as VectorOffsetType)
+    fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
+        Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
 
     fn upsert_vector(
@@ -81,13 +82,13 @@ impl quantization::EncodedStorage for QuantizedRamStorage {
 }
 
 pub struct QuantizedRamStorageBuilder {
-    pub vectors: ChunkedVectors<u8>,
+    pub vectors: VolatileChunkedVectors<u8>,
     pub path: PathBuf,
 }
 
 impl QuantizedRamStorageBuilder {
     pub fn new(path: &Path, count: usize, dim: usize) -> OperationResult<Self> {
-        let mut vectors = ChunkedVectors::new(dim);
+        let mut vectors = VolatileChunkedVectors::new(dim);
         vectors.try_set_capacity_exact(count)?;
         Ok(Self {
             vectors,

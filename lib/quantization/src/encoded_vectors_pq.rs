@@ -3,6 +3,7 @@ use std::alloc::Layout;
 use std::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::borrow::Cow;
 use std::iter::repeat_with;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -488,7 +489,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             .sum()
     }
 
-    pub fn get_quantized_vector(&self, i: PointOffsetType) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
         self.encoded_vectors.get_vector_data(i)
     }
 
@@ -540,7 +541,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     ) -> f32 {
         let centroids = self.encoded_vectors.get_vector_data(i);
 
-        self.score_bytes(True, query, centroids, hw_counter)
+        self.score_bytes(True, query, &centroids, hw_counter)
     }
 
     /// Score two points inside endoded data by their indexes
@@ -560,7 +561,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
             .incr_delta(self.metadata.vector_division.len() * 2);
 
         hw_counter.cpu_counter().incr_delta(
-            centroids_i.len()
+            centroids_i.as_ref().len()
             // Chunk size
                 * self
                     .metadata
@@ -572,7 +573,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
         let distance: f32 = centroids_i
             .iter()
-            .zip(centroids_j)
+            .zip(centroids_j.as_ref())
             .enumerate()
             .map(|(range_index, (&c_i, &c_j))| {
                 let range = &self.metadata.vector_division[range_index];
