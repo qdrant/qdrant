@@ -1,8 +1,6 @@
-#ifndef BHEAP_HEADER
-#define BHEAP_HEADER
-
-#include "common.comp"
-#include "shared_buffer.comp"
+import config;
+import common;
+import shared_buffer;
 
 struct BHeap
 {
@@ -19,7 +17,7 @@ struct BHeap
 
     ScoredPoint top() { return shared_buffer[offset]; }
 
-#ifdef BHEAP_LINEAR
+    // --- Linear implementation helpers ---
 
     uint _findMax()
     {
@@ -59,7 +57,7 @@ struct BHeap
         return WaveReadLaneAt(min_index, subgroup_min_thread);
     }
 
-    [mutating] bool push(ScoredPoint score)
+    [mutating] bool _pushLinear(ScoredPoint score)
     {
         if (size == capacity) {
             if (score.score > shared_buffer[offset].score) {
@@ -88,7 +86,7 @@ struct BHeap
         }
     }
 
-    [mutating] ScoredPoint popMax()
+    [mutating] ScoredPoint _popMaxLinear()
     {
         if (size == 0) {
             return {0, 0.0};
@@ -105,7 +103,7 @@ struct BHeap
         return popped_value;
     }
 
-    [mutating] uint intoArray()
+    [mutating] uint _intoArrayLinear()
     {
         sort(offset, size);
         uint result = size;
@@ -113,7 +111,7 @@ struct BHeap
         return result;
     }
 
-#else
+    // --- Binary heap implementation helpers ---
 
     void _swap(uint i, uint j)
     {
@@ -160,7 +158,7 @@ struct BHeap
         }
     }
 
-    [mutating] bool push(ScoredPoint score)
+    [mutating] bool _pushBinary(ScoredPoint score)
     {
         if (size == capacity) {
             if (score.score > shared_buffer[offset].score) {
@@ -180,7 +178,7 @@ struct BHeap
         }
     }
 
-    [mutating] ScoredPoint _pop()
+    [mutating] ScoredPoint _popBinary()
     {
         ScoredPoint top_value = top();
         size--;
@@ -191,7 +189,7 @@ struct BHeap
         return top_value;
     }
 
-    [mutating] ScoredPoint popMax()
+    [mutating] ScoredPoint _popMaxBinary()
     {
         if (size == 0) {
             return {0, 0.0};
@@ -223,12 +221,12 @@ struct BHeap
         return popped_value;
     }
 
-    [mutating] uint intoArray()
+    [mutating] uint _intoArrayBinary()
     {
         uint array_size = size;
         while (size > 0) {
             uint i = size - 1;
-            ScoredPoint value = _pop();
+            ScoredPoint value = _popBinary();
             if (WaveIsFirstLane()) {
                 shared_buffer[offset + i] = value;
             }
@@ -236,7 +234,23 @@ struct BHeap
         return array_size;
     }
 
-#endif
-};
+    // --- Public dispatch methods ---
 
-#endif
+    [mutating] bool push(ScoredPoint score)
+    {
+        if (BHEAP_LINEAR) return _pushLinear(score);
+        else return _pushBinary(score);
+    }
+
+    [mutating] ScoredPoint popMax()
+    {
+        if (BHEAP_LINEAR) return _popMaxLinear();
+        else return _popMaxBinary();
+    }
+
+    [mutating] uint intoArray()
+    {
+        if (BHEAP_LINEAR) return _intoArrayLinear();
+        else return _intoArrayBinary();
+    }
+};

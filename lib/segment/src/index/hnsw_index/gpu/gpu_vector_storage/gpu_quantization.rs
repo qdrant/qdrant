@@ -113,8 +113,8 @@ pub struct GpuBinaryQuantization {
 impl ShaderBuilderParameters for GpuBinaryQuantization {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
-            "vector_storage_bq.comp".to_string(),
-            include_str!("../shaders/vector_storage_bq.comp").to_string(),
+            "vector_storage_bq.slang".to_string(),
+            include_str!("../shaders/vector_storage_bq.slang").to_string(),
         )])
     }
 
@@ -180,8 +180,8 @@ pub struct GpuScalarQuantization {
 impl ShaderBuilderParameters for GpuScalarQuantization {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
-            "vector_storage_sq.comp".to_string(),
-            include_str!("../shaders/vector_storage_sq.comp").to_string(),
+            "vector_storage_sq.slang".to_string(),
+            include_str!("../shaders/vector_storage_sq.slang").to_string(),
         )])
     }
 
@@ -289,8 +289,8 @@ pub struct GpuProductQuantization {
 impl ShaderBuilderParameters for GpuProductQuantization {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
-            "vector_storage_pq.comp".to_string(),
-            include_str!("../shaders/vector_storage_pq.comp").to_string(),
+            "vector_storage_pq.slang".to_string(),
+            include_str!("../shaders/vector_storage_pq.slang").to_string(),
         )])
     }
 

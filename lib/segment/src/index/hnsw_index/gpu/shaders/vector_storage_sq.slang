@@ -1,12 +1,9 @@
-#ifndef VECTOR_STORAGE_SQ_HEADER
-#define VECTOR_STORAGE_SQ_HEADER
+import config;
+import distance_metric;
 
 [[vk::binding(VECTOR_STORAGE_SQ_OFFSETS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<float> vector_offsets;
 
 static float target_offset;
-
-#define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
-#define VECTOR_STORAGE_SCORE_TYPE uint
 
 uint sq_dot(vector<uint8_t, 4> a, vector<uint8_t, 4> b) {
     uint4 sum = uint4(a) * uint4(b);
@@ -17,8 +14,6 @@ uint sq_manhattan(vector<uint8_t, 4> a, vector<uint8_t, 4> b) {
     int4 diff = int4(a) - int4(b);
     return abs(diff.x) + abs(diff.y) + abs(diff.z) + abs(diff.w);
 }
-
-#ifdef MANHATTAN_DISTANCE
 
 struct SQManhattan : IDistanceMetric<vector<uint8_t, 4> >
 {
@@ -34,10 +29,6 @@ struct SQManhattan : IDistanceMetric<vector<uint8_t, 4> >
     override static void onSetTarget(uint pointId) { target_offset = vector_offsets[pointId]; }
 };
 
-typedef SQManhattan ActiveMetric;
-
-#else
-
 struct SQDot : IDistanceMetric<vector<uint8_t, 4> >
 {
     typedef uint ScoreType;
@@ -51,9 +42,3 @@ struct SQDot : IDistanceMetric<vector<uint8_t, 4> >
     }
     override static void onSetTarget(uint pointId) { target_offset = vector_offsets[pointId]; }
 };
-
-typedef SQDot ActiveMetric;
-
-#endif
-
-#endif

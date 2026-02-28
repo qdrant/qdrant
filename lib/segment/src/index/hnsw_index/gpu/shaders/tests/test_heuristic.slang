@@ -1,17 +1,10 @@
-#include "extensions.comp"
-
-#include "common.comp"
-
-#define VECTOR_STORAGE_LAYOUT_SET 1
-#include "vector_storage.comp"
-
-#define LINKS_LAYOUT_SET 2
-#include "links.comp"
-
-#define VISITED_FLAGS_LAYOUT_SET 3
-#include "visited_flags.comp"
-
-#include "search_context.comp"
+import config;
+import common;
+import shared_buffer;
+import vector_storage;
+import links;
+import visited_flags;
+import search_context;
 
 struct SearchRequest {
     uint id;
@@ -26,7 +19,7 @@ struct SearchRequest {
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
-    uint subgroup_index = SUBGROUP_ID;
+    uint subgroup_index = subgroupId();
     SearchRequest search_request = search_requests[subgroup_index];
 
     set_target(search_request.id);

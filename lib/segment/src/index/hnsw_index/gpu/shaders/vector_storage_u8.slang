@@ -1,8 +1,4 @@
-#ifndef VECTOR_STORAGE_U8_HEADER
-#define VECTOR_STORAGE_U8_HEADER
-
-#define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
-#define VECTOR_STORAGE_SCORE_TYPE uint
+import distance_metric;
 
 struct U8CosineState
 {
@@ -79,21 +75,3 @@ struct ManhattanU8 : IDistanceMetric<vector<uint8_t, 4> >
     }
     static float postprocessScore(uint accumulated, NoState s, uint pointId) { return -float(WaveActiveSum(accumulated)); }
 };
-
-#ifdef COSINE_DISTANCE
-typedef CosineU8 ActiveMetric;
-#endif
-
-#ifdef DOT_DISTANCE
-typedef DotU8 ActiveMetric;
-#endif
-
-#ifdef EUCLID_DISTANCE
-typedef EuclidU8 ActiveMetric;
-#endif
-
-#ifdef MANHATTAN_DISTANCE
-typedef ManhattanU8 ActiveMetric;
-#endif
-
-#endif

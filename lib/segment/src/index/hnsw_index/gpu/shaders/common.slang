@@ -1,19 +1,17 @@
-#ifndef COMMON_HEADER
-#define COMMON_HEADER
-
-#include "distance_metric.comp"
+import config;
+import distance_metric;
 
 // Global thread ID, set by entry point at the start of main().
 static uint3 gl_GlobalInvocationID;
 
-#define SUBGROUP_ID (gl_GlobalInvocationID.x / SUBGROUP_SIZE)
+uint subgroupId() { return gl_GlobalInvocationID.x / SUBGROUP_SIZE; }
 
 static const float positive_infinity = 1.0 / 0.0;
 static const float negative_infinity = -1.0 / 0.0;
-#define UINT_MAX 0xffffffff
+static const uint UINT_MAX_VALUE = 0xffffffff;
 
 typedef uint POINT_ID;
-static const POINT_ID INVALID_POINT_ID = UINT_MAX;
+static const POINT_ID INVALID_POINT_ID = UINT_MAX_VALUE;
 
 struct ScoredPoint {
     POINT_ID id;
@@ -28,5 +26,3 @@ uint ballotFindLSB(uint4 ballot) {
     if (ballot.z != 0) return 64 + firstbitlow(ballot.z);
     return 96 + firstbitlow(ballot.w);
 }
-
-#endif

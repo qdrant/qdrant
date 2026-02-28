@@ -1,5 +1,5 @@
-#ifndef VECTOR_STORAGE_PQ_HEADER
-#define VECTOR_STORAGE_PQ_HEADER
+import config;
+import distance_metric;
 
 struct PQRange {
     uint start;
@@ -8,9 +8,6 @@ struct PQRange {
 
 [[vk::binding(VECTOR_STORAGE_PQ_CENTROIDS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<float> centroids;
 [[vk::binding(VECTOR_STORAGE_PQ_DIVISIONS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<PQRange> vector_divisions;
-
-#define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
-#define VECTOR_STORAGE_SCORE_TYPE float
 
 float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
     float score = 0.0;
@@ -24,18 +21,14 @@ float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
             float data_a = centroids[c_a + j];
             float data_b = centroids[c_b + j];
 
-#ifdef COSINE_DISTANCE
-            score += data_a * data_b;
-#endif
-#ifdef DOT_DISTANCE
-            score += data_a * data_b;
-#endif
-#ifdef EUCLID_DISTANCE
-            score -= (data_a - data_b) * (data_a - data_b);
-#endif
-#ifdef MANHATTAN_DISTANCE
-            score -= abs(data_a - data_b);
-#endif
+            if (EUCLID_DISTANCE) {
+                score -= (data_a - data_b) * (data_a - data_b);
+            } else if (MANHATTAN_DISTANCE) {
+                score -= abs(data_a - data_b);
+            } else {
+                // Cosine and Dot use the same formula.
+                score += data_a * data_b;
+            }
         }
     }
     return score;
@@ -51,24 +44,23 @@ struct PQMetric : IDistanceMetric<vector<uint8_t, 4> >
     typedef float ScoreType;
     typedef PQState State;
 
-#ifdef SINGLE_SUBGROUP_PER_VECTOR
-    static PQState initState() { return { WaveGetLaneIndex() }; }
-#else
-    static PQState initState() { return { 0 }; }
-#endif
+    static PQState initState()
+    {
+        if (SINGLE_SUBGROUP_PER_VECTOR) {
+            return { WaveGetLaneIndex() };
+        } else {
+            return { 0 };
+        }
+    }
 
     static float scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout PQState state)
     {
         float result = score_pq(a, b, state.elementIndex);
-#ifndef SINGLE_SUBGROUP_PER_VECTOR
-        state.elementIndex += SUBGROUP_SIZE;
-#endif
+        if (!SINGLE_SUBGROUP_PER_VECTOR) {
+            state.elementIndex += SUBGROUP_SIZE;
+        }
         return result;
     }
 
     static float postprocessScore(float accumulated, PQState state, uint pointId) { return WaveActiveSum(accumulated); }
 };
-
-typedef PQMetric ActiveMetric;
-
-#endif

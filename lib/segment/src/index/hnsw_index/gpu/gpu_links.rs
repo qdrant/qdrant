@@ -39,8 +39,8 @@ pub struct GpuLinks {
 impl ShaderBuilderParameters for GpuLinks {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
-            "links.comp".to_string(),
-            include_str!("shaders/links.comp").to_string(),
+            "links.slang".to_string(),
+            include_str!("shaders/links.slang").to_string(),
         )])
     }
 

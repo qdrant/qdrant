@@ -1,8 +1,5 @@
-#ifndef VECTOR_STORAGE_BQ_HEADER
-#define VECTOR_STORAGE_BQ_HEADER
-
-#define VECTOR_STORAGE_ELEMENT_TYPE uint
-#define VECTOR_STORAGE_SCORE_TYPE uint
+import config;
+import distance_metric;
 
 static const uint BITS_IN_UINT = 32;
 
@@ -20,7 +17,3 @@ struct BQMetric : IDistanceMetric<uint>
         return zeros_count - xor_product - BQ_SKIP_COUNT;
     }
 };
-
-typedef BQMetric ActiveMetric;
-
-#endif

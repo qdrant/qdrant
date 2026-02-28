@@ -330,42 +330,15 @@ impl Instance {
         defines: Option<&HashMap<String, Option<String>>>,
         include_dir: &std::path::Path,
     ) -> GpuResult<Vec<u8>> {
-        // Inject defines directly into the shader source as #define directives
-        // after the #version line. This is the most reliable way to pass defines
-        // since Slang's load_module API doesn't preprocess macros in layout qualifiers.
-        let shader_with_defines = if let Some(defines) = defines {
-            let mut define_block = String::new();
-            for (key, value) in defines {
-                if let Some(val) = value {
-                    define_block.push_str(&format!("#define {key} {val}\n"));
-                } else {
-                    define_block.push_str(&format!("#define {key}\n"));
-                }
-            }
+        // Defines are now baked into the generated config.slang module,
+        // so no preprocessor injection is needed.
+        let _ = defines; // Kept in signature for API compatibility.
+        let shader_source = shader.to_string();
 
-            // Insert defines after the #version line if present.
-            if let Some(version_end) = shader.find('\n') {
-                let first_line = &shader[..version_end];
-                if first_line.trim_start().starts_with("#version") {
-                    format!(
-                        "{}\n{}\n{}",
-                        first_line,
-                        define_block,
-                        &shader[version_end + 1..]
-                    )
-                } else {
-                    format!("{define_block}{shader}")
-                }
-            } else {
-                format!("{define_block}{shader}")
-            }
-        } else {
-            shader.to_string()
-        };
-
-        // Write the shader source with defines to a file for slangc.
+        // Write the shader source to a file for slangc.
         let module_name = shader_name
-            .strip_suffix(".comp")
+            .strip_suffix(".slang")
+            .or_else(|| shader_name.strip_suffix(".comp"))
             .unwrap_or(shader_name);
         let shader_file_name = format!("{module_name}.slang");
         let shader_file_path = include_dir.join(&shader_file_name);
@@ -377,7 +350,7 @@ impl Instance {
             })?;
         }
 
-        std::fs::write(&shader_file_path, &shader_with_defines).map_err(|e| {
+        std::fs::write(&shader_file_path, &shader_source).map_err(|e| {
             GpuError::Other(format!("Failed to write shader source {shader_name}: {e}"))
         })?;
 

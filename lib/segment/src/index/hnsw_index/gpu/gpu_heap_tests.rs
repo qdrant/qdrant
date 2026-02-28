@@ -21,12 +21,12 @@ impl ShaderBuilderParameters for GpuHeapTestConfig {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([
             (
-                "shared_buffer.comp".to_string(),
-                include_str!("shaders/shared_buffer.comp").to_string(),
+                "shared_buffer.slang".to_string(),
+                include_str!("shaders/shared_buffer.slang").to_string(),
             ),
             (
-                "bheap.comp".to_string(),
-                include_str!("shaders/bheap.comp").to_string(),
+                "bheap.slang".to_string(),
+                include_str!("shaders/bheap.slang").to_string(),
             ),
         ])
     }
@@ -34,6 +34,16 @@ impl ShaderBuilderParameters for GpuHeapTestConfig {
     fn shader_defines(&self) -> HashMap<String, Option<String>> {
         let mut defines = HashMap::new();
         defines.insert("EF".to_owned(), Some(self.ef.to_string()));
+        // Test shaders use a single heap, so SHARED_BUFFER_CAPACITY = EF.
+        defines.insert(
+            "SHARED_BUFFER_CAPACITY".to_owned(),
+            Some(self.ef.to_string()),
+        );
+        defines.insert("NEAREST_HEAP_OFFSET".to_owned(), Some("0".to_owned()));
+        defines.insert(
+            "CANDIDATES_HEAP_OFFSET".to_owned(),
+            Some("0".to_owned()),
+        );
         if self.linear {
             defines.insert("BHEAP_LINEAR".to_owned(), None);
         }
@@ -73,9 +83,9 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
     let gpu_nearest_heap = GpuHeapTestConfig { ef, linear };
 
     let shader = ShaderBuilder::new(device.clone())
-        .with_shader_code(include_str!("shaders/tests/test_nearest_heap.comp"))
+        .with_shader_code(include_str!("shaders/tests/test_nearest_heap.slang"))
         .with_parameters(&gpu_nearest_heap)
-        .build("tests/test_nearest_heap.comp")
+        .build("tests/test_nearest_heap.slang")
         .unwrap();
 
     let input_points_buffer = gpu::Buffer::new(
@@ -276,9 +286,9 @@ fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
     };
 
     let shader = ShaderBuilder::new(device.clone())
-        .with_shader_code(include_str!("shaders/tests/test_candidates_heap.comp"))
+        .with_shader_code(include_str!("shaders/tests/test_candidates_heap.slang"))
         .with_parameters(&gpu_candidates_heap)
-        .build("tests/test_candidates_heap.comp")
+        .build("tests/test_candidates_heap.slang")
         .unwrap();
 
     let input_points_buffer = gpu::Buffer::new(

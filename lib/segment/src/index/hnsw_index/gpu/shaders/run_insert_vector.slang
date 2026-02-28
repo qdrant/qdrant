@@ -1,17 +1,10 @@
-#include "extensions.comp"
-
-#include "common.comp"
-
-#define VECTOR_STORAGE_LAYOUT_SET 1
-#include "vector_storage.comp"
-
-#define LINKS_LAYOUT_SET 2
-#include "links.comp"
-
-#define VISITED_FLAGS_LAYOUT_SET 3
-#include "visited_flags.comp"
-
-#include "search_context.comp"
+import config;
+import common;
+import shared_buffer;
+import vector_storage;
+import links;
+import visited_flags;
+import search_context;
 
 struct Request {
     uint id;
@@ -27,7 +20,7 @@ struct Request {
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
-    uint subgroup_index = SUBGROUP_ID;
+    uint subgroup_index = subgroupId();
     Request request = requests[subgroup_index];
 
     set_target(request.id);
@@ -49,16 +42,16 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     // update request.id links
     for (uint i = WaveGetLaneIndex(); i < count; i += SUBGROUP_SIZE) {
-        GET_LINK(request.id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
+        links_data[linkIndex(request.id, i)] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
     }
     if (WaveIsFirstLane()) {
-        LINKS_SET_SIZE(request.id, count);
+        links_data[linksCountIndex(request.id)] = count;
     }
 
     AllMemoryBarrier();
 
     for (uint i = 0; i < count; i++) {
-        uint other_id = GET_LINK(request.id, i);
+        uint other_id = links_data[linkIndex(request.id, i)];
 
         bool is_locked = false;
         if (WaveGetLaneIndex() == 0) {
@@ -71,17 +64,17 @@ void main(uint3 dtid : SV_DispatchThreadID) {
             continue;
         }
 
-        uint other_links_count = LINKS_COUNT(other_id);
-        if (other_links_count < LEVEL_M) {
+        uint other_links_count = links_data[linksCountIndex(other_id)];
+        if (other_links_count < links_params.m) {
             if (WaveIsFirstLane()) {
-                GET_LINK(other_id, other_links_count) = request.id;
-                LINKS_SET_SIZE(other_id, other_links_count + 1);
+                links_data[linkIndex(other_id, other_links_count)] = request.id;
+                links_data[linksCountIndex(other_id)] = other_links_count + 1;
             }
         } else {
             set_target(other_id);
             ctx.nearest.size = 0;
             for (uint j = 0; j < other_links_count; j++) {
-                POINT_ID link = GET_LINK(other_id, j);
+                POINT_ID link = links_data[linkIndex(other_id, j)];
                 shared_buffer[NEAREST_HEAP_OFFSET + ctx.nearest.size] = ScoredPoint(
                     link,
                     similarity(link)
@@ -102,10 +95,10 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
             GroupMemoryBarrier();
             for (uint j = WaveGetLaneIndex(); j < other_new_links_count; j += SUBGROUP_SIZE) {
-                GET_LINK(other_id, j) = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
+                links_data[linkIndex(other_id, j)] = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
             if (WaveIsFirstLane()) {
-                LINKS_SET_SIZE(other_id, other_new_links_count);
+                links_data[linksCountIndex(other_id)] = other_new_links_count;
             }
         }
 

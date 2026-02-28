@@ -1,8 +1,4 @@
-#ifndef VECTOR_STORAGE_F16_HEADER
-#define VECTOR_STORAGE_F16_HEADER
-
-#define VECTOR_STORAGE_ELEMENT_TYPE half4
-#define VECTOR_STORAGE_SCORE_TYPE float
+import distance_metric;
 
 struct CosineF16 : IDistanceMetric<half4>
 {
@@ -47,21 +43,3 @@ struct ManhattanF16 : IDistanceMetric<half4>
     }
     static float postprocessScore(float accumulated, NoState s, uint pointId) { return WaveActiveSum(accumulated); }
 };
-
-#ifdef COSINE_DISTANCE
-typedef CosineF16 ActiveMetric;
-#endif
-
-#ifdef DOT_DISTANCE
-typedef DotF16 ActiveMetric;
-#endif
-
-#ifdef EUCLID_DISTANCE
-typedef EuclidF16 ActiveMetric;
-#endif
-
-#ifdef MANHATTAN_DISTANCE
-typedef ManhattanF16 ActiveMetric;
-#endif
-
-#endif

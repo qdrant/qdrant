@@ -1,6 +1,3 @@
-#ifndef DISTANCE_METRIC_HEADER
-#define DISTANCE_METRIC_HEADER
-
 struct NoState {};
 
 interface IDistanceMetric<T>
@@ -16,5 +13,3 @@ interface IDistanceMetric<T>
     // Overridden by SQ (to load the target offset).
     static void onSetTarget(uint pointId) {}
 }
-
-#endif

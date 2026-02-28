@@ -68,16 +68,16 @@ impl ShaderBuilderParameters for GpuInsertResources {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([
             (
-                "shared_buffer.comp".to_string(),
-                include_str!("shaders/shared_buffer.comp").to_string(),
+                "shared_buffer.slang".to_string(),
+                include_str!("shaders/shared_buffer.slang").to_string(),
             ),
             (
-                "bheap.comp".to_string(),
-                include_str!("shaders/bheap.comp").to_string(),
+                "bheap.slang".to_string(),
+                include_str!("shaders/bheap.slang").to_string(),
             ),
             (
-                "search_context.comp".to_string(),
-                include_str!("shaders/search_context.comp").to_string(),
+                "search_context.slang".to_string(),
+                include_str!("shaders/search_context.slang").to_string(),
             ),
         ])
     }
@@ -210,20 +210,20 @@ impl<'a> GpuInsertContext<'a> {
         )?;
 
         let greedy_search_shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
+            .with_shader_code(include_str!("shaders/run_greedy_search.slang"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
             .with_parameters(&gpu_visited_flags)
             .with_parameters(&insert_resources)
-            .build("run_greedy_search.comp")?;
+            .build("run_greedy_search.slang")?;
 
         let insert_shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
+            .with_shader_code(include_str!("shaders/run_insert_vector.slang"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
             .with_parameters(&gpu_visited_flags)
             .with_parameters(&insert_resources)
-            .build("run_insert_vector.comp")?;
+            .build("run_insert_vector.slang")?;
 
         let greedy_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, insert_resources.greedy_descriptor_set_layout.clone())
@@ -618,12 +618,12 @@ mod tests {
         .unwrap();
 
         let search_shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
+            .with_shader_code(include_str!("shaders/tests/test_hnsw_search.slang"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
-            .build("tests/test_hnsw_search.comp")
+            .build("tests/test_hnsw_search.slang")
             .unwrap();
 
         let search_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -888,12 +888,12 @@ mod tests {
 
         // Create test pipeline
         let shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
+            .with_shader_code(include_str!("shaders/tests/test_heuristic.slang"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
-            .build("tests/test_heuristic.comp")
+            .build("tests/test_heuristic.slang")
             .unwrap();
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()

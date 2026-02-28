@@ -33,8 +33,8 @@ pub struct GpuVisitedFlags {
 impl ShaderBuilderParameters for GpuVisitedFlags {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
-            "visited_flags.comp".to_string(),
-            include_str!("shaders/visited_flags.comp").to_string(),
+            "visited_flags.slang".to_string(),
+            self.generate_visited_flags_slang(),
         )])
     }
 
@@ -52,6 +52,46 @@ impl ShaderBuilderParameters for GpuVisitedFlags {
 }
 
 impl GpuVisitedFlags {
+    fn generate_visited_flags_slang(&self) -> String {
+        let mut code = String::from(
+            "// Generated visited_flags module.\n\
+             import config;\n\
+             import common;\n\
+             \n\
+             struct VisitedFlagsParamsStruct {\n\
+             \tuint generation;\n\
+             };\n\
+             \n\
+             [[vk::binding(0, VISITED_FLAGS_LAYOUT_SET)]] ConstantBuffer<VisitedFlagsParamsStruct> visited_flags_params;\n\
+             [[vk::binding(1, VISITED_FLAGS_LAYOUT_SET)]] RWStructuredBuffer<uint8_t> visited_flags;\n\n",
+        );
+
+        if self.remap_buffer.is_some() {
+            code.push_str("[[vk::binding(2, VISITED_FLAGS_LAYOUT_SET)]] StructuredBuffer<POINT_ID> visited_flags_remap;\n\n");
+        }
+
+        code.push_str(
+            "bool check_visited(POINT_ID point_id) {\n",
+        );
+        if self.remap_buffer.is_some() {
+            code.push_str("\tpoint_id = visited_flags_remap[point_id];\n");
+        }
+        code.push_str(
+            "\tuint subgroup_index = subgroupId();\n\
+             \tuint index = subgroup_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;\n\
+             \tuint prev_generation = uint(visited_flags[index]);\n\
+             \tif (prev_generation == visited_flags_params.generation) {\n\
+             \t\treturn true;\n\
+             \t} else {\n\
+             \t\tvisited_flags[index] = uint8_t(visited_flags_params.generation);\n\
+             \t\treturn false;\n\
+             \t}\n\
+             }\n",
+        );
+
+        code
+    }
+
     pub fn new(
         device: Arc<gpu::Device>,
         groups_count: usize,

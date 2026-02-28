@@ -1,16 +1,10 @@
-#ifndef SEARCH_CONTEXT_HEADER
-#define SEARCH_CONTEXT_HEADER
-
-#define SHARED_BUFFER_CAPACITY (2 * EF)
-#define NEAREST_HEAP_OFFSET 0
-#define CANDIDATES_HEAP_OFFSET EF
-
-#include "common.comp"
-#include "shared_buffer.comp"
-#include "bheap.comp"
-#include "vector_storage.comp"
-#include "links.comp"
-#include "visited_flags.comp"
+import config;
+import common;
+import shared_buffer;
+import bheap;
+import vector_storage;
+import links;
+import visited_flags;
 
 struct SearchContext
 {
@@ -35,14 +29,14 @@ struct SearchContext
 
     [mutating] void processCandidate(POINT_ID candidate_id)
     {
-        uint links_count = LINKS_COUNT(candidate_id);
+        uint links_count = links_data[linksCountIndex(candidate_id)];
         uint subgroup_link = 0;
         bool subgroup_is_visited = true;
         uint invocation = WaveGetLaneIndex();
 
         for (uint i = 0; i < links_count; i++) {
             if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-                subgroup_link = GET_LINK(candidate_id, i + invocation);
+                subgroup_link = links_data[linkIndex(candidate_id, i + invocation)];
                 subgroup_is_visited = check_visited(subgroup_link);
             }
 
@@ -72,10 +66,10 @@ struct SearchContext
             changed = false;
 
             uint current = result.id;
-            uint links_count = LINKS_COUNT(current);
+            uint links_count = links_data[linksCountIndex(current)];
             for (uint i = 0; i < links_count; i++) {
                 if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-                    subgroup_link = GET_LINK(current, i + invocation);
+                    subgroup_link = links_data[linkIndex(current, i + invocation)];
                 }
                 uint link = WaveReadLaneAt(subgroup_link, i % SUBGROUP_SIZE);
 
@@ -91,9 +85,9 @@ struct SearchContext
 
     [mutating] uint search(POINT_ID point_id, ScoredPoint entry)
     {
-#ifndef EXACT
-        entry = greedySearch(point_id, entry);
-#endif
+        if (!EXACT) {
+            entry = greedySearch(point_id, entry);
+        }
 
         if (WaveIsFirstLane()) {
             check_visited(point_id);
@@ -122,7 +116,7 @@ struct SearchContext
         uint result_count = 0;
 
         for (uint i = 0; i < nearest.size; i++) {
-            if (result_count >= LEVEL_M) {
+            if (result_count >= links_params.m) {
                 break;
             }
 
@@ -152,5 +146,3 @@ struct SearchContext
         return result_count;
     }
 };
-
-#endif

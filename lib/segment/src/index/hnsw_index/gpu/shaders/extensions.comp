@@ -1,7 +1,0 @@
-#ifndef EXTENSIONS_HEADER
-#define EXTENSIONS_HEADER
-
-// Slang automatically infers required SPIR-V capabilities from usage.
-// No explicit extension declarations needed.
-
-#endif

@@ -52,24 +52,24 @@ impl ShaderBuilderParameters for GpuVectorStorage {
     fn shader_includes(&self) -> HashMap<String, String> {
         let mut includes = HashMap::from([
             (
-                "vector_storage.comp".to_string(),
-                include_str!("../shaders/vector_storage.comp").to_string(),
+                "vector_storage.slang".to_string(),
+                self.generate_vector_storage_slang(),
             ),
             (
-                "vector_storage_dense.comp".to_string(),
-                include_str!("../shaders/vector_storage_dense.comp").to_string(),
+                "vector_storage_dense.slang".to_string(),
+                include_str!("../shaders/vector_storage_dense.slang").to_string(),
             ),
             (
-                "vector_storage_f16.comp".to_string(),
-                include_str!("../shaders/vector_storage_f16.comp").to_string(),
+                "vector_storage_f16.slang".to_string(),
+                include_str!("../shaders/vector_storage_f16.slang").to_string(),
             ),
             (
-                "vector_storage_f32.comp".to_string(),
-                include_str!("../shaders/vector_storage_f32.comp").to_string(),
+                "vector_storage_f32.slang".to_string(),
+                include_str!("../shaders/vector_storage_f32.slang").to_string(),
             ),
             (
-                "vector_storage_u8.comp".to_string(),
-                include_str!("../shaders/vector_storage_u8.comp").to_string(),
+                "vector_storage_u8.slang".to_string(),
+                include_str!("../shaders/vector_storage_u8.slang").to_string(),
             ),
         ]);
 
@@ -130,6 +130,57 @@ impl ShaderBuilderParameters for GpuVectorStorage {
 }
 
 impl GpuVectorStorage {
+    fn generate_vector_storage_slang(&self) -> String {
+        let mut code = String::from(
+            "// Generated vector_storage module.\n\
+             import config;\n\
+             import common;\n\
+             import vector_storage_dense;\n\n",
+        );
+
+        if self.multivectors.is_some() {
+            code.push_str(
+                "struct MultivectorOffset {\n\
+                 \tuint offset;\n\
+                 \tuint count;\n\
+                 };\n\n\
+                 [[vk::binding(MULTIVECTOR_OFFSETS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<MultivectorOffset> multivector_offsets;\n\n\
+                 static uint target_id;\n\n\
+                 void set_target(uint point_id) {\n\
+                 \ttarget_id = point_id;\n\
+                 }\n\n\
+                 float similarity(uint point_id) {\n\
+                 \tMultivectorOffset offset_a = multivector_offsets[target_id];\n\
+                 \tMultivectorOffset offset_b = multivector_offsets[point_id];\n\n\
+                 \tfloat sum = 0.0;\n\
+                 \tfor (uint a = 0; a < offset_a.count; a++) {\n\
+                 \t\tset_target_dense(offset_a.offset + a);\n\
+                 \t\tfloat max_sim = negative_infinity;\n\n\
+                 \t\tfor (uint b = 0; b < offset_b.count; b++) {\n\
+                 \t\t\tfloat sim = similarity_dense(offset_b.offset + b);\n\
+                 \t\t\tif (sim > max_sim) {\n\
+                 \t\t\t\tmax_sim = sim;\n\
+                 \t\t\t}\n\
+                 \t\t}\n\n\
+                 \t\tsum += max_sim;\n\
+                 \t}\n\
+                 \treturn sum;\n\
+                 }\n",
+            );
+        } else {
+            code.push_str(
+                "void set_target(uint point_id) {\n\
+                 \tset_target_dense(point_id);\n\
+                 }\n\n\
+                 float similarity(uint point_id) {\n\
+                 \treturn similarity_dense(point_id);\n\
+                 }\n",
+            );
+        }
+
+        code
+    }
+
     pub fn new(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,

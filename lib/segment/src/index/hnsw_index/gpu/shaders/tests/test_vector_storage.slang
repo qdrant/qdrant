@@ -1,9 +1,6 @@
-#include "extensions.comp"
-
-#include "common.comp"
-
-#define VECTOR_STORAGE_LAYOUT_SET 1
-#include "vector_storage.comp"
+import config;
+import common;
+import vector_storage;
 
 [[vk::binding(0, 0)]] RWStructuredBuffer<float> scores;
 
@@ -11,7 +8,7 @@
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    uint idx = SUBGROUP_ID;
+    uint idx = subgroupId();
     set_target(0);
     float score = similarity(idx);
     if (WaveIsFirstLane()) {

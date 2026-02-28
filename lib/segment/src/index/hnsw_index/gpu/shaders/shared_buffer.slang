@@ -1,7 +1,5 @@
-#ifndef SHARED_BUFFER_HEADER
-#define SHARED_BUFFER_HEADER
-
-#include "common.comp"
+import config;
+import common;
 
 groupshared ScoredPoint shared_buffer[SHARED_BUFFER_CAPACITY];
 
@@ -96,5 +94,3 @@ void sort(uint offset, uint count) {
         }
     }
 }
-
-#endif

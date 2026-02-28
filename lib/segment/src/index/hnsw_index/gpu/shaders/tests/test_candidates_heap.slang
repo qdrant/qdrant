@@ -1,12 +1,7 @@
-#include "extensions.comp"
-
-#include "common.comp"
-
-#define SHARED_BUFFER_CAPACITY EF
-#define CANDIDATES_HEAP_OFFSET 0
-
-#include "shared_buffer.comp"
-#include "bheap.comp"
+import config;
+import common;
+import shared_buffer;
+import bheap;
 
 struct TestParamsStruct {
     uint input_counts;
@@ -20,7 +15,7 @@ struct TestParamsStruct {
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    uint subgroup_index = SUBGROUP_ID;
+    uint subgroup_index = subgroupId();
 
     BHeap heap = BHeap(CANDIDATES_HEAP_OFFSET, EF);
 
