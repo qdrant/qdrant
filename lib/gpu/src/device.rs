@@ -50,6 +50,9 @@ pub struct Device {
 
     /// Does the device support half precision floats.
     has_half_precision: bool,
+
+    /// Does the device support buffer device address (BDA) for 64-bit pointer access.
+    has_buffer_device_address: bool,
 }
 
 // GPU execution queue.
@@ -108,9 +111,6 @@ impl Device {
             })
             .collect();
 
-        let physical_device_features =
-            vk::PhysicalDeviceFeatures::default();
-
         // Define Vulkan features that we need.
         let mut enabled_physical_device_features_1_1 =
             vk::PhysicalDeviceVulkan11Features::default();
@@ -162,11 +162,34 @@ impl Device {
         // for 8-bit types in buffer storage, so we enable it if supported.
         let has_uniform_and_storage_buffer_8bit =
             enabled_physical_device_features_1_2.uniform_and_storage_buffer8_bit_access != 0;
+
+        // Check if buffer device address (BDA) is supported for 64-bit pointer access.
+        // Also requires shader_int64 for uint64_t in shaders.
+        // Query shader_int64 from the base physical device features directly.
+        let has_shader_int64 = {
+            let base_features = unsafe {
+                instance
+                    .vk_instance()
+                    .get_physical_device_features(vk_physical_device.vk_physical_device)
+            };
+            base_features.shader_int64 != 0
+        };
+        let has_buffer_device_address =
+            enabled_physical_device_features_1_2.buffer_device_address != 0 && has_shader_int64;
+
+        // Enable shader_int64 when BDA is available (needed for uint64_t in shaders).
+        let physical_device_features = if has_buffer_device_address {
+            vk::PhysicalDeviceFeatures::default().shader_int64(true)
+        } else {
+            vk::PhysicalDeviceFeatures::default()
+        };
+
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
             .shader_float16(has_half_precision)
             .storage_buffer8_bit_access(true)
-            .uniform_and_storage_buffer8_bit_access(has_uniform_and_storage_buffer_8bit);
+            .uniform_and_storage_buffer8_bit_access(has_uniform_and_storage_buffer_8bit)
+            .buffer_device_address(has_buffer_device_address);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
         let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();
@@ -228,6 +251,7 @@ impl Device {
 
             log::info!("Create GPU device {}", vk_physical_device.name);
             log::debug!("GPU subgroup size: {subgroup_size}");
+            log::debug!("GPU buffer device address: {has_buffer_device_address}");
             subgroup_size
         };
 
@@ -295,7 +319,7 @@ impl Device {
             device: vk_device.clone(),
             physical_device: vk_physical_device.vk_physical_device,
             debug_settings: Default::default(),
-            buffer_device_address: false,
+            buffer_device_address: has_buffer_device_address,
             allocation_sizes: Default::default(),
         });
 
@@ -322,6 +346,7 @@ impl Device {
             queue_index,
             name: vk_physical_device.name.clone(),
             has_half_precision,
+            has_buffer_device_address,
         }))
     }
 
@@ -384,6 +409,10 @@ impl Device {
 
     pub fn has_half_precision(&self) -> bool {
         self.has_half_precision
+    }
+
+    pub fn has_buffer_device_address(&self) -> bool {
+        self.has_buffer_device_address
     }
 
     pub fn compute_queue(&self) -> &Queue {

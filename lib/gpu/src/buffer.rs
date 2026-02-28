@@ -63,6 +63,11 @@ impl Buffer {
         }
 
         // Vulkan API requires buffer usage flags to be specified during the buffer creation.
+        let bda_flag = if device.has_buffer_device_address() {
+            vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+        } else {
+            vk::BufferUsageFlags::empty()
+        };
         let vk_usage_flags = match buffer_type {
             BufferType::Uniform => {
                 vk::BufferUsageFlags::UNIFORM_BUFFER // mark as uniform buffer.
@@ -73,6 +78,7 @@ impl Buffer {
                 vk::BufferUsageFlags::STORAGE_BUFFER // mark as storage buffer.
                     | vk::BufferUsageFlags::TRANSFER_DST // For uploading.
                     | vk::BufferUsageFlags::TRANSFER_SRC // For downloading.
+                    | bda_flag // For BDA pointer access when supported.
             }
             // CpuToGpu buffer can be used as a source for transfer operations only.
             BufferType::CpuToGpu => vk::BufferUsageFlags::TRANSFER_SRC,
@@ -167,6 +173,13 @@ impl Buffer {
 
     pub fn buffer_type(&self) -> BufferType {
         self.buffer_type
+    }
+
+    /// Get the device address of the buffer for BDA (buffer device address) access.
+    /// Only valid when the device supports BDA and the buffer has the SHADER_DEVICE_ADDRESS flag.
+    pub fn device_address(&self) -> u64 {
+        let info = vk::BufferDeviceAddressInfo::default().buffer(self.vk_buffer);
+        unsafe { self.device.vk_device().get_buffer_device_address(&info) }
     }
 
     /// Download a value from the buffer to the RAM.

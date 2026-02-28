@@ -8,13 +8,44 @@ import vector_storage_bq;
 import vector_storage_sq;
 import vector_storage_pq;
 
-// Vector data accessed via ByteAddressBuffer bindings (type-agnostic).
+// ============================================================
+// Buffer access: BDA (64-bit pointer) vs ByteAddressBuffer (32-bit offset)
+// ============================================================
+
+#ifdef USE_BDA
+
+// BDA mode: storage buffer with 4 device addresses for pointer-based access.
+struct VectorAddresses { uint64_t addr[4]; };
+[[vk::binding(0, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<VectorAddresses> vector_addrs;
+
+float4 loadElement_f32(uint storageIndex, uint elementIndex) {
+    float4* ptr = (float4*)(vector_addrs[0].addr[storageIndex]);
+    return ptr[elementIndex];
+}
+
+half4 loadElement_f16(uint storageIndex, uint elementIndex) {
+    half4* ptr = (half4*)(vector_addrs[0].addr[storageIndex]);
+    return ptr[elementIndex];
+}
+
+vector<uint8_t, 4> loadElement_u8(uint storageIndex, uint elementIndex) {
+    vector<uint8_t, 4>* ptr = (vector<uint8_t, 4>*)(vector_addrs[0].addr[storageIndex]);
+    return ptr[elementIndex];
+}
+
+uint loadElement_bq(uint storageIndex, uint elementIndex) {
+    uint* ptr = (uint*)(vector_addrs[0].addr[storageIndex]);
+    return ptr[elementIndex];
+}
+
+#else
+
+// Non-BDA mode: ByteAddressBuffer bindings with 32-bit byte offsets.
 [[vk::binding(0, VECTOR_STORAGE_LAYOUT_SET)]] ByteAddressBuffer vectors_0;
 [[vk::binding(1, VECTOR_STORAGE_LAYOUT_SET)]] ByteAddressBuffer vectors_1;
 [[vk::binding(2, VECTOR_STORAGE_LAYOUT_SET)]] ByteAddressBuffer vectors_2;
 [[vk::binding(3, VECTOR_STORAGE_LAYOUT_SET)]] ByteAddressBuffer vectors_3;
 
-// Element load via ByteAddressBuffer typed loads.
 float4 loadElement_f32(uint storageIndex, uint elementIndex) {
     uint byteOffset = elementIndex * 16;
     if (storageIndex == 0) return vectors_0.Load<float4>(byteOffset);
@@ -46,6 +77,8 @@ uint loadElement_bq(uint storageIndex, uint elementIndex) {
     if (storageIndex == 2) return vectors_2.Load<uint>(byteOffset);
     return vectors_3.Load<uint>(byteOffset);
 }
+
+#endif
 
 static const uint TARGET_CACHE_SIZE = SINGLE_WAVE_PER_VECTOR ? 1 : WAVES_PER_VECTOR;
 

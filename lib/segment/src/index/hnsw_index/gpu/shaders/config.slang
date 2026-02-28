@@ -52,6 +52,11 @@ static const uint SQ_OFFSETS_BINDING = 4;
 static const uint PQ_CENTROIDS_BINDING = 5;
 static const uint PQ_DIVISIONS_BINDING = 6;
 
+// Buffer device address (BDA) for 64-bit pointer access to large buffers.
+// When USE_BDA is defined, shaders use pointer-based access via device addresses.
+// #define USE_BDA
+typedef uint BufferOffset;
+
 // Multivectors
 static const bool MULTIVECTORS = false;
 static const uint MULTIVECTOR_OFFSETS_BINDING = 7;

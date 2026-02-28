@@ -53,6 +53,8 @@ pub struct GpuVectorStorage {
     quantization: Option<GpuQuantization>,
     /// Additional multivectors data.
     multivectors: Option<GpuMultivectors>,
+    /// Whether BDA (buffer device address) mode is used for vector access.
+    use_bda: bool,
 }
 
 impl ShaderBuilderParameters for GpuVectorStorage {
@@ -144,6 +146,11 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             "STORAGES_COUNT".to_owned(),
             Some(STORAGES_COUNT.to_string()),
         );
+
+        if self.use_bda {
+            defines.insert("USE_BDA".to_owned(), None);
+        }
+
         defines
     }
 }
@@ -782,14 +789,23 @@ impl GpuVectorStorage {
             TElement::datatype(),
         );
 
-        let descriptor_set_layout =
-            Self::create_descriptor_set_layout(device.clone(), &quantization, &multivectors)?;
+        let use_bda = device.has_buffer_device_address()
+            && std::env::var("QDRANT_GPU_DISABLE_BDA").is_err();
+        log::debug!("GPU vector storage using BDA: {use_bda}");
+
+        let descriptor_set_layout = Self::create_descriptor_set_layout(
+            device.clone(),
+            &quantization,
+            &multivectors,
+            use_bda,
+        )?;
         let descriptor_set = Self::create_descriptor_set(
             device.clone(),
             descriptor_set_layout.clone(),
             &vectors_buffer,
             &quantization,
             &multivectors,
+            use_bda,
         )?;
 
         Ok(Self {
@@ -802,6 +818,7 @@ impl GpuVectorStorage {
             distance,
             quantization,
             multivectors,
+            use_bda,
         })
     }
 
@@ -809,12 +826,18 @@ impl GpuVectorStorage {
         device: Arc<gpu::Device>,
         quantization: &Option<GpuQuantization>,
         multivectors: &Option<GpuMultivectors>,
+        use_bda: bool,
     ) -> OperationResult<Arc<gpu::DescriptorSetLayout>> {
         let mut builder = gpu::DescriptorSetLayout::builder();
 
-        // Bindings 0-3: vector data (ByteAddressBuffer = storage buffer)
-        for i in 0..STORAGES_COUNT {
-            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i);
+        if use_bda {
+            // BDA mode: binding 0 = storage buffer with 4 device addresses.
+            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START);
+        } else {
+            // Non-BDA mode: bindings 0-3 = storage buffers (ByteAddressBuffer).
+            for i in 0..STORAGES_COUNT {
+                builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i);
+            }
         }
 
         // Bindings 4-6: quantization data (always declared for static shader layout)
@@ -843,12 +866,39 @@ impl GpuVectorStorage {
         vectors_buffer: &[Arc<gpu::Buffer>],
         quantization: &Option<GpuQuantization>,
         multivectors: &Option<GpuMultivectors>,
+        use_bda: bool,
     ) -> OperationResult<Arc<gpu::DescriptorSet>> {
         let mut builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone());
 
-        // Bindings 0-3: vector data buffers
-        for (i, buffer) in vectors_buffer.iter().enumerate() {
-            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i, buffer.clone());
+        if use_bda {
+            // BDA mode: create uniform buffer with 4 device addresses.
+            let mut addrs = [0u64; STORAGES_COUNT];
+            for (i, buffer) in vectors_buffer.iter().enumerate() {
+                addrs[i] = buffer.device_address();
+            }
+            let addresses_buffer = gpu::Buffer::new(
+                device.clone(),
+                "Vector addresses buffer",
+                gpu::BufferType::Storage,
+                std::mem::size_of::<[u64; STORAGES_COUNT]>(),
+            )?;
+            let staging = gpu::Buffer::new(
+                device.clone(),
+                "Vector addresses staging buffer",
+                gpu::BufferType::CpuToGpu,
+                addresses_buffer.size(),
+            )?;
+            staging.upload(&addrs, 0)?;
+            let mut ctx = gpu::Context::new(device.clone())?;
+            ctx.copy_gpu_buffer(staging, addresses_buffer.clone(), 0, 0, addresses_buffer.size())?;
+            ctx.run()?;
+            ctx.wait_finish(GPU_TIMEOUT)?;
+            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START, addresses_buffer);
+        } else {
+            // Non-BDA mode: bind 4 storage buffers directly.
+            for (i, buffer) in vectors_buffer.iter().enumerate() {
+                builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i, buffer.clone());
+            }
         }
 
         // Bindings 4-6: quantization data

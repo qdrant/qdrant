@@ -8,6 +8,7 @@ pub struct ShaderBuilder {
     shader_code: String,
     modules: HashMap<String, String>,
     defines: HashMap<String, Option<String>>,
+    extra_slangc_args: Vec<String>,
 }
 
 pub trait ShaderBuilderParameters {
@@ -43,12 +44,19 @@ impl ShaderBuilder {
             shader_code: Default::default(),
             modules,
             defines,
+            extra_slangc_args: Vec::new(),
         }
     }
 
     pub fn with_parameters<T: ShaderBuilderParameters>(&mut self, parameters: &T) -> &mut Self {
         self.modules.extend(parameters.shader_includes());
         self.defines.extend(parameters.shader_defines());
+        self
+    }
+
+    pub fn with_extra_slangc_args(&mut self, args: &[&str]) -> &mut Self {
+        self.extra_slangc_args
+            .extend(args.iter().map(|s| s.to_string()));
         self
     }
 
@@ -62,7 +70,21 @@ impl ShaderBuilder {
     fn generate_config_slang(&self) -> String {
         let mut config = String::from("// Generated config module — do not edit.\n\n");
 
+        // BDA uses preprocessor #define (not static const) so shaders can use #ifdef
+        // to conditionally declare different buffer bindings.
+        let use_bda = self.defines.contains_key("USE_BDA");
+        if use_bda {
+            config.push_str("#define USE_BDA\n");
+            config.push_str("typedef uint64_t BufferOffset;\n\n");
+        } else {
+            config.push_str("typedef uint BufferOffset;\n\n");
+        }
+
         for (key, value) in &self.defines {
+            // USE_BDA is handled above as a preprocessor #define.
+            if key == "USE_BDA" {
+                continue;
+            }
             match value {
                 Some(val) => {
                     if val.contains('.') {
@@ -185,11 +207,23 @@ impl ShaderBuilder {
         let mut modules = self.modules.clone();
         modules.insert("config.slang".to_string(), self.generate_config_slang());
 
-        let compiled = self.device.instance().compile_shader(
+        // Collect extra slangc args. Add BDA capability automatically when USE_BDA is set.
+        let mut extra_args: Vec<&str> = self.extra_slangc_args.iter().map(|s| s.as_str()).collect();
+        if self.defines.contains_key("USE_BDA") {
+            extra_args.extend([
+                "-capability",
+                "SPV_EXT_physical_storage_buffer",
+                "-D",
+                "USE_BDA",
+            ]);
+        }
+
+        let compiled = self.device.instance().compile_shader_with_extra_args(
             &self.shader_code,
             shader_name,
             None,
             Some(&modules),
+            &extra_args,
         )?;
         log::debug!("Shader compilation took: {:?}", timer.elapsed());
         Ok(gpu::Shader::new(self.device.clone(), &compiled)?)

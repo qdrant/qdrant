@@ -295,6 +295,17 @@ impl Instance {
         defines: Option<&HashMap<String, Option<String>>>,
         includes: Option<&HashMap<String, String>>,
     ) -> GpuResult<Vec<u8>> {
+        self.compile_shader_with_extra_args(shader, shader_name, defines, includes, &[])
+    }
+
+    pub fn compile_shader_with_extra_args(
+        &self,
+        shader: &str,
+        shader_name: &str,
+        defines: Option<&HashMap<String, Option<String>>>,
+        includes: Option<&HashMap<String, String>>,
+        extra_args: &[&str],
+    ) -> GpuResult<Vec<u8>> {
         // Write include files to a unique temporary directory for Slang's search path resolution.
         // Use an atomic counter to ensure uniqueness across concurrent compilations.
         static COMPILE_COUNTER: std::sync::atomic::AtomicU64 =
@@ -315,7 +326,8 @@ impl Instance {
             }
         }
 
-        let result = self.compile_shader_slang(shader, shader_name, defines, &include_dir);
+        let result =
+            self.compile_shader_slang(shader, shader_name, defines, &include_dir, extra_args);
 
         // Clean up temp include files (best-effort).
         let _ = std::fs::remove_dir_all(&include_dir);
@@ -329,6 +341,7 @@ impl Instance {
         shader_name: &str,
         defines: Option<&HashMap<String, Option<String>>>,
         include_dir: &std::path::Path,
+        extra_args: &[&str],
     ) -> GpuResult<Vec<u8>> {
         // Defines are now baked into the generated config.slang module,
         // so no preprocessor injection is needed.
@@ -373,6 +386,9 @@ impl Instance {
             .arg("-O2")
             .arg("-I").arg(include_dir)
             .arg("-o").arg(&output_path);
+        for arg in extra_args {
+            cmd.arg(arg);
+        }
 
         let output = cmd.output().map_err(|e| {
             GpuError::Other(format!("Failed to run slangc for {shader_name}: {e}"))
