@@ -23,7 +23,7 @@ struct BHeap
     {
         ScoredPoint max_scored_point = {0, negative_infinity};
         uint max_index = 0;
-        for (uint i = WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
+        for (uint i = WaveGetLaneIndex(); i < size; i += WAVE_SIZE) {
             bool is_large = shared_buffer[offset + i].score > max_scored_point.score;
             if (is_large) {
                 max_scored_point = shared_buffer[offset + i];
@@ -42,7 +42,7 @@ struct BHeap
     {
         ScoredPoint min_scored_point = {0, positive_infinity};
         uint min_index = 0;
-        for (uint i = WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
+        for (uint i = WaveGetLaneIndex(); i < size; i += WAVE_SIZE) {
             bool is_less = shared_buffer[offset + i].score < min_scored_point.score;
             if (is_less) {
                 min_scored_point = shared_buffer[offset + i];
@@ -198,7 +198,7 @@ struct BHeap
         ScoredPoint max_scored_point = {0, negative_infinity};
         uint max_index = 0;
         uint scan_start = (size - 1) / 2;
-        for (uint i = scan_start + WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
+        for (uint i = scan_start + WaveGetLaneIndex(); i < size; i += WAVE_SIZE) {
             if (shared_buffer[offset + i].score > max_scored_point.score) {
                 max_scored_point = shared_buffer[offset + i];
                 max_index = i;

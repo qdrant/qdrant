@@ -29,7 +29,7 @@ use crate::vector_storage::{
     DenseVectorStorage, MultiVectorStorage, Random, VectorStorage, VectorStorageEnum,
 };
 
-pub const ELEMENTS_PER_SUBGROUP: usize = 4;
+pub const PACK_SIZE: usize = 4;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 pub const STORAGES_COUNT: usize = 4;
 
@@ -888,7 +888,7 @@ impl GpuVectorStorage {
         // We need to keep this alignment for bq case that's why we have `max` here.
         // But TBH even CPU emulator has 8 subgroups to that we don't expect in practice
         // that we will have less than 16 bytes alignment.
-        let alignment = std::cmp::max(device.subgroup_size() * ELEMENTS_PER_SUBGROUP, 16);
+        let alignment = std::cmp::max(device.subgroup_size() * PACK_SIZE, 16);
         dim.next_multiple_of(alignment)
     }
 

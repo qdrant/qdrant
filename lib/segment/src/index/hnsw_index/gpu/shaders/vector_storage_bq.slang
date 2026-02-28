@@ -13,7 +13,7 @@ struct BQMetric : IDistanceMetric<uint>
     static float postprocessScore(uint accumulated, NoState s, uint pointId)
     {
         float xor_product = float(WaveActiveSum(accumulated));
-        float zeros_count = float((DIM / ELEMENTS_PER_SUBGROUP) * BITS_IN_UINT) - xor_product;
+        float zeros_count = float((DIM / PACK_SIZE) * BITS_IN_UINT) - xor_product;
         return zeros_count - xor_product - BQ_SKIP_COUNT;
     }
 };

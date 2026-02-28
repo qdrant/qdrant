@@ -15,12 +15,12 @@ struct SearchRequest {
 [[vk::binding(1, 0)]] RWStructuredBuffer<ScoredPoint> search_results;
 
 [shader("compute")]
-[numthreads(SUBGROUP_SIZE, 1, 1)]
+[numthreads(WAVE_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
-    uint subgroup_index = subgroupId();
-    SearchRequest search_request = search_requests[subgroup_index];
+    uint wave_index = waveId();
+    SearchRequest search_request = search_requests[wave_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
@@ -30,7 +30,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
     GroupMemoryBarrierWithGroupSync();
 
     if (WaveIsFirstLane()) {
-        uint result_index_offset = EF * subgroup_index;
+        uint result_index_offset = EF * wave_index;
         for (uint i = 0; i < count; i++) {
             search_results[result_index_offset + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
         }

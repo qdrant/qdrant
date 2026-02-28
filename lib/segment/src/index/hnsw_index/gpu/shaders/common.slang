@@ -4,7 +4,7 @@ import distance_metric;
 // Global thread ID, set by entry point at the start of main().
 static uint3 gl_GlobalInvocationID;
 
-uint subgroupId() { return gl_GlobalInvocationID.x / SUBGROUP_SIZE; }
+uint waveId() { return gl_GlobalInvocationID.x / WAVE_SIZE; }
 
 static const float positive_infinity = 1.0 / 0.0;
 static const float negative_infinity = -1.0 / 0.0;
@@ -18,7 +18,7 @@ struct ScoredPoint {
     float score;
 };
 
-// Helper for subgroupBallotFindLSB equivalent.
+// Helper for waveBallotFindLSB equivalent.
 // Finds the index of the lowest set bit in a ballot result.
 uint ballotFindLSB(uint4 ballot) {
     if (ballot.x != 0) return firstbitlow(ballot.x);

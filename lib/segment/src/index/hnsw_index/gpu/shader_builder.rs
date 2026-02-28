@@ -30,7 +30,7 @@ impl ShaderBuilder {
 
         let mut defines = HashMap::new();
         defines.insert(
-            "SUBGROUP_SIZE".to_owned(),
+            "WAVE_SIZE".to_owned(),
             Some(device.subgroup_size().to_string()),
         );
 
@@ -83,22 +83,22 @@ impl ShaderBuilder {
         };
 
         let dim = get_uint("DIM");
-        let subgroup_size = get_uint("SUBGROUP_SIZE").max(1);
+        let wave_size = get_uint("WAVE_SIZE").max(1);
         let ef = get_uint("EF");
 
-        let elements_per_subgroup: u32 = 4;
+        let pack_size: u32 = 4;
         config.push_str(&format!(
-            "\nstatic const uint ELEMENTS_PER_SUBGROUP = {elements_per_subgroup};\n"
+            "\nstatic const uint PACK_SIZE = {pack_size};\n"
         ));
 
         if dim > 0 {
-            let subgroups_count = dim / (elements_per_subgroup * subgroup_size);
-            let single_subgroup = subgroups_count < 2;
+            let waves_per_vector = dim / (pack_size * wave_size);
+            let single_wave = waves_per_vector < 2;
             config.push_str(&format!(
-                "static const uint SUBGROUPS_COUNT_PER_VECTOR = {subgroups_count};\n"
+                "static const uint WAVES_PER_VECTOR = {waves_per_vector};\n"
             ));
             config.push_str(&format!(
-                "static const bool SINGLE_SUBGROUP_PER_VECTOR = {single_subgroup};\n",
+                "static const bool SINGLE_WAVE_PER_VECTOR = {single_wave};\n",
             ));
         }
 

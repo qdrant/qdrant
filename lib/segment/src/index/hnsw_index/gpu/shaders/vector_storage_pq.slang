@@ -46,7 +46,7 @@ struct PQMetric : IDistanceMetric<vector<uint8_t, 4> >
 
     static PQState initState()
     {
-        if (SINGLE_SUBGROUP_PER_VECTOR) {
+        if (SINGLE_WAVE_PER_VECTOR) {
             return { WaveGetLaneIndex() };
         } else {
             return { 0 };
@@ -56,8 +56,8 @@ struct PQMetric : IDistanceMetric<vector<uint8_t, 4> >
     static float scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout PQState state)
     {
         float result = score_pq(a, b, state.elementIndex);
-        if (!SINGLE_SUBGROUP_PER_VECTOR) {
-            state.elementIndex += SUBGROUP_SIZE;
+        if (!SINGLE_WAVE_PER_VECTOR) {
+            state.elementIndex += WAVE_SIZE;
         }
         return result;
     }

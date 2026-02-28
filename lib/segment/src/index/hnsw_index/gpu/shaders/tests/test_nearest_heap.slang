@@ -13,15 +13,15 @@ struct TestParamsStruct {
 [[vk::binding(3, 0)]] RWStructuredBuffer<uint> sorted_output;
 
 [shader("compute")]
-[numthreads(SUBGROUP_SIZE, 1, 1)]
+[numthreads(WAVE_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    uint subgroup_index = subgroupId();
+    uint wave_index = waveId();
 
     BHeap heap = BHeap(NEAREST_HEAP_OFFSET, EF);
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = wave_index * test_params.input_counts + i;
         ScoredPoint point = input_points[point_index];
         heap.push(point);
 
@@ -42,7 +42,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
     sort(NEAREST_HEAP_OFFSET, heap.size);
     if (WaveIsFirstLane()) {
         for (uint i = 0; i < EF; i++) {
-            uint point_index = subgroup_index * EF + i;
+            uint point_index = wave_index * EF + i;
             sorted_output[point_index] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
         }
     }

@@ -77,8 +77,8 @@ impl GpuVisitedFlags {
             code.push_str("\tpoint_id = visited_flags_remap[point_id];\n");
         }
         code.push_str(
-            "\tuint subgroup_index = subgroupId();\n\
-             \tuint index = subgroup_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;\n\
+            "\tuint wave_index = waveId();\n\
+             \tuint index = wave_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;\n\
              \tuint prev_generation = uint(visited_flags[index]);\n\
              \tif (prev_generation == visited_flags_params.generation) {\n\
              \t\treturn true;\n\

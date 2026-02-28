@@ -8,12 +8,12 @@ uint _subgroup_bubble_sort(float score) {
     bool is_even = invocation % 2 == 0;
     uint invocation_forward = is_even ? invocation + 1 : invocation - 1;
     uint invocation_backward = invocation;
-    if (invocation != SUBGROUP_SIZE - 1 && invocation != 0) {
+    if (invocation != WAVE_SIZE - 1 && invocation != 0) {
         invocation_backward = is_even ? invocation - 1 : invocation + 1;
     }
 
     uint index = invocation;
-    for (uint j = 0; j < SUBGROUP_SIZE / 2; j++) {
+    for (uint j = 0; j < WAVE_SIZE / 2; j++) {
         bool is_even = WaveGetLaneIndex() % 2 == 0;
         bool was_changed = false;
 
@@ -58,8 +58,8 @@ void _bitonic_cmp(uint offset, uint count, uint b_i, uint b_j) {
 
 // Sort the shared buffer in place using bitonic sort
 void sort(uint offset, uint count) {
-    // To increase performance, sort blocks of size `SUBGROUP_SIZE` using bubble sort.
-    for (uint group_offset = 0; group_offset < count; group_offset += SUBGROUP_SIZE) {
+    // To increase performance, sort blocks of size `WAVE_SIZE` using bubble sort.
+    for (uint group_offset = 0; group_offset < count; group_offset += WAVE_SIZE) {
         ScoredPoint scored_point = {0, negative_infinity};
         uint i = group_offset + WaveGetLaneIndex();
         if (i < count) {
@@ -79,15 +79,15 @@ void sort(uint offset, uint count) {
     }
     GroupMemoryBarrier();
 
-    // Start bitonic sort. Start from `k = 2 * SUBGROUP_SIZE` instead of `1` because we have already sorted blocks of size `SUBGROUP_SIZE`.
-    for (uint k = 2 * SUBGROUP_SIZE; (k >> 1) < count; k <<= 1) {
-        for (uint i = WaveGetLaneIndex(); i < count; i += SUBGROUP_SIZE) {
+    // Start bitonic sort. Start from `k = 2 * WAVE_SIZE` instead of `1` because we have already sorted blocks of size `WAVE_SIZE`.
+    for (uint k = 2 * WAVE_SIZE; (k >> 1) < count; k <<= 1) {
+        for (uint i = WaveGetLaneIndex(); i < count; i += WAVE_SIZE) {
             _bitonic_cmp(offset, count, i, i ^ (k - 1));
         }
         GroupMemoryBarrier();
 
         for (uint j = k >> 1; 0 < j; j >>= 1) {
-            for (uint i = WaveGetLaneIndex(); i < count; i += SUBGROUP_SIZE) {
+            for (uint i = WaveGetLaneIndex(); i < count; i += WAVE_SIZE) {
                 _bitonic_cmp(offset, count, i, i ^ j);
             }
             GroupMemoryBarrier();

@@ -35,13 +35,13 @@ struct SearchContext
         uint invocation = WaveGetLaneIndex();
 
         for (uint i = 0; i < links_count; i++) {
-            if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+            if (i % WAVE_SIZE == 0 && i + invocation < links_count) {
                 subgroup_link = links_data[linkIndex(candidate_id, i + invocation)];
                 subgroup_is_visited = check_visited(subgroup_link);
             }
 
-            uint link = WaveReadLaneAt(subgroup_link, i % SUBGROUP_SIZE);
-            bool is_visited = WaveReadLaneAt(subgroup_is_visited, i % SUBGROUP_SIZE);
+            uint link = WaveReadLaneAt(subgroup_link, i % WAVE_SIZE);
+            bool is_visited = WaveReadLaneAt(subgroup_is_visited, i % WAVE_SIZE);
 
             if (!is_visited) {
                 float score = similarity(link);
@@ -68,10 +68,10 @@ struct SearchContext
             uint current = result.id;
             uint links_count = links_data[linksCountIndex(current)];
             for (uint i = 0; i < links_count; i++) {
-                if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+                if (i % WAVE_SIZE == 0 && i + invocation < links_count) {
                     subgroup_link = links_data[linkIndex(current, i + invocation)];
                 }
-                uint link = WaveReadLaneAt(subgroup_link, i % SUBGROUP_SIZE);
+                uint link = WaveReadLaneAt(subgroup_link, i % WAVE_SIZE);
 
                 float score = similarity(link);
                 if (score > result.score) {

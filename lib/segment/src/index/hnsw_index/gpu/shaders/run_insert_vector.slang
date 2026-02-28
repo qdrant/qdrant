@@ -16,12 +16,12 @@ struct Request {
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint> atomics;
 
 [shader("compute")]
-[numthreads(SUBGROUP_SIZE, 1, 1)]
+[numthreads(WAVE_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
-    uint subgroup_index = subgroupId();
-    Request request = requests[subgroup_index];
+    uint wave_index = waveId();
+    Request request = requests[wave_index];
 
     set_target(request.id);
     float entry_score = similarity(request.entry);
@@ -29,9 +29,9 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     if (WaveIsFirstLane()) {
         if (search_count > 0) {
-            new_entries[subgroup_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
+            new_entries[wave_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
         } else {
-            new_entries[subgroup_index] = request.entry;
+            new_entries[wave_index] = request.entry;
         }
     }
 
@@ -41,7 +41,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
     GroupMemoryBarrierWithGroupSync();
 
     // update request.id links
-    for (uint i = WaveGetLaneIndex(); i < count; i += SUBGROUP_SIZE) {
+    for (uint i = WaveGetLaneIndex(); i < count; i += WAVE_SIZE) {
         links_data[linkIndex(request.id, i)] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
     }
     if (WaveIsFirstLane()) {
@@ -60,7 +60,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
             is_locked = other_atomic == 1;
         }
         if (WaveActiveAnyTrue(is_locked)) {
-            // point is already being processed by another subgroup
+            // point is already being processed by another wave
             continue;
         }
 
@@ -94,7 +94,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
             uint other_new_links_count = ctx.runHeuristic();
 
             GroupMemoryBarrier();
-            for (uint j = WaveGetLaneIndex(); j < other_new_links_count; j += SUBGROUP_SIZE) {
+            for (uint j = WaveGetLaneIndex(); j < other_new_links_count; j += WAVE_SIZE) {
                 links_data[linkIndex(other_id, j)] = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
             if (WaveIsFirstLane()) {
