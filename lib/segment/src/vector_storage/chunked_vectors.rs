@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::cmp::max;
-use std::io::BufReader;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
@@ -13,9 +12,11 @@ use common::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapType, create_and_ensure_length,
     open_write_mmap,
 };
-use common::universal_io::{ElementsRange, OpenOptions, UniversalIoError, UniversalWrite};
+use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::{
+    ElementsRange, OpenOptions, UniversalIoError, UniversalWrite, read_json_via,
+};
 use fs_err as fs;
-use fs_err::File;
 use memmap2::MmapMut;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
@@ -106,12 +107,13 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     fn load_config(config_file: &Path) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        if config_file.exists() {
-            let file = BufReader::new(File::open(config_file)?);
-            let config: ChunkedVectorsConfig = serde_json::from_reader(file)?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
+        match read_json_via::<MmapUniversal<u8>, ChunkedVectorsConfig>(
+            config_file,
+            OpenOptions::default(),
+        ) {
+            Ok(config) => Ok(Some(config)),
+            Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
         }
     }
 

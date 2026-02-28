@@ -120,6 +120,10 @@ where
         crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
     }
+
+    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+        Ok(Cow::Borrowed(self.mmap.as_ref()))
+    }
 }
 
 impl<T> UniversalWrite<T> for MmapUniversal<T>
