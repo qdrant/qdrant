@@ -271,8 +271,8 @@ where
             size > std::mem::size_of::<TrackerHeader>(),
             "Size hint is too small"
         );
-        create_and_ensure_length(&path, size).map_err(GridstoreError::from)?;
-        let storage = S::open(&path, tracker_open_options()).map_err(GridstoreError::from)?;
+        create_and_ensure_length(&path, size)?;
+        let storage = S::open(&path, tracker_open_options())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -297,14 +297,12 @@ where
                     path.display()
                 )));
             }
-            other => other.map_err(GridstoreError::from)?,
+            other => other?,
         };
-        let header_bytes = storage
-            .read::<false>(ElementsRange {
-                start: 0,
-                length: std::mem::size_of::<TrackerHeader>() as u64,
-            })
-            .map_err(GridstoreError::from)?;
+        let header_bytes = storage.read::<false>(ElementsRange {
+            start: 0,
+            length: std::mem::size_of::<TrackerHeader>() as u64,
+        })?;
         #[expect(deprecated, reason = "legacy code")]
         let header: TrackerHeader =
             *unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) };
@@ -375,24 +373,21 @@ where
 
     pub fn flusher(&self) -> crate::gridstore::Flusher {
         let inner = self.storage.flusher();
-        Box::new(move || inner().map_err(GridstoreError::from))
+        Box::new(move || inner().map_err(Into::into))
     }
 
     #[cfg(test)]
     pub fn write_pending_and_flush_internal(&mut self) -> Result<Vec<ValuePointer>> {
         let pending_updates = std::mem::take(&mut self.pending_updates);
         let res = self.write_pending(pending_updates)?;
-        self.storage.flusher()().map_err(GridstoreError::from)?;
+        self.storage.flusher()()?;
         Ok(res)
     }
 
     /// Return the size of the underlying file
     #[cfg(test)]
     pub fn mmap_file_size(&self) -> Result<usize> {
-        self.storage
-            .len()
-            .map(|u| u as usize)
-            .map_err(GridstoreError::from)
+        self.storage.len().map(|u| u as usize).map_err(Into::into)
     }
 
     pub fn pointer_count(&self) -> u32 {
@@ -403,9 +398,8 @@ where
     fn write_header(&mut self) -> Result<()> {
         #[expect(deprecated, reason = "legacy code")]
         let header_bytes = unsafe { transmute_to_u8(&self.header) };
-        self.storage
-            .write(0, header_bytes)
-            .map_err(GridstoreError::from)
+        self.storage.write(0, header_bytes)?;
+        Ok(())
     }
 
     /// Save the mapping at the given offset
@@ -415,7 +409,7 @@ where
         point_offset: PointOffset,
         pointer: Option<ValuePointer>,
     ) -> Result<()> {
-        let storage_len = self.storage.len().map_err(GridstoreError::from)? as usize;
+        let storage_len = self.storage.len()? as usize;
         if pointer.is_none() && point_offset as usize >= storage_len {
             return Ok(());
         }
@@ -427,19 +421,17 @@ where
 
         // Grow tracker file if it isn't big enough
         if storage_len < end_offset {
-            self.storage.flusher()().map_err(GridstoreError::from)?;
+            self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
-            create_and_ensure_length(&self.path, new_size).map_err(GridstoreError::from)?;
-            self.storage =
-                S::open(&self.path, tracker_open_options()).map_err(GridstoreError::from)?;
+            create_and_ensure_length(&self.path, new_size)?;
+            self.storage = S::open(&self.path, tracker_open_options())?;
         }
 
         let pointer: Optional<_> = pointer.into();
         #[expect(deprecated, reason = "legacy code")]
         let pointer_bytes = unsafe { transmute_to_u8(&pointer) };
-        self.storage
-            .write(start_offset as u64, pointer_bytes)
-            .map_err(GridstoreError::from)
+        self.storage.write(start_offset as u64, pointer_bytes)?;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -476,17 +468,14 @@ where
         let start_offset = std::mem::size_of::<TrackerHeader>()
             + point_offset as usize * std::mem::size_of::<Optional<ValuePointer>>();
         let end_offset = start_offset + std::mem::size_of::<Optional<ValuePointer>>();
-        let storage_len = self.storage.len().map_err(GridstoreError::from)?;
+        let storage_len = self.storage.len()?;
         if end_offset as u64 > storage_len {
             return Ok(None);
         }
-        let bytes = self
-            .storage
-            .read::<false>(ElementsRange {
-                start: start_offset as u64,
-                length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
-            })
-            .map_err(GridstoreError::from)?;
+        let bytes = self.storage.read::<false>(ElementsRange {
+            start: start_offset as u64,
+            length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
+        })?;
         #[expect(deprecated, reason = "legacy code")]
         let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
         Ok(Some(opt.is_some().copied()))
@@ -540,7 +529,7 @@ where
     }
 
     pub fn populate(&self) -> Result<()> {
-        self.storage.populate().map_err(GridstoreError::from)
+        self.storage.populate().map_err(Into::into)
     }
 }
 

@@ -2,15 +2,15 @@ use std::ops::{ControlFlow, Deref};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UniversalWrite};
 use lz4_flex::compress_prepend_size;
 
+use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, ValuePointer};
-use crate::{Result, Tracker};
+use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker as TrackerGeneric, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -25,21 +25,21 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// A non-owning view into gridstore data.
 ///
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
-/// Generic over the page storage backend `S`, so it works with any `UniversalRead<u8>`
-/// implementation (mmap, memory buffers, etc.).
+/// Generic over the storage backend `S` for both pages and tracker (same as [`Page<S>`] and
+/// [`Tracker<S>`]).
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
-pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
+pub struct GridstoreView<'a, V, S: UniversalRead<u8> + UniversalWrite<u8>> {
     pub(super) config: &'a StorageConfig,
-    pub(super) tracker: &'a Tracker,
+    pub(super) tracker: &'a TrackerGeneric<S>,
     pub(super) pages: &'a [Page<S>],
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead<u8> + UniversalWrite<u8>> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
-        tracker: &'a Tracker,
+        tracker: &'a TrackerGeneric<S>,
         pages: &'a [Page<S>],
     ) -> Self {
         Self {
@@ -99,7 +99,7 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead<u8> + UniversalWrite<u8>> GridstoreView<'a, V, S> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         match self.config.compression {
             Compression::None => value,
@@ -154,6 +154,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     /// - `callback` returned false
     /// - there are no more results.
     ///
+    /// Returns `Err(e)` if reading from the tracker fails (no silent skip).
     pub fn iter<F, E>(
         &self,
         from: PointOffset,
@@ -165,18 +166,18 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let mut pointers_iter = self
-            .tracker
-            .iter_pointers(from)
-            .filter_map(|(point_offset, res)| {
-                res.ok().flatten().map(|pointer| (point_offset, pointer))
-            })
-            .enumerate();
+        let mut nth = 0;
+        for (point_offset, res) in self.tracker.iter_pointers(from) {
+            let pointer = match res {
+                Ok(Some(p)) => p,
+                Ok(None) => continue,
+                Err(e) => return Err(e.into()),
+            };
 
-        for (nth, (point_offset, pointer)) in pointers_iter.by_ref() {
             if nth == max_iters {
                 return Ok(ControlFlow::Continue(point_offset));
             }
+            nth += 1;
 
             let ValuePointer {
                 page_id,
