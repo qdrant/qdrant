@@ -1,22 +1,20 @@
-#version 450
-
 #include "extensions.comp"
 
 #include "common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
 
-layout(set = 0, binding = 0) buffer ScoresData {
-    writeonly float data[];
-} scores;
+[[vk::binding(0, 0)]] RWStructuredBuffer<float> scores;
 
-void main() {
+[shader("compute")]
+[numthreads(SUBGROUP_SIZE, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID) {
+    gl_GlobalInvocationID = dtid;
     uint idx = SUBGROUP_ID;
     set_target(0);
     float score = similarity(idx);
-    if (subgroupElect()) {
-        scores.data[idx] = score;
+    if (WaveIsFirstLane()) {
+        scores[idx] = score;
     }
 }

@@ -10,20 +10,17 @@ struct MultivectorOffset {
     uint count;
 };
 
-layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = MULTIVECTOR_OFFSETS_BINDING) \
-readonly buffer MultivectorOffsets { \
-    MultivectorOffset data[]; \
-} multivector_offsets;
+[[vk::binding(MULTIVECTOR_OFFSETS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<MultivectorOffset> multivector_offsets;
 
-uint target_id;
+static uint target_id;
 
 void set_target(uint point_id) {
     target_id = point_id;
 }
 
 float similarity(uint point_id) {
-    MultivectorOffset offset_a = multivector_offsets.data[target_id];
-    MultivectorOffset offset_b = multivector_offsets.data[point_id];
+    MultivectorOffset offset_a = multivector_offsets[target_id];
+    MultivectorOffset offset_b = multivector_offsets[point_id];
 
     float sum = 0.0;
     for (uint a = 0; a < offset_a.count; a++) {

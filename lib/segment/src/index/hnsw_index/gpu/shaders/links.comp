@@ -7,15 +7,12 @@
 
 #include "common.comp"
 
-layout(set = LINKS_LAYOUT_SET, binding = 0)
-readonly uniform LinksParams {
+struct LinksParamsStruct {
     uint m;
-} links_params;
+};
 
-layout(set = LINKS_LAYOUT_SET, binding = 1)
-buffer Links {
-    coherent POINT_ID data[];
-} links;
+[[vk::binding(0, LINKS_LAYOUT_SET)]] ConstantBuffer<LinksParamsStruct> links_params;
+[[vk::binding(1, LINKS_LAYOUT_SET)]] RWStructuredBuffer<POINT_ID> links;
 
 #define LEVEL_M links_params.m
 
@@ -23,12 +20,12 @@ buffer Links {
     ID * (LINKS_CAPACITY + 1)
 
 #define LINKS_COUNT(ID) \
-    links.data[LINKS_CONTAINER_OFFSET(ID)]
+    links[LINKS_CONTAINER_OFFSET(ID)]
 
 #define GET_LINK(ID, I) \
-    links.data[LINKS_CONTAINER_OFFSET(ID) + 1 + I]
+    links[LINKS_CONTAINER_OFFSET(ID) + 1 + I]
 
 #define LINKS_SET_SIZE(ID, SIZE) \
-    links.data[LINKS_CONTAINER_OFFSET(ID)] = SIZE
+    links[LINKS_CONTAINER_OFFSET(ID)] = SIZE
 
 #endif

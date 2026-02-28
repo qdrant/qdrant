@@ -8,7 +8,7 @@
 #define BITS_IN_UINT 32
 
 float bq_postprocess_score(uint result) {
-    float xor_product = float(subgroupAdd(result));
+    float xor_product = float(WaveActiveSum(result));
     float zeros_count = float((DIM / ELEMENTS_PER_SUBGROUP) * BITS_IN_UINT) - xor_product;
     return zeros_count - xor_product - BQ_SKIP_COUNT;
 }
@@ -17,19 +17,19 @@ float bq_postprocess_score(uint result) {
     bq_postprocess_score(RESULT)
 
 #ifdef COSINE_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) bitCount(a ^ b)
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
 #endif
 
 #ifdef DOT_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) bitCount(a ^ b)
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
 #endif
 
 #ifdef EUCLID_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) bitCount(a ^ b)
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
 #endif
 
 #ifdef MANHATTAN_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) bitCount(a ^ b)
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
 #endif
 
 #endif

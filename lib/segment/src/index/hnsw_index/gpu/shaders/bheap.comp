@@ -11,9 +11,9 @@ ScoredPoint bheap_top(uint offset) {
 }
 
 uint _heap_find_max(uint offset, uint size) {
-    ScoredPoint max_scored_point = ScoredPoint(0, negative_infinity);
+    ScoredPoint max_scored_point = {0, negative_infinity};
     uint max_index = 0;
-    for (uint i = gl_SubgroupInvocationID; i < size; i += SUBGROUP_SIZE) {
+    for (uint i = WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
         bool is_large = shared_buffer[offset + i].score > max_scored_point.score;
         if (is_large) {
             max_scored_point = shared_buffer[offset + i];
@@ -21,17 +21,17 @@ uint _heap_find_max(uint offset, uint size) {
         }
     }
 
-    float subgroup_largest = subgroupMax(max_scored_point.score);
+    float subgroup_largest = WaveActiveMax(max_scored_point.score);
     bool is_max_thread = max_scored_point.score == subgroup_largest;
-    uvec4 subgroup_max_threads = subgroupBallot(is_max_thread);
-    uint subgroup_max_thread = subgroupBallotFindLSB(subgroup_max_threads);
-    return subgroupShuffle(max_index, subgroup_max_thread);
+    uint4 subgroup_max_threads = WaveActiveBallot(is_max_thread);
+    uint subgroup_max_thread = ballotFindLSB(subgroup_max_threads);
+    return WaveReadLaneAt(max_index, subgroup_max_thread);
 }
 
 uint _heap_find_min(uint offset, uint size) {
-    ScoredPoint min_scored_point = ScoredPoint(0, positive_infinity);
+    ScoredPoint min_scored_point = {0, positive_infinity};
     uint min_index = 0;
-    for (uint i = gl_SubgroupInvocationID; i < size; i += SUBGROUP_SIZE) {
+    for (uint i = WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
         bool is_less = shared_buffer[offset + i].score < min_scored_point.score;
         if (is_less) {
             min_scored_point = shared_buffer[offset + i];
@@ -39,11 +39,11 @@ uint _heap_find_min(uint offset, uint size) {
         }
     }
 
-    float subgroup_smallest = subgroupMin(min_scored_point.score);
+    float subgroup_smallest = WaveActiveMin(min_scored_point.score);
     bool is_min_thread = min_scored_point.score == subgroup_smallest;
-    uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
-    uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
-    return subgroupShuffle(min_index, subgroup_min_thread);
+    uint4 subgroup_min_threads = WaveActiveBallot(is_min_thread);
+    uint subgroup_min_thread = ballotFindLSB(subgroup_min_threads);
+    return WaveReadLaneAt(min_index, subgroup_min_thread);
 }
 
 bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) {
@@ -51,7 +51,7 @@ bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) 
         if (score.score > shared_buffer[offset].score) {
             shared_buffer[offset] = score;
             uint min_index = _heap_find_min(offset, size);
-            if (subgroupElect()) {
+            if (WaveIsFirstLane()) {
                 shared_buffer[offset] = shared_buffer[offset + min_index];
                 shared_buffer[offset + min_index] = score;
             }
@@ -62,7 +62,7 @@ bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) 
     } else {
         uint i = size;
         size++;
-        if (subgroupElect()) {
+        if (WaveIsFirstLane()) {
             if (score.score < shared_buffer[offset].score) {
                 shared_buffer[offset + i] = shared_buffer[offset];
                 shared_buffer[offset] = score;
@@ -76,13 +76,13 @@ bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) 
 
 ScoredPoint bheap_pop_max(uint offset, inout uint size) {
     if (size == 0) {
-        return ScoredPoint(0, 0.0);
+        return {0, 0.0};
     }
 
     uint max_index = _heap_find_max(offset, size);
     ScoredPoint popped_value = shared_buffer[offset + max_index];
 
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         shared_buffer[offset + max_index] = shared_buffer[offset + size - 1];
     }
 
@@ -138,7 +138,7 @@ ScoredPoint bheap_top(uint offset) {
 }
 
 void _bheap_change_top(uint offset, uint size, ScoredPoint new_value) {
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         shared_buffer[offset] = new_value;
         _bheap_sift_down(offset, size, 0);
     }
@@ -155,7 +155,7 @@ bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) 
     } else {
         uint i = size;
         size++;
-        if (subgroupElect()) {
+        if (WaveIsFirstLane()) {
             shared_buffer[offset + i] = score;
             _bheap_sift_up(offset, i);
         }
@@ -166,7 +166,7 @@ bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) 
 ScoredPoint _bheap_pop(uint offset, inout uint size) {
     ScoredPoint top_value = bheap_top(offset);
     size--;
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         shared_buffer[offset] = shared_buffer[offset + size];
         _bheap_sift_down(offset, size, 0);
     }
@@ -175,27 +175,27 @@ ScoredPoint _bheap_pop(uint offset, inout uint size) {
 
 ScoredPoint bheap_pop_max(uint offset, inout uint size) {
     if (size == 0) {
-        return ScoredPoint(0, 0.0);
+        return {0, 0.0};
     }
 
-    ScoredPoint max_scored_point = ScoredPoint(0, negative_infinity);
+    ScoredPoint max_scored_point = {0, negative_infinity};
     uint max_index = 0;
     uint scan_start = (size - 1) / 2;
-    for (uint i = scan_start + gl_SubgroupInvocationID; i < size; i += SUBGROUP_SIZE) {
+    for (uint i = scan_start + WaveGetLaneIndex(); i < size; i += SUBGROUP_SIZE) {
         if (shared_buffer[offset + i].score > max_scored_point.score) {
             max_scored_point = shared_buffer[offset + i];
             max_index = i;
         }
     }
 
-    float subgroup_largest = subgroupMax(max_scored_point.score);
+    float subgroup_largest = WaveActiveMax(max_scored_point.score);
     bool is_max_thread = max_scored_point.score == subgroup_largest;
-    uvec4 subgroup_max_threads = subgroupBallot(is_max_thread);
-    uint subgroup_max_thread = subgroupBallotFindLSB(subgroup_max_threads);
-    max_index = subgroupShuffle(max_index, subgroup_max_thread);
+    uint4 subgroup_max_threads = WaveActiveBallot(is_max_thread);
+    uint subgroup_max_thread = ballotFindLSB(subgroup_max_threads);
+    max_index = WaveReadLaneAt(max_index, subgroup_max_thread);
 
     ScoredPoint popped_value = shared_buffer[offset + max_index];
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         shared_buffer[offset + max_index] = shared_buffer[offset + size - 1];
         _bheap_sift_up(offset, max_index);
     }
@@ -209,7 +209,7 @@ uint bheap_into_array(uint offset, inout uint size) {
     while (size > 0) {
         uint i = size - 1;
         ScoredPoint value = _bheap_pop(offset, size);
-        if (subgroupElect()) {
+        if (WaveIsFirstLane()) {
             shared_buffer[offset + i] = value;
         }
     }

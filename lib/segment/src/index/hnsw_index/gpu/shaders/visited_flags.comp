@@ -8,21 +8,15 @@
 #include "common.comp"
 #include "vector_storage.comp"
 
-layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 0)
-readonly uniform VisitedFlagsParams {
+struct VisitedFlagsParamsStruct {
     uint generation;
-} visited_flags_params;
+};
 
-layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 1)
-buffer VisitedFlagsBuffer {
-    coherent uint8_t data[];
-} visited_flags;
+[[vk::binding(0, VISITED_FLAGS_LAYOUT_SET)]] ConstantBuffer<VisitedFlagsParamsStruct> visited_flags_params;
+[[vk::binding(1, VISITED_FLAGS_LAYOUT_SET)]] RWStructuredBuffer<uint8_t> visited_flags;
 
 #ifdef VISITED_FLAGS_REMAP
-layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 2)
-buffer VisitedFlagsRemapBuffer {
-    readonly POINT_ID data[];
-} visited_flags_remap;
+[[vk::binding(2, VISITED_FLAGS_LAYOUT_SET)]] StructuredBuffer<POINT_ID> visited_flags_remap;
 #endif
 
 #define BYTE_MASK 0xFF
@@ -30,16 +24,16 @@ buffer VisitedFlagsRemapBuffer {
 
 bool check_visited(POINT_ID point_id) {
     #ifdef VISITED_FLAGS_REMAP
-    point_id = visited_flags_remap.data[point_id];
+    point_id = visited_flags_remap[point_id];
     #endif
 
     uint subgroup_index = SUBGROUP_ID;
     uint index = subgroup_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;
-    uint prev_generation = uint(visited_flags.data[index]);
+    uint prev_generation = uint(visited_flags[index]);
     if (prev_generation == VISITED_GENERATION) {
         return true;
     } else {
-        visited_flags.data[index] = uint8_t(VISITED_GENERATION);
+        visited_flags[index] = uint8_t(VISITED_GENERATION);
         return false;
     }
 }

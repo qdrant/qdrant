@@ -1,9 +1,6 @@
-#version 450
-
 #include "extensions.comp"
 
 #include "common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define SHARED_BUFFER_CAPACITY EF
 #define NEAREST_HEAP_OFFSET 0
@@ -11,52 +8,47 @@ layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 #include "shared_buffer.comp"
 #include "bheap.comp"
 
-layout(set = 0, binding = 0)
-readonly uniform TestParams {
+struct TestParamsStruct {
     uint input_counts;
-} test_params;
+};
 
-layout(set = 0, binding = 1) buffer ScoredPointsInput {
-    readonly ScoredPoint data[];
-} input_points;
+[[vk::binding(0, 0)]] ConstantBuffer<TestParamsStruct> test_params;
+[[vk::binding(1, 0)]] StructuredBuffer<ScoredPoint> input_points;
+[[vk::binding(2, 0)]] RWStructuredBuffer<float> scores_output;
+[[vk::binding(3, 0)]] RWStructuredBuffer<uint> sorted_output;
 
-layout(set = 0, binding = 2) buffer ScoresOuput {
-    writeonly float data[];
-} scores_output;
+static uint nearest_count = 0;
 
-layout(set = 0, binding = 3) buffer SortedOuput {
-    writeonly uint data[];
-} sorted_output;
-
-uint nearest_count = 0;
-
-void main() {
+[shader("compute")]
+[numthreads(SUBGROUP_SIZE, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID) {
+    gl_GlobalInvocationID = dtid;
     uint subgroup_index = SUBGROUP_ID;
 
     for (uint i = 0; i < test_params.input_counts; i++) {
         uint point_index = subgroup_index * test_params.input_counts + i;
-        ScoredPoint point = input_points.data[point_index];
+        ScoredPoint point = input_points[point_index];
         bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, point);
 
-        groupMemoryBarrier();
-        memoryBarrier();
+        GroupMemoryBarrier();
+        AllMemoryBarrier();
 
-        float nearest_smaller_score_check = subgroupMin(bheap_top(NEAREST_HEAP_OFFSET).score);
+        float nearest_smaller_score_check = WaveActiveMin(bheap_top(NEAREST_HEAP_OFFSET).score);
         bool is_different = nearest_smaller_score_check != bheap_top(NEAREST_HEAP_OFFSET).score;
-        if (subgroupAny(is_different)) {
-            if (subgroupElect()) {
-                scores_output.data[point_index] = positive_infinity;
+        if (WaveActiveAnyTrue(is_different)) {
+            if (WaveIsFirstLane()) {
+                scores_output[point_index] = positive_infinity;
             }
-        } else if (subgroupElect()) {
-            scores_output.data[point_index] = bheap_top(NEAREST_HEAP_OFFSET).score;
+        } else if (WaveIsFirstLane()) {
+            scores_output[point_index] = bheap_top(NEAREST_HEAP_OFFSET).score;
         }
     }
 
     sort(NEAREST_HEAP_OFFSET, nearest_count);
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         for (uint i = 0; i < EF; i++) {
             uint point_index = subgroup_index * EF + i;
-            sorted_output.data[point_index] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
+            sorted_output[point_index] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
         }
     }
 }

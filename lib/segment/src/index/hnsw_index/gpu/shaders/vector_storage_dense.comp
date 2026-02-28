@@ -8,7 +8,6 @@
 #include "common.comp"
 
 #define ELEMENTS_PER_SUBGROUP 4
-#define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
 #define SUBGROUPS_COUNT_PER_VECTOR (DIM / (ELEMENTS_PER_SUBGROUP * SUBGROUP_SIZE))
 #if SUBGROUPS_COUNT_PER_VECTOR < 2
@@ -43,51 +42,49 @@
 #include "vector_storage_bq.comp"
 #endif
 
-#define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
-    layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = STORAGE_INDEX) \
-    readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
-        VECTOR_STORAGE_ELEMENT_TYPE data[]; \
-    } STORAGE(STORAGE_INDEX);
+[[vk::binding(0, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<VECTOR_STORAGE_ELEMENT_TYPE> vectors_0;
+[[vk::binding(1, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<VECTOR_STORAGE_ELEMENT_TYPE> vectors_1;
+[[vk::binding(2, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<VECTOR_STORAGE_ELEMENT_TYPE> vectors_2;
+[[vk::binding(3, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<VECTOR_STORAGE_ELEMENT_TYPE> vectors_3;
 
-VECTOR_STORAGE_DEFINE(0)
-VECTOR_STORAGE_DEFINE(1)
-VECTOR_STORAGE_DEFINE(2)
-VECTOR_STORAGE_DEFINE(3)
+#define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
 #ifdef SINGLE_SUBGROUP_PER_VECTOR
 
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
     result += VECTOR_STORAGE_SCORE_ELEMENT( \
-        STORAGE(STORAGE_INDEX).data[index], \
+        STORAGE(STORAGE_INDEX)[index], \
         target_cache \
     );
 
 #define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
-    target_cache = STORAGE(STORAGE_INDEX).data[index];
+    { VECTOR_STORAGE_ELEMENT_TYPE _tmp = STORAGE(STORAGE_INDEX)[index]; \
+    target_cache = _tmp; }
 
-VECTOR_STORAGE_ELEMENT_TYPE target_cache;
+static VECTOR_STORAGE_ELEMENT_TYPE target_cache;
 
 #else
 
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
     for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
         result += VECTOR_STORAGE_SCORE_ELEMENT( \
-            STORAGE(STORAGE_INDEX).data[index], \
+            STORAGE(STORAGE_INDEX)[index], \
             target_cache[i] \
         ); \
     }
 
 #define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
     for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
-        target_cache[i] = STORAGE(STORAGE_INDEX).data[index]; \
+        VECTOR_STORAGE_ELEMENT_TYPE _tmp = STORAGE(STORAGE_INDEX)[index]; \
+        target_cache[i] = _tmp; \
     }
 
-VECTOR_STORAGE_ELEMENT_TYPE target_cache[SUBGROUPS_COUNT_PER_VECTOR];
+static VECTOR_STORAGE_ELEMENT_TYPE target_cache[SUBGROUPS_COUNT_PER_VECTOR];
 
 #endif
 
 void set_target_dense(uint point_id) {
-    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + WaveGetLaneIndex();
     uint storage_index = point_id % STORAGES_COUNT;
     switch (storage_index) {
     case 0:
@@ -115,7 +112,7 @@ float similarity_dense(uint point_id) {
 #endif
 
     VECTOR_STORAGE_SCORE_TYPE result = 0;
-    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + WaveGetLaneIndex();
     uint storage_index = point_id % STORAGES_COUNT;
     switch (storage_index) {
     case 0:

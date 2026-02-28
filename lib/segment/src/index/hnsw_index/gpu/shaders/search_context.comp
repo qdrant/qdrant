@@ -12,15 +12,15 @@
 #include "links.comp"
 #include "visited_flags.comp"
 
-uint nearest_count = 0;
-uint candidates_count = 0;
+static uint nearest_count = 0;
+static uint candidates_count = 0;
 
 void process_candidate(ScoredPoint scored_point) {
     bool not_presented = bheap_top(NEAREST_HEAP_OFFSET).id != scored_point.id;
     bool was_added = bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, scored_point);
     if (was_added && not_presented) {
         bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, scored_point);
-        subgroupMemoryBarrierShared();
+        GroupMemoryBarrier();
     }
 }
 
@@ -28,7 +28,7 @@ void process_candidate(POINT_ID candidate_id) {
     uint links_count = LINKS_COUNT(candidate_id);
     uint subgroup_link = 0;
     bool subgroup_is_visited = true;
-    uint invocation = gl_SubgroupInvocationID;
+    uint invocation = WaveGetLaneIndex();
 
     for (uint i = 0; i < links_count; i++) {
         if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
@@ -36,8 +36,8 @@ void process_candidate(POINT_ID candidate_id) {
             subgroup_is_visited = check_visited(subgroup_link);
         }
 
-        uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
-        bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
+        uint link = WaveReadLaneAt(subgroup_link, i % SUBGROUP_SIZE);
+        bool is_visited = WaveReadLaneAt(subgroup_is_visited, i % SUBGROUP_SIZE);
 
         if (!is_visited) {
             float score = similarity(link);
@@ -47,7 +47,7 @@ void process_candidate(POINT_ID candidate_id) {
     }
 
     // flush all changed visited flags
-    subgroupMemoryBarrierBuffer();
+    DeviceMemoryBarrier();
 }
 
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
@@ -55,7 +55,7 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     ScoredPoint result = entry;
 
     uint subgroup_link = 0;
-    uint invocation = gl_SubgroupInvocationID;
+    uint invocation = WaveGetLaneIndex();
 
     while (changed) {
         changed = false;
@@ -66,7 +66,7 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
             if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
                 subgroup_link = GET_LINK(current, i + invocation);
             }
-            uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+            uint link = WaveReadLaneAt(subgroup_link, i % SUBGROUP_SIZE);
 
             float score = similarity(link);
             if (score > result.score) {
@@ -83,13 +83,13 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
     entry = greedy_search(point_id, entry);
 #endif
 
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         check_visited(point_id);
         check_visited(entry.id);
     }
     bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, entry);
     bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, entry);
-    groupMemoryBarrier();
+    GroupMemoryBarrier();
     
     while (candidates_count > 0) {
         ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
@@ -127,10 +127,10 @@ uint run_heuristic() {
         }
 
         if (is_good) {
-            if (subgroupElect()) {
+            if (WaveIsFirstLane()) {
                 shared_buffer[NEAREST_HEAP_OFFSET + result_count] = current_closest;
             }
-            subgroupMemoryBarrierShared();
+            GroupMemoryBarrier();
             result_count += 1;
         }
     }

@@ -1,17 +1,16 @@
 static SHADER_CODE: &str = "
-#version 450
-
-layout(set = 0, binding = 0) buffer Numbers {
-    float data[];
-} numbers;
-
-layout(set = 0, binding = 1) uniform Param {
+struct ParamStruct {
     float param;
-} param;
+};
 
-void main() {
-    uint index = gl_GlobalInvocationID.x;
-    numbers.data[index] += param.param;
+[[vk::binding(0, 0)]] RWStructuredBuffer<float> numbers;
+[[vk::binding(1, 0)]] ConstantBuffer<ParamStruct> param;
+
+[shader(\"compute\")]
+[numthreads(1, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID) {
+    uint index = dtid.x;
+    numbers[index] += param.param;
 }
 ";
 

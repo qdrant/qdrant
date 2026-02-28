@@ -1,9 +1,6 @@
-#version 450
-
 #include "extensions.comp"
 
 #include "common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
@@ -21,78 +18,62 @@ struct Request {
     uint entry;
 };
 
-layout(set = 0, binding = 0) buffer Requests {
-    readonly Request data[];
-} requests;
+[[vk::binding(0, 0)]] StructuredBuffer<Request> requests;
+[[vk::binding(1, 0)]] RWStructuredBuffer<uint> new_entries;
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint> atomics;
 
-layout(set = 0, binding = 1) buffer NewEntries {
-    writeonly uint data[];
-} new_entries;
-
-layout(set = 0, binding = 2) buffer Atomics {
-    coherent uint data[];
-} atomics;
-
-// Workaround for Slang error 41403: Slang does not recognize GLSL buffer blocks
-// as "device buffers" for atomic operations. Use spirv_asm to emit OpAtomicExchange
-// directly, bypassing Slang's IR validation.
-// Scope=1 (Device), Semantics=0x40 (UniformMemory).
-uint slangAtomicExchange(inout uint dest, uint value) {
-    return spirv_asm {
-        %scope = OpConstant $$uint 1;
-        %sem = OpConstant $$uint 64;
-        result:$$uint = OpAtomicExchange &dest %scope %sem $value
-    };
-}
-
-void main() {
+[shader("compute")]
+[numthreads(SUBGROUP_SIZE, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID) {
+    gl_GlobalInvocationID = dtid;
     search_context_init();
     uint subgroup_index = SUBGROUP_ID;
-    Request request = requests.data[subgroup_index];
+    Request request = requests[subgroup_index];
 
     set_target(request.id);
     float entry_score = similarity(request.entry);
     uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
 
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         if (search_count > 0) {
-            new_entries.data[subgroup_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
+            new_entries[subgroup_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
         } else {
-            new_entries.data[subgroup_index] = request.entry;
+            new_entries[subgroup_index] = request.entry;
         }
     }
 
     uint count = run_heuristic();
 
     // sync all threads to make sure that we don't do search while updating links
-    barrier();
+    GroupMemoryBarrierWithGroupSync();
 
     // update request.id links
-    for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
+    for (uint i = WaveGetLaneIndex(); i < count; i += SUBGROUP_SIZE) {
         GET_LINK(request.id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
     }
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         LINKS_SET_SIZE(request.id, count);
     }
 
-    subgroupMemoryBarrier();
+    AllMemoryBarrier();
 
     for (uint i = 0; i < count; i++) {
         uint other_id = GET_LINK(request.id, i);
 
         bool is_locked = false;
-        if (gl_SubgroupInvocationID == 0) {
-            uint other_atomic = slangAtomicExchange(atomics.data[other_id], 1);
+        if (WaveGetLaneIndex() == 0) {
+            uint other_atomic;
+            InterlockedExchange(atomics[other_id], 1, other_atomic);
             is_locked = other_atomic == 1;
         }
-        if (subgroupAny(is_locked)) {
+        if (WaveActiveAnyTrue(is_locked)) {
             // point is already being processed by another subgroup
             continue;
         }
 
         uint other_links_count = LINKS_COUNT(other_id);
         if (other_links_count < LEVEL_M) {
-            if (subgroupElect()) {
+            if (WaveIsFirstLane()) {
                 GET_LINK(other_id, other_links_count) = request.id;
                 LINKS_SET_SIZE(other_id, other_links_count + 1);
             }
@@ -113,25 +94,26 @@ void main() {
             );
             nearest_count++;
 
-            subgroupMemoryBarrierShared();
+            GroupMemoryBarrier();
             sort(NEAREST_HEAP_OFFSET, nearest_count);
 
-            subgroupMemoryBarrierShared();
+            GroupMemoryBarrier();
             uint other_new_links_count = run_heuristic();
 
-            subgroupMemoryBarrierShared();
-            for (uint j = gl_SubgroupInvocationID; j < other_new_links_count; j += SUBGROUP_SIZE) {
+            GroupMemoryBarrier();
+            for (uint j = WaveGetLaneIndex(); j < other_new_links_count; j += SUBGROUP_SIZE) {
                 GET_LINK(other_id, j) = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
-            if (subgroupElect()) {
+            if (WaveIsFirstLane()) {
                 LINKS_SET_SIZE(other_id, other_new_links_count);
             }
         }
 
-        subgroupMemoryBarrier();
+        AllMemoryBarrier();
 
-        if (gl_SubgroupInvocationID == 0) {
-            slangAtomicExchange(atomics.data[other_id], 0);
+        if (WaveGetLaneIndex() == 0) {
+            uint dummy;
+            InterlockedExchange(atomics[other_id], 0, dummy);
         }
     }
 }

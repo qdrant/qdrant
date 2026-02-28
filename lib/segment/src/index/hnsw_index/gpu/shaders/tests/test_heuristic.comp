@@ -1,9 +1,6 @@
-#version 450
-
 #include "extensions.comp"
 
 #include "common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
@@ -21,30 +18,28 @@ struct SearchRequest {
     uint entry;
 };
 
-layout(set = 0, binding = 0) buffer SearchRequests {
-    readonly SearchRequest data[];
-} search_requests;
+[[vk::binding(0, 0)]] StructuredBuffer<SearchRequest> search_requests;
+[[vk::binding(1, 0)]] RWStructuredBuffer<ScoredPoint> search_results;
 
-layout(set = 0, binding = 1) buffer SearchResults {
-    writeonly ScoredPoint data[];
-} search_results;
-
-void main() {
+[shader("compute")]
+[numthreads(SUBGROUP_SIZE, 1, 1)]
+void main(uint3 dtid : SV_DispatchThreadID) {
+    gl_GlobalInvocationID = dtid;
     search_context_init();
     uint subgroup_index = SUBGROUP_ID;
-    SearchRequest search_request = search_requests.data[subgroup_index];
+    SearchRequest search_request = search_requests[subgroup_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
     search(search_request.id, ScoredPoint(search_request.entry, entry_score));
     uint count = run_heuristic();
 
-    barrier();
+    GroupMemoryBarrierWithGroupSync();
 
-    if (subgroupElect()) {
+    if (WaveIsFirstLane()) {
         uint result_index_offset = EF * subgroup_index;
         for (uint i = 0; i < count; i++) {
-            search_results.data[result_index_offset + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
+            search_results[result_index_offset + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
         }
     }
 }

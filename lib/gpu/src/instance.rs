@@ -394,10 +394,7 @@ impl Instance {
         let mut cmd = std::process::Command::new(Self::slangc_path());
         cmd.arg(&shader_file_path)
             .arg("-target").arg("spirv")
-            .arg("-lang").arg("glsl")
-            .arg("-stage").arg("compute")
             .arg("-entry").arg("main")
-            .arg("-profile").arg("glsl_450")
             .arg("-force-glsl-scalar-layout")
             .arg("-emit-spirv-directly")
             .arg("-O2")
@@ -409,10 +406,8 @@ impl Instance {
         })?;
 
         // Check if slangc succeeded. Slang may emit warnings to stderr even on
-        // success (e.g., warning 41012 about subgroup capabilities exceeding
-        // the glsl_450 profile). We check the output file existence as a
-        // secondary signal — if the file was written, the compilation succeeded
-        // despite any warnings.
+        // success. We check the output file existence as a secondary signal —
+        // if the file was written, the compilation succeeded despite any warnings.
         if !output.status.success() && !output_path.exists() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GpuError::Other(format!(

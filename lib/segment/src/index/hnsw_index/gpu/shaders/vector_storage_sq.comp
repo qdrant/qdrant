@@ -1,26 +1,23 @@
 #ifndef VECTOR_STORAGE_SQ_HEADER
 #define VECTOR_STORAGE_SQ_HEADER
 
-layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = VECTOR_STORAGE_SQ_OFFSETS_BINDING) \
-readonly buffer VectorOffsets { \
-    float data[]; \
-} vector_offsets;
+[[vk::binding(VECTOR_STORAGE_SQ_OFFSETS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<float> vector_offsets;
 
-float target_offset;
+static float target_offset;
 
-uint dot_u8vec4(u8vec4 a, u8vec4 b) {
-    uvec4 sum = uvec4(a) * uvec4(b);
+uint dot_u8vec4(vector<uint8_t, 4> a, vector<uint8_t, 4> b) {
+    uint4 sum = uint4(a) * uint4(b);
     return sum.x + sum.y + sum.z + sum.w;
 }
 
-#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
+#define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
 #define VECTOR_STORAGE_SCORE_TYPE uint
 #define VECTOR_STORAGE_POSTPROCESS_SET_TARGET() \
-    target_offset = vector_offsets.data[point_id]
+    target_offset = vector_offsets[point_id]
 
 float sq_postprocess_score(VECTOR_STORAGE_SCORE_TYPE result, POINT_ID point_id, float target_offset) {
-    float sq_offset = target_offset + vector_offsets.data[point_id] - SQ_DIFF;
-    return SQ_MULTIPLIER * float(subgroupAdd(result)) + sq_offset;
+    float sq_offset = target_offset + vector_offsets[point_id] - SQ_DIFF;
+    return SQ_MULTIPLIER * float(WaveActiveSum(result)) + sq_offset;
 }
 
 #define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
@@ -40,8 +37,8 @@ float sq_postprocess_score(VECTOR_STORAGE_SCORE_TYPE result, POINT_ID point_id, 
 
 #ifdef MANHATTAN_DISTANCE
 
-VECTOR_STORAGE_SCORE_TYPE manhattan_u8vec4(u8vec4 a, u8vec4 b) {
-    ivec4 diff = ivec4(a) - ivec4(b);
+VECTOR_STORAGE_SCORE_TYPE manhattan_u8vec4(vector<uint8_t, 4> a, vector<uint8_t, 4> b) {
+    int4 diff = int4(a) - int4(b);
     return abs(diff.x) + abs(diff.y) + abs(diff.z) + abs(diff.w);
 }
 
