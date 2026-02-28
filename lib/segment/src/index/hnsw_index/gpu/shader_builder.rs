@@ -26,6 +26,14 @@ impl ShaderBuilder {
                 "distance_metric.slang".to_string(),
                 include_str!("shaders/distance_metric.slang").to_string(),
             ),
+            (
+                "config.slang".to_string(),
+                include_str!("shaders/config.slang").to_string(),
+            ),
+            (
+                "metric_config.slang".to_string(),
+                include_str!("shaders/metric_config.slang").to_string(),
+            ),
         ]);
 
         let mut defines = HashMap::new();
@@ -127,10 +135,45 @@ impl ShaderBuilder {
             "DOT_DISTANCE",
             "EUCLID_DISTANCE",
             "MANHATTAN_DISTANCE",
+            "VECTOR_STORAGE_ELEMENT_FLOAT32",
+            "VECTOR_STORAGE_ELEMENT_FLOAT16",
+            "VECTOR_STORAGE_ELEMENT_UINT8",
+            "VECTOR_STORAGE_ELEMENT_BQ",
+            "VECTOR_STORAGE_ELEMENT_SQ",
+            "VECTOR_STORAGE_ELEMENT_PQ",
+            "VECTOR_STORAGE_QUANTIZATION",
+            "MULTIVECTORS",
+            "VISITED_FLAGS_REMAP",
         ];
         for key in bool_defaults {
             if !self.defines.contains_key(key) {
                 config.push_str(&format!("static const bool {key} = false;\n"));
+            }
+        }
+
+        // Default values for uint constants that may not always be set.
+        let uint_defaults = [
+            ("BQ_SKIP_COUNT", 0),
+            ("PQ_DIVISIONS_COUNT", 0),
+            ("PQ_CENTROIDS_DIM", 0),
+            ("VECTOR_STORAGE_SQ_OFFSETS_BINDING", 4),
+            ("VECTOR_STORAGE_PQ_CENTROIDS_BINDING", 4),
+            ("VECTOR_STORAGE_PQ_DIVISIONS_BINDING", 5),
+            ("MULTIVECTOR_OFFSETS_BINDING", 6),
+            ("LINKS_CAPACITY", 0),
+            ("VISITED_FLAGS_CAPACITY", 0),
+        ];
+        for (key, default) in uint_defaults {
+            if !self.defines.contains_key(key) {
+                config.push_str(&format!("static const uint {key} = {default};\n"));
+            }
+        }
+
+        // Default values for float constants that may not always be set.
+        let float_defaults = [("SQ_MULTIPLIER", "1.0"), ("SQ_DIFF", "0.0")];
+        for (key, default) in float_defaults {
+            if !self.defines.contains_key(key) {
+                config.push_str(&format!("static const float {key} = {default};\n"));
             }
         }
 

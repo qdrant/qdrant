@@ -34,7 +34,7 @@ impl ShaderBuilderParameters for GpuVisitedFlags {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([(
             "visited_flags.slang".to_string(),
-            self.generate_visited_flags_slang(),
+            include_str!("shaders/visited_flags.slang").to_string(),
         )])
     }
 
@@ -52,46 +52,6 @@ impl ShaderBuilderParameters for GpuVisitedFlags {
 }
 
 impl GpuVisitedFlags {
-    fn generate_visited_flags_slang(&self) -> String {
-        let mut code = String::from(
-            "// Generated visited_flags module.\n\
-             import config;\n\
-             import common;\n\
-             \n\
-             struct VisitedFlagsParamsStruct {\n\
-             \tuint generation;\n\
-             };\n\
-             \n\
-             [[vk::binding(0, VISITED_FLAGS_LAYOUT_SET)]] ConstantBuffer<VisitedFlagsParamsStruct> visited_flags_params;\n\
-             [[vk::binding(1, VISITED_FLAGS_LAYOUT_SET)]] RWStructuredBuffer<uint8_t> visited_flags;\n\n",
-        );
-
-        if self.remap_buffer.is_some() {
-            code.push_str("[[vk::binding(2, VISITED_FLAGS_LAYOUT_SET)]] StructuredBuffer<POINT_ID> visited_flags_remap;\n\n");
-        }
-
-        code.push_str(
-            "bool check_visited(POINT_ID point_id) {\n",
-        );
-        if self.remap_buffer.is_some() {
-            code.push_str("\tpoint_id = visited_flags_remap[point_id];\n");
-        }
-        code.push_str(
-            "\tuint wave_index = waveId();\n\
-             \tuint index = wave_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;\n\
-             \tuint prev_generation = uint(visited_flags[index]);\n\
-             \tif (prev_generation == visited_flags_params.generation) {\n\
-             \t\treturn true;\n\
-             \t} else {\n\
-             \t\tvisited_flags[index] = uint8_t(visited_flags_params.generation);\n\
-             \t\treturn false;\n\
-             \t}\n\
-             }\n",
-        );
-
-        code
-    }
-
     pub fn new(
         device: Arc<gpu::Device>,
         groups_count: usize,
@@ -129,21 +89,29 @@ impl GpuVisitedFlags {
         upload_context.run()?;
         upload_context.wait_finish(GPU_TIMEOUT)?;
 
-        let mut descriptor_set_layout_builder = gpu::DescriptorSetLayout::builder()
+        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_uniform_buffer(0)
-            .add_storage_buffer(1);
-        if remap_buffer.is_some() {
-            descriptor_set_layout_builder = descriptor_set_layout_builder.add_storage_buffer(2);
-        }
-        let descriptor_set_layout = descriptor_set_layout_builder.build(device.clone())?;
+            .add_storage_buffer(1)
+            .add_storage_buffer(2)
+            .build(device.clone())?;
 
-        let mut descriptor_set_builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
+        // When remap is not used, bind a dummy buffer at binding 2
+        // (the shader always declares it, but branches on VISITED_FLAGS_REMAP).
+        let remap_bind_buffer = match remap_buffer.clone() {
+            Some(buf) => buf,
+            None => gpu::Buffer::new(
+                device.clone(),
+                "Visited flags remap dummy buffer",
+                gpu::BufferType::Storage,
+                std::mem::size_of::<u32>(),
+            )?,
+        };
+
+        let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, params_buffer.clone())
-            .add_storage_buffer(1, visited_flags_buffer.clone());
-        if let Some(remap_buffer) = remap_buffer.clone() {
-            descriptor_set_builder = descriptor_set_builder.add_storage_buffer(2, remap_buffer);
-        }
-        let descriptor_set = descriptor_set_builder.build()?;
+            .add_storage_buffer(1, visited_flags_buffer.clone())
+            .add_storage_buffer(2, remap_bind_buffer)
+            .build()?;
 
         let remap_staging_buffer = if remap_buffer.is_some() {
             Some(gpu::Buffer::new(

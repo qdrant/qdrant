@@ -53,7 +53,7 @@ impl ShaderBuilderParameters for GpuVectorStorage {
         let mut includes = HashMap::from([
             (
                 "vector_storage.slang".to_string(),
-                self.generate_vector_storage_slang(),
+                include_str!("../shaders/vector_storage.slang").to_string(),
             ),
             (
                 "vector_storage_dense.slang".to_string(),
@@ -130,57 +130,6 @@ impl ShaderBuilderParameters for GpuVectorStorage {
 }
 
 impl GpuVectorStorage {
-    fn generate_vector_storage_slang(&self) -> String {
-        let mut code = String::from(
-            "// Generated vector_storage module.\n\
-             import config;\n\
-             import common;\n\
-             import vector_storage_dense;\n\n",
-        );
-
-        if self.multivectors.is_some() {
-            code.push_str(
-                "struct MultivectorOffset {\n\
-                 \tuint offset;\n\
-                 \tuint count;\n\
-                 };\n\n\
-                 [[vk::binding(MULTIVECTOR_OFFSETS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<MultivectorOffset> multivector_offsets;\n\n\
-                 static uint target_id;\n\n\
-                 void set_target(uint point_id) {\n\
-                 \ttarget_id = point_id;\n\
-                 }\n\n\
-                 float similarity(uint point_id) {\n\
-                 \tMultivectorOffset offset_a = multivector_offsets[target_id];\n\
-                 \tMultivectorOffset offset_b = multivector_offsets[point_id];\n\n\
-                 \tfloat sum = 0.0;\n\
-                 \tfor (uint a = 0; a < offset_a.count; a++) {\n\
-                 \t\tset_target_dense(offset_a.offset + a);\n\
-                 \t\tfloat max_sim = negative_infinity;\n\n\
-                 \t\tfor (uint b = 0; b < offset_b.count; b++) {\n\
-                 \t\t\tfloat sim = similarity_dense(offset_b.offset + b);\n\
-                 \t\t\tif (sim > max_sim) {\n\
-                 \t\t\t\tmax_sim = sim;\n\
-                 \t\t\t}\n\
-                 \t\t}\n\n\
-                 \t\tsum += max_sim;\n\
-                 \t}\n\
-                 \treturn sum;\n\
-                 }\n",
-            );
-        } else {
-            code.push_str(
-                "void set_target(uint point_id) {\n\
-                 \tset_target_dense(point_id);\n\
-                 }\n\n\
-                 float similarity(uint point_id) {\n\
-                 \treturn similarity_dense(point_id);\n\
-                 }\n",
-            );
-        }
-
-        code
-    }
-
     pub fn new(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,
@@ -817,6 +766,7 @@ impl GpuVectorStorage {
         let descriptor_set_layout =
             Self::create_descriptor_set_layout(device.clone(), &quantization, &multivectors)?;
         let descriptor_set = Self::create_descriptor_set(
+            device.clone(),
             descriptor_set_layout.clone(),
             &vectors_buffer,
             &quantization,
@@ -850,15 +800,19 @@ impl GpuVectorStorage {
         } else {
             descriptor_set_layout_builder
         };
-        descriptor_set_layout_builder = if let Some(multivectors) = &multivectors {
-            multivectors.add_descriptor_set_layout(descriptor_set_layout_builder)
+        if let Some(multivectors) = &multivectors {
+            descriptor_set_layout_builder =
+                multivectors.add_descriptor_set_layout(descriptor_set_layout_builder);
         } else {
-            descriptor_set_layout_builder
-        };
+            // Always declare the multivector offsets binding (shader is static).
+            descriptor_set_layout_builder = descriptor_set_layout_builder
+                .add_storage_buffer(GpuMultivectors::offsets_binding_index());
+        }
         Ok(descriptor_set_layout_builder.build(device.clone())?)
     }
 
     fn create_descriptor_set(
+        device: Arc<gpu::Device>,
         descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
         vectors_buffer: &[Arc<gpu::Buffer>],
         quantization: &Option<GpuQuantization>,
@@ -874,11 +828,21 @@ impl GpuVectorStorage {
         } else {
             descriptor_set_builder
         };
-        descriptor_set_builder = if let Some(multivectors) = &multivectors {
-            multivectors.add_descriptor_set(descriptor_set_builder)
+        if let Some(multivectors) = &multivectors {
+            descriptor_set_builder = multivectors.add_descriptor_set(descriptor_set_builder);
         } else {
-            descriptor_set_builder
-        };
+            // Bind a dummy buffer at the multivector offsets binding (shader is static).
+            let dummy_buffer = gpu::Buffer::new(
+                device,
+                "Multivector offsets dummy buffer",
+                gpu::BufferType::Storage,
+                std::mem::size_of::<u32>(),
+            )?;
+            descriptor_set_builder = descriptor_set_builder.add_storage_buffer(
+                GpuMultivectors::offsets_binding_index(),
+                dummy_buffer,
+            );
+        }
         Ok(descriptor_set_builder.build()?)
     }
 

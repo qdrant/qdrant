@@ -56,6 +56,11 @@ impl ShaderBuilderParameters for GpuMultivectors {
 }
 
 impl GpuMultivectors {
+    /// The fixed binding index for multivector offsets buffer.
+    pub fn offsets_binding_index() -> usize {
+        START_MULTIVECTORS_BINDING
+    }
+
     /// Construct multivectors data from quantized storage.
     pub fn new_quantized<
         QuantizedStorage: EncodedVectors,
