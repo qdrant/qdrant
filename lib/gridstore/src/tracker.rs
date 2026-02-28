@@ -247,16 +247,103 @@ pub struct Tracker<S> {
     next_pointer_offset: PointOffset,
 }
 
+// Methods that do not use storage (no trait bound).
+impl<S> Tracker<S> {
+    pub fn files(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+
+    pub fn pointer_count(&self) -> u32 {
+        self.next_pointer_offset
+    }
+}
+
+// Read operations -- only require UniversalRead
+impl<S: UniversalRead<u8>> Tracker<S> {
+    /// Get the raw value at the given point offset
+    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<Option<ValuePointer>>> {
+        let start_offset = std::mem::size_of::<TrackerHeader>()
+            + point_offset as usize * std::mem::size_of::<Optional<ValuePointer>>();
+        let end_offset = start_offset + std::mem::size_of::<Optional<ValuePointer>>();
+        let storage_len = self.storage.len()?;
+        if end_offset as u64 > storage_len {
+            return Ok(None);
+        }
+        let bytes = self.storage.read::<false>(ElementsRange {
+            start: start_offset as u64,
+            length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
+        })?;
+        #[expect(deprecated, reason = "legacy code")]
+        let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
+        Ok(Some(opt.is_some().copied()))
+    }
+
+    /// Get the page pointer at the given point offset
+    pub fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        match self.pending_updates.get(&point_offset) {
+            // Pending update exists but is empty, should not happen, fall back to real data
+            Some(pending) if pending.is_empty() => {
+                debug_assert!(false, "pending updates must not be empty");
+                Ok(self.get_raw(point_offset)?.and_then(|o| o))
+            }
+            // Use set from pending updates
+            Some(pending) => Ok(pending.current),
+            // No pending update, use real data
+            None => Ok(self.get_raw(point_offset)?.and_then(|o| o)),
+        }
+    }
+
+    /// Iterate over the pointers in the tracker
+    /// Starts from the given point offset
+    pub fn iter_pointers(
+        &self,
+        from: PointOffset,
+    ) -> impl Iterator<Item = (PointOffset, Result<Option<ValuePointer>>)> + '_ {
+        (from..self.next_pointer_offset).map(move |i| (i, self.get(i)))
+    }
+
+    pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
+        Ok(self.get(point_offset)?.is_some())
+    }
+
+    pub fn populate(&self) -> Result<()> {
+        self.storage.populate().map_err(Into::into)
+    }
+
+    /// Get the length of the mapping
+    /// Excludes None values
+    /// Warning: performs a full scan of the tracker.
+    #[cfg(test)]
+    #[allow(clippy::unnecessary_wraps)]
+    pub fn mapping_len(&self) -> Result<usize> {
+        let mut count = 0;
+        for i in 0..self.next_pointer_offset {
+            if self.get(i).ok().flatten().is_some() {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.mapping_len().unwrap_or(0) == 0
+    }
+
+    /// Return the size of the underlying file
+    #[cfg(test)]
+    pub fn mmap_file_size(&self) -> Result<usize> {
+        self.storage.len().map(|u| u as usize).map_err(Into::into)
+    }
+}
+
+// Write operations and constructors -- require UniversalWrite
 impl<S> Tracker<S>
 where
     S: UniversalRead<u8> + UniversalWrite<u8>,
 {
     const FILE_NAME: &'static str = "tracker.dat";
     const DEFAULT_SIZE: usize = 1024 * 1024; // 1MB
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.clone()]
-    }
 
     fn tracker_file_name(path: &Path) -> PathBuf {
         path.join(Self::FILE_NAME)
@@ -384,16 +471,6 @@ where
         Ok(res)
     }
 
-    /// Return the size of the underlying file
-    #[cfg(test)]
-    pub fn mmap_file_size(&self) -> Result<usize> {
-        self.storage.len().map(|u| u as usize).map_err(Into::into)
-    }
-
-    pub fn pointer_count(&self) -> u32 {
-        self.next_pointer_offset
-    }
-
     /// Write the current page header to the storage
     fn write_header(&mut self) -> Result<()> {
         #[expect(deprecated, reason = "legacy code")]
@@ -434,76 +511,10 @@ where
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.mapping_len().unwrap_or(0) == 0
-    }
-
-    /// Get the length of the mapping
-    /// Excludes None values
-    /// Warning: performs a full scan of the tracker.
-    #[cfg(test)]
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn mapping_len(&self) -> Result<usize> {
-        let mut count = 0;
-        for i in 0..self.next_pointer_offset {
-            if self.get(i).ok().flatten().is_some() {
-                count += 1;
-            }
-        }
-        Ok(count)
-    }
-
-    /// Iterate over the pointers in the tracker
-    /// Starts from the given point offset
-    pub fn iter_pointers(
-        &self,
-        from: PointOffset,
-    ) -> impl Iterator<Item = (PointOffset, Result<Option<ValuePointer>>)> + '_ {
-        (from..self.next_pointer_offset).map(move |i| (i, self.get(i)))
-    }
-
-    /// Get the raw value at the given point offset
-    fn get_raw(&self, point_offset: PointOffset) -> Result<Option<Option<ValuePointer>>> {
-        let start_offset = std::mem::size_of::<TrackerHeader>()
-            + point_offset as usize * std::mem::size_of::<Optional<ValuePointer>>();
-        let end_offset = start_offset + std::mem::size_of::<Optional<ValuePointer>>();
-        let storage_len = self.storage.len()?;
-        if end_offset as u64 > storage_len {
-            return Ok(None);
-        }
-        let bytes = self.storage.read::<false>(ElementsRange {
-            start: start_offset as u64,
-            length: std::mem::size_of::<Optional<ValuePointer>>() as u64,
-        })?;
-        #[expect(deprecated, reason = "legacy code")]
-        let opt: &Optional<ValuePointer> = unsafe { transmute_from_u8(bytes.as_ref()) };
-        Ok(Some(opt.is_some().copied()))
-    }
-
-    /// Get the page pointer at the given point offset
-    pub fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        match self.pending_updates.get(&point_offset) {
-            // Pending update exists but is empty, should not happen, fall back to real data
-            Some(pending) if pending.is_empty() => {
-                debug_assert!(false, "pending updates must not be empty");
-                Ok(self.get_raw(point_offset)?.and_then(|o| o))
-            }
-            // Use set from pending updates
-            Some(pending) => Ok(pending.current),
-            // No pending update, use real data
-            None => Ok(self.get_raw(point_offset)?.and_then(|o| o)),
-        }
-    }
-
     /// Increment the header count if the given point offset is larger than the current count
     fn write_pointer_count(&mut self) -> Result<()> {
         self.header.next_pointer_offset = self.next_pointer_offset;
         self.write_header()
-    }
-
-    pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
-        Ok(self.get(point_offset)?.is_some())
     }
 
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
@@ -526,10 +537,6 @@ where
         }
 
         Ok(pointer_opt)
-    }
-
-    pub fn populate(&self) -> Result<()> {
-        self.storage.populate().map_err(Into::into)
     }
 }
 

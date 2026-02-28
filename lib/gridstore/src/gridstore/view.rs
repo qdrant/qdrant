@@ -2,7 +2,7 @@ use std::ops::{ControlFlow, Deref};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::universal_io::{UniversalRead, UniversalWrite};
+use common::universal_io::UniversalRead;
 use lz4_flex::compress_prepend_size;
 
 use crate::Result;
@@ -29,14 +29,14 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// [`Tracker<S>`]).
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
-pub struct GridstoreView<'a, V, S: UniversalRead<u8> + UniversalWrite<u8>> {
+pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
     pub(super) config: &'a StorageConfig,
     pub(super) tracker: &'a TrackerGeneric<S>,
     pub(super) pages: &'a [Page<S>],
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
-impl<'a, V, S: UniversalRead<u8> + UniversalWrite<u8>> GridstoreView<'a, V, S> {
+impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
         tracker: &'a TrackerGeneric<S>,
@@ -99,7 +99,7 @@ impl<'a, V, S: UniversalRead<u8> + UniversalWrite<u8>> GridstoreView<'a, V, S> {
     }
 }
 
-impl<'a, V: Blob, S: UniversalRead<u8> + UniversalWrite<u8>> GridstoreView<'a, V, S> {
+impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     pub(super) fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         match self.config.compression {
             Compression::None => value,
