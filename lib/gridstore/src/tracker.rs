@@ -249,6 +249,12 @@ pub struct Tracker<S> {
 
 // Methods that do not use storage (no trait bound).
 impl<S> Tracker<S> {
+    const FILE_NAME: &'static str = "tracker.dat";
+
+    fn tracker_file_name(path: &Path) -> PathBuf {
+        path.join(Self::FILE_NAME)
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
     }
@@ -260,6 +266,36 @@ impl<S> Tracker<S> {
 
 // Read operations -- only require UniversalRead
 impl<S: UniversalRead<u8>> Tracker<S> {
+    /// Open an existing PageTracker at the given path
+    /// If the file does not exist, return an error
+    pub fn open(path: &Path) -> Result<Self> {
+        let path = Self::tracker_file_name(path);
+        let storage = match S::open(&path, tracker_open_options()) {
+            Err(UniversalIoError::NotFound { .. }) => {
+                return Err(GridstoreError::service_error(format!(
+                    "Tracker file does not exist: {}",
+                    path.display()
+                )));
+            }
+            other => other?,
+        };
+        let header_bytes = storage.read::<false>(ElementsRange {
+            start: 0,
+            length: std::mem::size_of::<TrackerHeader>() as u64,
+        })?;
+        #[expect(deprecated, reason = "legacy code")]
+        let header: TrackerHeader =
+            *unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) };
+        let pending_updates = AHashMap::new();
+        Ok(Self {
+            next_pointer_offset: header.next_pointer_offset,
+            path,
+            header,
+            storage,
+            pending_updates,
+        })
+    }
+
     /// Get the raw value at the given point offset
     fn get_raw(&self, point_offset: PointOffset) -> Result<Option<Option<ValuePointer>>> {
         let start_offset = std::mem::size_of::<TrackerHeader>()
@@ -342,12 +378,7 @@ impl<S> Tracker<S>
 where
     S: UniversalRead<u8> + UniversalWrite<u8>,
 {
-    const FILE_NAME: &'static str = "tracker.dat";
     const DEFAULT_SIZE: usize = 1024 * 1024; // 1MB
-
-    fn tracker_file_name(path: &Path) -> PathBuf {
-        path.join(Self::FILE_NAME)
-    }
 
     /// Create a new PageTracker at the given dir path
     /// The file is created with the default size if no size hint is given
@@ -371,36 +402,6 @@ where
         };
         page_tracker.write_header()?;
         Ok(page_tracker)
-    }
-
-    /// Open an existing PageTracker at the given path
-    /// If the file does not exist, return an error
-    pub fn open(path: &Path) -> Result<Self> {
-        let path = Self::tracker_file_name(path);
-        let storage = match S::open(&path, tracker_open_options()) {
-            Err(UniversalIoError::NotFound { .. }) => {
-                return Err(GridstoreError::service_error(format!(
-                    "Tracker file does not exist: {}",
-                    path.display()
-                )));
-            }
-            other => other?,
-        };
-        let header_bytes = storage.read::<false>(ElementsRange {
-            start: 0,
-            length: std::mem::size_of::<TrackerHeader>() as u64,
-        })?;
-        #[expect(deprecated, reason = "legacy code")]
-        let header: TrackerHeader =
-            *unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) };
-        let pending_updates = AHashMap::new();
-        Ok(Self {
-            next_pointer_offset: header.next_pointer_offset,
-            path,
-            header,
-            storage,
-            pending_updates,
-        })
     }
 
     /// Writes the accumulated pending updates to storage and flushes it
