@@ -127,5 +127,5 @@ where
 {
     let storage = S::open(path, options)?;
     let bytes = storage.read_whole()?;
-    serde_json::from_slice(&*bytes).map_err(UniversalIoError::from)
+    serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
 }
