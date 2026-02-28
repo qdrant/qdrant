@@ -31,8 +31,7 @@ use segment::types::{
     VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use semver::Version;
-use serde;
-use serde::{Deserialize, Serialize};
+use serde::{self, Deserialize, Serialize};
 use serde_json::{Error as JsonError, Map, Value};
 pub use shard::count::CountRequestInternal;
 use shard::payload_index_schema::PayloadIndexSchema;
