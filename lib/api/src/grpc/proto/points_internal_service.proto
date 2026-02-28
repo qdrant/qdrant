@@ -334,6 +334,8 @@ message QueryShardPoints {
       MmrInternal mmr = 6;
       // Parameterized RRF fusion
       Rrf rrf = 7;
+      // Parameterized balanced log-odds fusion
+      Blo blo = 8;
     }
   }
 

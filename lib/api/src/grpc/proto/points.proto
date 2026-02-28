@@ -853,6 +853,8 @@ enum Fusion {
   RRF = 0;
   // Distribution-Based Score Fusion
   DBSF = 1;
+  // Balanced Log-Odds fusion (with default parameters)
+  BLO = 2;
 }
 
 // Sample points from the collection
@@ -988,6 +990,15 @@ message Rrf {
   repeated float weights = 2;
 }
 
+// Parameterized balanced log-odds fusion
+message Blo {
+  // Weights for each prefetch source.
+  // Higher weight gives more influence on the final ranking.
+  // If not specified, all prefetches are weighted equally.
+  // The number of weights should match the number of prefetches.
+  repeated float weights = 1;
+}
+
 message Query {
   oneof variant {
     // Find the nearest neighbors to this vector.
@@ -1012,6 +1023,8 @@ message Query {
     Rrf rrf = 10;
     // Search with feedback from some oracle.
     RelevanceFeedbackInput relevance_feedback = 11;
+    // Parameterized balanced log-odds fusion
+    Blo blo = 12;
   }
 }
 

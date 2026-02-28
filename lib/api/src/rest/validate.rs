@@ -39,6 +39,7 @@ impl Validate for Query {
             Query::Context(context) => context.validate(),
             Query::Fusion(fusion) => fusion.validate(),
             Query::Rrf(rrf) => rrf.validate(),
+            Query::Blo(blo) => blo.validate(),
             Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
@@ -107,7 +108,7 @@ impl Validate for FeedbackStrategy {
 impl Validate for Fusion {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Fusion::Rrf | Fusion::Dbsf => Ok(()),
+            Fusion::Rrf | Fusion::Dbsf | Fusion::Blo => Ok(()),
         }
     }
 }

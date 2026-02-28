@@ -1910,6 +1910,30 @@ class Fusion:
         """DBSF (Distribution-Based Score Fusion)."""
         def __init__(self) -> None: ...
 
+    class Blo:
+        """
+        BLO (Balanced Log-Odds) fusion.
+
+        Converts raw scores to probabilities via auto-calibrated sigmoid,
+        transforms to logit space, min-max normalizes, and combines via weighted mean.
+
+        Args:
+            weights: Optional weights for each prefetch source.
+                     Higher weight gives more influence on the final ranking.
+                     If not specified, all prefetches are weighted equally.
+
+        Examples:
+            # Basic BLO fusion
+            Fusion.Blo()
+
+            # Weighted BLO fusion
+            Fusion.Blo(weights=[3.0, 1.0])
+        """
+        def __init__(self, weights: Optional[List[float]] = None) -> None: ...
+
+        @property
+        def weights(self) -> Optional[List[float]]: ...
+
 
 class OrderBy:
     """Order results by a payload field."""
