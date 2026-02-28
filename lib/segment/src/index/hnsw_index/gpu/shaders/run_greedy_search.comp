@@ -25,13 +25,13 @@ struct SearchRequest {
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    search_context_init();
+    SearchContext ctx = SearchContext();
     uint subgroup_index = SUBGROUP_ID;
     SearchRequest search_request = search_requests[subgroup_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
-    ScoredPoint result = greedy_search(search_request.id, ScoredPoint(search_request.entry, entry_score));
+    ScoredPoint result = ctx.greedySearch(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
     if (WaveIsFirstLane()) {
         search_results[subgroup_index] = result.id;

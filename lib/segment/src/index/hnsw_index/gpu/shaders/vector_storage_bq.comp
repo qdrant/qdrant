@@ -1,35 +1,26 @@
 #ifndef VECTOR_STORAGE_BQ_HEADER
 #define VECTOR_STORAGE_BQ_HEADER
 
-// uint = 4 * uint8_t, vec4 analogue for BQ
 #define VECTOR_STORAGE_ELEMENT_TYPE uint
 #define VECTOR_STORAGE_SCORE_TYPE uint
 
-#define BITS_IN_UINT 32
+static const uint BITS_IN_UINT = 32;
 
-float bq_postprocess_score(uint result) {
-    float xor_product = float(WaveActiveSum(result));
-    float zeros_count = float((DIM / ELEMENTS_PER_SUBGROUP) * BITS_IN_UINT) - xor_product;
-    return zeros_count - xor_product - BQ_SKIP_COUNT;
-}
+// BQ uses the same XOR + popcount scoring for all distance metrics.
+struct BQMetric : IDistanceMetric<uint>
+{
+    typedef uint ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static uint scoreElement(uint a, uint b, inout NoState s) { return countbits(a ^ b); }
+    static float postprocessScore(uint accumulated, NoState s, uint pointId)
+    {
+        float xor_product = float(WaveActiveSum(accumulated));
+        float zeros_count = float((DIM / ELEMENTS_PER_SUBGROUP) * BITS_IN_UINT) - xor_product;
+        return zeros_count - xor_product - BQ_SKIP_COUNT;
+    }
+};
 
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
-    bq_postprocess_score(RESULT)
-
-#ifdef COSINE_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
-#endif
-
-#ifdef DOT_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
-#endif
-
-#ifdef EUCLID_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
-#endif
-
-#ifdef MANHATTAN_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) countbits(a ^ b)
-#endif
+typedef BQMetric ActiveMetric;
 
 #endif

@@ -17,34 +17,34 @@ struct TestParamsStruct {
 [[vk::binding(2, 0)]] RWStructuredBuffer<float> scores_output;
 [[vk::binding(3, 0)]] RWStructuredBuffer<uint> sorted_output;
 
-static uint nearest_count = 0;
-
 [shader("compute")]
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     uint subgroup_index = SUBGROUP_ID;
 
+    BHeap heap = BHeap(NEAREST_HEAP_OFFSET, EF);
+
     for (uint i = 0; i < test_params.input_counts; i++) {
         uint point_index = subgroup_index * test_params.input_counts + i;
         ScoredPoint point = input_points[point_index];
-        bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, point);
+        heap.push(point);
 
         GroupMemoryBarrier();
         AllMemoryBarrier();
 
-        float nearest_smaller_score_check = WaveActiveMin(bheap_top(NEAREST_HEAP_OFFSET).score);
-        bool is_different = nearest_smaller_score_check != bheap_top(NEAREST_HEAP_OFFSET).score;
+        float nearest_smaller_score_check = WaveActiveMin(heap.top().score);
+        bool is_different = nearest_smaller_score_check != heap.top().score;
         if (WaveActiveAnyTrue(is_different)) {
             if (WaveIsFirstLane()) {
                 scores_output[point_index] = positive_infinity;
             }
         } else if (WaveIsFirstLane()) {
-            scores_output[point_index] = bheap_top(NEAREST_HEAP_OFFSET).score;
+            scores_output[point_index] = heap.top().score;
         }
     }
 
-    sort(NEAREST_HEAP_OFFSET, nearest_count);
+    sort(NEAREST_HEAP_OFFSET, heap.size);
     if (WaveIsFirstLane()) {
         for (uint i = 0; i < EF; i++) {
             uint point_index = subgroup_index * EF + i;

@@ -25,14 +25,14 @@ struct SearchRequest {
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    search_context_init();
+    SearchContext ctx = SearchContext();
     uint subgroup_index = SUBGROUP_ID;
     SearchRequest search_request = search_requests[subgroup_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
-    search(search_request.id, ScoredPoint(search_request.entry, entry_score));
-    uint count = run_heuristic();
+    ctx.search(search_request.id, ScoredPoint(search_request.entry, entry_score));
+    uint count = ctx.runHeuristic();
 
     GroupMemoryBarrierWithGroupSync();
 

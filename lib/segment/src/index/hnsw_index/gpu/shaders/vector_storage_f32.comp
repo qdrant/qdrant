@@ -3,30 +3,65 @@
 
 #define VECTOR_STORAGE_ELEMENT_TYPE float4
 #define VECTOR_STORAGE_SCORE_TYPE float
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) WaveActiveSum(RESULT)
+
+struct CosineF32 : IDistanceMetric<float4>
+{
+    typedef float ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static float scoreElement(float4 a, float4 b, inout NoState s) { return dot(a, b); }
+    static float postprocessScore(float accumulated, NoState s, uint pointId) { return WaveActiveSum(accumulated); }
+};
+
+struct DotF32 : IDistanceMetric<float4>
+{
+    typedef float ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static float scoreElement(float4 a, float4 b, inout NoState s) { return dot(a, b); }
+    static float postprocessScore(float accumulated, NoState s, uint pointId) { return WaveActiveSum(accumulated); }
+};
+
+struct EuclidF32 : IDistanceMetric<float4>
+{
+    typedef float ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static float scoreElement(float4 a, float4 b, inout NoState s)
+    {
+        float4 v = a - b;
+        return -v.x * v.x - v.y * v.y - v.z * v.z - v.w * v.w;
+    }
+    static float postprocessScore(float accumulated, NoState s, uint pointId) { return WaveActiveSum(accumulated); }
+};
+
+struct ManhattanF32 : IDistanceMetric<float4>
+{
+    typedef float ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static float scoreElement(float4 a, float4 b, inout NoState s)
+    {
+        float4 v = abs(a - b);
+        return -v.x - v.y - v.z - v.w;
+    }
+    static float postprocessScore(float accumulated, NoState s, uint pointId) { return WaveActiveSum(accumulated); }
+};
 
 #ifdef COSINE_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+typedef CosineF32 ActiveMetric;
 #endif
 
 #ifdef DOT_DISTANCE
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+typedef DotF32 ActiveMetric;
 #endif
 
 #ifdef EUCLID_DISTANCE
-float euclid_metric_f32(float4 v1, float4 v2) {
-    float4 v = v1 - v2;
-    return -v.x * v.x - v.y * v.y - v.z * v.z - v.w * v.w;
-}
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_metric_f32(a, b)
+typedef EuclidF32 ActiveMetric;
 #endif
 
 #ifdef MANHATTAN_DISTANCE
-float manhattan_metric_f32(float4 v1, float4 v2) {
-    float4 v = abs(v1 - v2);
-    return -v.x - v.y - v.z - v.w;
-}
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_metric_f32(a, b)
+typedef ManhattanF32 ActiveMetric;
 #endif
 
 #endif

@@ -26,13 +26,13 @@ struct Request {
 [numthreads(SUBGROUP_SIZE, 1, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
-    search_context_init();
+    SearchContext ctx = SearchContext();
     uint subgroup_index = SUBGROUP_ID;
     Request request = requests[subgroup_index];
 
     set_target(request.id);
     float entry_score = similarity(request.entry);
-    uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
+    uint search_count = ctx.search(request.id, ScoredPoint(request.entry, entry_score));
 
     if (WaveIsFirstLane()) {
         if (search_count > 0) {
@@ -42,7 +42,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
         }
     }
 
-    uint count = run_heuristic();
+    uint count = ctx.runHeuristic();
 
     // sync all threads to make sure that we don't do search while updating links
     GroupMemoryBarrierWithGroupSync();
@@ -79,26 +79,26 @@ void main(uint3 dtid : SV_DispatchThreadID) {
             }
         } else {
             set_target(other_id);
-            nearest_count = 0;
+            ctx.nearest.size = 0;
             for (uint j = 0; j < other_links_count; j++) {
                 POINT_ID link = GET_LINK(other_id, j);
-                shared_buffer[NEAREST_HEAP_OFFSET + nearest_count] = ScoredPoint(
+                shared_buffer[NEAREST_HEAP_OFFSET + ctx.nearest.size] = ScoredPoint(
                     link,
                     similarity(link)
                 );
-                nearest_count++;
+                ctx.nearest.size++;
             }
-            shared_buffer[NEAREST_HEAP_OFFSET + nearest_count] = ScoredPoint(
+            shared_buffer[NEAREST_HEAP_OFFSET + ctx.nearest.size] = ScoredPoint(
                 request.id,
                 similarity(request.id)
             );
-            nearest_count++;
+            ctx.nearest.size++;
 
             GroupMemoryBarrier();
-            sort(NEAREST_HEAP_OFFSET, nearest_count);
+            sort(NEAREST_HEAP_OFFSET, ctx.nearest.size);
 
             GroupMemoryBarrier();
-            uint other_new_links_count = run_heuristic();
+            uint other_new_links_count = ctx.runHeuristic();
 
             GroupMemoryBarrier();
             for (uint j = WaveGetLaneIndex(); j < other_new_links_count; j += SUBGROUP_SIZE) {

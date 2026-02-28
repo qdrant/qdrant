@@ -26,6 +26,10 @@ impl ShaderBuilder {
                 "extensions.comp".to_string(),
                 include_str!("shaders/extensions.comp").to_string(),
             ),
+            (
+                "distance_metric.comp".to_string(),
+                include_str!("shaders/distance_metric.comp").to_string(),
+            ),
         ]);
 
         let mut defines = HashMap::new();

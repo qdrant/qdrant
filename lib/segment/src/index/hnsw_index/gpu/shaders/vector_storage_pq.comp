@@ -11,7 +11,6 @@ struct PQRange {
 
 #define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
 #define VECTOR_STORAGE_SCORE_TYPE float
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) WaveActiveSum(RESULT)
 
 float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
     float score = 0.0;
@@ -28,15 +27,12 @@ float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
 #ifdef COSINE_DISTANCE
             score += data_a * data_b;
 #endif
-
 #ifdef DOT_DISTANCE
             score += data_a * data_b;
 #endif
-
 #ifdef EUCLID_DISTANCE
             score -= (data_a - data_b) * (data_a - data_b);
 #endif
-
 #ifdef MANHATTAN_DISTANCE
             score -= abs(data_a - data_b);
 #endif
@@ -45,10 +41,34 @@ float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
     return score;
 }
 
+struct PQState
+{
+    uint elementIndex;
+};
+
+struct PQMetric : IDistanceMetric<vector<uint8_t, 4> >
+{
+    typedef float ScoreType;
+    typedef PQState State;
+
 #ifdef SINGLE_SUBGROUP_PER_VECTOR
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, WaveGetLaneIndex())
+    static PQState initState() { return { WaveGetLaneIndex() }; }
 #else
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, i * SUBGROUP_SIZE + WaveGetLaneIndex())
+    static PQState initState() { return { 0 }; }
 #endif
+
+    static float scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout PQState state)
+    {
+        float result = score_pq(a, b, state.elementIndex);
+#ifndef SINGLE_SUBGROUP_PER_VECTOR
+        state.elementIndex += SUBGROUP_SIZE;
+#endif
+        return result;
+    }
+
+    static float postprocessScore(float accumulated, PQState state, uint pointId) { return WaveActiveSum(accumulated); }
+};
+
+typedef PQMetric ActiveMetric;
 
 #endif

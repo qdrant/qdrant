@@ -4,73 +4,96 @@
 #define VECTOR_STORAGE_ELEMENT_TYPE vector<uint8_t, 4>
 #define VECTOR_STORAGE_SCORE_TYPE uint
 
-#ifdef COSINE_DISTANCE
+struct U8CosineState
+{
+    uint vector1Len;
+    uint vector2Len;
+};
 
-uint dot_u8x4(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout uint vector1Len, inout uint vector2Len) {
-    uint4 square1 = uint4(a) * uint4(a);
-    vector1Len += square1.x + square1.y + square1.z + square1.w;
+struct CosineU8 : IDistanceMetric<vector<uint8_t, 4> >
+{
+    typedef uint ScoreType;
+    typedef U8CosineState State;
 
-    uint4 square2 = uint4(b) * uint4(b);
-    vector2Len += square2.x + square2.y + square2.z + square2.w;
+    static U8CosineState initState() { return { 0, 0 }; }
 
-    uint4 mul = uint4(a) * uint4(b);
-    return mul.x + mul.y + mul.z + mul.w;
-}
+    static uint scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout U8CosineState state)
+    {
+        uint4 square1 = uint4(a) * uint4(a);
+        state.vector1Len += square1.x + square1.y + square1.z + square1.w;
 
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8x4(a, b, vector1Len, vector2Len)
+        uint4 square2 = uint4(b) * uint4(b);
+        state.vector2Len += square2.x + square2.y + square2.z + square2.w;
 
-float u8_postprocess_cosine_score(float result, uint vector1Len, uint vector2Len) {
-    float len1 = float(WaveActiveSum(vector1Len));
-    float len2 = float(WaveActiveSum(vector2Len));
-    if (len1 > 0 && len2 > 0) {
-        return float(WaveActiveSum(result)) / sqrt(len1 * len2);
-    } else {
-        return 0;
+        uint4 mul = uint4(a) * uint4(b);
+        return mul.x + mul.y + mul.z + mul.w;
     }
-}
 
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
-    u8_postprocess_cosine_score(RESULT, vector1Len, vector2Len)
+    static float postprocessScore(uint accumulated, U8CosineState state, uint pointId)
+    {
+        float len1 = float(WaveActiveSum(state.vector1Len));
+        float len2 = float(WaveActiveSum(state.vector2Len));
+        if (len1 > 0 && len2 > 0) {
+            return float(WaveActiveSum(accumulated)) / sqrt(len1 * len2);
+        } else {
+            return 0;
+        }
+    }
+};
 
-#define VECTOR_STORAGE_PREPROCESS() \
-    uint vector1Len = 0; \
-    uint vector2Len = 0;
+struct DotU8 : IDistanceMetric<vector<uint8_t, 4> >
+{
+    typedef uint ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static uint scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout NoState s)
+    {
+        uint4 mul = uint4(a) * uint4(b);
+        return mul.x + mul.y + mul.z + mul.w;
+    }
+    static float postprocessScore(uint accumulated, NoState s, uint pointId) { return float(WaveActiveSum(accumulated)); }
+};
 
+struct EuclidU8 : IDistanceMetric<vector<uint8_t, 4> >
+{
+    typedef uint ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static uint scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout NoState s)
+    {
+        int4 v = int4(a) - int4(b);
+        return uint(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+    }
+    static float postprocessScore(uint accumulated, NoState s, uint pointId) { return -float(WaveActiveSum(accumulated)); }
+};
+
+struct ManhattanU8 : IDistanceMetric<vector<uint8_t, 4> >
+{
+    typedef uint ScoreType;
+    typedef NoState State;
+    static NoState initState() { return {}; }
+    static uint scoreElement(vector<uint8_t, 4> a, vector<uint8_t, 4> b, inout NoState s)
+    {
+        int4 v = abs(int4(a) - int4(b));
+        return uint(v.x + v.y + v.z + v.w);
+    }
+    static float postprocessScore(uint accumulated, NoState s, uint pointId) { return -float(WaveActiveSum(accumulated)); }
+};
+
+#ifdef COSINE_DISTANCE
+typedef CosineU8 ActiveMetric;
 #endif
 
 #ifdef DOT_DISTANCE
-
-uint dot_u8x4(vector<uint8_t, 4> a, vector<uint8_t, 4> b) {
-    uint4 mul = uint4(a) * uint4(b);
-    return mul.x + mul.y + mul.z + mul.w;
-}
-
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8x4(a, b)
-
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) float(WaveActiveSum(RESULT))
-
+typedef DotU8 ActiveMetric;
 #endif
 
 #ifdef EUCLID_DISTANCE
-
-uint euclid_u8x4(vector<uint8_t, 4> v1, vector<uint8_t, 4> v2) {
-    int4 v = int4(v1) - int4(v2);
-    return uint(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
-}
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_u8x4(a, b)
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(WaveActiveSum(RESULT))
-
+typedef EuclidU8 ActiveMetric;
 #endif
 
 #ifdef MANHATTAN_DISTANCE
-uint manhattan_u8x4(vector<uint8_t, 4> v1, vector<uint8_t, 4> v2) {
-    int4 v = abs(int4(v1) - int4(v2));
-    return uint(v.x + v.y + v.z + v.w);
-}
-
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_u8x4(a, b)
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(WaveActiveSum(RESULT))
-
+typedef ManhattanU8 ActiveMetric;
 #endif
 
 #endif
