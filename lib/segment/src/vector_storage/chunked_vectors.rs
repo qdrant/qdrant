@@ -112,7 +112,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
             OpenOptions::default(),
         ) {
             Ok(config) => Ok(Some(config)),
-            Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }

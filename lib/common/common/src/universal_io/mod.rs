@@ -1,7 +1,7 @@
 pub mod mmap;
 
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
@@ -111,6 +111,10 @@ pub enum UniversalIoError {
     },
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
+    /// Path does not exist or is not accessible; backends may use this instead of
+    /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
+    #[error("Not found: {path:?}")]
+    NotFound { path: PathBuf },
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
