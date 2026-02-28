@@ -5,12 +5,12 @@ use common::counter::referenced_counter::HwMetricRefCounter;
 use common::universal_io::UniversalRead;
 use lz4_flex::compress_prepend_size;
 
-use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
+use crate::tracker::{BlockOffset, PageId, PointOffset, ValuePointer};
+use crate::{Result, Tracker};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -54,7 +54,7 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         self.tracker.pointer_count()
     }
 
-    fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+    fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
         self.tracker.get(point_offset)
     }
 
@@ -120,7 +120,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        let Some(pointer) = self.get_pointer(point_offset) else {
+        let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
 
@@ -168,8 +168,8 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         let mut pointers_iter = self
             .tracker
             .iter_pointers(from)
-            .filter_map(|(point_offset, opt_pointer)| {
-                opt_pointer.map(|pointer| (point_offset, pointer))
+            .filter_map(|(point_offset, res)| {
+                res.ok().flatten().map(|pointer| (point_offset, pointer))
             })
             .enumerate();
 
