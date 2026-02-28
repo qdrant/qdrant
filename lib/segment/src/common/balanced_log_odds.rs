@@ -3,9 +3,10 @@
 //!
 //! The approach:
 //! 1. Auto-calibrate sigmoid parameters (alpha, beta) per retriever from score distribution
-//! 2. Convert raw scores to logit space: logit(sigmoid(alpha * (s - beta))) = alpha * (s - beta)
-//! 3. Min-max normalize logits within each retriever to [0, 1]
-//! 4. Combine via weighted mean over participating retrievers (missing docs are skipped)
+//! 2. Convert raw scores to probabilities via sigmoid: P = sigmoid(alpha * (s - beta))
+//! 3. Transform probabilities to log-odds space via logit: logit(P)
+//! 4. Min-max normalize logits within each retriever to [0, 1]
+//! 5. Combine via weighted mean over participating retrievers (missing docs are skipped)
 
 use std::collections::hash_map::Entry;
 
@@ -17,6 +18,25 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{ExtendedPointId, ScoredPoint};
 
 const LOGIT_MIN_MAX_EPSILON: f64 = 1e-12;
+const LOGIT_CLAMP_EPSILON: f64 = 1e-10;
+
+/// Numerically stable sigmoid function.
+/// Uses the two-branch form to avoid overflow in exp().
+fn sigmoid(x: f64) -> f64 {
+    if x >= 0.0 {
+        1.0 / (1.0 + (-x).exp())
+    } else {
+        let ex = x.exp();
+        ex / (1.0 + ex)
+    }
+}
+
+/// Logit (log-odds) transform: ln(p / (1 - p)).
+/// Clamps p to [epsilon, 1 - epsilon] to avoid ln(0).
+fn logit(p: f64) -> f64 {
+    let p = p.clamp(LOGIT_CLAMP_EPSILON, 1.0 - LOGIT_CLAMP_EPSILON);
+    (p / (1.0 - p)).ln()
+}
 
 /// Compute the standard deviation of a slice of f64 values.
 /// Returns 0.0 if fewer than 2 elements.
@@ -46,15 +66,61 @@ fn median(values: &mut [f64]) -> f64 {
     }
 }
 
+/// Normalize a single retriever's scores into [0, 1] using the BLO pipeline:
+///   1. Auto-calibrate sigmoid parameters from score distribution
+///   2. Convert each score to probability via sigmoid
+///   3. Transform to log-odds space via logit
+///   4. Min-max normalize the logit values to [0, 1]
+///
+/// Returns normalized scores in the same order as the input.
+fn normalize_retriever_scores(scores: &[f32]) -> Vec<f64> {
+    if scores.is_empty() {
+        return vec![];
+    }
+
+    let mut raw: Vec<f64> = scores.iter().map(|&s| s as f64).collect();
+
+    // Compute std before median (which sorts in-place)
+    let sd = std_dev(&raw);
+    let alpha = if sd < f64::EPSILON { 1.0 } else { 1.0 / sd };
+    let beta = median(&mut raw);
+
+    // Score -> sigmoid probability -> logit (log-odds)
+    let logits: Vec<f64> = scores
+        .iter()
+        .map(|&s| {
+            let prob = sigmoid(alpha * (s as f64 - beta));
+            logit(prob)
+        })
+        .collect();
+
+    // Min-max normalize logits to [0, 1]
+    let lo = logits
+        .iter()
+        .copied()
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(0.0);
+    let hi = logits
+        .iter()
+        .copied()
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(0.0);
+
+    let range = hi - lo;
+    if range > LOGIT_MIN_MAX_EPSILON {
+        logits.iter().map(|v| (v - lo) / range).collect()
+    } else {
+        vec![0.5; logits.len()]
+    }
+}
+
 /// Balanced Log-Odds fusion.
 ///
-/// For each retriever source:
-///   - Compute beta = median(scores), alpha = 1/std(scores) (or 1.0 if std == 0)
-///   - Transform each score to logit space: alpha * (score - beta)
-///   - Min-max normalize logits within this source to [0, 1]
+/// For each retriever source, normalizes scores via sigmoid -> logit -> min-max
+/// (see [`normalize_retriever_scores`]).
 ///
-/// For each document in the union of all sources:
-///   - Compute weighted mean of normalized logits over participating sources only
+/// For each document in the union of all sources, computes a weighted mean
+/// of normalized values over participating retrievers only (missing docs are skipped).
 ///
 /// Returns results sorted descending by fused score.
 pub fn blo_fusion(
@@ -83,52 +149,19 @@ pub fn blo_fusion(
         }
 
         let w = weight as f64;
+        let raw_scores: Vec<f32> = response.iter().map(|p| p.score).collect();
+        let normalized = normalize_retriever_scores(&raw_scores);
 
-        // Collect raw scores as f64 for statistical computation
-        let mut raw_scores: Vec<f64> = response.iter().map(|p| p.score as f64).collect();
-
-        // Compute stats before median mutates the array
-        let sd = std_dev(&raw_scores);
-        let alpha = if sd < f64::EPSILON { 1.0 } else { 1.0 / sd };
-        let beta = median(&mut raw_scores);
-
-        // Transform to logit space: alpha * (score - beta), using original point scores
-        let logits: Vec<f64> = response
-            .iter()
-            .map(|p| alpha * (p.score as f64 - beta))
-            .collect();
-
-        // Min-max normalize logits
-        let lo = logits
-            .iter()
-            .copied()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0);
-        let hi = logits
-            .iter()
-            .copied()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0.0);
-
-        let range = hi - lo;
-        let can_normalize = range > LOGIT_MIN_MAX_EPSILON;
-
-        for (mut point, logit) in response.into_iter().zip(logits.iter()) {
-            let normalized = if can_normalize {
-                (logit - lo) / range
-            } else {
-                0.5 // All scores identical in this source
-            };
-
+        for (mut point, &norm_score) in response.into_iter().zip(normalized.iter()) {
             match acc.entry(point.id) {
                 Entry::Occupied(mut entry) => {
                     let (sum, tw, _) = entry.get_mut();
-                    *sum += w * normalized;
+                    *sum += w * norm_score;
                     *tw += w;
                 }
                 Entry::Vacant(entry) => {
-                    point.score = 0.0; // Will be overwritten
-                    entry.insert((w * normalized, w, point));
+                    point.score = 0.0;
+                    entry.insert((w * norm_score, w, point));
                 }
             }
         }
@@ -257,6 +290,34 @@ mod tests {
         let result = blo_fusion(responses, Some(&weights)).unwrap();
         assert_eq!(result[0].id, 1.into());
         assert!(result[0].score > result[1].score);
+    }
+
+    #[test]
+    fn test_sigmoid_basic() {
+        assert!((sigmoid(0.0) - 0.5).abs() < 1e-10);
+        assert!(sigmoid(100.0) > 0.999);
+        assert!(sigmoid(-100.0) < 0.001);
+        // Symmetry: sigmoid(-x) = 1 - sigmoid(x)
+        assert!((sigmoid(2.0) + sigmoid(-2.0) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_logit_basic() {
+        assert!(logit(0.5).abs() < 1e-10);
+        assert!(logit(0.9) > 0.0);
+        assert!(logit(0.1) < 0.0);
+    }
+
+    #[test]
+    fn test_sigmoid_logit_roundtrip() {
+        // logit(sigmoid(x)) should ≈ x for moderate values
+        for &x in &[-5.0, -1.0, 0.0, 1.0, 5.0] {
+            let roundtrip = logit(sigmoid(x));
+            assert!(
+                (roundtrip - x).abs() < 1e-8,
+                "roundtrip failed for x={x}: got {roundtrip}"
+            );
+        }
     }
 
     #[test]
