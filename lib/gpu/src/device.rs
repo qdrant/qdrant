@@ -134,8 +134,14 @@ impl Device {
                 "Storage buffer 16 bit access is not supported".to_string(),
             ));
         }
+        // Slang's SPIR-V codegen emits UniformAndStorageBuffer16BitAccess capability
+        // for 16-bit types in buffer storage, so we enable it if supported.
+        let has_uniform_and_storage_buffer_16bit =
+            enabled_physical_device_features_1_1.uniform_and_storage_buffer16_bit_access != 0;
         let mut physical_device_features_1_1 =
-            vk::PhysicalDeviceVulkan11Features::default().storage_buffer16_bit_access(true);
+            vk::PhysicalDeviceVulkan11Features::default()
+                .storage_buffer16_bit_access(true)
+                .uniform_and_storage_buffer16_bit_access(has_uniform_and_storage_buffer_16bit);
 
         // From Vulkan 1.2 we need int8/float16 support.
         if !enabled_physical_device_features_1_2.shader_int8 == 0 {
@@ -151,10 +157,15 @@ impl Device {
                 "Storage buffer 8 bit access is not supported".to_string(),
             ));
         }
+        // Slang's SPIR-V codegen emits UniformAndStorageBuffer8BitAccess capability
+        // for 8-bit types in buffer storage, so we enable it if supported.
+        let has_uniform_and_storage_buffer_8bit =
+            enabled_physical_device_features_1_2.uniform_and_storage_buffer8_bit_access != 0;
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
             .shader_float16(has_half_precision)
-            .storage_buffer8_bit_access(true);
+            .storage_buffer8_bit_access(true)
+            .uniform_and_storage_buffer8_bit_access(has_uniform_and_storage_buffer_8bit);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
         let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();

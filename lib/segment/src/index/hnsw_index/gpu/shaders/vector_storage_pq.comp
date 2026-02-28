@@ -25,8 +25,8 @@ float score_pq(u8vec4 a, u8vec4 b, uint i) {
     uint index = i * 4;
     uint max_index = min(index + 4, PQ_DIVISIONS_COUNT);
     for (; index < max_index; index++) {
-        uint c_a = a[index % 4] * PQ_CENTROIDS_DIM;
-        uint c_b = b[index % 4] * PQ_CENTROIDS_DIM;
+        uint c_a = uint(a[index % 4]) * PQ_CENTROIDS_DIM;
+        uint c_b = uint(b[index % 4]) * PQ_CENTROIDS_DIM;
         PQRange range = vector_divisions.data[index];
         for (uint j = range.start; j < range.end; j++) {
             float data_a = centroids.data[c_a + j];

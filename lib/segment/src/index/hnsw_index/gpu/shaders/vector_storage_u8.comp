@@ -6,7 +6,7 @@
 
 #ifdef COSINE_DISTANCE
 
-uint dot_u8vec4(u8vec4 a, u8vec4 b, in out uint vector1Len, in out uint vector2Len) {
+uint dot_u8vec4(u8vec4 a, u8vec4 b, inout uint vector1Len, inout uint vector2Len) {
     uvec4 square1 = uvec4(a) * uvec4(a);
     vector1Len += square1.x + square1.y + square1.z + square1.w;
 

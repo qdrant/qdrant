@@ -300,7 +300,7 @@ tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.21", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
-zerocopy = { version = "0.8.39", features = ["derive"] }
+zerocopy = { version = "0.8.28", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
 thiserror = "2.0.18"

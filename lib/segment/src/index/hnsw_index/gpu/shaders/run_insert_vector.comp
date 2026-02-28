@@ -33,6 +33,18 @@ layout(set = 0, binding = 2) buffer Atomics {
     coherent uint data[];
 } atomics;
 
+// Workaround for Slang error 41403: Slang does not recognize GLSL buffer blocks
+// as "device buffers" for atomic operations. Use spirv_asm to emit OpAtomicExchange
+// directly, bypassing Slang's IR validation.
+// Scope=1 (Device), Semantics=0x40 (UniformMemory).
+uint slangAtomicExchange(inout uint dest, uint value) {
+    return spirv_asm {
+        %scope = OpConstant $$uint 1;
+        %sem = OpConstant $$uint 64;
+        result:$$uint = OpAtomicExchange &dest %scope %sem $value
+    };
+}
+
 void main() {
     search_context_init();
     uint subgroup_index = SUBGROUP_ID;
@@ -70,7 +82,7 @@ void main() {
 
         bool is_locked = false;
         if (gl_SubgroupInvocationID == 0) {
-            uint other_atomic = atomicExchange(atomics.data[other_id], 1);
+            uint other_atomic = slangAtomicExchange(atomics.data[other_id], 1);
             is_locked = other_atomic == 1;
         }
         if (subgroupAny(is_locked)) {
@@ -119,7 +131,7 @@ void main() {
         subgroupMemoryBarrier();
 
         if (gl_SubgroupInvocationID == 0) {
-            atomicExchange(atomics.data[other_id], 0);
+            slangAtomicExchange(atomics.data[other_id], 0);
         }
     }
 }

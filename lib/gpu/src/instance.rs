@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use ash::vk;
-use parking_lot::Mutex;
 
 use crate::*;
 
@@ -31,9 +30,6 @@ pub struct Instance {
 
     /// Validation layer messenger.
     vk_debug_messenger: vk::DebugUtilsMessengerEXT,
-
-    /// Shader compiler.
-    compiler: Mutex<shaderc::Compiler>,
 
     /// Debug messenger for the instance. It contains validation error callbacks.
     /// Should be kept alive while the instance is alive because it contains raw pointers to callbacks.
@@ -110,13 +106,6 @@ impl Instance {
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,
     ) -> GpuResult<Arc<Self>> {
-        // Create a shader compiler before we start.
-        // It's used to compile GLSL into SPIR-V.
-        let compiler = Mutex::new(
-            shaderc::Compiler::new()
-                .map_err(|_| GpuError::Other("Failed to create shaderc compiler".to_string()))?,
-        );
-
         // Create Vulkan API entry point.
         let entry = unsafe {
             ash::Entry::load().map_err(|e| {
@@ -271,7 +260,6 @@ impl Instance {
             allocation_callbacks,
             vk_debug_utils_loader,
             vk_debug_messenger,
-            compiler,
             _debug_messenger: debug_messenger,
         }))
     }
@@ -307,52 +295,153 @@ impl Instance {
         defines: Option<&HashMap<String, Option<String>>>,
         includes: Option<&HashMap<String, String>>,
     ) -> GpuResult<Vec<u8>> {
-        let mut options = shaderc::CompileOptions::new()
-            .map_err(|_| GpuError::Other("Failed to create shaderc compile options".to_string()))?;
-        options.set_optimization_level(shaderc::OptimizationLevel::Performance);
-        options.set_target_env(
-            shaderc::TargetEnv::Vulkan,
-            shaderc::EnvVersion::Vulkan1_3 as u32,
-        );
-        options.set_target_spirv(shaderc::SpirvVersion::V1_3);
-
-        if let Some(defines) = defines {
-            for (define, value) in defines {
-                match value {
-                    Some(value) => {
-                        options.add_macro_definition(define, Some(value));
-                    }
-                    None => {
-                        options.add_macro_definition(define, None);
-                    }
-                }
+        // Write include files to a unique temporary directory for Slang's search path resolution.
+        // Use an atomic counter to ensure uniqueness across concurrent compilations.
+        static COMPILE_COUNTER: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        let counter = COMPILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let include_dir = std::env::temp_dir().join(format!(
+            "qdrant_slang_{}_{counter}",
+            std::process::id()
+        ));
+        if let Some(includes) = includes {
+            std::fs::create_dir_all(&include_dir).map_err(|e| {
+                GpuError::Other(format!("Failed to create shader include directory: {e}"))
+            })?;
+            for (filename, source) in includes {
+                std::fs::write(include_dir.join(filename), source).map_err(|e| {
+                    GpuError::Other(format!("Failed to write shader include {filename}: {e}"))
+                })?;
             }
         }
 
-        if let Some(includes) = includes {
-            options.set_include_callback(|filename, _, _, _| {
-                if let Some(code) = includes.get(filename) {
-                    Ok(shaderc::ResolvedInclude {
-                        resolved_name: filename.to_string(),
-                        content: code.to_owned(),
-                    })
+        let result = self.compile_shader_slang(shader, shader_name, defines, &include_dir);
+
+        // Clean up temp include files (best-effort).
+        let _ = std::fs::remove_dir_all(&include_dir);
+
+        result
+    }
+
+    fn compile_shader_slang(
+        &self,
+        shader: &str,
+        shader_name: &str,
+        defines: Option<&HashMap<String, Option<String>>>,
+        include_dir: &std::path::Path,
+    ) -> GpuResult<Vec<u8>> {
+        // Inject defines directly into the shader source as #define directives
+        // after the #version line. This is the most reliable way to pass defines
+        // since Slang's load_module API doesn't preprocess macros in layout qualifiers.
+        let shader_with_defines = if let Some(defines) = defines {
+            let mut define_block = String::new();
+            for (key, value) in defines {
+                if let Some(val) = value {
+                    define_block.push_str(&format!("#define {key} {val}\n"));
                 } else {
-                    Err(format!("Include file not found: {filename}"))
+                    define_block.push_str(&format!("#define {key}\n"));
                 }
-            });
+            }
+
+            // Insert defines after the #version line if present.
+            if let Some(version_end) = shader.find('\n') {
+                let first_line = &shader[..version_end];
+                if first_line.trim_start().starts_with("#version") {
+                    format!(
+                        "{}\n{}\n{}",
+                        first_line,
+                        define_block,
+                        &shader[version_end + 1..]
+                    )
+                } else {
+                    format!("{define_block}{shader}")
+                }
+            } else {
+                format!("{define_block}{shader}")
+            }
+        } else {
+            shader.to_string()
+        };
+
+        // Write the shader source with defines to a file for slangc.
+        let module_name = shader_name
+            .strip_suffix(".comp")
+            .unwrap_or(shader_name);
+        let shader_file_name = format!("{module_name}.slang");
+        let shader_file_path = include_dir.join(&shader_file_name);
+
+        // Ensure the directory exists (shader names may contain path components).
+        if let Some(parent) = shader_file_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GpuError::Other(format!("Failed to create shader directory: {e}"))
+            })?;
         }
 
-        let compiler = self.compiler.lock();
-        let result = compiler
-            .compile_into_spirv(
-                shader,
-                shaderc::ShaderKind::Compute,
-                shader_name,
-                "main",
-                Some(&options),
-            )
-            .map_err(|e| GpuError::Other(format!("Failed to compile shader: {e:?}")))?;
-        Ok(result.as_binary_u8().to_owned())
+        std::fs::write(&shader_file_path, &shader_with_defines).map_err(|e| {
+            GpuError::Other(format!("Failed to write shader source {shader_name}: {e}"))
+        })?;
+
+        // Compile GLSL to SPIR-V using the slangc command-line tool.
+        // We use the CLI rather than the C API because the API's load_module
+        // function doesn't properly preprocess macros in layout() qualifiers,
+        // and loadModuleFromSourceString has COM reference counting issues.
+        let output_path = include_dir.join(format!("{module_name}.spv"));
+        if let Some(parent) = output_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GpuError::Other(format!("Failed to create output directory: {e}"))
+            })?;
+        }
+        let mut cmd = std::process::Command::new(Self::slangc_path());
+        cmd.arg(&shader_file_path)
+            .arg("-target").arg("spirv")
+            .arg("-lang").arg("glsl")
+            .arg("-stage").arg("compute")
+            .arg("-entry").arg("main")
+            .arg("-profile").arg("glsl_450")
+            .arg("-force-glsl-scalar-layout")
+            .arg("-emit-spirv-directly")
+            .arg("-O2")
+            .arg("-I").arg(include_dir)
+            .arg("-o").arg(&output_path);
+
+        let output = cmd.output().map_err(|e| {
+            GpuError::Other(format!("Failed to run slangc for {shader_name}: {e}"))
+        })?;
+
+        // Check if slangc succeeded. Slang may emit warnings to stderr even on
+        // success (e.g., warning 41012 about subgroup capabilities exceeding
+        // the glsl_450 profile). We check the output file existence as a
+        // secondary signal — if the file was written, the compilation succeeded
+        // despite any warnings.
+        if !output.status.success() && !output_path.exists() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GpuError::Other(format!(
+                "Failed to compile shader {shader_name}: {stderr}"
+            )));
+        }
+
+        let spirv_data = std::fs::read(&output_path).map_err(|e| {
+            GpuError::Other(format!(
+                "Failed to read compiled SPIR-V for {shader_name}: {e}"
+            ))
+        })?;
+
+        Ok(spirv_data)
+    }
+
+    /// Get the path to the slangc compiler binary.
+    fn slangc_path() -> &'static str {
+        // Check SLANG_DIR env var first, then fall back to system PATH.
+        static SLANGC_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        SLANGC_PATH.get_or_init(|| {
+            if let Ok(slang_dir) = std::env::var("SLANG_DIR") {
+                let path = format!("{slang_dir}/bin/slangc");
+                if std::path::Path::new(&path).exists() {
+                    return path;
+                }
+            }
+            "slangc".to_string()
+        })
     }
 
     fn layers_list(validation: bool, dump_api: bool) -> Vec<String> {

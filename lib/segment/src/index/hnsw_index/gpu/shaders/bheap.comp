@@ -46,7 +46,7 @@ uint _heap_find_min(uint offset, uint size) {
     return subgroupShuffle(min_index, subgroup_min_thread);
 }
 
-bool bheap_push(uint offset, in out uint size, uint capacity, ScoredPoint score) {
+bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) {
     if (size == capacity) {
         if (score.score > shared_buffer[offset].score) {
             shared_buffer[offset] = score;
@@ -74,7 +74,7 @@ bool bheap_push(uint offset, in out uint size, uint capacity, ScoredPoint score)
     }
 }
 
-ScoredPoint bheap_pop_max(uint offset, in out uint size) {
+ScoredPoint bheap_pop_max(uint offset, inout uint size) {
     if (size == 0) {
         return ScoredPoint(0, 0.0);
     }
@@ -90,7 +90,7 @@ ScoredPoint bheap_pop_max(uint offset, in out uint size) {
     return popped_value;
 }
 
-uint bheap_into_array(uint offset, in out uint size) {
+uint bheap_into_array(uint offset, inout uint size) {
     sort(offset, size);
     uint result = size;
     size = 0;
@@ -144,7 +144,7 @@ void _bheap_change_top(uint offset, uint size, ScoredPoint new_value) {
     }
 }
 
-bool bheap_push(uint offset, in out uint size, uint capacity, ScoredPoint score) {
+bool bheap_push(uint offset, inout uint size, uint capacity, ScoredPoint score) {
     if (size == capacity) {
         if (score.score > shared_buffer[offset].score) {
             _bheap_change_top(offset, capacity, score);
@@ -163,7 +163,7 @@ bool bheap_push(uint offset, in out uint size, uint capacity, ScoredPoint score)
     }
 }
 
-ScoredPoint _bheap_pop(uint offset, in out uint size) {
+ScoredPoint _bheap_pop(uint offset, inout uint size) {
     ScoredPoint top_value = bheap_top(offset);
     size--;
     if (subgroupElect()) {
@@ -173,7 +173,7 @@ ScoredPoint _bheap_pop(uint offset, in out uint size) {
     return top_value;
 }
 
-ScoredPoint bheap_pop_max(uint offset, in out uint size) {
+ScoredPoint bheap_pop_max(uint offset, inout uint size) {
     if (size == 0) {
         return ScoredPoint(0, 0.0);
     }
@@ -204,7 +204,7 @@ ScoredPoint bheap_pop_max(uint offset, in out uint size) {
     return popped_value;
 }
 
-uint bheap_into_array(uint offset, in out uint size) {
+uint bheap_into_array(uint offset, inout uint size) {
     uint array_size = size;
     while (size > 0) {
         uint i = size - 1;
