@@ -59,7 +59,7 @@ fn median(values: &mut [f64]) -> f64 {
     }
     let mid = values.len() / 2;
     values.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         (values[mid - 1] + values[mid]) / 2.0
     } else {
         values[mid]
@@ -78,7 +78,7 @@ fn normalize_retriever_scores(scores: &[f32]) -> Vec<f64> {
         return vec![];
     }
 
-    let mut raw: Vec<f64> = scores.iter().map(|&s| s as f64).collect();
+    let mut raw: Vec<f64> = scores.iter().map(|&s| f64::from(s)).collect();
 
     // Compute std before median (which sorts in-place)
     let sd = std_dev(&raw);
@@ -89,7 +89,7 @@ fn normalize_retriever_scores(scores: &[f32]) -> Vec<f64> {
     let logits: Vec<f64> = scores
         .iter()
         .map(|&s| {
-            let prob = sigmoid(alpha * (s as f64 - beta));
+            let prob = sigmoid(alpha * (f64::from(s) - beta));
             logit(prob)
         })
         .collect();
@@ -148,7 +148,7 @@ pub fn blo_fusion(
             continue;
         }
 
-        let w = weight as f64;
+        let w = f64::from(weight);
         let raw_scores: Vec<f32> = response.iter().map(|p| p.score).collect();
         let normalized = normalize_retriever_scores(&raw_scores);
 
