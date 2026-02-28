@@ -789,8 +789,7 @@ impl GpuVectorStorage {
             TElement::datatype(),
         );
 
-        let use_bda = device.has_buffer_device_address()
-            && std::env::var("QDRANT_GPU_DISABLE_BDA").is_err();
+        let use_bda = device.has_buffer_device_address();
         log::debug!("GPU vector storage using BDA: {use_bda}");
 
         let descriptor_set_layout = Self::create_descriptor_set_layout(

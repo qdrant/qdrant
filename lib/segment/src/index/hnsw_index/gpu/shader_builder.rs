@@ -70,11 +70,10 @@ impl ShaderBuilder {
     fn generate_config_slang(&self) -> String {
         let mut config = String::from("// Generated config module — do not edit.\n\n");
 
-        // BDA uses preprocessor #define (not static const) so shaders can use #ifdef
-        // to conditionally declare different buffer bindings.
+        // BDA uses -D USE_BDA on the slangc command line so the define propagates
+        // to all imported modules. Here we only emit the BufferOffset typedef.
         let use_bda = self.defines.contains_key("USE_BDA");
         if use_bda {
-            config.push_str("#define USE_BDA\n");
             config.push_str("typedef uint64_t BufferOffset;\n\n");
         } else {
             config.push_str("typedef uint BufferOffset;\n\n");

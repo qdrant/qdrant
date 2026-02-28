@@ -174,8 +174,24 @@ impl Device {
             };
             base_features.shader_int64 != 0
         };
+        // Mesa RADV has a known bug where PhysicalStorageBuffer (BDA) pointer
+        // reads return incorrect data. Disable BDA on RADV unconditionally.
+        let is_mesa_radv = {
+            let mut driver_props = vk::PhysicalDeviceDriverProperties::default();
+            let mut props2 =
+                vk::PhysicalDeviceProperties2::default().push_next(&mut driver_props);
+            unsafe {
+                instance.vk_instance().get_physical_device_properties2(
+                    vk_physical_device.vk_physical_device,
+                    &mut props2,
+                );
+            }
+            driver_props.driver_id == vk::DriverId::MESA_RADV
+        };
         let has_buffer_device_address =
-            enabled_physical_device_features_1_2.buffer_device_address != 0 && has_shader_int64;
+            enabled_physical_device_features_1_2.buffer_device_address != 0
+                && has_shader_int64
+                && !is_mesa_radv;
 
         // Enable shader_int64 when BDA is available (needed for uint64_t in shaders).
         let physical_device_features = if has_buffer_device_address {
@@ -251,6 +267,11 @@ impl Device {
 
             log::info!("Create GPU device {}", vk_physical_device.name);
             log::debug!("GPU subgroup size: {subgroup_size}");
+            if is_mesa_radv {
+                log::warn!(
+                    "Mesa RADV detected: disabling BDA (PhysicalStorageBuffer has known bugs on RADV)"
+                );
+            }
             log::debug!("GPU buffer device address: {has_buffer_device_address}");
             subgroup_size
         };
