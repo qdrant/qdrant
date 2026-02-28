@@ -5,13 +5,12 @@ use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 
-use super::{GpuVectorStorage, STORAGES_COUNT};
+use super::{
+    GpuVectorStorage, PQ_CENTROIDS_BINDING, PQ_DIVISIONS_BINDING, SQ_OFFSETS_BINDING,
+};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
-
-pub const START_QUANTIZATION_BINDING: usize = STORAGES_COUNT;
-pub const MAX_QUANTIZATION_BINDINGS: usize = 2;
 
 /// Additional data for quantization in GPU.
 /// Add quantized vectors are stored as reqular vectors with for instance `u8` type.
@@ -71,32 +70,44 @@ impl GpuQuantization {
         )?))
     }
 
-    /// Adds additional bindings to descriptor set.
-    pub fn add_descriptor_set(
-        &self,
-        descriptor_set_builder: gpu::DescriptorSetBuilder,
-    ) -> gpu::DescriptorSetBuilder {
-        match self {
-            GpuQuantization::Binary(bq) => bq.add_descriptor_set(descriptor_set_builder),
-            GpuQuantization::Scalar(sq) => sq.add_descriptor_set(descriptor_set_builder),
-            GpuQuantization::Product(pq) => pq.add_descriptor_set(descriptor_set_builder),
-        }
-    }
-
-    /// Adds additional bindings to descriptor set layout.
+    /// Add quantization descriptor set layout bindings.
     pub fn add_descriptor_set_layout(
         &self,
-        descriptor_set_layout_builder: gpu::DescriptorSetLayoutBuilder,
+        builder: gpu::DescriptorSetLayoutBuilder,
     ) -> gpu::DescriptorSetLayoutBuilder {
+        // Always declare all three quantization bindings for static shader layout.
+        builder
+            .add_storage_buffer(SQ_OFFSETS_BINDING)
+            .add_storage_buffer(PQ_CENTROIDS_BINDING)
+            .add_storage_buffer(PQ_DIVISIONS_BINDING)
+    }
+
+    /// Add quantization descriptor set bindings.
+    pub fn add_descriptor_set(
+        &self,
+        builder: gpu::DescriptorSetBuilder,
+    ) -> gpu::DescriptorSetBuilder {
         match self {
-            GpuQuantization::Binary(bq) => {
-                bq.add_descriptor_set_layout(descriptor_set_layout_builder)
-            }
             GpuQuantization::Scalar(sq) => {
-                sq.add_descriptor_set_layout(descriptor_set_layout_builder)
+                let dummy = sq.dummy_buffer.clone();
+                builder
+                    .add_storage_buffer(SQ_OFFSETS_BINDING, sq.offsets_buffer.clone())
+                    .add_storage_buffer(PQ_CENTROIDS_BINDING, dummy.clone())
+                    .add_storage_buffer(PQ_DIVISIONS_BINDING, dummy)
             }
             GpuQuantization::Product(pq) => {
-                pq.add_descriptor_set_layout(descriptor_set_layout_builder)
+                let dummy = pq.dummy_buffer.clone();
+                builder
+                    .add_storage_buffer(SQ_OFFSETS_BINDING, dummy)
+                    .add_storage_buffer(PQ_CENTROIDS_BINDING, pq.centroids_buffer.clone())
+                    .add_storage_buffer(PQ_DIVISIONS_BINDING, pq.vector_division_buffer.clone())
+            }
+            GpuQuantization::Binary(bq) => {
+                let dummy = bq.dummy_buffer.clone();
+                builder
+                    .add_storage_buffer(SQ_OFFSETS_BINDING, dummy.clone())
+                    .add_storage_buffer(PQ_CENTROIDS_BINDING, dummy.clone())
+                    .add_storage_buffer(PQ_DIVISIONS_BINDING, dummy)
             }
         }
     }
@@ -108,6 +119,8 @@ pub struct GpuBinaryQuantization {
     /// How many bits are added while aligning.
     /// We need to subtract them after XOR+popcnt operation.
     skip_count: usize,
+    /// Dummy buffer for unused quantization bindings.
+    dummy_buffer: Arc<gpu::Buffer>,
 }
 
 impl ShaderBuilderParameters for GpuBinaryQuantization {
@@ -148,25 +161,17 @@ impl GpuBinaryQuantization {
         // Find bits count for aligned gpu vector.
         let gpu_bits_count = GpuVectorStorage::gpu_vector_capacity(&device, quantized_vector_len)
             * u8::BITS as usize;
+        let dummy_buffer = gpu::Buffer::new(
+            device,
+            "BQ dummy buffer",
+            gpu::BufferType::Storage,
+            std::mem::size_of::<u32>(),
+        )
+        .expect("Failed to create dummy buffer");
         Self {
             skip_count: gpu_bits_count - orig_dim,
+            dummy_buffer,
         }
-    }
-
-    #[allow(clippy::unused_self)]
-    fn add_descriptor_set(
-        &self,
-        descriptor_set_builder: gpu::DescriptorSetBuilder,
-    ) -> gpu::DescriptorSetBuilder {
-        descriptor_set_builder
-    }
-
-    #[allow(clippy::unused_self)]
-    fn add_descriptor_set_layout(
-        &self,
-        descriptor_set_layout_builder: gpu::DescriptorSetLayoutBuilder,
-    ) -> gpu::DescriptorSetLayoutBuilder {
-        descriptor_set_layout_builder
     }
 }
 
@@ -174,7 +179,8 @@ pub struct GpuScalarQuantization {
     multiplier: f32,
     diff: f32,
     offsets_buffer: Arc<gpu::Buffer>,
-    offsets_buffer_binding: usize,
+    /// Dummy buffer for unused quantization bindings.
+    dummy_buffer: Arc<gpu::Buffer>,
 }
 
 impl ShaderBuilderParameters for GpuScalarQuantization {
@@ -191,11 +197,6 @@ impl ShaderBuilderParameters for GpuScalarQuantization {
         defines.insert("VECTOR_STORAGE_QUANTIZATION".to_owned(), None);
         // Define that quantization is scalar.
         defines.insert("VECTOR_STORAGE_ELEMENT_SQ".to_owned(), None);
-        // Provide shader binding of SQ offsets.
-        defines.insert(
-            "VECTOR_STORAGE_SQ_OFFSETS_BINDING".to_owned(),
-            Some(self.offsets_buffer_binding.to_string()),
-        );
         // Provide multiplier and diff for quantization.
         defines.insert(
             "SQ_MULTIPLIER".to_owned(),
@@ -211,6 +212,12 @@ impl GpuScalarQuantization {
         device: Arc<gpu::Device>,
         quantized_storage: &EncodedVectorsU8<TStorage>,
     ) -> OperationResult<Self> {
+        let dummy_buffer = gpu::Buffer::new(
+            device.clone(),
+            "SQ dummy buffer",
+            gpu::BufferType::Storage,
+            std::mem::size_of::<u32>(),
+        )?;
         Ok(GpuScalarQuantization {
             multiplier: quantized_storage.get_multiplier(),
             diff: quantized_storage.get_shift(),
@@ -218,7 +225,7 @@ impl GpuScalarQuantization {
                 device,
                 quantized_storage,
             )?,
-            offsets_buffer_binding: START_QUANTIZATION_BINDING,
+            dummy_buffer,
         })
     }
 
@@ -260,30 +267,15 @@ impl GpuScalarQuantization {
 
         Ok(sq_offsets_buffer)
     }
-
-    pub fn add_descriptor_set(
-        &self,
-        descriptor_set_builder: gpu::DescriptorSetBuilder,
-    ) -> gpu::DescriptorSetBuilder {
-        descriptor_set_builder
-            .add_storage_buffer(self.offsets_buffer_binding, self.offsets_buffer.clone())
-    }
-
-    pub fn add_descriptor_set_layout(
-        &self,
-        descriptor_set_layout_builder: gpu::DescriptorSetLayoutBuilder,
-    ) -> gpu::DescriptorSetLayoutBuilder {
-        descriptor_set_layout_builder.add_storage_buffer(self.offsets_buffer_binding)
-    }
 }
 
 pub struct GpuProductQuantization {
     centroids_buffer: Arc<gpu::Buffer>,
-    centroids_buffer_binding: usize,
     vector_division_buffer: Arc<gpu::Buffer>,
-    vector_division_buffer_binding: usize,
     divisions_count: usize,
     centroids_dim: usize,
+    /// Dummy buffer for unused quantization bindings.
+    dummy_buffer: Arc<gpu::Buffer>,
 }
 
 impl ShaderBuilderParameters for GpuProductQuantization {
@@ -300,16 +292,6 @@ impl ShaderBuilderParameters for GpuProductQuantization {
         defines.insert("VECTOR_STORAGE_QUANTIZATION".to_owned(), None);
         // Define that quantization is product.
         defines.insert("VECTOR_STORAGE_ELEMENT_PQ".to_owned(), None);
-        // Provide shader binding of PQ centroids.
-        defines.insert(
-            "VECTOR_STORAGE_PQ_CENTROIDS_BINDING".to_owned(),
-            Some(self.centroids_buffer_binding.to_string()),
-        );
-        // Provide shader binding of PQ vector division.
-        defines.insert(
-            "VECTOR_STORAGE_PQ_DIVISIONS_BINDING".to_owned(),
-            Some(self.vector_division_buffer_binding.to_string()),
-        );
         // Provide vector divisions count and centroids count for quantization.
         defines.insert(
             "PQ_DIVISIONS_COUNT".to_owned(),
@@ -360,6 +342,12 @@ impl GpuProductQuantization {
             gpu::BufferType::CpuToGpu,
             vector_division_buffer.size(),
         )?;
+        let dummy_buffer = gpu::Buffer::new(
+            device.clone(),
+            "PQ dummy buffer",
+            gpu::BufferType::Storage,
+            std::mem::size_of::<u32>(),
+        )?;
 
         let mut upload_context = gpu::Context::new(device.clone())?;
 
@@ -406,29 +394,7 @@ impl GpuProductQuantization {
                 .first()
                 .map(|c| c.len())
                 .unwrap_or_default(),
-            centroids_buffer_binding: START_QUANTIZATION_BINDING,
-            vector_division_buffer_binding: START_QUANTIZATION_BINDING + 1,
+            dummy_buffer,
         })
-    }
-
-    pub fn add_descriptor_set(
-        &self,
-        descriptor_set_builder: gpu::DescriptorSetBuilder,
-    ) -> gpu::DescriptorSetBuilder {
-        let descriptor_set_builder = descriptor_set_builder
-            .add_storage_buffer(self.centroids_buffer_binding, self.centroids_buffer.clone());
-        descriptor_set_builder.add_storage_buffer(
-            self.vector_division_buffer_binding,
-            self.vector_division_buffer.clone(),
-        )
-    }
-
-    pub fn add_descriptor_set_layout(
-        &self,
-        descriptor_set_layout_builder: gpu::DescriptorSetLayoutBuilder,
-    ) -> gpu::DescriptorSetLayoutBuilder {
-        let descriptor_set_layout_builder =
-            descriptor_set_layout_builder.add_storage_buffer(self.centroids_buffer_binding);
-        descriptor_set_layout_builder.add_storage_buffer(self.vector_division_buffer_binding)
     }
 }

@@ -108,7 +108,8 @@ impl Device {
             })
             .collect();
 
-        let physical_device_features = vk::PhysicalDeviceFeatures::default();
+        let physical_device_features =
+            vk::PhysicalDeviceFeatures::default();
 
         // Define Vulkan features that we need.
         let mut enabled_physical_device_features_1_1 =

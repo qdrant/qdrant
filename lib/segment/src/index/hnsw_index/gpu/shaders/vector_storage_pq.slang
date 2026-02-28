@@ -1,13 +1,21 @@
 import config;
 import distance_metric;
 
+[[vk::binding(PQ_CENTROIDS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<float> pq_centroids;
+[[vk::binding(PQ_DIVISIONS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<uint2> pq_divisions;
+
 struct PQRange {
     uint start;
     uint end;
 };
 
-[[vk::binding(VECTOR_STORAGE_PQ_CENTROIDS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<float> centroids;
-[[vk::binding(VECTOR_STORAGE_PQ_DIVISIONS_BINDING, VECTOR_STORAGE_LAYOUT_SET)]] StructuredBuffer<PQRange> vector_divisions;
+PQRange pq_load_division(uint index) {
+    uint2 d = pq_divisions[index];
+    PQRange r;
+    r.start = d.x;
+    r.end = d.y;
+    return r;
+}
 
 float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
     float score = 0.0;
@@ -16,10 +24,10 @@ float score_pq(vector<uint8_t, 4> a, vector<uint8_t, 4> b, uint i) {
     for (; index < max_index; index++) {
         uint c_a = uint(a[index % 4]) * PQ_CENTROIDS_DIM;
         uint c_b = uint(b[index % 4]) * PQ_CENTROIDS_DIM;
-        PQRange range = vector_divisions[index];
+        PQRange range = pq_load_division(index);
         for (uint j = range.start; j < range.end; j++) {
-            float data_a = centroids[c_a + j];
-            float data_b = centroids[c_b + j];
+            float data_a = pq_centroids[c_a + j];
+            float data_b = pq_centroids[c_b + j];
 
             if (EUCLID_DISTANCE) {
                 score -= (data_a - data_b) * (data_a - data_b);

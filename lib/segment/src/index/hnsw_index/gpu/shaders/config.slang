@@ -47,9 +47,14 @@ static const uint LINKS_CAPACITY = 32;
 static const uint VISITED_FLAGS_CAPACITY = 1024;
 static const bool VISITED_FLAGS_REMAP = false;
 
+// Quantization buffer bindings
+static const uint SQ_OFFSETS_BINDING = 4;
+static const uint PQ_CENTROIDS_BINDING = 5;
+static const uint PQ_DIVISIONS_BINDING = 6;
+
 // Multivectors
 static const bool MULTIVECTORS = false;
-static const uint MULTIVECTOR_OFFSETS_BINDING = 6;
+static const uint MULTIVECTOR_OFFSETS_BINDING = 7;
 
 // Binary quantization
 static const uint BQ_SKIP_COUNT = 0;
@@ -57,10 +62,7 @@ static const uint BQ_SKIP_COUNT = 0;
 // Scalar quantization
 static const float SQ_MULTIPLIER = 1.0;
 static const float SQ_DIFF = 0.0;
-static const uint VECTOR_STORAGE_SQ_OFFSETS_BINDING = 4;
 
 // Product quantization
-static const uint VECTOR_STORAGE_PQ_CENTROIDS_BINDING = 4;
-static const uint VECTOR_STORAGE_PQ_DIVISIONS_BINDING = 5;
 static const uint PQ_DIVISIONS_COUNT = 0;
 static const uint PQ_CENTROIDS_DIM = 0;

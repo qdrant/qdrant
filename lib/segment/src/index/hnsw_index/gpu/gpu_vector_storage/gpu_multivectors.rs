@@ -5,8 +5,6 @@ use common::types::PointOffsetType;
 use quantization::EncodedVectors;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use super::STORAGES_COUNT;
-use super::gpu_quantization::MAX_QUANTIZATION_BINDINGS;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
@@ -16,8 +14,9 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 };
 use crate::vector_storage::{MultiVectorStorage, Random};
 
-// Multivector shader binding is after vectot data and quantization data bindings.
-const START_MULTIVECTORS_BINDING: usize = STORAGES_COUNT + MAX_QUANTIZATION_BINDINGS;
+// Multivector offsets binding index within VECTOR_STORAGE_LAYOUT_SET.
+// Bindings 0-3: vector data, 4-6: quantization, 7: multivector offsets.
+const START_MULTIVECTORS_BINDING: usize = 7;
 
 /// Shader struct for multivector offsets with start id and count of vectors in multivector.
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]

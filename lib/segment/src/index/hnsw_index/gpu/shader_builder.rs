@@ -30,10 +30,6 @@ impl ShaderBuilder {
                 "config.slang".to_string(),
                 include_str!("shaders/config.slang").to_string(),
             ),
-            (
-                "metric_config.slang".to_string(),
-                include_str!("shaders/metric_config.slang").to_string(),
-            ),
         ]);
 
         let mut defines = HashMap::new();
@@ -127,6 +123,12 @@ impl ShaderBuilder {
         config.push_str("static const uint LINKS_LAYOUT_SET = 2;\n");
         config.push_str("static const uint VISITED_FLAGS_LAYOUT_SET = 3;\n");
 
+        // Quantization buffer bindings (fixed layout within VECTOR_STORAGE_LAYOUT_SET).
+        // Bindings 0-3 are vector data (ByteAddressBuffer).
+        config.push_str("\nstatic const uint SQ_OFFSETS_BINDING = 4;\n");
+        config.push_str("static const uint PQ_CENTROIDS_BINDING = 5;\n");
+        config.push_str("static const uint PQ_DIVISIONS_BINDING = 6;\n");
+
         // Default false for boolean flags that may not always be set.
         let bool_defaults = [
             "EXACT",
@@ -156,10 +158,7 @@ impl ShaderBuilder {
             ("BQ_SKIP_COUNT", 0),
             ("PQ_DIVISIONS_COUNT", 0),
             ("PQ_CENTROIDS_DIM", 0),
-            ("VECTOR_STORAGE_SQ_OFFSETS_BINDING", 4),
-            ("VECTOR_STORAGE_PQ_CENTROIDS_BINDING", 4),
-            ("VECTOR_STORAGE_PQ_DIVISIONS_BINDING", 5),
-            ("MULTIVECTOR_OFFSETS_BINDING", 6),
+            ("MULTIVECTOR_OFFSETS_BINDING", 7),
             ("LINKS_CAPACITY", 0),
             ("VISITED_FLAGS_CAPACITY", 0),
         ];
@@ -180,79 +179,11 @@ impl ShaderBuilder {
         config
     }
 
-    /// Generate the `metric_config.slang` module from collected defines.
-    fn generate_metric_config_slang(&self) -> String {
-        let has = |key: &str| self.defines.contains_key(key);
-        let distance = if has("COSINE_DISTANCE") {
-            "Cosine"
-        } else if has("DOT_DISTANCE") {
-            "Dot"
-        } else if has("EUCLID_DISTANCE") {
-            "Euclid"
-        } else if has("MANHATTAN_DISTANCE") {
-            "Manhattan"
-        } else {
-            "Cosine"
-        };
-
-        let (import_module, element_type, score_type, metric_name) =
-            if has("VECTOR_STORAGE_ELEMENT_BQ") {
-                ("vector_storage_bq", "uint", "uint", "BQMetric".to_string())
-            } else if has("VECTOR_STORAGE_ELEMENT_SQ") {
-                let metric = if has("MANHATTAN_DISTANCE") {
-                    "SQManhattan"
-                } else {
-                    "SQDot"
-                };
-                (
-                    "vector_storage_sq",
-                    "vector<uint8_t, 4>",
-                    "uint",
-                    metric.to_string(),
-                )
-            } else if has("VECTOR_STORAGE_ELEMENT_PQ") {
-                (
-                    "vector_storage_pq",
-                    "vector<uint8_t, 4>",
-                    "float",
-                    "PQMetric".to_string(),
-                )
-            } else if has("VECTOR_STORAGE_ELEMENT_FLOAT16") {
-                ("vector_storage_f16", "half4", "float", format!("{distance}F16"))
-            } else if has("VECTOR_STORAGE_ELEMENT_UINT8") {
-                (
-                    "vector_storage_u8",
-                    "vector<uint8_t, 4>",
-                    "uint",
-                    format!("{distance}U8"),
-                )
-            } else {
-                ("vector_storage_f32", "float4", "float", format!("{distance}F32"))
-            };
-
-        format!(
-            "// Generated metric config — do not edit.\n\
-             import {import_module};\n\
-             \n\
-             typedef {element_type} ElementType;\n\
-             typedef {score_type} ScoreType;\n\
-             typedef {metric_name} ActiveMetric;\n"
-        )
-    }
-
     pub fn build(&self, shader_name: &str) -> OperationResult<Arc<gpu::Shader>> {
         let timer = std::time::Instant::now();
 
         let mut modules = self.modules.clone();
         modules.insert("config.slang".to_string(), self.generate_config_slang());
-
-        // Generate metric_config if vector storage is configured.
-        if self.defines.contains_key("DIM") {
-            modules.insert(
-                "metric_config.slang".to_string(),
-                self.generate_metric_config_slang(),
-            );
-        }
 
         let compiled = self.device.instance().compile_shader(
             &self.shader_code,

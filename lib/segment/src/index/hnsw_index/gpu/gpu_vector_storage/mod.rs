@@ -33,6 +33,13 @@ pub const PACK_SIZE: usize = 4;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 pub const STORAGES_COUNT: usize = 4;
 
+// Binding indices within VECTOR_STORAGE_LAYOUT_SET.
+const VECTOR_BINDINGS_START: usize = 0; // Bindings 0-3: vector data
+const SQ_OFFSETS_BINDING: usize = 4;
+const PQ_CENTROIDS_BINDING: usize = 5;
+const PQ_DIVISIONS_BINDING: usize = 6;
+const MULTIVECTOR_OFFSETS_BINDING: usize = 7;
+
 /// GPU storage for vectors.
 pub struct GpuVectorStorage {
     device: Arc<gpu::Device>,
@@ -70,6 +77,18 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             (
                 "vector_storage_u8.slang".to_string(),
                 include_str!("../shaders/vector_storage_u8.slang").to_string(),
+            ),
+            (
+                "vector_storage_bq.slang".to_string(),
+                include_str!("../shaders/vector_storage_bq.slang").to_string(),
+            ),
+            (
+                "vector_storage_sq.slang".to_string(),
+                include_str!("../shaders/vector_storage_sq.slang").to_string(),
+            ),
+            (
+                "vector_storage_pq.slang".to_string(),
+                include_str!("../shaders/vector_storage_pq.slang").to_string(),
             ),
         ]);
 
@@ -791,24 +810,31 @@ impl GpuVectorStorage {
         quantization: &Option<GpuQuantization>,
         multivectors: &Option<GpuMultivectors>,
     ) -> OperationResult<Arc<gpu::DescriptorSetLayout>> {
-        let mut descriptor_set_layout_builder = gpu::DescriptorSetLayout::builder();
+        let mut builder = gpu::DescriptorSetLayout::builder();
+
+        // Bindings 0-3: vector data (ByteAddressBuffer = storage buffer)
         for i in 0..STORAGES_COUNT {
-            descriptor_set_layout_builder = descriptor_set_layout_builder.add_storage_buffer(i);
+            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i);
         }
-        descriptor_set_layout_builder = if let Some(quantization) = &quantization {
-            quantization.add_descriptor_set_layout(descriptor_set_layout_builder)
+
+        // Bindings 4-6: quantization data (always declared for static shader layout)
+        if let Some(quantization) = quantization {
+            builder = quantization.add_descriptor_set_layout(builder);
         } else {
-            descriptor_set_layout_builder
-        };
-        if let Some(multivectors) = &multivectors {
-            descriptor_set_layout_builder =
-                multivectors.add_descriptor_set_layout(descriptor_set_layout_builder);
-        } else {
-            // Always declare the multivector offsets binding (shader is static).
-            descriptor_set_layout_builder = descriptor_set_layout_builder
-                .add_storage_buffer(GpuMultivectors::offsets_binding_index());
+            builder = builder
+                .add_storage_buffer(SQ_OFFSETS_BINDING)
+                .add_storage_buffer(PQ_CENTROIDS_BINDING)
+                .add_storage_buffer(PQ_DIVISIONS_BINDING);
         }
-        Ok(descriptor_set_layout_builder.build(device.clone())?)
+
+        // Binding 7: multivector offsets
+        if let Some(multivectors) = multivectors {
+            builder = multivectors.add_descriptor_set_layout(builder);
+        } else {
+            builder = builder.add_storage_buffer(MULTIVECTOR_OFFSETS_BINDING);
+        }
+
+        Ok(builder.build(device.clone())?)
     }
 
     fn create_descriptor_set(
@@ -818,40 +844,47 @@ impl GpuVectorStorage {
         quantization: &Option<GpuQuantization>,
         multivectors: &Option<GpuMultivectors>,
     ) -> OperationResult<Arc<gpu::DescriptorSet>> {
-        let mut descriptor_set_builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone());
-        for (i, vector_buffer) in vectors_buffer.iter().enumerate() {
-            descriptor_set_builder =
-                descriptor_set_builder.add_storage_buffer(i, vector_buffer.clone());
+        let mut builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone());
+
+        // Bindings 0-3: vector data buffers
+        for (i, buffer) in vectors_buffer.iter().enumerate() {
+            builder = builder.add_storage_buffer(VECTOR_BINDINGS_START + i, buffer.clone());
         }
-        descriptor_set_builder = if let Some(quantization) = &quantization {
-            quantization.add_descriptor_set(descriptor_set_builder)
+
+        // Bindings 4-6: quantization data
+        if let Some(quantization) = quantization {
+            builder = quantization.add_descriptor_set(builder);
         } else {
-            descriptor_set_builder
-        };
-        if let Some(multivectors) = &multivectors {
-            descriptor_set_builder = multivectors.add_descriptor_set(descriptor_set_builder);
+            let dummy = gpu::Buffer::new(
+                device.clone(),
+                "Quantization dummy buffer",
+                gpu::BufferType::Storage,
+                std::mem::size_of::<u32>(),
+            )?;
+            builder = builder
+                .add_storage_buffer(SQ_OFFSETS_BINDING, dummy.clone())
+                .add_storage_buffer(PQ_CENTROIDS_BINDING, dummy.clone())
+                .add_storage_buffer(PQ_DIVISIONS_BINDING, dummy);
+        }
+
+        // Binding 7: multivector offsets
+        if let Some(multivectors) = multivectors {
+            builder = multivectors.add_descriptor_set(builder);
         } else {
-            // Bind a dummy buffer at the multivector offsets binding (shader is static).
-            let dummy_buffer = gpu::Buffer::new(
-                device,
+            let dummy = gpu::Buffer::new(
+                device.clone(),
                 "Multivector offsets dummy buffer",
                 gpu::BufferType::Storage,
                 std::mem::size_of::<u32>(),
             )?;
-            descriptor_set_builder = descriptor_set_builder.add_storage_buffer(
-                GpuMultivectors::offsets_binding_index(),
-                dummy_buffer,
-            );
+            builder = builder.add_storage_buffer(MULTIVECTOR_OFFSETS_BINDING, dummy);
         }
-        Ok(descriptor_set_builder.build()?)
+
+        Ok(builder.build()?)
     }
 
     /// GPU aligned vector size in elements count.
     fn gpu_vector_capacity(device: &Arc<gpu::Device>, dim: usize) -> usize {
-        // BQ is a `u8` vector with `u128`=16bytes alignment.
-        // We need to keep this alignment for bq case that's why we have `max` here.
-        // But TBH even CPU emulator has 8 subgroups to that we don't expect in practice
-        // that we will have less than 16 bytes alignment.
         let alignment = std::cmp::max(device.subgroup_size() * PACK_SIZE, 16);
         dim.next_multiple_of(alignment)
     }
