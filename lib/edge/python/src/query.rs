@@ -320,7 +320,9 @@ pub enum PyFusion {
     },
     Dbsf {},
     #[pyo3(constructor = (weights = None))]
-    Blo { weights: Option<Vec<f32>> },
+    Blo {
+        weights: Option<Vec<f32>>,
+    },
 }
 
 #[pymethods]

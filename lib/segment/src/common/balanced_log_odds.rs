@@ -202,10 +202,7 @@ mod tests {
 
     #[test]
     fn test_blo_weights_length_mismatch() {
-        let responses = vec![
-            vec![make_point(1, 0.9)],
-            vec![make_point(2, 0.9)],
-        ];
+        let responses = vec![vec![make_point(1, 0.9)], vec![make_point(2, 0.9)]];
         let weights = [1.0, 2.0, 3.0];
         let result = blo_fusion(responses, Some(&weights));
         assert!(result.is_err());
@@ -213,10 +210,7 @@ mod tests {
 
     #[test]
     fn test_blo_zero_weight_source_ignored() {
-        let responses = vec![
-            vec![make_point(1, 0.9)],
-            vec![make_point(2, 0.9)],
-        ];
+        let responses = vec![vec![make_point(1, 0.9)], vec![make_point(2, 0.9)]];
         let weights = [1.0, 0.0];
         let result = blo_fusion(responses, Some(&weights)).unwrap();
         // Point 2 from source with weight=0 should still appear but with score from
