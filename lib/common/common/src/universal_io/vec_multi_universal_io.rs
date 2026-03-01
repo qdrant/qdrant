@@ -1,38 +1,29 @@
-//! Minimal multi-source write implementation: [`VecMultiUniversalWrite`].
+//! Minimal multi-source read implementation: [`VecMultiUniversalIo`].
 
 use std::path::Path;
 
-use super::MultiUniversalWrite;
 use crate::universal_io::multi_universal_read::{MultiUniversalRead, SourceId};
 use crate::universal_io::{
-    ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalWrite,
+    ElementOffset, ElementsRange, Flusher, MultiUniversalWrite, OpenOptions, Result,
+    UniversalIoError, UniversalRead, UniversalWrite,
 };
 
-/// Minimal multi-source write implementation: a collection of [`UniversalWrite`] backends
+/// Minimal multi-source read implementation: a collection of [`UniversalRead`] backends
 /// addressable by [`SourceId`] (index). Supports attaching more sources by path at runtime.
 #[derive(Debug)]
-pub struct VecMultiUniversalWrite<T, S> {
+pub struct VecMultiUniversalIo<T, S> {
     sources: Vec<S>,
+    open_options: OpenOptions,
     _element: std::marker::PhantomData<T>,
 }
 
-impl<T: Copy + 'static, S: UniversalWrite<T> + Send> VecMultiUniversalWrite<T, S> {
-    /// Create from an initial set of sources. Source ids will be 0, 1, 2, ...
-    pub fn from_sources(sources: Vec<S>) -> Self {
-        Self {
-            sources,
-            _element: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalRead<T>
-    for VecMultiUniversalWrite<T, S>
+impl<T: Copy + 'static, S: UniversalRead<T> + Send> MultiUniversalRead<T>
+    for VecMultiUniversalIo<T, S>
 {
     fn new(options: OpenOptions) -> Self {
-        let _ = options;
         Self {
             sources: Vec::new(),
+            open_options: options,
             _element: std::marker::PhantomData,
         }
     }
@@ -41,8 +32,8 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalRead<T>
         self.sources.len()
     }
 
-    fn attach(&mut self, path: &Path, options: OpenOptions) -> Result<SourceId> {
-        let source = S::open(path, options)?;
+    fn attach(&mut self, path: &Path) -> Result<SourceId> {
+        let source = S::open(path, self.open_options)?;
         let id = SourceId(self.sources.len());
         self.sources.push(source);
         Ok(id)
@@ -94,7 +85,7 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalRead<T>
 }
 
 impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
-    for VecMultiUniversalWrite<T, S>
+    for VecMultiUniversalIo<T, S>
 {
     fn write_batch_multi<'a>(
         &mut self,

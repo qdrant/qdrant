@@ -1,8 +1,7 @@
 pub mod mmap;
 pub mod multi_universal_read;
 pub mod multi_universal_write;
-pub mod vec_multi_universal_read;
-pub mod vec_multi_universal_write;
+pub mod vec_multi_universal_io;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -10,8 +9,7 @@ use std::path::{Path, PathBuf};
 pub use multi_universal_read::{MultiUniversalRead, SourceId};
 pub use multi_universal_write::MultiUniversalWrite;
 use serde::de::DeserializeOwned;
-pub use vec_multi_universal_read::VecMultiUniversalRead;
-pub use vec_multi_universal_write::VecMultiUniversalWrite;
+pub use vec_multi_universal_io::VecMultiUniversalIo;
 
 use crate::mmap::AdviceSetting;
 

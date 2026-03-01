@@ -2,10 +2,9 @@
 //!
 //! See [`MultiUniversalRead`].
 
-use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::universal_io::{ElementsRange, OpenOptions, Result, UniversalIoError};
+use crate::universal_io::{ElementsRange, OpenOptions, Result};
 
 /// Identifier for a source in a multi-source storage (e.g. a file, an S3 object).
 /// Each multi-source storage assigns source ids to its constituent backends.
@@ -30,7 +29,7 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
     }
 
     /// Attach a source by path. Opens it with the given options and returns its [`SourceId`].
-    fn attach(&mut self, path: &Path, options: OpenOptions) -> Result<SourceId>;
+    fn attach(&mut self, path: &Path) -> Result<SourceId>;
 
     /// Batch read across sources. Each request is `(SourceId, ElementsRange)`.
     /// Invokes `callback(request_index, slice)` for each range in order of `requests`.
@@ -41,13 +40,7 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
     ) -> Result<()>;
 
     /// Length in elements of the given source. Optional; default returns unsupported error.
-    fn source_len(&self, source_id: SourceId) -> Result<u64> {
-        let _ = source_id;
-        Err(UniversalIoError::Io(std::io::Error::new(
-            ErrorKind::Unsupported,
-            "source_len not implemented",
-        )))
-    }
+    fn source_len(&self, source_id: SourceId) -> Result<u64>;
 
     /// Fill RAM cache for all sources, if applicable.
     fn populate(&self) -> Result<()>;
