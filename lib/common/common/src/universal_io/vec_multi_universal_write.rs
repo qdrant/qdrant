@@ -3,9 +3,9 @@
 use std::path::Path;
 
 use super::MultiUniversalWrite;
-use crate::universal_io::multi_universal_read::SourceId;
+use crate::universal_io::multi_universal_read::{MultiUniversalRead, SourceId};
 use crate::universal_io::{
-    ElementOffset, Flusher, OpenOptions, Result, UniversalIoError, UniversalWrite,
+    ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalWrite,
 };
 
 /// Minimal multi-source write implementation: a collection of [`UniversalWrite`] backends
@@ -26,7 +26,7 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> VecMultiUniversalWrite<T, S
     }
 }
 
-impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
+impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalRead<T>
     for VecMultiUniversalWrite<T, S>
 {
     fn new(options: OpenOptions) -> Self {
@@ -48,6 +48,54 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
         Ok(id)
     }
 
+    fn read_batch_multi<const SEQUENTIAL: bool>(
+        &self,
+        requests: impl IntoIterator<Item = (SourceId, ElementsRange)>,
+        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
+    ) -> Result<()> {
+        for (idx, (source_id, range)) in requests.into_iter().enumerate() {
+            let source =
+                self.sources
+                    .get(source_id.0)
+                    .ok_or(UniversalIoError::InvalidSourceId {
+                        source_id: source_id.0,
+                        num_sources: self.sources.len(),
+                    })?;
+            let data = source.read::<SEQUENTIAL>(range)?;
+            callback(idx, &data)?;
+        }
+        Ok(())
+    }
+
+    fn source_len(&self, source_id: SourceId) -> Result<u64> {
+        let source = self
+            .sources
+            .get(source_id.0)
+            .ok_or(UniversalIoError::InvalidSourceId {
+                source_id: source_id.0,
+                num_sources: self.sources.len(),
+            })?;
+        source.len()
+    }
+
+    fn populate(&self) -> Result<()> {
+        for source in &self.sources {
+            source.populate()?;
+        }
+        Ok(())
+    }
+
+    fn clear_ram_cache(&self) -> Result<()> {
+        for source in &self.sources {
+            source.clear_ram_cache()?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
+    for VecMultiUniversalWrite<T, S>
+{
     fn write_batch_multi<'a>(
         &mut self,
         requests: impl IntoIterator<Item = (SourceId, ElementOffset, &'a [T])>,
@@ -66,17 +114,6 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
         Ok(())
     }
 
-    fn source_len(&self, source_id: SourceId) -> Result<u64> {
-        let source = self
-            .sources
-            .get(source_id.0)
-            .ok_or(UniversalIoError::InvalidSourceId {
-                source_id: source_id.0,
-                num_sources: self.sources.len(),
-            })?;
-        source.len()
-    }
-
     fn flusher(&self) -> Flusher {
         let flushers: Vec<Flusher> = self.sources.iter().map(|s| s.flusher()).collect();
         Box::new(move || {
@@ -85,19 +122,5 @@ impl<T: Copy + 'static, S: UniversalWrite<T> + Send> MultiUniversalWrite<T>
             }
             Ok(())
         })
-    }
-
-    fn populate(&self) -> Result<()> {
-        for source in &self.sources {
-            source.populate()?;
-        }
-        Ok(())
-    }
-
-    fn clear_ram_cache(&self) -> Result<()> {
-        for source in &self.sources {
-            source.clear_ram_cache()?;
-        }
-        Ok(())
     }
 }
