@@ -1,21 +1,17 @@
-//! Multi-source universal read interface.
+//! Multi-source universal write interface.
 //!
-//! See [`MultiUniversalRead`].
+//! See [`MultiUniversalWrite`].
 
 use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::universal_io::{ElementsRange, OpenOptions, Result, UniversalIoError};
+use crate::universal_io::multi_universal_read::SourceId;
+use crate::universal_io::{ElementOffset, Flusher, OpenOptions, Result, UniversalIoError};
 
-/// Identifier for a source in a multi-source storage (e.g. a file, an S3 object).
-/// Each multi-source storage assigns source ids to its constituent backends.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct SourceId(pub usize);
-
-/// Interface for batched read access across multiple sources (files, S3 objects, etc.).
-/// Complements [`UniversalRead`], which is single-source.
+/// Interface for batched write access across multiple sources (files, S3 objects, etc.).
+/// Complements [`UniversalWrite`], which is single-source.
 /// All implementations must support attaching sources by path.
-pub trait MultiUniversalRead<T: Copy + 'static> {
+pub trait MultiUniversalWrite<T: Copy + 'static> {
     /// Create an empty multi-source view with the given options (used when attaching paths).
     fn new(options: OpenOptions) -> Self
     where
@@ -32,12 +28,10 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
     /// Attach a source by path. Opens it with the given options and returns its [`SourceId`].
     fn attach(&mut self, path: &Path, options: OpenOptions) -> Result<SourceId>;
 
-    /// Batch read across sources. Each request is `(SourceId, ElementsRange)`.
-    /// Invokes `callback(request_index, slice)` for each range in order of `requests`.
-    fn read_batch_multi<const SEQUENTIAL: bool>(
-        &self,
-        requests: impl IntoIterator<Item = (SourceId, ElementsRange)>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
+    /// Batch write across sources. Each request is `(SourceId, offset, data)`.
+    fn write_batch_multi<'a>(
+        &mut self,
+        requests: impl IntoIterator<Item = (SourceId, ElementOffset, &'a [T])>,
     ) -> Result<()>;
 
     /// Length in elements of the given source. Optional; default returns unsupported error.
@@ -48,6 +42,9 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
             "source_len not implemented",
         )))
     }
+
+    /// Flush all sources. Returns a flusher that flushes every attached source.
+    fn flusher(&self) -> Flusher;
 
     /// Fill RAM cache for all sources, if applicable.
     fn populate(&self) -> Result<()>;
