@@ -5,7 +5,6 @@ use common::fs::clear_disk_cache;
 use common::mmap::create_and_ensure_length;
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{ElementsRange, Flusher, UniversalRead, UniversalWrite};
-use fs_err as fs;
 
 use crate::Result;
 use crate::error::GridstoreError;
@@ -113,13 +112,6 @@ impl<S: UniversalRead<u8>> Page<S> {
     pub fn clear_cache(&self) -> std::io::Result<()> {
         clear_disk_cache(&self.path)?;
         Ok(())
-    }
-
-    /// Delete the page from the filesystem.
-    #[allow(dead_code)]
-    pub fn delete_page(self) {
-        drop(self.file_access);
-        fs::remove_file(&self.path).unwrap();
     }
 }
 
