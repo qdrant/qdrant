@@ -4,7 +4,7 @@
 
 use std::io::ErrorKind;
 
-use crate::universal_io::{ElementsRange, OpenOptions, Result, UniversalIoError, UniversalRead};
+use crate::universal_io::{ElementsRange, Result, UniversalIoError, UniversalRead};
 
 /// Identifier for a source in a multi-source storage (e.g. a file, an S3 object).
 /// Each multi-source storage assigns source ids to its constituent backends.
@@ -13,12 +13,12 @@ pub struct SourceId(pub usize);
 
 /// Interface for batched read access across multiple sources (files, S3 objects, etc.).
 /// Complements [`UniversalRead`], which is single-source.
+/// All implementations must support attaching sources dynamically.
 pub trait MultiUniversalRead<T: Copy + 'static> {
-    /// Type of source that can be attached. Use [`AttachUnsupported`] for implementations
-    /// that do not support dynamic attach.
+    /// Type of source that can be attached.
     type Source: UniversalRead<T> + Send;
 
-    /// Create an empty multi-source view. Use [`Self::attach`] to add sources (if supported).
+    /// Create an empty multi-source view. Use [`Self::attach`] to add sources.
     fn new() -> Self
     where
         Self: Sized;
@@ -33,14 +33,7 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
 
     /// Attach another source and return its [`SourceId`]. The new id is the current
     /// number of sources (so existing ids remain valid).
-    /// Default returns unsupported error for implementations that do not support dynamic attach.
-    fn attach(&mut self, source: Self::Source) -> Result<SourceId> {
-        let _ = source;
-        Err(UniversalIoError::Io(std::io::Error::new(
-            ErrorKind::Unsupported,
-            "attach not implemented",
-        )))
-    }
+    fn attach(&mut self, source: Self::Source) -> Result<SourceId>;
 
     /// Batch read across sources. Each request is `(SourceId, ElementsRange)`.
     /// Invokes `callback(request_index, slice)` for each range in order of `requests`.
@@ -65,44 +58,6 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
     /// Evict RAM cache for all sources, if applicable.
     fn clear_ram_cache(&self) -> Result<()>;
 }
-
-/// Placeholder source type for [`MultiUniversalRead`] implementations that do not support
-/// dynamic attach. All methods panic if called.
-#[derive(Debug)]
-pub struct AttachUnsupported<T>(std::marker::PhantomData<T>);
-
-impl<T: Copy + 'static> UniversalRead<T> for AttachUnsupported<T> {
-    fn open(_path: impl AsRef<std::path::Path>, _options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        unreachable!("AttachUnsupported is a placeholder and should not be opened")
-    }
-    fn read<const _SEQUENTIAL: bool>(
-        &self,
-        _range: ElementsRange,
-    ) -> Result<std::borrow::Cow<'_, [T]>> {
-        unreachable!("AttachUnsupported is a placeholder")
-    }
-    fn read_batch<const _SEQUENTIAL: bool>(
-        &self,
-        _ranges: impl IntoIterator<Item = ElementsRange>,
-        _callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()> {
-        unreachable!("AttachUnsupported is a placeholder")
-    }
-    fn len(&self) -> Result<u64> {
-        unreachable!("AttachUnsupported is a placeholder")
-    }
-    fn populate(&self) -> Result<()> {
-        unreachable!("AttachUnsupported is a placeholder")
-    }
-    fn clear_ram_cache(&self) -> Result<()> {
-        unreachable!("AttachUnsupported is a placeholder")
-    }
-}
-
-unsafe impl<T: Send> Send for AttachUnsupported<T> {}
 
 /// Minimal multi-source read implementation: a collection of [`UniversalRead`] backends
 /// addressable by [`SourceId`] (index). Supports attaching more sources at runtime.

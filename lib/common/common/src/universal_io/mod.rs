@@ -4,9 +4,7 @@ pub mod multi_universal_read;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-pub use multi_universal_read::{
-    AttachUnsupported, MultiUniversalRead, SourceId, VecMultiUniversalRead,
-};
+pub use multi_universal_read::{MultiUniversalRead, SourceId, VecMultiUniversalRead};
 use serde::de::DeserializeOwned;
 
 use crate::mmap::AdviceSetting;
