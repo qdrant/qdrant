@@ -4,7 +4,7 @@
 
 use std::io::ErrorKind;
 
-use crate::universal_io::{ElementsRange, Result, UniversalIoError, UniversalRead};
+use crate::universal_io::{ElementsRange, OpenOptions, Result, UniversalIoError, UniversalRead};
 
 /// Identifier for a source in a multi-source storage (e.g. a file, an S3 object).
 /// Each multi-source storage assigns source ids to its constituent backends.
@@ -14,6 +14,34 @@ pub struct SourceId(pub usize);
 /// Interface for batched read access across multiple sources (files, S3 objects, etc.).
 /// Complements [`UniversalRead`], which is single-source.
 pub trait MultiUniversalRead<T: Copy + 'static> {
+    /// Type of source that can be attached. Use [`AttachUnsupported`] for implementations
+    /// that do not support dynamic attach.
+    type Source: UniversalRead<T> + Send;
+
+    /// Create an empty multi-source view. Use [`Self::attach`] to add sources (if supported).
+    fn new() -> Self
+    where
+        Self: Sized;
+
+    /// Number of sources currently attached.
+    fn len(&self) -> usize;
+
+    /// True if there are no sources.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Attach another source and return its [`SourceId`]. The new id is the current
+    /// number of sources (so existing ids remain valid).
+    /// Default returns unsupported error for implementations that do not support dynamic attach.
+    fn attach(&mut self, source: Self::Source) -> Result<SourceId> {
+        let _ = source;
+        Err(UniversalIoError::Io(std::io::Error::new(
+            ErrorKind::Unsupported,
+            "attach not implemented",
+        )))
+    }
+
     /// Batch read across sources. Each request is `(SourceId, ElementsRange)`.
     /// Invokes `callback(request_index, slice)` for each range in order of `requests`.
     fn read_batch_multi<const SEQUENTIAL: bool>(
@@ -31,16 +59,50 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
         )))
     }
 
-    /// Fill RAM cache for all sources, if applicable. Default is a no-op.
-    fn populate(&self) -> Result<()> {
-        Ok(())
-    }
+    /// Fill RAM cache for all sources, if applicable.
+    fn populate(&self) -> Result<()>;
 
-    /// Evict RAM cache for all sources, if applicable. Default is a no-op.
+    /// Evict RAM cache for all sources, if applicable.
+    fn clear_ram_cache(&self) -> Result<()>;
+}
+
+/// Placeholder source type for [`MultiUniversalRead`] implementations that do not support
+/// dynamic attach. All methods panic if called.
+#[derive(Debug)]
+pub struct AttachUnsupported<T>(std::marker::PhantomData<T>);
+
+impl<T: Copy + 'static> UniversalRead<T> for AttachUnsupported<T> {
+    fn open(_path: impl AsRef<std::path::Path>, _options: OpenOptions) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        unreachable!("AttachUnsupported is a placeholder and should not be opened")
+    }
+    fn read<const _SEQUENTIAL: bool>(
+        &self,
+        _range: ElementsRange,
+    ) -> Result<std::borrow::Cow<'_, [T]>> {
+        unreachable!("AttachUnsupported is a placeholder")
+    }
+    fn read_batch<const _SEQUENTIAL: bool>(
+        &self,
+        _ranges: impl IntoIterator<Item = ElementsRange>,
+        _callback: impl FnMut(usize, &[T]) -> Result<()>,
+    ) -> Result<()> {
+        unreachable!("AttachUnsupported is a placeholder")
+    }
+    fn len(&self) -> Result<u64> {
+        unreachable!("AttachUnsupported is a placeholder")
+    }
+    fn populate(&self) -> Result<()> {
+        unreachable!("AttachUnsupported is a placeholder")
+    }
     fn clear_ram_cache(&self) -> Result<()> {
-        Ok(())
+        unreachable!("AttachUnsupported is a placeholder")
     }
 }
+
+unsafe impl<T: Send> Send for AttachUnsupported<T> {}
 
 /// Minimal multi-source read implementation: a collection of [`UniversalRead`] backends
 /// addressable by [`SourceId`] (index). Supports attaching more sources at runtime.
@@ -50,15 +112,7 @@ pub struct VecMultiUniversalRead<T, S> {
     _element: std::marker::PhantomData<T>,
 }
 
-impl<T: Copy + 'static, S: UniversalRead<T>> VecMultiUniversalRead<T, S> {
-    /// Create an empty multi-source view. Use [`Self::attach`] to add sources.
-    pub fn new() -> Self {
-        Self {
-            sources: Vec::new(),
-            _element: std::marker::PhantomData,
-        }
-    }
-
+impl<T: Copy + 'static, S: UniversalRead<T> + Send> VecMultiUniversalRead<T, S> {
     /// Create from an initial set of sources. Source ids will be 0, 1, 2, ...
     pub fn from_sources(sources: Vec<S>) -> Self {
         Self {
@@ -66,33 +120,36 @@ impl<T: Copy + 'static, S: UniversalRead<T>> VecMultiUniversalRead<T, S> {
             _element: std::marker::PhantomData,
         }
     }
-
-    /// Attach another source and return its [`SourceId`]. The new id is the current
-    /// number of sources (so existing ids remain valid).
-    pub fn attach(&mut self, source: S) -> SourceId {
-        let id = SourceId(self.sources.len());
-        self.sources.push(source);
-        id
-    }
-
-    /// Number of sources currently attached.
-    pub fn len(&self) -> usize {
-        self.sources.len()
-    }
-
-    /// True if there are no sources.
-    pub fn is_empty(&self) -> bool {
-        self.sources.is_empty()
-    }
 }
 
-impl<T: Copy + 'static, S: UniversalRead<T>> Default for VecMultiUniversalRead<T, S> {
+impl<T: Copy + 'static, S: UniversalRead<T> + Send> Default for VecMultiUniversalRead<T, S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Copy + 'static, S: UniversalRead<T>> MultiUniversalRead<T> for VecMultiUniversalRead<T, S> {
+impl<T: Copy + 'static, S: UniversalRead<T> + Send> MultiUniversalRead<T>
+    for VecMultiUniversalRead<T, S>
+{
+    type Source = S;
+
+    fn new() -> Self {
+        Self {
+            sources: Vec::new(),
+            _element: std::marker::PhantomData,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.sources.len()
+    }
+
+    fn attach(&mut self, source: S) -> Result<SourceId> {
+        let id = SourceId(self.sources.len());
+        self.sources.push(source);
+        Ok(id)
+    }
+
     fn read_batch_multi<const SEQUENTIAL: bool>(
         &self,
         requests: impl IntoIterator<Item = (SourceId, ElementsRange)>,
@@ -182,8 +239,8 @@ mod tests {
         let s1 = MmapUniversal::<u8>::open(&path1, opts).unwrap();
 
         let mut multi = VecMultiUniversalRead::new();
-        let id0 = multi.attach(s0);
-        let id1 = multi.attach(s1);
+        let id0 = multi.attach(s0).unwrap();
+        let id1 = multi.attach(s1).unwrap();
 
         assert_eq!(multi.len(), 2);
         assert_eq!(id0.0, 0);
