@@ -703,7 +703,9 @@ impl PipelineBuilder {
                             builder = builder.add_descriptor_set_layout(set, l.clone());
                         }
                         _ => {
-                            return Err(GpuError::Other("Backend mismatch in pipeline".to_string()));
+                            return Err(GpuError::Other(
+                                "Backend mismatch in pipeline".to_string(),
+                            ));
                         }
                     }
                 }
