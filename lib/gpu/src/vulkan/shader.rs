@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::*;
+use crate::{GpuError, GpuResult, Resource};
+use super::*;
 
 /// Struct that represents a compiled shader.
 /// If you want to create a new shader, you have to compile it first using Slang.

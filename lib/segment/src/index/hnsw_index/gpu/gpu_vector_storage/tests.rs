@@ -786,6 +786,7 @@ fn test_gpu_vector_storage_impl(
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         )
         .unwrap();
+
     context.dispatch(num_vectors, 1, 1).unwrap();
 
     let timer = std::time::Instant::now();
@@ -830,6 +831,25 @@ fn test_gpu_vector_storage_impl(
             test_point_id as PointOffsetType,
             point_id as PointOffsetType,
         );
-        assert!((score - gpu_score).abs() < precision);
+        if (score - gpu_score).abs() >= precision {
+            log::error!(
+                "Score mismatch at point_id={point_id}: cpu={score}, gpu={gpu_score}, diff={}, precision={precision}",
+                (score - gpu_score).abs()
+            );
+            // Print first 10 mismatches then assert
+            let mut mismatches = 0;
+            for (pid, gs) in gpu_scores.iter().enumerate() {
+                let s = scorer.score_internal(
+                    test_point_id as PointOffsetType,
+                    pid as PointOffsetType,
+                );
+                if (s - gs).abs() >= precision {
+                    log::error!("  mismatch pid={pid}: cpu={s}, gpu={gs}");
+                    mismatches += 1;
+                    if mismatches >= 10 { break; }
+                }
+            }
+            panic!("Score mismatch: cpu={score}, gpu={gpu_score}, diff={}", (score - gpu_score).abs());
+        }
     }
 }

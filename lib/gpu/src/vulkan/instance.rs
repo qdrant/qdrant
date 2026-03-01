@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::*;
+use crate::{GpuError, GpuResult, Resource};
+use super::*;
 
 static APPLICATION_NAME: &std::ffi::CStr = c"qdrant";
 
@@ -88,7 +89,7 @@ impl InstanceBuilder {
     }
 
     pub fn build(self) -> GpuResult<Arc<Instance>> {
-        Instance::new(
+        Instance::new_internal(
             self.debug_messenger,
             self.allocation_callbacks,
             self.dump_api,
@@ -101,7 +102,7 @@ impl Instance {
         InstanceBuilder::new()
     }
 
-    fn new(
+    pub(crate) fn new_internal(
         debug_messenger: Option<Box<dyn DebugMessenger>>,
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,

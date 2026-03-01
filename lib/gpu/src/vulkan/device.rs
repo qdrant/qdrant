@@ -5,7 +5,8 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator, AllocatorCreateDesc};
 use parking_lot::Mutex;
 
-use crate::*;
+use crate::{GpuError, GpuResult, Resource};
+use super::*;
 
 /// GPU device structure.
 /// It's a wrapper around Vulkan device.

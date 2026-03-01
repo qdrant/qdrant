@@ -55,6 +55,11 @@ pub struct GpuVectorStorage {
     multivectors: Option<GpuMultivectors>,
     /// Whether BDA (buffer device address) mode is used for vector access.
     use_bda: bool,
+    /// Keep vector storage GPU buffers alive so their device addresses remain valid.
+    /// In BDA mode, only the addresses are stored in the descriptor set — the
+    /// buffers themselves must be kept alive here to prevent the GPU memory from
+    /// being freed and reused.
+    _vectors_buffer: Vec<Arc<gpu::Buffer>>,
 }
 
 impl ShaderBuilderParameters for GpuVectorStorage {
@@ -818,6 +823,7 @@ impl GpuVectorStorage {
             quantization,
             multivectors,
             use_bda,
+            _vectors_buffer: vectors_buffer,
         })
     }
 

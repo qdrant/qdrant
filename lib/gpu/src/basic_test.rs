@@ -18,10 +18,11 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 // It takes list of numbers and adds parameter to each number.
 #[test]
 fn basic_gpu_test() {
-    // Get Vulkan API instance.
+    // Get GPU instance (HIP → CUDA → Vulkan auto-selected).
     let instance = crate::GPU_TEST_INSTANCE.clone();
     // Choose any GPU hardware to use.
-    let physical_device = &instance.physical_devices()[0];
+    let physical_devices = instance.physical_devices();
+    let physical_device = &physical_devices[0];
     // Create GPU device.
     let device = crate::Device::new(instance.clone(), physical_device).unwrap();
 
@@ -97,12 +98,12 @@ fn basic_gpu_test() {
 
     // Third step: create computation pipeline.
 
-    // Compile shader code to SPIR-V.
-    let spirv = crate::GPU_TEST_INSTANCE
-        .compile_shader(SHADER_CODE, "shader.glsl", None, None)
+    // Compile shader code (SPIR-V for Vulkan, binary for CUDA/HIP).
+    let compiled = device
+        .compile_shader_with_extra_args(SHADER_CODE, "shader.glsl", None, None, &[])
         .unwrap();
     // Create shader.
-    let shader = crate::Shader::new(device.clone(), &spirv).unwrap();
+    let shader = crate::Shader::new(device.clone(), &compiled).unwrap();
 
     // Create linking to the shader.
     let descriptor_set_layout = crate::DescriptorSetLayout::builder()

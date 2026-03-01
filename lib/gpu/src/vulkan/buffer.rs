@@ -7,7 +7,8 @@ use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::*;
+use crate::{GpuError, GpuResult, Resource};
+use super::*;
 
 static DOWNLOAD_NOT_ALLOWED_ERROR: &str = "Download from the GPU buffer is not allowed";
 static UPLOAD_NOT_ALLOWED_ERROR: &str = "Upload to the GPU buffer is not allowed";

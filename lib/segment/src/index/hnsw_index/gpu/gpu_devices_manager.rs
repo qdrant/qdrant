@@ -46,21 +46,29 @@ impl GpuDevicesMaganer {
             .map(|s| s.trim().to_owned())
             .collect::<Vec<_>>();
 
+        // Collect all physical devices once (physical_devices() returns an owned Vec).
+        let all_physical_devices = instance.physical_devices();
+
+        // All found device names to include in telemetry.
+        let device_names = all_physical_devices
+            .iter()
+            .map(|device| device.name().to_string())
+            .collect();
+
         // Collect physical devices that match the filter.
-        let filtered_physical_devices = instance
-            .physical_devices()
+        let filtered_physical_devices = all_physical_devices
             .iter()
             // Apply device name filter.
             .filter(|device| {
-                let device_name = device.name.to_lowercase();
+                let device_name = device.name().to_lowercase();
                 filter.iter().any(|filter| device_name.contains(filter))
             })
             // Filter out integrated and emulated devices.
             .filter(|device| {
-                device.device_type == gpu::PhysicalDeviceType::Discrete
+                device.device_type() == gpu::PhysicalDeviceType::Discrete
                     || (allow_integrated
-                        && device.device_type == gpu::PhysicalDeviceType::Integrated)
-                    || (allow_emulated && device.device_type == gpu::PhysicalDeviceType::Other)
+                        && device.device_type() == gpu::PhysicalDeviceType::Integrated)
+                    || (allow_emulated && device.device_type() == gpu::PhysicalDeviceType::Other)
             })
             .collect::<Vec<_>>();
 
@@ -76,7 +84,7 @@ impl GpuDevicesMaganer {
             devices.extend(
                 device_indexes
                     .iter()
-                    // Get vk physical device. Filter out invalid device indexes.
+                    // Get physical device. Filter out invalid device indexes.
                     .filter_map(|&device_index| filtered_physical_devices.get(device_index))
                     // Try to create a gpu device.
                     .filter_map(|physical_device| {
@@ -87,13 +95,13 @@ impl GpuDevicesMaganer {
                             false,
                         ) {
                             Ok(device) => {
-                                log::info!("Initialized GPU device: {:?}", &physical_device.name);
+                                log::info!("Initialized GPU device: {:?}", physical_device.name());
                                 Some(Mutex::new(device))
                             }
                             Err(err) => {
                                 log::error!(
                                     "Failed to create GPU device: {:?}, error: {:?}",
-                                    &physical_device.name,
+                                    physical_device.name(),
                                     err
                                 );
                                 None
@@ -102,13 +110,6 @@ impl GpuDevicesMaganer {
                     }),
             );
         }
-
-        // All found devices to include it to the telemetry.
-        let device_names = instance
-            .physical_devices()
-            .iter()
-            .map(|device| device.name.clone())
-            .collect();
 
         Ok(Self {
             devices,

@@ -2798,6 +2798,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "gpu-allocator",
+ "libloading",
  "log",
  "parking_lot",
  "zerocopy",

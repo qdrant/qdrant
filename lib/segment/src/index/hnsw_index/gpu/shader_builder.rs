@@ -217,7 +217,7 @@ impl ShaderBuilder {
             ]);
         }
 
-        let compiled = self.device.instance().compile_shader_with_extra_args(
+        let compiled = self.device.compile_shader_with_extra_args(
             &self.shader_code,
             shader_name,
             None,
