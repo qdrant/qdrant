@@ -895,7 +895,13 @@ impl GpuVectorStorage {
             )?;
             staging.upload(&addrs, 0)?;
             let mut ctx = gpu::Context::new(device.clone())?;
-            ctx.copy_gpu_buffer(staging, addresses_buffer.clone(), 0, 0, addresses_buffer.size())?;
+            ctx.copy_gpu_buffer(
+                staging,
+                addresses_buffer.clone(),
+                0,
+                0,
+                addresses_buffer.size(),
+            )?;
             ctx.run()?;
             ctx.wait_finish(GPU_TIMEOUT)?;
             builder = builder.add_storage_buffer(VECTOR_BINDINGS_START, addresses_buffer);

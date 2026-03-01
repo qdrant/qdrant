@@ -10,8 +10,8 @@ use std::sync::Arc;
 use crate::{GpuError, GpuResult};
 
 // Opaque handle types — pointers stored as u64 to avoid lifetime complications.
-pub type CuDevice = i32;   // CUdevice is just an int
-pub type Handle = u64;     // CUcontext, CUmodule, CUfunction, CUstream, CUdeviceptr
+pub type CuDevice = i32; // CUdevice is just an int
+pub type Handle = u64; // CUcontext, CUmodule, CUfunction, CUstream, CUdeviceptr
 
 /// One function pointer table that covers both CUDA and HIP driver APIs.
 /// Each field is the raw function pointer loaded from the shared library.
@@ -19,33 +19,43 @@ pub struct GpuDriver {
     pub _lib: libloading::Library, // Keep library alive.
 
     // ---- device / init ----
-    pub init:                  unsafe extern "C" fn(flags: u32) -> i32,
-    pub device_count:          unsafe extern "C" fn(count: *mut i32) -> i32,
-    pub device_get:            unsafe extern "C" fn(dev: *mut CuDevice, ordinal: i32) -> i32,
-    pub device_get_name:       unsafe extern "C" fn(name: *mut i8, len: i32, dev: CuDevice) -> i32,
-    pub device_get_attribute:  unsafe extern "C" fn(pi: *mut i32, attrib: i32, dev: CuDevice) -> i32,
-    pub ctx_create:            unsafe extern "C" fn(ctx: *mut Handle, flags: u32, dev: CuDevice) -> i32,
-    pub ctx_destroy:           unsafe extern "C" fn(ctx: Handle) -> i32,
-    pub ctx_set_current:       unsafe extern "C" fn(ctx: Handle) -> i32,
+    pub init: unsafe extern "C" fn(flags: u32) -> i32,
+    pub device_count: unsafe extern "C" fn(count: *mut i32) -> i32,
+    pub device_get: unsafe extern "C" fn(dev: *mut CuDevice, ordinal: i32) -> i32,
+    pub device_get_name: unsafe extern "C" fn(name: *mut i8, len: i32, dev: CuDevice) -> i32,
+    pub device_get_attribute: unsafe extern "C" fn(pi: *mut i32, attrib: i32, dev: CuDevice) -> i32,
+    pub ctx_create: unsafe extern "C" fn(ctx: *mut Handle, flags: u32, dev: CuDevice) -> i32,
+    pub ctx_destroy: unsafe extern "C" fn(ctx: Handle) -> i32,
+    pub ctx_set_current: unsafe extern "C" fn(ctx: Handle) -> i32,
 
     // ---- memory ----
-    pub mem_alloc:             unsafe extern "C" fn(dptr: *mut Handle, size: usize) -> i32,
-    pub mem_free:              unsafe extern "C" fn(dptr: Handle) -> i32,
-    pub memcpy_htod:           unsafe extern "C" fn(dst: Handle, src: *const c_void, size: usize) -> i32,
-    pub memcpy_dtoh:           unsafe extern "C" fn(dst: *mut c_void, src: Handle, size: usize) -> i32,
-    pub memset_d8:             unsafe extern "C" fn(dst: Handle, value: u8, count: usize) -> i32,
+    pub mem_alloc: unsafe extern "C" fn(dptr: *mut Handle, size: usize) -> i32,
+    pub mem_free: unsafe extern "C" fn(dptr: Handle) -> i32,
+    pub memcpy_htod: unsafe extern "C" fn(dst: Handle, src: *const c_void, size: usize) -> i32,
+    pub memcpy_dtoh: unsafe extern "C" fn(dst: *mut c_void, src: Handle, size: usize) -> i32,
+    pub memset_d8: unsafe extern "C" fn(dst: Handle, value: u8, count: usize) -> i32,
 
     // ---- modules / kernels ----
-    pub module_load_data:      unsafe extern "C" fn(module: *mut Handle, image: *const c_void) -> i32,
-    pub module_unload:         unsafe extern "C" fn(module: Handle) -> i32,
-    pub module_get_function:   unsafe extern "C" fn(func: *mut Handle, module: Handle, name: *const i8) -> i32,
-    pub module_get_global:     unsafe extern "C" fn(dptr: *mut Handle, bytes: *mut usize, module: Handle, name: *const i8) -> i32,
+    pub module_load_data: unsafe extern "C" fn(module: *mut Handle, image: *const c_void) -> i32,
+    pub module_unload: unsafe extern "C" fn(module: Handle) -> i32,
+    pub module_get_function:
+        unsafe extern "C" fn(func: *mut Handle, module: Handle, name: *const i8) -> i32,
+    pub module_get_global: unsafe extern "C" fn(
+        dptr: *mut Handle,
+        bytes: *mut usize,
+        module: Handle,
+        name: *const i8,
+    ) -> i32,
 
     // ---- launch ----
-    pub launch_kernel:         unsafe extern "C" fn(
+    pub launch_kernel: unsafe extern "C" fn(
         func: Handle,
-        grid_x: u32, grid_y: u32, grid_z: u32,
-        block_x: u32, block_y: u32, block_z: u32,
+        grid_x: u32,
+        grid_y: u32,
+        grid_z: u32,
+        block_x: u32,
+        block_y: u32,
+        block_z: u32,
         shared_mem_bytes: u32,
         stream: Handle,
         kernel_params: *mut *mut c_void,
@@ -53,9 +63,9 @@ pub struct GpuDriver {
     ) -> i32,
 
     // ---- streams ----
-    pub stream_create:         unsafe extern "C" fn(stream: *mut Handle) -> i32,
-    pub stream_synchronize:    unsafe extern "C" fn(stream: Handle) -> i32,
-    pub stream_destroy:        unsafe extern "C" fn(stream: Handle) -> i32,
+    pub stream_create: unsafe extern "C" fn(stream: *mut Handle) -> i32,
+    pub stream_synchronize: unsafe extern "C" fn(stream: Handle) -> i32,
+    pub stream_destroy: unsafe extern "C" fn(stream: Handle) -> i32,
 }
 
 /// Which GPU runtime is in use.
@@ -79,7 +89,10 @@ impl GpuDriver {
         Self::load_from_candidates(&candidates, Runtime::Cuda)
     }
 
-    fn load_from_candidates(candidates: &[&str], runtime: Runtime) -> GpuResult<(Arc<Self>, Runtime)> {
+    fn load_from_candidates(
+        candidates: &[&str],
+        runtime: Runtime,
+    ) -> GpuResult<(Arc<Self>, Runtime)> {
         let mut last_err = format!("No candidates for {runtime:?}");
         for &name in candidates {
             match Self::load(name, runtime) {
@@ -94,9 +107,8 @@ impl GpuDriver {
 
     fn load(lib_name: &str, runtime: Runtime) -> GpuResult<Self> {
         let lib = unsafe {
-            libloading::Library::new(lib_name).map_err(|e| {
-                GpuError::NotSupported(format!("Cannot load {lib_name}: {e}"))
-            })?
+            libloading::Library::new(lib_name)
+                .map_err(|e| GpuError::NotSupported(format!("Cannot load {lib_name}: {e}")))?
         };
 
         // For CUDA: cu* functions; for HIP: hip* functions.
@@ -109,7 +121,9 @@ impl GpuDriver {
                 };
                 let sym = unsafe {
                     lib.get::<*mut c_void>(name).map_err(|e| {
-                        GpuError::NotSupported(format!("Symbol {name:?} not found in {lib_name}: {e}"))
+                        GpuError::NotSupported(format!(
+                            "Symbol {name:?} not found in {lib_name}: {e}"
+                        ))
                     })?
                 };
                 unsafe { std::mem::transmute(*sym) }
@@ -117,27 +131,27 @@ impl GpuDriver {
         }
 
         let driver = Self {
-            init:                 load_fn!(b"cuInit\0",                  b"hipInit\0"),
-            device_count:         load_fn!(b"cuDeviceGetCount\0",        b"hipGetDeviceCount\0"),
-            device_get:           load_fn!(b"cuDeviceGet\0",             b"hipDeviceGet\0"),
-            device_get_name:      load_fn!(b"cuDeviceGetName\0",         b"hipDeviceGetName\0"),
-            device_get_attribute: load_fn!(b"cuDeviceGetAttribute\0",    b"hipDeviceGetAttribute\0"),
-            ctx_create:           load_fn!(b"cuCtxCreate_v2\0",          b"hipCtxCreate\0"),
-            ctx_destroy:          load_fn!(b"cuCtxDestroy_v2\0",         b"hipCtxDestroy\0"),
-            ctx_set_current:      load_fn!(b"cuCtxSetCurrent\0",         b"hipCtxSetCurrent\0"),
-            mem_alloc:            load_fn!(b"cuMemAlloc_v2\0",           b"hipMalloc\0"),
-            mem_free:             load_fn!(b"cuMemFree_v2\0",            b"hipFree\0"),
-            memcpy_htod:          load_fn!(b"cuMemcpyHtoD_v2\0",        b"hipMemcpyHtoD\0"),
-            memcpy_dtoh:          load_fn!(b"cuMemcpyDtoH_v2\0",        b"hipMemcpyDtoH\0"),
-            memset_d8:            load_fn!(b"cuMemsetD8_v2\0",           b"hipMemsetD8\0"),
-            module_load_data:     load_fn!(b"cuModuleLoadData\0",        b"hipModuleLoadData\0"),
-            module_unload:        load_fn!(b"cuModuleUnload\0",          b"hipModuleUnload\0"),
-            module_get_function:  load_fn!(b"cuModuleGetFunction\0",     b"hipModuleGetFunction\0"),
-            module_get_global:    load_fn!(b"cuModuleGetGlobal_v2\0",    b"hipModuleGetGlobal\0"),
-            launch_kernel:        load_fn!(b"cuLaunchKernel\0",          b"hipModuleLaunchKernel\0"),
-            stream_create:        load_fn!(b"cuStreamCreate\0",          b"hipStreamCreate\0"),
-            stream_synchronize:   load_fn!(b"cuStreamSynchronize\0",     b"hipStreamSynchronize\0"),
-            stream_destroy:       load_fn!(b"cuStreamDestroy_v2\0",      b"hipStreamDestroy\0"),
+            init: load_fn!(b"cuInit\0", b"hipInit\0"),
+            device_count: load_fn!(b"cuDeviceGetCount\0", b"hipGetDeviceCount\0"),
+            device_get: load_fn!(b"cuDeviceGet\0", b"hipDeviceGet\0"),
+            device_get_name: load_fn!(b"cuDeviceGetName\0", b"hipDeviceGetName\0"),
+            device_get_attribute: load_fn!(b"cuDeviceGetAttribute\0", b"hipDeviceGetAttribute\0"),
+            ctx_create: load_fn!(b"cuCtxCreate_v2\0", b"hipCtxCreate\0"),
+            ctx_destroy: load_fn!(b"cuCtxDestroy_v2\0", b"hipCtxDestroy\0"),
+            ctx_set_current: load_fn!(b"cuCtxSetCurrent\0", b"hipCtxSetCurrent\0"),
+            mem_alloc: load_fn!(b"cuMemAlloc_v2\0", b"hipMalloc\0"),
+            mem_free: load_fn!(b"cuMemFree_v2\0", b"hipFree\0"),
+            memcpy_htod: load_fn!(b"cuMemcpyHtoD_v2\0", b"hipMemcpyHtoD\0"),
+            memcpy_dtoh: load_fn!(b"cuMemcpyDtoH_v2\0", b"hipMemcpyDtoH\0"),
+            memset_d8: load_fn!(b"cuMemsetD8_v2\0", b"hipMemsetD8\0"),
+            module_load_data: load_fn!(b"cuModuleLoadData\0", b"hipModuleLoadData\0"),
+            module_unload: load_fn!(b"cuModuleUnload\0", b"hipModuleUnload\0"),
+            module_get_function: load_fn!(b"cuModuleGetFunction\0", b"hipModuleGetFunction\0"),
+            module_get_global: load_fn!(b"cuModuleGetGlobal_v2\0", b"hipModuleGetGlobal\0"),
+            launch_kernel: load_fn!(b"cuLaunchKernel\0", b"hipModuleLaunchKernel\0"),
+            stream_create: load_fn!(b"cuStreamCreate\0", b"hipStreamCreate\0"),
+            stream_synchronize: load_fn!(b"cuStreamSynchronize\0", b"hipStreamSynchronize\0"),
+            stream_destroy: load_fn!(b"cuStreamDestroy_v2\0", b"hipStreamDestroy\0"),
             _lib: lib,
         };
 
@@ -195,20 +209,20 @@ impl GpuDriver {
 
     // ---- CUDA (NVIDIA) device attribute indices ----
     // These match CUdevice_attribute enum values.
-    pub const CUDA_ATTR_WARP_SIZE: i32 = 10;         // CU_DEVICE_ATTRIBUTE_WARP_SIZE
-    pub const CUDA_ATTR_MAX_GRID_DIM_X: i32 = 5;     // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X
+    pub const CUDA_ATTR_WARP_SIZE: i32 = 10; // CU_DEVICE_ATTRIBUTE_WARP_SIZE
+    pub const CUDA_ATTR_MAX_GRID_DIM_X: i32 = 5; // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X
 
     // ---- HIP (AMD) device attribute indices ----
     // HIP uses DIFFERENT numeric values from CUDA for the same concepts!
     // Verified by running hipDeviceGetAttribute on ROCm 6.x:
-    pub const HIP_ATTR_WARP_SIZE: i32 = 87;          // hipDeviceAttributeWarpSize (= 87)
-    pub const HIP_ATTR_MAX_GRID_DIM_X: i32 = 29;     // hipDeviceAttributeMaxGridDimX (= 29)
+    pub const HIP_ATTR_WARP_SIZE: i32 = 87; // hipDeviceAttributeWarpSize (= 87)
+    pub const HIP_ATTR_MAX_GRID_DIM_X: i32 = 29; // hipDeviceAttributeMaxGridDimX (= 29)
 
     /// Returns the correct warp-size attribute number for the given runtime.
     pub fn attr_warp_size(runtime: Runtime) -> i32 {
         match runtime {
             Runtime::Cuda => Self::CUDA_ATTR_WARP_SIZE,
-            Runtime::Hip  => Self::HIP_ATTR_WARP_SIZE,
+            Runtime::Hip => Self::HIP_ATTR_WARP_SIZE,
         }
     }
 
@@ -216,7 +230,7 @@ impl GpuDriver {
     pub fn attr_max_grid_dim_x(runtime: Runtime) -> i32 {
         match runtime {
             Runtime::Cuda => Self::CUDA_ATTR_MAX_GRID_DIM_X,
-            Runtime::Hip  => Self::HIP_ATTR_MAX_GRID_DIM_X,
+            Runtime::Hip => Self::HIP_ATTR_MAX_GRID_DIM_X,
         }
     }
 

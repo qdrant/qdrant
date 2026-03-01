@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-use crate::{GpuError, GpuResult};
-use crate::vulkan::BufferType;
 use super::device::CudaDevice;
+use crate::vulkan::BufferType;
+use crate::{GpuError, GpuResult};
 
 /// A GPU memory buffer backed by a CUDA/HIP device pointer.
 pub struct CudaBuffer {
@@ -87,9 +87,9 @@ impl CudaBuffer {
             ));
         }
         let bytes = data.as_bytes();
-        let end = offset.checked_add(bytes.len()).ok_or_else(|| {
-            GpuError::OutOfBounds("Overflow in upload offset".to_string())
-        })?;
+        let end = offset
+            .checked_add(bytes.len())
+            .ok_or_else(|| GpuError::OutOfBounds("Overflow in upload offset".to_string()))?;
         if end > self.size {
             return Err(GpuError::OutOfBounds(format!(
                 "Upload range {offset}..{end} exceeds buffer size {}",
@@ -111,9 +111,9 @@ impl CudaBuffer {
         T: FromBytes + IntoBytes + ?Sized,
     {
         let bytes = data.as_mut_bytes();
-        let end = offset.checked_add(bytes.len()).ok_or_else(|| {
-            GpuError::OutOfBounds("Overflow in download offset".to_string())
-        })?;
+        let end = offset
+            .checked_add(bytes.len())
+            .ok_or_else(|| GpuError::OutOfBounds("Overflow in download offset".to_string()))?;
         if end > self.size {
             return Err(GpuError::OutOfBounds(format!(
                 "Download range {offset}..{end} exceeds buffer size {}",
@@ -136,9 +136,9 @@ impl CudaBuffer {
         let byte_len = len
             .checked_mul(size_of::<T>())
             .ok_or_else(|| GpuError::OutOfBounds("Overflow in download_vec".to_string()))?;
-        let end = offset.checked_add(byte_len).ok_or_else(|| {
-            GpuError::OutOfBounds("Overflow in download_vec offset".to_string())
-        })?;
+        let end = offset
+            .checked_add(byte_len)
+            .ok_or_else(|| GpuError::OutOfBounds("Overflow in download_vec offset".to_string()))?;
         if end > self.size {
             return Err(GpuError::OutOfBounds(format!(
                 "Download range {offset}..{end} exceeds buffer size {}",

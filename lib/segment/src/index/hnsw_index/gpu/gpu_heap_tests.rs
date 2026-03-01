@@ -40,10 +40,7 @@ impl ShaderBuilderParameters for GpuHeapTestConfig {
             Some(self.ef.to_string()),
         );
         defines.insert("NEAREST_HEAP_OFFSET".to_owned(), Some("0".to_owned()));
-        defines.insert(
-            "CANDIDATES_HEAP_OFFSET".to_owned(),
-            Some("0".to_owned()),
-        );
+        defines.insert("CANDIDATES_HEAP_OFFSET".to_owned(), Some("0".to_owned()));
         if self.linear {
             defines.insert("BHEAP_LINEAR".to_owned(), None);
         }

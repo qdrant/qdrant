@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 /// Timeout to wait for GPU execution in drop function.
 static DROP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);

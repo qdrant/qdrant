@@ -112,9 +112,7 @@ impl ShaderBuilder {
         let ef = get_uint("EF");
 
         let pack_size: u32 = 4;
-        config.push_str(&format!(
-            "\nstatic const uint PACK_SIZE = {pack_size};\n"
-        ));
+        config.push_str(&format!("\nstatic const uint PACK_SIZE = {pack_size};\n"));
 
         if dim > 0 {
             let waves_per_vector = dim / (pack_size * wave_size);

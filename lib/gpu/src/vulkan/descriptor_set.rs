@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 /// `DescriptorSet` is a collection of buffers that can be bound to a shader.
 /// It depends on a DescriptorSetLayout which defines linkage to the shader.

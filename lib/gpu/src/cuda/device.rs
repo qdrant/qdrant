@@ -1,8 +1,8 @@
 use std::ffi::CStr;
 use std::sync::Arc;
 
-use crate::GpuResult;
 use super::driver::{CuDevice, GpuDriver, Handle, Runtime};
+use crate::GpuResult;
 
 /// A CUDA or HIP compute device.
 pub struct CudaDevice {
@@ -39,15 +39,9 @@ pub struct CudaDevice {
 
 impl CudaDevice {
     /// Enumerate devices using the supplied driver and return one device per device found.
-    pub fn enumerate(
-        driver: Arc<GpuDriver>,
-        runtime: Runtime,
-    ) -> GpuResult<Vec<Arc<CudaDevice>>> {
+    pub fn enumerate(driver: Arc<GpuDriver>, runtime: Runtime) -> GpuResult<Vec<Arc<CudaDevice>>> {
         let mut count: i32 = 0;
-        GpuDriver::check(
-            unsafe { (driver.device_count)(&mut count) },
-            "device_count",
-        )?;
+        GpuDriver::check(unsafe { (driver.device_count)(&mut count) }, "device_count")?;
 
         let mut devices = Vec::new();
         for i in 0..count {
@@ -79,14 +73,12 @@ impl CudaDevice {
         // Query warp/wavefront size using the correct runtime-specific attribute number.
         // CUDA: CU_DEVICE_ATTRIBUTE_WARP_SIZE = 10
         // HIP:  hipDeviceAttributeWarpSize    = 88  (different from CUDA!)
-        let subgroup_size = driver.get_attribute(
-            GpuDriver::attr_warp_size(runtime), cu_device,
-        )? as usize;
+        let subgroup_size =
+            driver.get_attribute(GpuDriver::attr_warp_size(runtime), cu_device)? as usize;
 
         // Max grid X — also has different attribute numbers per runtime.
-        let max_work_groups = driver.get_attribute(
-            GpuDriver::attr_max_grid_dim_x(runtime), cu_device,
-        )? as usize;
+        let max_work_groups =
+            driver.get_attribute(GpuDriver::attr_max_grid_dim_x(runtime), cu_device)? as usize;
 
         // All modern AMD Instinct and NVIDIA GPUs support f16.
         let has_half_precision = true;

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::{GpuError, GpuResult};
 use super::device::CudaDevice;
 use super::driver::{GpuDriver, Runtime};
 use crate::vulkan::PhysicalDeviceType;
+use crate::{GpuError, GpuResult};
 
 /// A physical CUDA/HIP device as seen from the instance level.
 /// Holds everything needed to later call `CudaDevice::new`.

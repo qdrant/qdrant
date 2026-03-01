@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{GpuError, GpuResult};
 use super::buffer::CudaBuffer;
 use super::descriptor_set_layout::CudaDescriptorSetLayout;
+use crate::{GpuError, GpuResult};
 
 /// A collection of buffers bound to specific shader binding slots.
 ///
@@ -36,7 +36,11 @@ impl CudaDescriptorSetBuilder {
 
     pub fn build(&self) -> GpuResult<Arc<CudaDescriptorSet>> {
         let mut buffers = HashMap::new();
-        for (binding, buf) in self.uniform_buffers.iter().chain(self.storage_buffers.iter()) {
+        for (binding, buf) in self
+            .uniform_buffers
+            .iter()
+            .chain(self.storage_buffers.iter())
+        {
             buffers.insert(*binding, buf.clone());
         }
         Ok(Arc::new(CudaDescriptorSet {

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 static APPLICATION_NAME: &std::ffi::CStr = c"qdrant";
 
@@ -309,13 +309,10 @@ impl Instance {
     ) -> GpuResult<Vec<u8>> {
         // Write include files to a unique temporary directory for Slang's search path resolution.
         // Use an atomic counter to ensure uniqueness across concurrent compilations.
-        static COMPILE_COUNTER: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(0);
+        static COMPILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let counter = COMPILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let include_dir = std::env::temp_dir().join(format!(
-            "qdrant_slang_{}_{counter}",
-            std::process::id()
-        ));
+        let include_dir =
+            std::env::temp_dir().join(format!("qdrant_slang_{}_{counter}", std::process::id()));
         if let Some(includes) = includes {
             std::fs::create_dir_all(&include_dir).map_err(|e| {
                 GpuError::Other(format!("Failed to create shader include directory: {e}"))
@@ -359,9 +356,8 @@ impl Instance {
 
         // Ensure the directory exists (shader names may contain path components).
         if let Some(parent) = shader_file_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                GpuError::Other(format!("Failed to create shader directory: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| GpuError::Other(format!("Failed to create shader directory: {e}")))?;
         }
 
         std::fs::write(&shader_file_path, &shader_source).map_err(|e| {
@@ -374,26 +370,29 @@ impl Instance {
         // and loadModuleFromSourceString has COM reference counting issues.
         let output_path = include_dir.join(format!("{module_name}.spv"));
         if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                GpuError::Other(format!("Failed to create output directory: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| GpuError::Other(format!("Failed to create output directory: {e}")))?;
         }
         let mut cmd = std::process::Command::new(Self::slangc_path());
         cmd.arg(&shader_file_path)
-            .arg("-target").arg("spirv")
-            .arg("-entry").arg("main")
+            .arg("-target")
+            .arg("spirv")
+            .arg("-entry")
+            .arg("main")
             .arg("-force-glsl-scalar-layout")
             .arg("-emit-spirv-directly")
             .arg("-O2")
-            .arg("-I").arg(include_dir)
-            .arg("-o").arg(&output_path);
+            .arg("-I")
+            .arg(include_dir)
+            .arg("-o")
+            .arg(&output_path);
         for arg in extra_args {
             cmd.arg(arg);
         }
 
-        let output = cmd.output().map_err(|e| {
-            GpuError::Other(format!("Failed to run slangc for {shader_name}: {e}"))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| GpuError::Other(format!("Failed to run slangc for {shader_name}: {e}")))?;
 
         // Check if slangc succeeded. Slang may emit warnings to stderr even on
         // success. We check the output file existence as a secondary signal —

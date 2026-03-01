@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 /// `DescriptorSetLayout` defines the linkage to the shader.
 /// It describes which resources are defined in the shader and how they must be binded.

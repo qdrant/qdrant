@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::{GpuError, GpuResult};
 use super::buffer::CudaBuffer;
+use super::descriptor_set::CudaDescriptorSet;
 use super::device::CudaDevice;
 use super::driver::Handle;
 use super::pipeline::CudaPipeline;
-use super::descriptor_set::CudaDescriptorSet;
+use crate::{GpuError, GpuResult};
 
 /// Timeout to wait for GPU execution in drop function (same as Vulkan Context).
 static DROP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
@@ -117,8 +117,12 @@ impl CudaContext {
             unsafe {
                 (self.device.driver().launch_kernel)(
                     pipeline.function(),
-                    x as u32, 1, 1,
-                    block_x, 1, 1,
+                    x as u32,
+                    1,
+                    1,
+                    block_x,
+                    1,
+                    1,
                     0,
                     self.stream,
                     std::ptr::null_mut(),
@@ -143,7 +147,9 @@ impl CudaContext {
             return Ok(());
         }
         if src.size() < src_offset + size || dst.size() < dst_offset + size {
-            return Err(GpuError::OutOfBounds("Buffer copy out of bounds".to_string()));
+            return Err(GpuError::OutOfBounds(
+                "Buffer copy out of bounds".to_string(),
+            ));
         }
         self.device.make_current()?;
         // For CUDA d2d copy we use a host bounce (we don't load cuMemcpyDtoD separately).
@@ -167,7 +173,9 @@ impl CudaContext {
             return Ok(());
         }
         self.device.make_current()?;
-        self.device.driver().memset(buffer.device_address(), 0, buffer.size())
+        self.device
+            .driver()
+            .memset(buffer.device_address(), 0, buffer.size())
     }
 
     /// Barrier is a no-op for CUDA/HIP (single stream, sequential execution).

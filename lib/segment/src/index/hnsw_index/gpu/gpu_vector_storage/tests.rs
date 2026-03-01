@@ -839,17 +839,20 @@ fn test_gpu_vector_storage_impl(
             // Print first 10 mismatches then assert
             let mut mismatches = 0;
             for (pid, gs) in gpu_scores.iter().enumerate() {
-                let s = scorer.score_internal(
-                    test_point_id as PointOffsetType,
-                    pid as PointOffsetType,
-                );
+                let s =
+                    scorer.score_internal(test_point_id as PointOffsetType, pid as PointOffsetType);
                 if (s - gs).abs() >= precision {
                     log::error!("  mismatch pid={pid}: cpu={s}, gpu={gs}");
                     mismatches += 1;
-                    if mismatches >= 10 { break; }
+                    if mismatches >= 10 {
+                        break;
+                    }
                 }
             }
-            panic!("Score mismatch: cpu={score}, gpu={gpu_score}, diff={}", (score - gpu_score).abs());
+            panic!(
+                "Score mismatch: cpu={score}, gpu={gpu_score}, diff={}",
+                (score - gpu_score).abs()
+            );
         }
     }
 }

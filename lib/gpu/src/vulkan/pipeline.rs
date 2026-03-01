@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use ash::vk;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 static SHADER_ENTRY_POINT: &std::ffi::CStr = c"main";
 

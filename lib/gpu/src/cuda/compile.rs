@@ -10,9 +10,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::{GpuError, GpuResult};
-use super::driver::Runtime;
 use super::device::CudaDevice;
+use super::driver::Runtime;
+use crate::{GpuError, GpuResult};
 
 /// Compiled shader binary + parameter layout extracted from generated CUDA source.
 pub struct CudaShader {
@@ -24,8 +24,7 @@ pub struct CudaShader {
     pub param_order: Vec<(usize, usize)>,
 }
 
-static COMPILE_COUNTER: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static COMPILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Compile a Slang shader to a CUDA/HIP binary.
 ///
@@ -42,20 +41,16 @@ pub fn compile_shader(
     device: &CudaDevice,
 ) -> GpuResult<CudaShader> {
     let counter = COMPILE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "qdrant_cuda_{}_{counter}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
-        GpuError::Other(format!("Failed to create temp dir: {e}"))
-    })?;
+    let tmp_dir =
+        std::env::temp_dir().join(format!("qdrant_cuda_{}_{counter}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| GpuError::Other(format!("Failed to create temp dir: {e}")))?;
 
     // Write include files.
     if let Some(includes) = includes {
         for (filename, source) in includes {
-            std::fs::write(tmp_dir.join(filename), source).map_err(|e| {
-                GpuError::Other(format!("Failed to write include {filename}: {e}"))
-            })?;
+            std::fs::write(tmp_dir.join(filename), source)
+                .map_err(|e| GpuError::Other(format!("Failed to write include {filename}: {e}")))?;
         }
     }
 
@@ -92,9 +87,8 @@ fn compile_inner(
 
     // Write shader source.
     let slang_path = tmp_dir.join(format!("{module_name}.slang"));
-    std::fs::write(&slang_path, shader).map_err(|e| {
-        GpuError::Other(format!("Failed to write shader source: {e}"))
-    })?;
+    std::fs::write(&slang_path, shader)
+        .map_err(|e| GpuError::Other(format!("Failed to write shader source: {e}")))?;
 
     let cu_path = tmp_dir.join(format!("{module_name}.cu"));
 
@@ -102,12 +96,18 @@ fn compile_inner(
     let slangc = slangc_path();
     let mut cmd = std::process::Command::new(&slangc);
     cmd.arg(&slang_path)
-        .arg("-target").arg("cuda")
-        .arg("-D").arg("USE_BDA")
-        .arg("-D").arg("SLANG_CUDA_STRUCTURED_BUFFER_NO_COUNT")
-        .arg("-line-directive-mode").arg("none")
-        .arg("-I").arg(tmp_dir)
-        .arg("-o").arg(&cu_path);
+        .arg("-target")
+        .arg("cuda")
+        .arg("-D")
+        .arg("USE_BDA")
+        .arg("-D")
+        .arg("SLANG_CUDA_STRUCTURED_BUFFER_NO_COUNT")
+        .arg("-line-directive-mode")
+        .arg("none")
+        .arg("-I")
+        .arg(tmp_dir)
+        .arg("-o")
+        .arg(&cu_path);
 
     // Forward caller-provided defines (skip USE_BDA if caller also sets it).
     if let Some(defs) = defines {
@@ -123,9 +123,9 @@ fn compile_inner(
         }
     }
 
-    let out = cmd.output().map_err(|e| {
-        GpuError::Other(format!("Failed to run slangc: {e}"))
-    })?;
+    let out = cmd
+        .output()
+        .map_err(|e| GpuError::Other(format!("Failed to run slangc: {e}")))?;
     if !out.status.success() && !cu_path.exists() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(GpuError::Other(format!(
@@ -133,9 +133,8 @@ fn compile_inner(
         )));
     }
 
-    let cu_source = std::fs::read_to_string(&cu_path).map_err(|e| {
-        GpuError::Other(format!("Failed to read generated .cu file: {e}"))
-    })?;
+    let cu_source = std::fs::read_to_string(&cu_path)
+        .map_err(|e| GpuError::Other(format!("Failed to read generated .cu file: {e}")))?;
 
     // Collect all Slang sources (main shader + includes) for binding analysis.
     let mut all_sources: Vec<&str> = vec![shader];
@@ -155,7 +154,10 @@ fn compile_inner(
         Runtime::Cuda => compile_nvcc(tmp_dir, module_name, &cu_path, device)?,
     };
 
-    Ok(CudaShader { binary, param_order })
+    Ok(CudaShader {
+        binary,
+        param_order,
+    })
 }
 
 /// Parse `GlobalParams_0` struct from the generated CUDA source and map each
@@ -249,10 +251,7 @@ fn parse_slang_constants(sources: &[&str]) -> HashMap<String, usize> {
             // rest = "NAME = VALUE;"
             if let Some(eq_pos) = rest.find('=') {
                 let name = rest[..eq_pos].trim().to_string();
-                let val_str = rest[eq_pos + 1..]
-                    .trim()
-                    .trim_end_matches(';')
-                    .trim();
+                let val_str = rest[eq_pos + 1..].trim().trim_end_matches(';').trim();
                 if let Ok(val) = val_str.parse::<usize>() {
                     constants.insert(name, val);
                 }
@@ -352,9 +351,8 @@ fn compile_hip(
     // Post-process the generated CUDA source for HIP compatibility.
     let hip_cu_path = tmp_dir.join(format!("{module_name}_hip.cu"));
     let hip_source = make_hip_compatible(cu_path)?;
-    std::fs::write(&hip_cu_path, &hip_source).map_err(|e| {
-        GpuError::Other(format!("Failed to write HIP-patched source: {e}"))
-    })?;
+    std::fs::write(&hip_cu_path, &hip_source)
+        .map_err(|e| GpuError::Other(format!("Failed to write HIP-patched source: {e}")))?;
 
     let out_path = tmp_dir.join(format!("{module_name}.co"));
 
@@ -367,15 +365,19 @@ fn compile_hip(
         .arg("-O3")
         .arg(format!("--offload-arch={offload_arch}"))
         .arg(&hip_cu_path)
-        .arg("-o").arg(&out_path);
+        .arg("-o")
+        .arg(&out_path);
 
-    let out = cmd.output().map_err(|e| {
-        GpuError::Other(format!("Failed to run hipcc: {e}"))
-    })?;
+    let out = cmd
+        .output()
+        .map_err(|e| GpuError::Other(format!("Failed to run hipcc: {e}")))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let stdout = String::from_utf8_lossy(&out.stdout);
-        log::error!("hipcc exited with status {:?}, stderr:\n{stderr}", out.status.code());
+        log::error!(
+            "hipcc exited with status {:?}, stderr:\n{stderr}",
+            out.status.code()
+        );
         if !stdout.is_empty() {
             log::error!("hipcc stdout:\n{stdout}");
         }
@@ -385,18 +387,16 @@ fn compile_hip(
         log::warn!("hipcc reported errors but .co file exists; continuing");
     }
 
-    std::fs::read(&out_path).map_err(|e| {
-        GpuError::Other(format!("Failed to read hipcc output: {e}"))
-    })
+    std::fs::read(&out_path)
+        .map_err(|e| GpuError::Other(format!("Failed to read hipcc output: {e}")))
 }
 
 /// Replace Slang's CUDA prelude include with a HIP-compatible header, and
 /// fix `extern "C" __constant__` declarations (HIP linker requires definitions,
 /// not just external declarations, for constant symbols in device code objects).
 fn make_hip_compatible(cu_path: &Path) -> GpuResult<String> {
-    let source = std::fs::read_to_string(cu_path).map_err(|e| {
-        GpuError::Other(format!("Failed to read .cu file: {e}"))
-    })?;
+    let source = std::fs::read_to_string(cu_path)
+        .map_err(|e| GpuError::Other(format!("Failed to read .cu file: {e}")))?;
 
     // Replace Slang's CUDA-only prelude include with a HIP-compatible one.
     // The prelude include line looks like: #include "...slang-cuda-prelude.h"
@@ -702,19 +702,19 @@ fn compile_nvcc(
     cmd.arg("-ptx")
         .arg("-O2")
         .arg(cu_path)
-        .arg("-o").arg(&out_path);
+        .arg("-o")
+        .arg(&out_path);
 
-    let out = cmd.output().map_err(|e| {
-        GpuError::Other(format!("Failed to run nvcc: {e}"))
-    })?;
+    let out = cmd
+        .output()
+        .map_err(|e| GpuError::Other(format!("Failed to run nvcc: {e}")))?;
     if !out.status.success() && !out_path.exists() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(GpuError::Other(format!("nvcc failed:\n{stderr}")));
     }
 
-    std::fs::read(&out_path).map_err(|e| {
-        GpuError::Other(format!("Failed to read nvcc output: {e}"))
-    })
+    std::fs::read(&out_path)
+        .map_err(|e| GpuError::Other(format!("Failed to read nvcc output: {e}")))
 }
 
 fn find_hipcc() -> GpuResult<String> {
@@ -729,10 +729,12 @@ fn find_hipcc() -> GpuResult<String> {
             .collect()
     };
 
-    for candidate in rocm_candidates.iter().map(String::as_str).chain(["hipcc"].iter().copied()) {
-        if std::path::Path::new(candidate).exists()
-            || which_in_path(candidate)
-        {
+    for candidate in rocm_candidates
+        .iter()
+        .map(String::as_str)
+        .chain(["hipcc"].iter().copied())
+    {
+        if std::path::Path::new(candidate).exists() || which_in_path(candidate) {
             return Ok(candidate.to_string());
         }
     }
@@ -743,9 +745,7 @@ fn find_hipcc() -> GpuResult<String> {
 
 fn find_nvcc() -> GpuResult<String> {
     for candidate in ["/usr/local/cuda/bin/nvcc", "nvcc"] {
-        if std::path::Path::new(candidate).exists()
-            || which_in_path(candidate)
-        {
+        if std::path::Path::new(candidate).exists() || which_in_path(candidate) {
             return Ok(candidate.to_string());
         }
     }

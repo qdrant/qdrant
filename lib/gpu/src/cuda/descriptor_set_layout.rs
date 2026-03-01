@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::GpuResult;
 use super::device::CudaDevice;
+use crate::GpuResult;
 
 /// Describes which bindings (set_index, binding_index) map to which slot in GlobalParams.
 ///

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::GpuResult;
 use super::device::CudaDevice;
+use crate::GpuResult;
 
 /// A compiled CUDA/HIP shader (binary blob: HIP .co or CUDA PTX).
 pub struct CudaShader {

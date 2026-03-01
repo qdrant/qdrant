@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::GpuResult;
-use crate::cuda::driver::GpuDriver;
 use super::device::CudaDevice;
 use super::driver::Handle;
 use super::shader::CudaShader;
+use crate::GpuResult;
+use crate::cuda::driver::GpuDriver;
 
 /// A CUDA/HIP compute pipeline.
 ///

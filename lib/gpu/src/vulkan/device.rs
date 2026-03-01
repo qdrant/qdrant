@@ -5,8 +5,8 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator, AllocatorCreateDesc};
 use parking_lot::Mutex;
 
-use crate::{GpuError, GpuResult, Resource};
 use super::*;
+use crate::{GpuError, GpuResult, Resource};
 
 /// GPU device structure.
 /// It's a wrapper around Vulkan device.
@@ -140,10 +140,9 @@ impl Device {
         // for 16-bit types in buffer storage, so we enable it if supported.
         let has_uniform_and_storage_buffer_16bit =
             enabled_physical_device_features_1_1.uniform_and_storage_buffer16_bit_access != 0;
-        let mut physical_device_features_1_1 =
-            vk::PhysicalDeviceVulkan11Features::default()
-                .storage_buffer16_bit_access(true)
-                .uniform_and_storage_buffer16_bit_access(has_uniform_and_storage_buffer_16bit);
+        let mut physical_device_features_1_1 = vk::PhysicalDeviceVulkan11Features::default()
+            .storage_buffer16_bit_access(true)
+            .uniform_and_storage_buffer16_bit_access(has_uniform_and_storage_buffer_16bit);
 
         // From Vulkan 1.2 we need int8/float16 support.
         if !enabled_physical_device_features_1_2.shader_int8 == 0 {
@@ -179,8 +178,7 @@ impl Device {
         // reads return incorrect data. Disable BDA on RADV unconditionally.
         let is_mesa_radv = {
             let mut driver_props = vk::PhysicalDeviceDriverProperties::default();
-            let mut props2 =
-                vk::PhysicalDeviceProperties2::default().push_next(&mut driver_props);
+            let mut props2 = vk::PhysicalDeviceProperties2::default().push_next(&mut driver_props);
             unsafe {
                 instance.vk_instance().get_physical_device_properties2(
                     vk_physical_device.vk_physical_device,
@@ -189,10 +187,10 @@ impl Device {
             }
             driver_props.driver_id == vk::DriverId::MESA_RADV
         };
-        let has_buffer_device_address =
-            enabled_physical_device_features_1_2.buffer_device_address != 0
-                && has_shader_int64
-                && !is_mesa_radv;
+        let has_buffer_device_address = enabled_physical_device_features_1_2.buffer_device_address
+            != 0
+            && has_shader_int64
+            && !is_mesa_radv;
 
         // Enable shader_int64 when BDA is available (needed for uint64_t in shaders).
         let physical_device_features = if has_buffer_device_address {

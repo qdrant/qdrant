@@ -2,15 +2,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub mod vulkan;
 pub mod cuda;
+pub mod vulkan;
 
 // Re-export pure-data enums and Vulkan-only helpers that callers may use directly.
-pub use vulkan::BufferType;
-pub use vulkan::PhysicalDeviceType;
-pub use vulkan::DebugMessenger;
-pub use vulkan::PanicIfErrorMessenger;
-pub use vulkan::AllocationCallbacks;
+pub use vulkan::{
+    AllocationCallbacks, BufferType, DebugMessenger, PanicIfErrorMessenger, PhysicalDeviceType,
+};
 
 // ─── Errors / Result ──────────────────────────────────────────────────────────
 
@@ -128,7 +126,10 @@ impl InstanceBuilder {
         Self::default()
     }
 
-    pub fn with_debug_messenger(mut self, debug_messenger: Box<dyn vulkan::DebugMessenger>) -> Self {
+    pub fn with_debug_messenger(
+        mut self,
+        debug_messenger: Box<dyn vulkan::DebugMessenger>,
+    ) -> Self {
         self.debug_messenger = Some(debug_messenger);
         self
     }
@@ -194,11 +195,8 @@ impl InstanceBuilder {
         allocation_callbacks: Option<Box<dyn vulkan::AllocationCallbacks>>,
         dump_api: bool,
     ) -> GpuResult<Arc<Instance>> {
-        let vk_inst = vulkan::Instance::new_internal(
-            debug_messenger,
-            allocation_callbacks,
-            dump_api,
-        )?;
+        let vk_inst =
+            vulkan::Instance::new_internal(debug_messenger, allocation_callbacks, dump_api)?;
         Ok(Arc::new(Instance::Vulkan(vk_inst)))
     }
 }
@@ -246,7 +244,11 @@ impl Instance {
         match self {
             Instance::Vulkan(inst) => {
                 let spv = inst.compile_shader_with_extra_args(
-                    shader, shader_name, defines, includes, extra_args,
+                    shader,
+                    shader_name,
+                    defines,
+                    includes,
+                    extra_args,
                 )?;
                 Ok(CompiledShader::Vulkan(spv))
             }
@@ -354,7 +356,11 @@ impl Device {
         match self {
             Device::Vulkan(d) => {
                 let spv = d.instance().compile_shader_with_extra_args(
-                    shader, shader_name, defines, includes, extra_args,
+                    shader,
+                    shader_name,
+                    defines,
+                    includes,
+                    extra_args,
                 )?;
                 Ok(CompiledShader::Vulkan(spv))
             }
@@ -463,7 +469,13 @@ impl Shader {
                 let s = vulkan::Shader::new(d.clone(), spv)?;
                 Ok(Arc::new(Shader::Vulkan(s)))
             }
-            (Device::Cuda(d), CompiledShader::Cuda { binary, param_order }) => {
+            (
+                Device::Cuda(d),
+                CompiledShader::Cuda {
+                    binary,
+                    param_order,
+                },
+            ) => {
                 let s = cuda::CudaShader::new(d.clone(), binary.clone(), param_order.clone())?;
                 Ok(Arc::new(Shader::Cuda(s)))
             }
@@ -573,14 +585,26 @@ impl DescriptorSetBuilder {
                 let mut builder = vulkan::DescriptorSet::builder(layout.clone());
                 for (binding, buf) in &self.uniform_buffers {
                     match buf.as_ref() {
-                        Buffer::Vulkan(b) => builder = builder.add_uniform_buffer(*binding, b.clone()),
-                        _ => return Err(GpuError::Other("Buffer/layout backend mismatch".to_string())),
+                        Buffer::Vulkan(b) => {
+                            builder = builder.add_uniform_buffer(*binding, b.clone())
+                        }
+                        _ => {
+                            return Err(GpuError::Other(
+                                "Buffer/layout backend mismatch".to_string(),
+                            ));
+                        }
                     }
                 }
                 for (binding, buf) in &self.storage_buffers {
                     match buf.as_ref() {
-                        Buffer::Vulkan(b) => builder = builder.add_storage_buffer(*binding, b.clone()),
-                        _ => return Err(GpuError::Other("Buffer/layout backend mismatch".to_string())),
+                        Buffer::Vulkan(b) => {
+                            builder = builder.add_storage_buffer(*binding, b.clone())
+                        }
+                        _ => {
+                            return Err(GpuError::Other(
+                                "Buffer/layout backend mismatch".to_string(),
+                            ));
+                        }
                     }
                 }
                 Ok(Arc::new(DescriptorSet::Vulkan(builder.build()?)))
@@ -589,14 +613,26 @@ impl DescriptorSetBuilder {
                 let mut builder = cuda::CudaDescriptorSet::builder(layout.clone());
                 for (binding, buf) in &self.uniform_buffers {
                     match buf.as_ref() {
-                        Buffer::Cuda(b) => builder = builder.add_uniform_buffer(*binding, b.clone()),
-                        _ => return Err(GpuError::Other("Buffer/layout backend mismatch".to_string())),
+                        Buffer::Cuda(b) => {
+                            builder = builder.add_uniform_buffer(*binding, b.clone())
+                        }
+                        _ => {
+                            return Err(GpuError::Other(
+                                "Buffer/layout backend mismatch".to_string(),
+                            ));
+                        }
                     }
                 }
                 for (binding, buf) in &self.storage_buffers {
                     match buf.as_ref() {
-                        Buffer::Cuda(b) => builder = builder.add_storage_buffer(*binding, b.clone()),
-                        _ => return Err(GpuError::Other("Buffer/layout backend mismatch".to_string())),
+                        Buffer::Cuda(b) => {
+                            builder = builder.add_storage_buffer(*binding, b.clone())
+                        }
+                        _ => {
+                            return Err(GpuError::Other(
+                                "Buffer/layout backend mismatch".to_string(),
+                            ));
+                        }
                     }
                 }
                 Ok(Arc::new(DescriptorSet::Cuda(builder.build()?)))
@@ -666,7 +702,9 @@ impl PipelineBuilder {
                         DescriptorSetLayout::Vulkan(l) => {
                             builder = builder.add_descriptor_set_layout(set, l.clone());
                         }
-                        _ => return Err(GpuError::Other("Backend mismatch in pipeline".to_string())),
+                        _ => {
+                            return Err(GpuError::Other("Backend mismatch in pipeline".to_string()));
+                        }
                     }
                 }
                 Ok(Arc::new(Pipeline::Vulkan(builder.build(d.clone())?)))
@@ -677,7 +715,9 @@ impl PipelineBuilder {
                     .build(d.clone())?;
                 Ok(Arc::new(Pipeline::Cuda(p)))
             }
-            _ => Err(GpuError::Other("Device/shader backend mismatch".to_string())),
+            _ => Err(GpuError::Other(
+                "Device/shader backend mismatch".to_string(),
+            )),
         }
     }
 }
@@ -714,13 +754,19 @@ impl Context {
             Context::Vulkan(ctx) => {
                 let vk_p = match pipeline.as_ref() {
                     Pipeline::Vulkan(p) => p.clone(),
-                    _ => return Err(GpuError::Other("Backend mismatch in bind_pipeline".to_string())),
+                    _ => {
+                        return Err(GpuError::Other(
+                            "Backend mismatch in bind_pipeline".to_string(),
+                        ));
+                    }
                 };
                 let vk_sets: GpuResult<Vec<_>> = descriptor_sets
                     .iter()
                     .map(|s| match s.as_ref() {
                         DescriptorSet::Vulkan(ds) => Ok(ds.clone()),
-                        _ => Err(GpuError::Other("Backend mismatch in descriptor set".to_string())),
+                        _ => Err(GpuError::Other(
+                            "Backend mismatch in descriptor set".to_string(),
+                        )),
                     })
                     .collect();
                 ctx.bind_pipeline(vk_p, &vk_sets?)
@@ -728,13 +774,19 @@ impl Context {
             Context::Cuda(ctx) => {
                 let cu_p = match pipeline.as_ref() {
                     Pipeline::Cuda(p) => p.clone(),
-                    _ => return Err(GpuError::Other("Backend mismatch in bind_pipeline".to_string())),
+                    _ => {
+                        return Err(GpuError::Other(
+                            "Backend mismatch in bind_pipeline".to_string(),
+                        ));
+                    }
                 };
                 let cu_sets: GpuResult<Vec<_>> = descriptor_sets
                     .iter()
                     .map(|s| match s.as_ref() {
                         DescriptorSet::Cuda(ds) => Ok(ds.clone()),
-                        _ => Err(GpuError::Other("Backend mismatch in descriptor set".to_string())),
+                        _ => Err(GpuError::Other(
+                            "Backend mismatch in descriptor set".to_string(),
+                        )),
                     })
                     .collect();
                 ctx.bind_pipeline(cu_p, &cu_sets?)
@@ -787,11 +839,15 @@ impl Context {
         match self {
             Context::Vulkan(ctx) => match buffer.as_ref() {
                 Buffer::Vulkan(b) => ctx.clear_buffer(b.clone()),
-                _ => Err(GpuError::Other("Backend mismatch in clear_buffer".to_string())),
+                _ => Err(GpuError::Other(
+                    "Backend mismatch in clear_buffer".to_string(),
+                )),
             },
             Context::Cuda(ctx) => match buffer.as_ref() {
                 Buffer::Cuda(b) => ctx.clear_buffer(b.clone()),
-                _ => Err(GpuError::Other("Backend mismatch in clear_buffer".to_string())),
+                _ => Err(GpuError::Other(
+                    "Backend mismatch in clear_buffer".to_string(),
+                )),
             },
         }
     }
@@ -842,10 +898,9 @@ impl Context {
 mod basic_test;
 
 #[cfg(any(test, feature = "testing"))]
-pub static GPU_TEST_INSTANCE: std::sync::LazyLock<Arc<Instance>> =
-    std::sync::LazyLock::new(|| {
-        Instance::builder()
-            .with_debug_messenger(Box::new(PanicIfErrorMessenger {}))
-            .build()
-            .unwrap()
-    });
+pub static GPU_TEST_INSTANCE: std::sync::LazyLock<Arc<Instance>> = std::sync::LazyLock::new(|| {
+    Instance::builder()
+        .with_debug_messenger(Box::new(PanicIfErrorMessenger {}))
+        .build()
+        .unwrap()
+});

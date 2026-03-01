@@ -5,9 +5,7 @@ use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8};
 
-use super::{
-    GpuVectorStorage, PQ_CENTROIDS_BINDING, PQ_DIVISIONS_BINDING, SQ_OFFSETS_BINDING,
-};
+use super::{GpuVectorStorage, PQ_CENTROIDS_BINDING, PQ_DIVISIONS_BINDING, SQ_OFFSETS_BINDING};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
