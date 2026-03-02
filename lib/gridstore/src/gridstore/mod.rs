@@ -20,13 +20,13 @@ use reader::CONFIG_FILENAME;
 pub use reader::GridstoreReader;
 pub use view::GridstoreView;
 
-use crate::Result;
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, Tracker, ValuePointer};
+use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
+use crate::{Result, Tracker};
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> + Send>;
 
@@ -118,7 +118,7 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = Bitmask::create(&base_path, config.clone())?;
 
         let storage = Self {
-            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
+            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None)?)),
             pages: Default::default(),
             base_path,
             config,
@@ -311,7 +311,7 @@ impl<V: Blob> Gridstore<V> {
             .mark_blocks(start_page_id, block_offset, required_blocks, true);
 
         let mut tracker_guard = self.tracker.write();
-        let is_update = tracker_guard.has_pointer(point_offset);
+        let is_update = tracker_guard.has_pointer(point_offset)?;
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
@@ -325,7 +325,7 @@ impl<V: Blob> Gridstore<V> {
     /// Returns None if the point_offset, page, or value was not found.
     /// Returns the deleted value otherwise.
     pub fn delete_value(&mut self, point_offset: PointOffset) -> Result<Option<V>> {
-        let Some(pointer) = self.tracker.write().unset(point_offset) else {
+        let Some(pointer) = self.tracker.write().unset(point_offset)? else {
             return Ok(None);
         };
 
@@ -402,7 +402,7 @@ impl<V: Blob> Gridstore<V> {
 
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
-        self.tracker.read().get(point_offset)
+        self.tracker.read().get(point_offset).ok().flatten()
     }
 
     pub fn max_point_offset(&self) -> PointOffset {
@@ -498,7 +498,7 @@ impl<V> Gridstore<V> {
     ) -> crate::Result<Vec<ValuePointer>> {
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
-            let old_pointers = guard.write_pending(pending_updates);
+            let old_pointers = guard.write_pending(pending_updates)?;
             let flusher = guard.flusher();
             (old_pointers, flusher)
         };

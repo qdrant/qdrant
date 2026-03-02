@@ -7,12 +7,12 @@ use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{OpenOptions, read_json_via};
 
 use super::view::GridstoreView;
-use crate::Result;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{PageId, PointOffset, Tracker};
+use crate::tracker::{PageId, PointOffset};
+use crate::{Result, Tracker};
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 

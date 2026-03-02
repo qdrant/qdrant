@@ -40,7 +40,7 @@ fn test_put_single_empty_value() {
     let payload = Payload::default();
     storage.put_value(0, &payload, hw_counter).unwrap();
     assert_eq!(storage.pages.read().len(), 1);
-    assert_eq!(storage.tracker.read().mapping_len(), 1);
+    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
     let hw_counter = HardwareCounterCell::new();
     let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
@@ -64,7 +64,7 @@ fn test_put_single_payload() {
 
     storage.put_value(0, &payload, hw_counter).unwrap();
     assert_eq!(storage.pages.read().len(), 1);
-    assert_eq!(storage.tracker.read().mapping_len(), 1);
+    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -91,7 +91,7 @@ fn test_storage_files() {
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
     assert_eq!(storage.pages.read().len(), 1);
-    assert_eq!(storage.tracker.read().mapping_len(), 1);
+    assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
     let files = storage.files();
     let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
     assert_eq!(
@@ -197,7 +197,7 @@ fn test_update_single_payload() {
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
             assert_eq!(storage.pages.read().len(), 1);
-            assert_eq!(storage.tracker.read().mapping_len(), 1);
+            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -440,7 +440,7 @@ fn test_behave_like_hashmap(
 
     // asset same length
     assert_eq!(
-        storage.tracker.read().mapping_len(),
+        storage.tracker.read().mapping_len().unwrap(),
         model_hashmap.len(),
         "different number of points"
     );
@@ -470,7 +470,10 @@ fn test_behave_like_hashmap(
     // assert same size
     assert_eq!(storage.get_storage_size_bytes(), before_size);
     // assert same length
-    assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
+    assert_eq!(
+        storage.tracker.read().mapping_len().unwrap(),
+        model_hashmap.len()
+    );
 
     // validate storage and model_hashmap are the same
     for point_offset in 0..=max_point_offset {
@@ -655,12 +658,15 @@ fn test_with_real_hm_data() {
     let (dir, mut storage) = empty_storage();
     let point_offset = write_data(&mut storage, 0);
     assert_eq!(point_offset, EXPECTED_LEN as u32);
-    assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN);
+    assert_eq!(storage.tracker.read().mapping_len().unwrap(), EXPECTED_LEN);
     assert_eq!(storage.pages.read().len(), 2);
 
     let point_offset = write_data(&mut storage, point_offset);
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
-    assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN * 2);
+    assert_eq!(
+        storage.tracker.read().mapping_len().unwrap(),
+        EXPECTED_LEN * 2
+    );
     assert_eq!(storage.pages.read().len(), 4);
 
     storage_double_pass_is_consistent(&storage, 0);
@@ -671,7 +677,10 @@ fn test_with_real_hm_data() {
     let mut storage = Gridstore::open(dir.path().to_path_buf()).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
     assert_eq!(storage.pages.read().len(), 4);
-    assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN * 2);
+    assert_eq!(
+        storage.tracker.read().mapping_len().unwrap(),
+        EXPECTED_LEN * 2
+    );
 
     storage_double_pass_is_consistent(&storage, 0);
 
@@ -781,7 +790,7 @@ fn test_deferred_flush() {
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
             assert_eq!(storage.pages.read().len(), 1);
-            assert_eq!(storage.tracker.read().mapping_len(), 1);
+            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -873,7 +882,7 @@ fn test_deferred_flush_with_delete() {
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
             assert_eq!(storage.pages.read().len(), 1);
-            assert_eq!(storage.tracker.read().mapping_len(), 1);
+            assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
             assert_eq!(page_mapping.page_id, 0); // first page
@@ -1043,7 +1052,7 @@ fn test_skip_deferred_flush_after_clear() {
 
     // Write enough new pointers so that they don't fit in the default tracker file size
     // On flush, the tracker file will be resized and reopened, significant for this test
-    let file_size = storage.tracker.read().mmap_file_size();
+    let file_size = storage.tracker.read().mmap_file_size().unwrap();
     const POINTER_SIZE: usize = size_of::<Option<ValuePointer>>();
     let last_point_offset = (file_size / POINTER_SIZE) as u32;
     for i in 0..=last_point_offset {
