@@ -32,6 +32,7 @@ fn init_logger() {
 
 #[test]
 fn test_search_batch_equivalence_single() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -86,6 +87,7 @@ fn test_search_batch_equivalence_single() {
 
 #[test]
 fn test_from_filter_attributes() {
+    init_logger();
     let data = r#"
         {
             "name": "John Doe",
@@ -169,7 +171,7 @@ fn test_from_filter_attributes() {
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
 fn test_snapshot(#[case] format: SnapshotFormat) {
-    let _ = env_logger::builder().is_test(true).try_init();
+    init_logger();
 
     let data = r#"
         {
@@ -285,6 +287,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
 #[test]
 fn test_check_consistency() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -371,6 +374,7 @@ fn test_check_consistency() {
 
 #[test]
 fn test_point_vector_count() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
@@ -412,6 +416,7 @@ fn test_point_vector_count() {
 
 #[test]
 fn test_point_vector_count_multivec() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
@@ -520,6 +525,7 @@ fn test_point_vector_count_multivec() {
 /// Tests segment functions to ensure invalid requests do error
 #[test]
 fn test_vector_compatibility_checks() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut segment = build_multivec_segment(dir.path(), 4, 2, Distance::Dot).unwrap();
@@ -676,6 +682,7 @@ fn test_vector_compatibility_checks() {
 /// should not happen, and this test asserts correct behavior.
 #[test]
 fn test_handle_point_version() {
+    init_logger();
     // Create base segment with a single point
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
