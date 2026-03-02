@@ -7489,9 +7489,9 @@ dependencies = [
 
 [[package]]
 name = "tango-bench"
-version = "0.6.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "257822358c6f206fed78bfe6369cf959063b0644d70f88df6b19f2dadc93423e"
+checksum = "ba54db8d29ede035b03f551299f4d8cb58b225fafc4382191594df95aa1a53e7"
 dependencies = [
  "alloca",
  "anyhow",
@@ -7499,6 +7499,7 @@ dependencies = [
  "colorz",
  "glob-match",
  "goblin",
+ "libc",
  "libloading",
  "log",
  "num-traits",
@@ -7506,6 +7507,7 @@ dependencies = [
  "scroll",
  "tempfile",
  "thiserror 1.0.69",
+ "windows 0.62.2",
 ]
 
 [[package]]
