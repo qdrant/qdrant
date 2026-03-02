@@ -22,8 +22,8 @@ use crate::segment_constructor::simple_segment_constructor::{
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Distance, Filter, Indexes, Payload, SnapshotFormat, VectorDataConfig, VectorStorageType,
-    WithPayload, WithVector,
+    Distance, Filter, Indexes, Payload, PointIdType, SnapshotFormat, VectorDataConfig,
+    VectorStorageType, WithPayload, WithVector,
 };
 
 fn init_logger() {
@@ -764,7 +764,10 @@ fn test_dense_deferred_points() {
     // Initially, no deferred points (empty segment)
     assert!(!segment.has_deferred_points());
     for i in 0..=20 {
-        assert!(!segment.point_is_deferred((i as u64).into()));
+        assert!(
+            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should not be deferred in an empty segment"
+        );
     }
 
     // Insert points with small vectors to reach the threshold
@@ -774,7 +777,7 @@ fn test_dense_deferred_points() {
     for i in 1..=20 {
         segment
             .insert_new_vectors(
-                (i as u64).into(),
+                PointIdType::from(i as u64),
                 i as u64,
                 &only_default_vector(&[
                     0.1 * i as f32,
@@ -794,7 +797,7 @@ fn test_dense_deferred_points() {
     // Points 1-13 (internal_ids 0-12) should NOT be deferred
     for i in 1..=13 {
         assert!(
-            !segment.point_is_deferred((i as u64).into()),
+            !segment.point_is_deferred(PointIdType::from(i as u64)),
             "Point {i} should not be deferred"
         );
     }
@@ -802,14 +805,14 @@ fn test_dense_deferred_points() {
     // Points 14+ (internal_ids 13+) should be deferred
     for i in 14..=20 {
         assert!(
-            segment.point_is_deferred((i as u64).into()),
+            segment.point_is_deferred(PointIdType::from(i as u64)),
             "Point {i} should be deferred"
         );
     }
 
     // Point 100 (non-existent) should not be deferred
     assert!(
-        !segment.point_is_deferred(100.into()),
+        !segment.point_is_deferred(PointIdType::from(100)),
         "Non-existent point should not be deferred"
     );
 }
