@@ -815,4 +815,29 @@ fn test_dense_deferred_points() {
         !segment.point_is_deferred(PointIdType::from(100)),
         "Non-existent point should not be deferred"
     );
+
+    // Close segment
+    segment.flush(true).unwrap();
+    let path = segment.segment_path.clone();
+    drop(segment);
+
+    // Reopen segment to ensure deferred points are loaded correctly from disk
+    let segment = load_segment(
+        &path,
+        Uuid::nil(),
+        Some(deferred_threshold_bytes),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    // Deferred points should still be the same after reopening
+    assert!(
+        segment.has_deferred_points(),
+        "Segment should still have deferred points after reopening"
+    );
+    assert_eq!(
+        segment.deferred_internal_id,
+        Some(13),
+        "Deferred internal ID should still be 13 after reopening"
+    );
 }
