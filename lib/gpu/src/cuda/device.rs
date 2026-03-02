@@ -70,15 +70,12 @@ impl CudaDevice {
             .to_string_lossy()
             .into_owned();
 
-        // Query warp/wavefront size using the correct runtime-specific attribute number.
-        // CUDA: CU_DEVICE_ATTRIBUTE_WARP_SIZE = 10
-        // HIP:  hipDeviceAttributeWarpSize    = 88  (different from CUDA!)
-        let subgroup_size =
-            driver.get_attribute(GpuDriver::attr_warp_size(runtime), cu_device)? as usize;
+        // Query warp/wavefront size. For HIP, the attribute enum changes between
+        // ROCm releases, so we probe multiple candidates.
+        let subgroup_size = driver.query_warp_size(runtime, cu_device)? as usize;
 
-        // Max grid X — also has different attribute numbers per runtime.
-        let max_work_groups =
-            driver.get_attribute(GpuDriver::attr_max_grid_dim_x(runtime), cu_device)? as usize;
+        // Max grid X — same probing approach for HIP.
+        let max_work_groups = driver.query_max_grid_dim_x(runtime, cu_device)? as usize;
 
         // All modern AMD Instinct and NVIDIA GPUs support f16.
         let has_half_precision = true;

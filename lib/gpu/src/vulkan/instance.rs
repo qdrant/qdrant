@@ -423,6 +423,11 @@ impl Instance {
                 if std::path::Path::new(&path).exists() {
                     return path;
                 }
+                // On Windows, check with .exe extension.
+                let path_exe = format!("{path}.exe");
+                if std::path::Path::new(&path_exe).exists() {
+                    return path_exe;
+                }
             }
             "slangc".to_string()
         })

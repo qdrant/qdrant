@@ -360,9 +360,10 @@ fn compile_hip(
     let offload_arch = device.amdgpu_target.as_deref().unwrap_or("native");
 
     let mut cmd = std::process::Command::new(&hipcc);
-    cmd.arg("--genco")
-        .arg("-fPIC")
-        .arg("-O3")
+    cmd.arg("--genco");
+    #[cfg(not(target_os = "windows"))]
+    cmd.arg("-fPIC");
+    cmd.arg("-O3")
         .arg(format!("--offload-arch={offload_arch}"))
         .arg(&hip_cu_path)
         .arg("-o")
@@ -718,18 +719,44 @@ fn compile_nvcc(
 }
 
 fn find_hipcc() -> GpuResult<String> {
-    // Check ROCM_PATH env variable first (e.g. ROCM_PATH=/opt/rocm-6.3.2).
-    let rocm_candidates: Vec<String> = if let Ok(rocm_path) = std::env::var("ROCM_PATH") {
-        vec![format!("{rocm_path}/bin/hipcc")]
+    // Check ROCM_PATH or HIP_PATH env variable first.
+    let env_path = std::env::var("ROCM_PATH")
+        .ok()
+        .or_else(|| std::env::var("HIP_PATH").ok());
+
+    let env_candidates: Vec<String> = if let Some(base) = env_path {
+        if cfg!(target_os = "windows") {
+            vec![
+                format!("{base}\\bin\\hipcc.bin.exe"),
+                format!("{base}\\bin\\hipcc.exe"),
+            ]
+        } else {
+            vec![format!("{base}/bin/hipcc")]
+        }
     } else {
-        // Try common versioned/unversioned paths.
-        ["/opt/rocm/bin/hipcc", "/usr/bin/hipcc"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
+        #[cfg(not(target_os = "windows"))]
+        {
+            ["/opt/rocm/bin/hipcc", "/usr/bin/hipcc"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // Search common AMD HIP SDK install paths.
+            let mut paths = Vec::new();
+            if let Ok(prog_files) = std::env::var("ProgramFiles") {
+                for ver in ["6.3", "6.2", "6.1", "6.0"] {
+                    paths.push(format!(
+                        "{prog_files}\\AMD\\ROCm\\{ver}\\bin\\hipcc.bin.exe"
+                    ));
+                }
+            }
+            paths
+        }
     };
 
-    for candidate in rocm_candidates
+    for candidate in env_candidates
         .iter()
         .map(String::as_str)
         .chain(["hipcc"].iter().copied())
@@ -739,29 +766,60 @@ fn find_hipcc() -> GpuResult<String> {
         }
     }
     Err(GpuError::NotSupported(
-        "hipcc not found; install ROCm or set ROCM_PATH".to_string(),
+        "hipcc not found; install ROCm/HIP SDK or set ROCM_PATH/HIP_PATH".to_string(),
     ))
 }
 
 fn find_nvcc() -> GpuResult<String> {
-    for candidate in ["/usr/local/cuda/bin/nvcc", "nvcc"] {
-        if std::path::Path::new(candidate).exists() || which_in_path(candidate) {
+    // Check CUDA_PATH env variable first (set by NVIDIA installer on both platforms).
+    if let Ok(cuda_path) = std::env::var("CUDA_PATH") {
+        let nvcc = std::path::Path::new(&cuda_path).join("bin").join("nvcc");
+        if nvcc.exists() {
+            return Ok(nvcc.to_string_lossy().into_owned());
+        }
+        let nvcc_exe = nvcc.with_extension("exe");
+        if nvcc_exe.exists() {
+            return Ok(nvcc_exe.to_string_lossy().into_owned());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    let candidates: &[&str] = &["/usr/local/cuda/bin/nvcc"];
+    #[cfg(target_os = "windows")]
+    let candidates: &[&str] = &[];
+
+    for candidate in candidates {
+        if std::path::Path::new(candidate).exists() {
             return Ok(candidate.to_string());
         }
     }
+    if which_in_path("nvcc") {
+        return Ok("nvcc".to_string());
+    }
     Err(GpuError::NotSupported(
-        "nvcc not found; install CUDA toolkit to compile CUDA shaders".to_string(),
+        "nvcc not found; install CUDA toolkit or set CUDA_PATH".to_string(),
     ))
 }
 
 fn which_in_path(name: &str) -> bool {
-    if name.contains('/') {
+    if name.contains('/') || name.contains('\\') {
         return false;
     }
     if let Ok(path_var) = std::env::var("PATH") {
-        for dir in path_var.split(':') {
-            if std::path::Path::new(dir).join(name).exists() {
+        let separator = if cfg!(target_os = "windows") {
+            ';'
+        } else {
+            ':'
+        };
+        for dir in path_var.split(separator) {
+            let candidate = std::path::Path::new(dir).join(name);
+            if candidate.exists() {
                 return true;
+            }
+            if cfg!(target_os = "windows") && !name.ends_with(".exe") {
+                if candidate.with_extension("exe").exists() {
+                    return true;
+                }
             }
         }
     }
@@ -773,6 +831,11 @@ fn slangc_path() -> String {
         let path = format!("{slang_dir}/bin/slangc");
         if std::path::Path::new(&path).exists() {
             return path;
+        }
+        // On Windows, check with .exe extension.
+        let path_exe = format!("{path}.exe");
+        if std::path::Path::new(&path_exe).exists() {
+            return path_exe;
         }
     }
     "slangc".to_string()

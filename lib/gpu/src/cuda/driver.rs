@@ -76,17 +76,22 @@ pub enum Runtime {
 }
 
 impl GpuDriver {
-    /// Try to load the HIP runtime (`libamdhip64.so`).
+    /// Try to load the HIP runtime.
     pub fn try_load_hip() -> GpuResult<(Arc<Self>, Runtime)> {
-        // Try several common library names/paths.
-        let candidates = ["libamdhip64.so", "libamdhip64.so.6", "libamdhip64.so.5"];
-        Self::load_from_candidates(&candidates, Runtime::Hip)
+        #[cfg(target_os = "windows")]
+        let candidates = &["amdhip64.dll", "amdhip64_7.dll", "amdhip64_6.dll"][..];
+        #[cfg(not(target_os = "windows"))]
+        let candidates = &["libamdhip64.so", "libamdhip64.so.6", "libamdhip64.so.5"][..];
+        Self::load_from_candidates(candidates, Runtime::Hip)
     }
 
-    /// Try to load the CUDA runtime (`libcuda.so`).
+    /// Try to load the CUDA driver.
     pub fn try_load_cuda() -> GpuResult<(Arc<Self>, Runtime)> {
-        let candidates = ["libcuda.so.1", "libcuda.so"];
-        Self::load_from_candidates(&candidates, Runtime::Cuda)
+        #[cfg(target_os = "windows")]
+        let candidates = &["nvcuda.dll"][..];
+        #[cfg(not(target_os = "windows"))]
+        let candidates = &["libcuda.so.1", "libcuda.so"][..];
+        Self::load_from_candidates(candidates, Runtime::Cuda)
     }
 
     fn load_from_candidates(
@@ -208,29 +213,56 @@ impl GpuDriver {
     }
 
     // ---- CUDA (NVIDIA) device attribute indices ----
-    // These match CUdevice_attribute enum values.
+    // These match CUdevice_attribute enum values (stable across CUDA versions).
     pub const CUDA_ATTR_WARP_SIZE: i32 = 10; // CU_DEVICE_ATTRIBUTE_WARP_SIZE
     pub const CUDA_ATTR_MAX_GRID_DIM_X: i32 = 5; // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X
 
     // ---- HIP (AMD) device attribute indices ----
-    // HIP uses DIFFERENT numeric values from CUDA for the same concepts!
-    // Verified by running hipDeviceGetAttribute on ROCm 6.x:
-    pub const HIP_ATTR_WARP_SIZE: i32 = 87; // hipDeviceAttributeWarpSize (= 87)
-    pub const HIP_ATTR_MAX_GRID_DIM_X: i32 = 29; // hipDeviceAttributeMaxGridDimX (= 29)
+    // HIP re-numbers its enum between ROCm releases, so we cannot hardcode a single
+    // value.  Instead we probe a set of known values and pick the one that succeeds
+    // with a plausible result.
+    //   ROCm 6.2: WarpSize=89, MaxGridDimX=31
+    //   ROCm 7.1: WarpSize=90, MaxGridDimX=31
+    const HIP_ATTR_WARP_SIZE_CANDIDATES: &'static [i32] = &[90, 89, 88, 87];
+    const HIP_ATTR_MAX_GRID_DIM_X_CANDIDATES: &'static [i32] = &[31, 30, 29];
 
-    /// Returns the correct warp-size attribute number for the given runtime.
-    pub fn attr_warp_size(runtime: Runtime) -> i32 {
+    /// Query warp/wavefront size for the given device.
+    pub fn query_warp_size(&self, runtime: Runtime, dev: CuDevice) -> GpuResult<i32> {
         match runtime {
-            Runtime::Cuda => Self::CUDA_ATTR_WARP_SIZE,
-            Runtime::Hip => Self::HIP_ATTR_WARP_SIZE,
+            Runtime::Cuda => self.get_attribute(Self::CUDA_ATTR_WARP_SIZE, dev),
+            Runtime::Hip => {
+                for &attr in Self::HIP_ATTR_WARP_SIZE_CANDIDATES {
+                    if let Ok(val) = self.get_attribute(attr, dev) {
+                        if val == 32 || val == 64 {
+                            return Ok(val);
+                        }
+                    }
+                }
+                Err(GpuError::Other(
+                    "Failed to query HIP warp size: no candidate attribute returned 32 or 64"
+                        .to_string(),
+                ))
+            }
         }
     }
 
-    /// Returns the correct max-grid-dim-X attribute number for the given runtime.
-    pub fn attr_max_grid_dim_x(runtime: Runtime) -> i32 {
+    /// Query max grid dim X for the given device.
+    pub fn query_max_grid_dim_x(&self, runtime: Runtime, dev: CuDevice) -> GpuResult<i32> {
         match runtime {
-            Runtime::Cuda => Self::CUDA_ATTR_MAX_GRID_DIM_X,
-            Runtime::Hip => Self::HIP_ATTR_MAX_GRID_DIM_X,
+            Runtime::Cuda => self.get_attribute(Self::CUDA_ATTR_MAX_GRID_DIM_X, dev),
+            Runtime::Hip => {
+                for &attr in Self::HIP_ATTR_MAX_GRID_DIM_X_CANDIDATES {
+                    if let Ok(val) = self.get_attribute(attr, dev) {
+                        // Max grid dim X should be a large positive number (typically 2^31-1).
+                        if val > 1024 {
+                            return Ok(val);
+                        }
+                    }
+                }
+                Err(GpuError::Other(
+                    "Failed to query HIP max grid dim X".to_string(),
+                ))
+            }
         }
     }
 
