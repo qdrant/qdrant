@@ -56,7 +56,10 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
     }
 
     let (access, inference_token, auth_type, subject) = auth_keys
-        .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
+        .validate_request(
+            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
+            Default::default(),
+        )
         .await
         .map_err(|e| match e {
             AuthError::Unauthorized(e) => Status::unauthenticated(e),
