@@ -547,7 +547,7 @@ mod tests {
             .unwrap();
 
         // Delete points 1..=200 (20%)
-        let deleted_ids: Vec<_> = (1..=200).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints {
                 ids: deleted_ids.clone(),
@@ -603,7 +603,7 @@ mod tests {
             .unwrap();
 
         // Delete ALL points
-        let deleted_ids: Vec<_> = (1..=1000).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=1000).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -653,7 +653,7 @@ mod tests {
             .unwrap();
 
         // Delete exactly 10% (100 out of 1000)
-        let deleted_ids: Vec<_> = (1..=100).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=100).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -683,7 +683,7 @@ mod tests {
             .unwrap();
 
         // Delete 101 out of 1000 = 10.1% — just above threshold
-        let deleted_ids: Vec<_> = (1..=101).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=101).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -716,7 +716,7 @@ mod tests {
         shard
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
-        let deleted_ids: Vec<_> = (1..=200).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -774,7 +774,7 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        let deleted_ids: Vec<_> = (1..=200).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -823,7 +823,7 @@ mod tests {
             .unwrap();
 
         // Delete 200 points, then optimize
-        let deleted_ids: Vec<_> = (1..=200).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -850,7 +850,10 @@ mod tests {
     /// Retrieve points by ID and verify each one is present with the correct
     /// vector value. Every test point was created with vector `[id as f32]`.
     fn assert_points_retrievable_with_vectors(shard: &EdgeShard, ids: &[u64]) {
-        let point_ids: Vec<_> = ids.iter().map(ExtendedPointId::NumId).collect();
+        let point_ids = ids
+            .iter()
+            .map(|id| ExtendedPointId::NumId(*id))
+            .collect::<Vec<_>>();
         let results = shard
             .retrieve(
                 &point_ids,
@@ -917,12 +920,12 @@ mod tests {
     /// Copy the first segment on disk to reach `target_count` total segments.
     fn multiply_segments(shard_dir: &Path, target_count: usize) {
         let segments_path = shard_dir.join("segments");
-        let segment_dirs: Vec<_> = fs::read_dir(&segments_path)
+        let segment_dirs = fs::read_dir(&segments_path)
             .unwrap()
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| path.is_dir())
-            .collect();
+            .collect::<Vec<_>>();
         assert!(!segment_dirs.is_empty(), "need at least one source segment");
 
         let source = &segment_dirs[0];
