@@ -52,7 +52,9 @@ EXCLUDED_DEPENDENCIES = {
 
 
 def main() -> None:
-    root_manifest = tomlkit.loads(Path(REPO_ROOT / "Cargo.toml").read_text())
+    root_manifest = tomlkit.loads(
+        Path(REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    )
     packages = all_file_dependencies(REPO_ROOT / "lib/edge")
 
     shutil.rmtree(AMALGAMATION, ignore_errors=True)
@@ -73,7 +75,9 @@ def main() -> None:
         REPO_ROOT / "lib/quantization/build.rs",
         AMALGAMATION / "build-quantization.rs",
     )
-    (AMALGAMATION / "build.rs").write_text('include!("build-quantization.rs");\n')
+    (AMALGAMATION / "build.rs").write_text(
+        'include!("build-quantization.rs");\n', encoding="utf-8"
+    )
     # TODO: segment/build.rs - for arm neon .c files.
 
     # Copy resources.
@@ -93,7 +97,7 @@ def main() -> None:
             root_manifest, [manifest for _, manifest in packages.values()]
         ),
     }
-    (AMALGAMATION / "Cargo.toml").write_text(tomlkit.dumps(manifest))
+    (AMALGAMATION / "Cargo.toml").write_text(tomlkit.dumps(manifest), encoding="utf-8")
 
     # Write src/lib.rs.
     # It just re-exports everything.
@@ -107,7 +111,8 @@ def main() -> None:
             pub mod shard;
             """
         ).lstrip()
-        + "".join(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"})
+        + "".join(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"}),
+        encoding="utf-8",
     )
 
     # Regex-based fixups.
@@ -142,7 +147,9 @@ def main() -> None:
     shutil.rmtree(AMALGAMATION / "src/segment/index/hnsw_index/gpu")
 
     # Ast-grep-based fixups.
-    RULES_TEMPLATE = (Path(__file__).parent / "ast-grep-rules.yaml").read_text()
+    RULES_TEMPLATE = (Path(__file__).parent / "ast-grep-rules.yaml").read_text(
+        encoding="utf-8"
+    )
     for package, (_, manifest) in packages.items():
         deps = (
             "|".join(
@@ -224,7 +231,7 @@ def substitute(paths: Path | Iterable[Path], *replacements: tuple[str, str]) -> 
     if isinstance(paths, Path):
         paths = (paths,)
     for path in paths:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         changed = False
         for i in range(len(replacements)):
             new_text = regexes[i].sub(replacements[i][1], text)
@@ -233,7 +240,7 @@ def substitute(paths: Path | Iterable[Path], *replacements: tuple[str, str]) -> 
                 changed = True
                 seen[i] = True
         if changed:
-            path.write_text(text)
+            path.write_text(text, encoding="utf-8")
     for seen, (pattern, _) in zip(seen, replacements):
         assert seen, f"Pattern {pattern!r} not found"
 
@@ -248,7 +255,7 @@ def all_file_dependencies(root: Path) -> dict[str, tuple[Path, tomlkit.TOMLDocum
 
     while stack:
         path = stack.pop()
-        manifest = tomlkit.loads((path / "Cargo.toml").read_text())
+        manifest = tomlkit.loads((path / "Cargo.toml").read_text(encoding="utf-8"))
         name = manifest["package"]["name"]
         if name in PACKAGES_TO_INCLUDE:
             result[manifest["package"]["name"]] = (path, manifest)
