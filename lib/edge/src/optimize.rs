@@ -328,9 +328,7 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        let deleted_ids = (1..=200)
-            .map(|id| ExtendedPointId::NumId(id as u64))
-            .collect::<Vec<_>>();
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -484,9 +482,7 @@ mod tests {
             .unwrap();
 
         // Delete 5% — below the 10% threshold
-        let deleted_ids = (1..=50)
-            .map(|id| ExtendedPointId::NumId(id))
-            .collect::<Vec<_>>();
+        let deleted_ids = (1..=50).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -519,9 +515,7 @@ mod tests {
             .unwrap();
 
         // Delete 50% — above ratio threshold, but total count is below minimum
-        let deleted_ids = (1..=50)
-            .map(|id| ExtendedPointId::NumId(id))
-            .collect::<Vec<_>>();
+        let deleted_ids = (1..=50).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -856,7 +850,7 @@ mod tests {
     /// Retrieve points by ID and verify each one is present with the correct
     /// vector value. Every test point was created with vector `[id as f32]`.
     fn assert_points_retrievable_with_vectors(shard: &EdgeShard, ids: &[u64]) {
-        let point_ids: Vec<_> = ids.iter().map(|&id| ExtendedPointId::NumId(id)).collect();
+        let point_ids: Vec<_> = ids.iter().map(ExtendedPointId::NumId).collect();
         let results = shard
             .retrieve(
                 &point_ids,
