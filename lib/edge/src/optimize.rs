@@ -155,6 +155,7 @@ impl EdgeShard {
             memmap_threshold_kb: usize::MAX,
             indexing_threshold_kb: DEFAULT_INDEXING_THRESHOLD_KB,
             max_segment_size_kb: indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB),
+            deferred_points_threshold_bytes: None,
         }
     }
 
