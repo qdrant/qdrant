@@ -116,6 +116,10 @@ impl<S: UniversalReadMulti<u8>> Pages<S> {
 
             read_ranges.push((page_id as _, element_range));
 
+            if unread_bytes == 0 {
+                break;
+            }
+
             block_offset = 0;
             length = unread_bytes as u32;
         }

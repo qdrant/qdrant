@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 pub use self::multi_io::*;
-use crate::mmap::AdviceSetting;
+use crate::mmap::{Advice, AdviceSetting};
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
@@ -25,7 +25,7 @@ pub trait UniversalRead<T: Copy + 'static> {
     /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
     fn read_whole(&self) -> Result<Cow<'_, [T]>> {
         let n = self.len()?;
-        self.read::<false>(ElementsRange {
+        self.read::<true>(ElementsRange {
             start: 0,
             length: n,
         })
@@ -125,11 +125,18 @@ pub enum UniversalIoError {
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///
 /// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
-pub fn read_json_via<S, T>(path: impl AsRef<Path>, options: OpenOptions) -> Result<T>
+pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
 where
     S: UniversalRead<u8> + Sized,
     T: DeserializeOwned,
 {
+    let options = OpenOptions {
+        need_sequential: false,
+        disk_parallel: None,
+        populate: Some(false),
+        advice: Some(AdviceSetting::Advice(Advice::Sequential)),
+    };
+
     let storage = S::open(path, options)?;
     let bytes = storage.read_whole()?;
     serde_json::from_slice(&bytes).map_err(UniversalIoError::from)

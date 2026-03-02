@@ -107,10 +107,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     fn load_config(config_file: &Path) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<MmapUniversal<u8>, ChunkedVectorsConfig>(
-            config_file,
-            OpenOptions::default(),
-        ) {
+        match read_json_via::<MmapUniversal<u8>, ChunkedVectorsConfig>(config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),

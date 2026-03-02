@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{OpenOptions, read_json_via};
+use common::universal_io::read_json_via;
 
 use super::view::GridstoreView;
 use crate::blob::Blob;
@@ -158,8 +158,7 @@ pub(super) fn read_config_and_tracker(
     }
 
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig =
-        read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path, OpenOptions::default())?;
+    let config: StorageConfig = read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path)?;
 
     let tracker = Tracker::open(base_path)?;
 
