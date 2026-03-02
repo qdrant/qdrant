@@ -1,7 +1,9 @@
 pub mod mmap;
 
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use serde::de::DeserializeOwned;
 
 use crate::mmap::AdviceSetting;
 
@@ -14,6 +16,18 @@ pub trait UniversalRead<T: Copy + 'static> {
 
     /// Prefer [`read_batch`] if you need high performance.
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
+
+    /// Read the entire file in one logical access.
+    ///
+    /// Implementations may override this to avoid the two accesses that would result from
+    /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
+    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+        let n = self.len()?;
+        self.read::<false>(ElementsRange {
+            start: 0,
+            length: n,
+        })
+    }
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
@@ -95,4 +109,23 @@ pub enum UniversalIoError {
         end: u64,
         data_length: usize,
     },
+    #[error(transparent)]
+    SerdeJson(#[from] serde_json::Error),
+    /// Path does not exist or is not accessible; backends may use this instead of
+    /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
+    #[error("Not found: {path:?}")]
+    NotFound { path: PathBuf },
+}
+
+/// Open a file via universal io, read it as a whole, and deserialize as JSON.
+///
+/// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
+pub fn read_json_via<S, T>(path: impl AsRef<Path>, options: OpenOptions) -> Result<T>
+where
+    S: UniversalRead<u8> + Sized,
+    T: DeserializeOwned,
+{
+    let storage = S::open(path, options)?;
+    let bytes = storage.read_whole()?;
+    serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
 }
