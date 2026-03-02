@@ -17,14 +17,22 @@ use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::SnapshotEntry as _;
 use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
-use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
-use crate::types::{Distance, Filter, Payload, SnapshotFormat, WithPayload, WithVector};
+use crate::segment_constructor::{build_segment, load_segment};
+use crate::types::{
+    Distance, Filter, Indexes, Payload, PointIdType, SnapshotFormat, VectorDataConfig,
+    VectorStorageType, WithPayload, WithVector,
+};
+
+fn init_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
 
 #[test]
 fn test_search_batch_equivalence_single() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -79,6 +87,7 @@ fn test_search_batch_equivalence_single() {
 
 #[test]
 fn test_from_filter_attributes() {
+    init_logger();
     let data = r#"
         {
             "name": "John Doe",
@@ -162,7 +171,7 @@ fn test_from_filter_attributes() {
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
 fn test_snapshot(#[case] format: SnapshotFormat) {
-    let _ = env_logger::builder().is_test(true).try_init();
+    init_logger();
 
     let data = r#"
         {
@@ -278,6 +287,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
 #[test]
 fn test_check_consistency() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -364,6 +374,7 @@ fn test_check_consistency() {
 
 #[test]
 fn test_point_vector_count() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
@@ -405,6 +416,7 @@ fn test_point_vector_count() {
 
 #[test]
 fn test_point_vector_count_multivec() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 1;
 
@@ -513,6 +525,7 @@ fn test_point_vector_count_multivec() {
 /// Tests segment functions to ensure invalid requests do error
 #[test]
 fn test_vector_compatibility_checks() {
+    init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut segment = build_multivec_segment(dir.path(), 4, 2, Distance::Dot).unwrap();
@@ -669,6 +682,7 @@ fn test_vector_compatibility_checks() {
 /// should not happen, and this test asserts correct behavior.
 #[test]
 fn test_handle_point_version() {
+    init_logger();
     // Create base segment with a single point
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
@@ -716,4 +730,121 @@ fn test_handle_point_version() {
         .handle_point_version(101, None, |_segment| Ok((true, None)))
         .unwrap();
     assert!(applied);
+}
+
+#[test]
+fn test_dense_deferred_points() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+    let hw_counter = HardwareCounterCell::new();
+
+    // Create a segment with a deferred_points_threshold_bytes set
+    // Vector size: 4 f32 = 16 bytes per vector
+    // We set threshold to 200 bytes, so deferred threshold should be at internal_id 13
+    // (200 / 16 = 12.5, rounded up = 13 via div_ceil)
+    let deferred_threshold_bytes = std::num::NonZeroUsize::new(200).unwrap();
+
+    let mut segment = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(deferred_threshold_bytes),
+        true,
+    )
+    .unwrap();
+
+    // Initially, no deferred points (empty segment)
+    assert!(!segment.has_deferred_points());
+    for i in 0..=20 {
+        assert!(
+            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should not be deferred in an empty segment"
+        );
+    }
+
+    // Insert points with small vectors to reach the threshold
+    // Each vector is 4 f32 = 16 bytes
+    // We need to insert enough vectors to exceed 200 bytes
+    // Points 1-13 will be non-deferred (internal_id 0-12), points 14+ will be deferred
+    for i in 1..=20 {
+        segment
+            .insert_new_vectors(
+                PointIdType::from(i as u64),
+                i as u64,
+                &only_default_vector(&[
+                    0.1 * i as f32,
+                    0.2 * i as f32,
+                    0.3 * i as f32,
+                    0.4 * i as f32,
+                ]),
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    // Now we should have deferred points
+    assert!(segment.has_deferred_points());
+    assert_eq!(segment.deferred_internal_id, Some(13));
+
+    // Points 1-13 (internal_ids 0-12) should NOT be deferred
+    for i in 1..=13 {
+        assert!(
+            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should not be deferred"
+        );
+    }
+
+    // Points 14+ (internal_ids 13+) should be deferred
+    for i in 14..=20 {
+        assert!(
+            segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should be deferred"
+        );
+    }
+
+    // Point 100 (non-existent) should not be deferred
+    assert!(
+        !segment.point_is_deferred(PointIdType::from(100)),
+        "Non-existent point should not be deferred"
+    );
+
+    // Close segment
+    segment.flush(true).unwrap();
+    let path = segment.segment_path.clone();
+    drop(segment);
+
+    // Reopen segment to ensure deferred points are loaded correctly from disk
+    let segment = load_segment(
+        &path,
+        Uuid::nil(),
+        Some(deferred_threshold_bytes),
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    // Deferred points should still be the same after reopening
+    assert!(
+        segment.has_deferred_points(),
+        "Segment should still have deferred points after reopening"
+    );
+    assert_eq!(
+        segment.deferred_internal_id,
+        Some(13),
+        "Deferred internal ID should still be 13 after reopening"
+    );
 }
