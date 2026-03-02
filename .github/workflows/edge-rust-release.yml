@@ -1,0 +1,90 @@
+name: Qdrant Edge Rust Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to crates.io'
+        type: boolean
+        default: false
+        required: true
+
+
+jobs:
+  edge-rust-check:
+    name: Check Qdrant Edge Rust Package [${{ matrix.os }}]
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        if: matrix.os == 'ubuntu-latest'
+        uses: rui314/setup-mold@v1
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install ast-grep
+        run: npm install --global @ast-grep/cli
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Amalgamate
+        run: uv run lib/edge/publish/amalgamate.py
+
+      - name: Cargo check
+        working-directory: lib/edge/publish
+        run: cargo check -p examples
+
+
+  publish:
+    name: Publish to crates.io
+
+    runs-on: ubuntu-latest
+    needs:
+      - edge-rust-check
+
+    if: inputs.publish
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install ast-grep
+        run: npm install --global @ast-grep/cli
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Amalgamate
+        run: uv run lib/edge/publish/amalgamate.py
+
+      - name: Publish to crates.io
+        working-directory: lib/edge/publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN_EDGE }}
+        run: cargo publish -p qdrant-edge

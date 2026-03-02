@@ -24,6 +24,8 @@ from pathlib import Path
 
 import tomlkit
 
+VERSION = "0.0.0"
+
 # Assume this script is in <root>/lib/edge/publish/.
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -81,11 +83,11 @@ def main() -> None:
     manifest = {
         "package": {
             "name": "qdrant-edge",
-            "version": "0.0.0",
+            "version": VERSION,
             "authors": ["Qdrant Team <info@qdrant.tech>"],
             "license": "Apache-2.0",
             "edition": "2024",
-            "publish": False,
+            "publish": True,
         },
         **gather_dependencies(
             root_manifest, [manifest for _, manifest in packages.values()]
