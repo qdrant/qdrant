@@ -2,57 +2,59 @@ use std::mem::MaybeUninit;
 use std::path::Path;
 
 use common::maybe_uninit::assume_init_vec;
-use common::universal_io::{ElementsRange, MultiUniversalRead, SourceId};
+use common::universal_io::{ElementsRange, OpenOptions, UniversalReadMulti};
 use smallvec::SmallVec;
 
 use crate::Result;
+use crate::error::GridstoreError;
 use crate::tracker::{BlockOffset, PageId, ValuePointer};
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct Pages<S> {
-    num_pages: usize,
-    file_access: S,
+    pages: Vec<S>,
+}
+
+impl<S> Default for Pages<S> {
+    fn default() -> Self {
+        Self { pages: Vec::new() }
+    }
 }
 
 #[allow(dead_code)]
-impl<S: MultiUniversalRead<u8>> Pages<S> {
+impl<S: UniversalReadMulti<u8>> Pages<S> {
     pub fn open(dir: &Path) -> Result<Self> {
-        let open_options = common::universal_io::OpenOptions {
+        let mut pages = Self::default();
+
+        for page_id in 0.. {
+            let page_path = dir.join(format!("page_{page_id}.dat"));
+
+            if !page_path.exists() {
+                break;
+            }
+
+            pages.attach_page(&page_path)?;
+        }
+
+        Ok(pages)
+    }
+
+    pub fn attach_page(&mut self, path: &Path) -> Result<()> {
+        let options = OpenOptions {
             need_sequential: true,
             disk_parallel: None,
             populate: Some(false),
             advice: None,
         };
 
-        let mut file_access = S::new(open_options);
+        let page = S::open(path, options)?;
+        self.pages.push(page);
 
-        let mut page_id: usize = 0;
-        loop {
-            // ToDo: should be abstracted by file_access
-            // ToDo: should list files to avoid round-trips to disk
-            let page_path = dir.join(format!("page_{page_id}.dat"));
-            if !page_path.exists() {
-                break;
-            }
-            file_access.attach(&page_path)?;
-            page_id += 1;
-        }
-
-        Ok(Self {
-            num_pages: page_id,
-            file_access,
-        })
+        Ok(())
     }
 
     pub fn num_pages(&self) -> usize {
-        self.num_pages
-    }
-
-    pub fn attach_page(&mut self, path: &Path) -> Result<()> {
-        self.file_access.attach(path)?;
-        self.num_pages += 1;
-        Ok(())
+        self.pages.len()
     }
 
     fn page_access_range(
@@ -62,8 +64,14 @@ impl<S: MultiUniversalRead<u8>> Pages<S> {
         length: u32,
         block_size_bytes: usize,
     ) -> Result<(ElementsRange, u64)> {
+        let page_len = self
+            .pages
+            .get(page_id as usize)
+            .ok_or(GridstoreError::PageNotFound { page_id })?
+            .len()?;
+
         let length = u64::from(length);
-        let page_len = self.file_access.source_len(SourceId(page_id as usize))?;
+
         let value_start = u64::from(block_offset) * block_size_bytes as u64;
         assert!(value_start < page_len);
 
@@ -106,18 +114,17 @@ impl<S: MultiUniversalRead<u8>> Pages<S> {
             range_offset.push(length_so_far as usize);
             length_so_far += element_range.length;
 
-            read_ranges.push((SourceId(page_id as usize), element_range));
+            read_ranges.push((page_id as _, element_range));
 
             block_offset = 0;
             length = unread_bytes as u32;
         }
 
-        self.file_access
-            .read_batch_multi::<READ_SEQUENTIAL>(read_ranges, |idx, slice| {
-                let offset = range_offset[idx];
-                raw_sections[offset..offset + slice.len()].write_copy_of_slice(slice);
-                Ok(())
-            })?;
+        S::read_multi::<READ_SEQUENTIAL>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
+            let offset = range_offset[idx];
+            raw_sections[offset..offset + slice.len()].write_copy_of_slice(slice);
+            Ok(())
+        })?;
 
         Ok(unsafe { assume_init_vec(raw_sections) })
     }
@@ -125,13 +132,17 @@ impl<S: MultiUniversalRead<u8>> Pages<S> {
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> Result<()> {
-        self.file_access.populate()?;
+        for page in &self.pages {
+            page.populate()?;
+        }
         Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> Result<()> {
-        self.file_access.clear_ram_cache()?;
+        for page in &self.pages {
+            page.clear_ram_cache()?;
+        }
         Ok(())
     }
 }
