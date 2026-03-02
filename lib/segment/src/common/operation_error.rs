@@ -174,7 +174,7 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::NotFound { path } => {
                 OperationError::service_error(format!("Not found: {}", path.display()))
             }
-            UniversalIoError::InvalidSourceId { .. } => {
+            UniversalIoError::InvalidFileIndex { .. } => {
                 OperationError::service_error(err.to_string())
             }
         }
@@ -272,6 +272,7 @@ impl From<GridstoreError> for OperationError {
             GridstoreError::UniversalIo(err) => {
                 Self::service_error(format!("Gridstore IO error: {err}"))
             }
+            GridstoreError::PageNotFound { .. } => Self::service_error(err.to_string()),
         }
     }
 }
