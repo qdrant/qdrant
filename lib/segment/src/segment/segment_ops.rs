@@ -663,12 +663,12 @@ impl Segment {
     }
 
     pub fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id) else {
-            return false;
+        if let Some(deferred_from) = self.deferred_internal_id
+            && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
+        {
+            return internal_id >= deferred_from;
         };
-        self.deferred_internal_id
-            .map(|deferred_from| internal_id >= deferred_from)
-            .unwrap_or(false)
+        false
     }
 
     pub(crate) fn update_deferred_internal_id(&mut self) {
