@@ -296,7 +296,7 @@ tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io", "io-util", "rt"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
-tonic-reflection = "0.11.0"
+tonic-reflection = "0.14.5"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.21", features = ["v4", "serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
