@@ -35,6 +35,9 @@ impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
     ///
     /// This is synchronous and does not spawn background optimization workers.
+    ///
+    /// NOTE: This method is not safe to call concurrently — it is only
+    /// intended to be called once during [`EdgeShard::load()`].
     pub fn optimize_all_segments_blocking(&self) -> OperationResult<bool> {
         let optimizers = self.build_blocking_optimizers()?;
         let stopped = AtomicBool::new(false);
