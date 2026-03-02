@@ -281,7 +281,7 @@ mod tests {
     use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
-    use shard::operations::point_ops::PointStructPersisted;
+    use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
     use uuid::Uuid;
 
     use super::{EDGE_OPTIMIZER_TEMP_PATH, default_segment_number};
@@ -908,11 +908,10 @@ mod tests {
     fn point(id: u64) -> PointStructPersisted {
         PointStructPersisted {
             id: ExtendedPointId::NumId(id),
-            vector: VectorStructInternal::Named(HashMap::from([(
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
                 VECTOR_NAME.to_string(),
                 VectorInternal::from(vec![id as f32]),
-            )]))
-            .into(),
+            )]))),
             payload: None,
         }
     }
