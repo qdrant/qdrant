@@ -1,9 +1,15 @@
 pub mod mmap;
+pub mod multi_universal_read;
+pub mod multi_universal_write;
+pub mod vec_multi_universal_io;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+pub use multi_universal_read::{MultiUniversalRead, SourceId};
+pub use multi_universal_write::MultiUniversalWrite;
 use serde::de::DeserializeOwned;
+pub use vec_multi_universal_io::VecMultiUniversalIo;
 
 use crate::mmap::AdviceSetting;
 
@@ -115,6 +121,12 @@ pub enum UniversalIoError {
     /// `Io(NotFound)` so callers can match without relying on a specific io::ErrorKind.
     #[error("Not found: {path:?}")]
     NotFound { path: PathBuf },
+    /// Source id is not valid for this multi-source storage.
+    #[error("Invalid source id {source_id} (num sources: {num_sources})")]
+    InvalidSourceId {
+        source_id: usize,
+        num_sources: usize,
+    },
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.

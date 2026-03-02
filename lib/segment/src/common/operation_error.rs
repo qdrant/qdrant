@@ -174,6 +174,9 @@ impl From<UniversalIoError> for OperationError {
             UniversalIoError::NotFound { path } => {
                 OperationError::service_error(format!("Not found: {}", path.display()))
             }
+            UniversalIoError::InvalidSourceId { .. } => {
+                OperationError::service_error(err.to_string())
+            }
         }
     }
 }
