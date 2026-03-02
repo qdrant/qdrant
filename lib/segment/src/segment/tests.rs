@@ -770,7 +770,7 @@ fn test_dense_deferred_points() {
     // Insert points with small vectors to reach the threshold
     // Each vector is 4 f32 = 16 bytes
     // We need to insert enough vectors to exceed 200 bytes
-    // Points 1-12 will be non-deferred (internal_id 0-11), points 13+ will be deferred
+    // Points 1-13 will be non-deferred (internal_id 0-12), points 14+ will be deferred
     for i in 1..=20 {
         segment
             .insert_new_vectors(
@@ -795,8 +795,7 @@ fn test_dense_deferred_points() {
     for i in 1..=13 {
         assert!(
             !segment.point_is_deferred((i as u64).into()),
-            "Point {} should not be deferred",
-            i
+            "Point {i} should not be deferred"
         );
     }
 
@@ -804,8 +803,13 @@ fn test_dense_deferred_points() {
     for i in 14..=20 {
         assert!(
             segment.point_is_deferred((i as u64).into()),
-            "Point {} should be deferred",
-            i
+            "Point {i} should be deferred"
         );
     }
+
+    // Point 100 (non-existent) should not be deferred
+    assert!(
+        !segment.point_is_deferred(100.into()),
+        "Non-existent point should not be deferred"
+    );
 }
