@@ -10,7 +10,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
+use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker as TrackerGeneric, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -25,13 +25,13 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// A non-owning view into gridstore data.
 ///
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
-/// Generic over the page storage backend `S`, so it works with any `UniversalRead<u8>`
-/// implementation (mmap, memory buffers, etc.).
+/// Generic over the storage backend `S` for both pages and tracker (same as [`Page<S>`] and
+/// [`Tracker<S>`]).
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
 pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
     pub(super) config: &'a StorageConfig,
-    pub(super) tracker: &'a Tracker,
+    pub(super) tracker: &'a TrackerGeneric<S>,
     pub(super) pages: &'a [Page<S>],
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
@@ -39,7 +39,7 @@ pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
 impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
-        tracker: &'a Tracker,
+        tracker: &'a TrackerGeneric<S>,
         pages: &'a [Page<S>],
     ) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         self.tracker.pointer_count()
     }
 
-    fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
+    fn get_pointer(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
         self.tracker.get(point_offset)
     }
 
@@ -120,7 +120,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        let Some(pointer) = self.get_pointer(point_offset) else {
+        let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
 
@@ -154,6 +154,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     /// - `callback` returned false
     /// - there are no more results.
     ///
+    /// Returns `Err(e)` if reading from the tracker fails (no silent skip).
     pub fn iter<F, E>(
         &self,
         from: PointOffset,
@@ -165,18 +166,18 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let mut pointers_iter = self
-            .tracker
-            .iter_pointers(from)
-            .filter_map(|(point_offset, opt_pointer)| {
-                opt_pointer.map(|pointer| (point_offset, pointer))
-            })
-            .enumerate();
+        let mut nth = 0;
+        for (point_offset, res) in self.tracker.iter_pointers(from) {
+            let pointer = match res {
+                Ok(Some(p)) => p,
+                Ok(None) => continue,
+                Err(e) => return Err(e.into()),
+            };
 
-        for (nth, (point_offset, pointer)) in pointers_iter.by_ref() {
             if nth == max_iters {
                 return Ok(ControlFlow::Continue(point_offset));
             }
+            nth += 1;
 
             let ValuePointer {
                 page_id,
