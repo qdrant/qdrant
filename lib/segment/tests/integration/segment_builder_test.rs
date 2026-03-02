@@ -85,15 +85,15 @@ fn test_building_new_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().iter().count(),
+        merged_segment.get_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .iter_points()
+            .get_points()
             .iter()
-            .chain(segment2.iter_points().iter())
+            .chain(segment2.get_points().iter())
             .unique()
             .count(),
     );
@@ -164,15 +164,15 @@ fn test_building_new_defragmented_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().iter().count(),
+        merged_segment.get_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .iter_points()
+            .get_points()
             .iter()
-            .chain(segment2.iter_points().iter())
+            .chain(segment2.get_points().iter())
             .unique()
             .count(),
     );
@@ -290,15 +290,15 @@ fn test_building_new_sparse_segment() {
     assert_eq!(new_segment_count, 3);
 
     assert_eq!(
-        merged_segment.iter_points().iter().count(),
+        merged_segment.get_points().iter().count(),
         merged_segment.available_point_count(),
     );
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .iter_points()
+            .get_points()
             .iter()
-            .chain(segment2.iter_points().iter())
+            .chain(segment2.get_points().iter())
             .unique()
             .count(),
     );

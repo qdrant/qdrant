@@ -144,7 +144,7 @@ fn assert_no_duplicate_point_ids(shard: &LocalShard) {
     for (seg_id, segment) in holder.iter() {
         let seg = segment.get();
         let seg_read = seg.read();
-        for pid in seg_read.iter_points().iter() {
+        for pid in seg_read.get_points().iter() {
             let is_deferred = seg_read.point_is_deferred(pid);
             point_occurrences
                 .entry(pid)
