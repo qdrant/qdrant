@@ -471,6 +471,7 @@ impl UpdateWorkers {
                 segments_path,
                 Some(segment_config.base_segment_config()),
                 payload_index_schema,
+                thresholds_config.deferred_points_threshold_bytes,
                 true,
             )?;
             let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);

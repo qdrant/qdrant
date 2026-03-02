@@ -91,7 +91,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
 
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_segment(segment_dir.path(), &segment_config, true).unwrap();
+    let mut segment = build_segment(segment_dir.path(), &segment_config, None, true).unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();
         let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);

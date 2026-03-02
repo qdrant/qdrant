@@ -65,6 +65,8 @@ impl IndexingOptimizer {
             .memmap_threshold_kb
             .saturating_mul(BYTES_IN_KB);
 
+        let has_deferred_points = segment.has_deferred_points();
+
         for (vector_name, vector_cfg) in &self.segment_config.dense_vector {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
                 let is_indexed = vector_data.index.is_indexed();
@@ -83,7 +85,7 @@ impl IndexingOptimizer {
                     is_big_for_mmap && !is_on_disk
                 };
 
-                if optimize_for_index || optimize_for_mmap {
+                if optimize_for_index || optimize_for_mmap || has_deferred_points {
                     return true;
                 }
             }

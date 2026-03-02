@@ -61,7 +61,15 @@ impl LocalShard {
         let shard_path = self.path.clone();
 
         let segments_path = Self::segments_path(&self.path);
-        let segment_config = self.collection_config.read().await.to_base_segment_config();
+        let (segment_config, deferred_points_threshold_bytes) = {
+            let collection_config = self.collection_config.read().await;
+            (
+                collection_config.to_base_segment_config(),
+                collection_config
+                    .optimizer_config
+                    .get_deferred_points_threshold_bytes(),
+            )
+        };
 
         let applied_seq_path = self.applied_seq_handler.path().to_path_buf();
 
@@ -89,6 +97,7 @@ impl LocalShard {
                     &segments_path,
                     Some(segment_config),
                     payload_index_schema,
+                    deferred_points_threshold_bytes,
                     &temp_path,
                     &tar.descend(Path::new(SEGMENTS_PATH))?,
                     format,
@@ -244,6 +253,7 @@ pub fn snapshot_all_segments(
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     temp_dir: &Path,
     tar: &tar_ext::BuilderExt,
     format: SnapshotFormat,
@@ -257,6 +267,7 @@ pub fn snapshot_all_segments(
         segments_path,
         segment_config,
         payload_index_schema,
+        deferred_points_threshold_bytes,
         |segment| {
             let read_segment = segment.read();
             let request_segment_manifest = if let Some(manifest) = manifest {
@@ -307,6 +318,7 @@ pub fn proxy_all_segments_and_apply<F>(
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     mut operation: F,
 ) -> OperationResult<()>
 where
@@ -322,6 +334,7 @@ where
         segments_path,
         segment_config,
         payload_index_schema,
+        deferred_points_threshold_bytes,
     )?;
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore

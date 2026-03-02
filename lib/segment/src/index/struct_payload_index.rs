@@ -1245,7 +1245,13 @@ mod tests {
         drop(payload_config);
 
         // Load once and drop.
-        load_segment(&full_segment_path, Uuid::nil(), &AtomicBool::new(false)).unwrap();
+        load_segment(
+            &full_segment_path,
+            Uuid::nil(),
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
 
         // Check that index type has been written to disk again.
         // Proves we'll always persist the exact index type if it wasn't known yet at that time
