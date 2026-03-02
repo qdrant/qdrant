@@ -166,6 +166,8 @@ impl EdgeShard {
         &self,
         default_hnsw_config: HnswConfig,
     ) -> SegmentOptimizerConfig {
+        let appendable_quantization = common::flags::feature_flags().appendable_quantization;
+
         let base_vector_data = self
             .config
             .vector_data
@@ -178,10 +180,9 @@ impl EdgeShard {
                 } else {
                     VectorStorageType::InRamChunkedMmap
                 };
-                config.quantization_config = config.quantization_config.filter(|q| {
-                    common::flags::feature_flags().appendable_quantization
-                        && q.supports_appendable()
-                });
+                config.quantization_config = config
+                    .quantization_config
+                    .filter(|q| appendable_quantization && q.supports_appendable());
                 (name.clone(), config)
             })
             .collect();
