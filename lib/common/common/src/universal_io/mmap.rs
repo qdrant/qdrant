@@ -41,7 +41,16 @@ where
         let mmap_file = path.as_ref();
         let advice = advice.unwrap_or(AdviceSetting::Global);
 
-        let mmap = open_write_mmap(mmap_file, advice, populate.unwrap_or_default())?;
+        let mmap =
+            open_write_mmap(mmap_file, advice, populate.unwrap_or_default()).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    UniversalIoError::NotFound {
+                        path: mmap_file.to_path_buf(),
+                    }
+                } else {
+                    e.into()
+                }
+            })?;
         let mmap = unsafe { MmapSlice::try_from(mmap) }?;
 
         let mmap_seq = if *MULTI_MMAP_IS_SUPPORTED && need_sequential {
@@ -119,6 +128,10 @@ where
     fn clear_ram_cache(&self) -> Result<()> {
         crate::fs::clear_disk_cache(&self.path)?;
         Ok(())
+    }
+
+    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
+        Ok(Cow::Borrowed(self.mmap.as_ref()))
     }
 }
 

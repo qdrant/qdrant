@@ -1,11 +1,10 @@
-use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::universal_io::mmap::MmapUniversal;
-use fs_err::File;
+use common::universal_io::{OpenOptions, read_json_via};
 
 use super::view::GridstoreView;
 use crate::Result;
@@ -159,8 +158,8 @@ pub(super) fn read_config_and_tracker(
     }
 
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config_file = BufReader::new(File::open(&config_path)?);
-    let config: StorageConfig = serde_json::from_reader(config_file)?;
+    let config: StorageConfig =
+        read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path, OpenOptions::default())?;
 
     let tracker = Tracker::open(base_path)?;
 
