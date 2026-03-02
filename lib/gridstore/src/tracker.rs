@@ -5,7 +5,7 @@ use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 #[expect(deprecated, reason = "legacy code")]
 use common::mmap::{transmute_from_u8, transmute_to_u8};
 use common::universal_io::{
-    ElementsRange, OpenOptions, UniversalIoError, UniversalRead, UniversalWrite,
+    ElementsRange, OpenOptions, SingleFile, StorageRead, StorageWrite, UniversalIoError,
 };
 use smallvec::SmallVec;
 use zerocopy::FromZeros;
@@ -237,7 +237,7 @@ pub struct Tracker<S> {
     /// Header of the file
     header: TrackerHeader,
     /// Storage for the file (universal io backend)
-    storage: S,
+    storage: SingleFile<u8, S>,
     /// Updates that haven't been flushed
     ///
     /// When flushing, these updates get written into the storage and flushed at once.
@@ -264,13 +264,13 @@ impl<S> Tracker<S> {
     }
 }
 
-// Read operations -- only require UniversalRead
-impl<S: UniversalRead<u8>> Tracker<S> {
+// Read operations
+impl<S: StorageRead<u8>> Tracker<S> {
     /// Open an existing PageTracker at the given path
     /// If the file does not exist, return an error
     pub fn open(path: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(path);
-        let storage = match S::open(&path, tracker_open_options()) {
+        let storage = match SingleFile::<u8, S>::open(&path, tracker_open_options()) {
             Err(UniversalIoError::NotFound { .. }) => {
                 return Err(GridstoreError::service_error(format!(
                     "Tracker file does not exist: {}",
@@ -373,11 +373,8 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     }
 }
 
-// Write operations and constructors -- require UniversalWrite
-impl<S> Tracker<S>
-where
-    S: UniversalRead<u8> + UniversalWrite<u8>,
-{
+// Write operations and constructors
+impl<S: StorageWrite<u8>> Tracker<S> {
     const DEFAULT_SIZE: usize = 1024 * 1024; // 1MB
 
     /// Create a new PageTracker at the given dir path
@@ -390,7 +387,7 @@ where
             "Size hint is too small"
         );
         create_and_ensure_length(&path, size)?;
-        let storage = S::open(&path, tracker_open_options())?;
+        let storage = SingleFile::<u8, S>::open(&path, tracker_open_options())?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
@@ -502,7 +499,7 @@ where
             self.storage.flusher()()?;
             let new_size = end_offset.next_power_of_two();
             create_and_ensure_length(&self.path, new_size)?;
-            self.storage = S::open(&self.path, tracker_open_options())?;
+            self.storage = SingleFile::<u8, S>::open(&self.path, tracker_open_options())?;
         }
 
         let pointer: Optional<_> = pointer.into();

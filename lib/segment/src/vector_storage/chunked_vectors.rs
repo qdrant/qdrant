@@ -14,7 +14,7 @@ use common::mmap::{
 };
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{
-    ElementsRange, OpenOptions, UniversalIoError, UniversalWrite, read_json_via,
+    ElementsRange, OpenOptions, SingleFile, StorageWrite, UniversalIoError, read_json_via,
 };
 use fs_err as fs;
 use memmap2::MmapMut;
@@ -48,15 +48,15 @@ struct ChunkedVectorsConfig {
 }
 
 #[derive(Debug)]
-pub struct ChunkedVectors<T: Copy + Sized + 'static, S: UniversalWrite<T>> {
+pub struct ChunkedVectors<T: Copy + Sized + 'static, S: StorageWrite<T>> {
     config: ChunkedVectorsConfig,
     status: MmapType<Status>,
-    chunks: Vec<S>,
+    chunks: Vec<SingleFile<T, S>>,
     directory: PathBuf,
     _vector_element_type: PhantomData<T>,
 }
 
-impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
+impl<T: Sized + Copy + 'static, S: StorageWrite<T>> ChunkedVectors<T, S> {
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -107,10 +107,7 @@ impl<T: Sized + Copy + 'static, S: UniversalWrite<T>> ChunkedVectors<T, S> {
     }
 
     fn load_config(config_file: &Path) -> OperationResult<Option<ChunkedVectorsConfig>> {
-        match read_json_via::<MmapUniversal<u8>, ChunkedVectorsConfig>(
-            config_file,
-            OpenOptions::default(),
-        ) {
+        match read_json_via::<MmapUniversal<u8>, ChunkedVectorsConfig>(config_file) {
             Ok(config) => Ok(Some(config)),
             Err(UniversalIoError::NotFound { .. }) => Ok(None),
             Err(e) => Err(e.into()),
@@ -413,11 +410,11 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
+pub fn read_chunks<T: Sized + Copy + 'static, S: StorageWrite<T>>(
     directory: &Path,
     advice: AdviceSetting,
     populate: bool,
-) -> Result<Vec<S>, common::universal_io::UniversalIoError> {
+) -> Result<Vec<SingleFile<T, S>>, common::universal_io::UniversalIoError> {
     let mut chunks_files: AHashMap<usize, _> = AHashMap::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
@@ -444,7 +441,7 @@ pub fn read_chunks<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
             ))
         })?;
 
-        let chunk = S::open(
+        let chunk = SingleFile::open(
             &chunk_path,
             OpenOptions {
                 need_sequential: *MULTI_MMAP_IS_SUPPORTED,
@@ -465,20 +462,20 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<T: Sized + Copy + 'static, S: UniversalWrite<T>>(
+pub fn create_chunk<T: Sized + Copy + 'static, S: StorageWrite<T>>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> Result<S, UniversalIoError> {
+) -> Result<SingleFile<T, S>, UniversalIoError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
 
-    S::open(
+    SingleFile::open(
         &chunk_file_path,
         OpenOptions {
             need_sequential: *MULTI_MMAP_IS_SUPPORTED,
             disk_parallel: None,
-            populate: Some(false), // don't populate newly created chunk, as it's empty and will be filled later
+            populate: Some(false),
             advice: None,
         },
     )

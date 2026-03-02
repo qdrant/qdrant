@@ -1,7 +1,8 @@
-//! Multi-source universal read interface.
+//! Multi-source storage read interface.
 //!
-//! See [`MultiUniversalRead`].
+//! See [`StorageRead`].
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use crate::universal_io::{ElementsRange, OpenOptions, Result};
@@ -12,9 +13,8 @@ use crate::universal_io::{ElementsRange, OpenOptions, Result};
 pub struct SourceId(pub usize);
 
 /// Interface for batched read access across multiple sources (files, S3 objects, etc.).
-/// Complements [`UniversalRead`], which is single-source.
 /// All implementations must support attaching sources by path.
-pub trait MultiUniversalRead<T: Copy + 'static> {
+pub trait StorageRead<T: Copy + 'static> {
     /// Create an empty multi-source view with the given options (used when attaching paths).
     fn new(options: OpenOptions) -> Self
     where
@@ -32,14 +32,31 @@ pub trait MultiUniversalRead<T: Copy + 'static> {
     fn attach(&mut self, path: &Path) -> Result<SourceId>;
 
     /// Batch read across sources. Each request is `(SourceId, ElementsRange)`.
-    /// Invokes `callback(request_index, slice)` for each range in order of `requests`.
-    fn read_batch_multi<const SEQUENTIAL: bool>(
-        &self,
+    /// Invokes `callback(request_index, data)` for each range in order of `requests`.
+    fn read_batch_multi<'a, const SEQUENTIAL: bool>(
+        &'a self,
         requests: impl IntoIterator<Item = (SourceId, ElementsRange)>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
+        callback: impl FnMut(usize, Cow<'a, [T]>) -> Result<()>,
     ) -> Result<()>;
 
-    /// Length in elements of the given source. Optional; default returns unsupported error.
+    /// Read a single range from a single source.
+    /// Default implementation delegates to [`read_batch_multi`](Self::read_batch_multi).
+    fn read<const SEQUENTIAL: bool>(
+        &self,
+        source_id: SourceId,
+        range: ElementsRange,
+    ) -> Result<Cow<'_, [T]>> {
+        let mut result = None;
+        self.read_batch_multi::<SEQUENTIAL>(std::iter::once((source_id, range)), |_idx, data| {
+            result = Some(data);
+            Ok(())
+        })?;
+        Ok(result.unwrap())
+    }
+
+    fn read_whole(&self, source_id: SourceId) -> Result<Cow<'_, [T]>>;
+
+    /// Length in elements of the given source.
     fn source_len(&self, source_id: SourceId) -> Result<u64>;
 
     /// Fill RAM cache for all sources, if applicable.

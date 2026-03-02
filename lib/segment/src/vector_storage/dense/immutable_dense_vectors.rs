@@ -10,7 +10,9 @@ use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapFlusher};
 use common::types::PointOffsetType;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, OpenOptions as UniversalOpenOptions, UniversalRead};
+use common::universal_io::{
+    ElementsRange, OpenOptions as UniversalOpenOptions, SingleFile, StorageRead,
+};
 use fs_err::{File, OpenOptions};
 use parking_lot::Mutex;
 
@@ -31,14 +33,11 @@ const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Immutable storage for dense vectors.
 #[derive(Debug)]
-pub struct ImmutableDenseVectors<
-    T: PrimitiveVectorElement,
-    S: UniversalRead<u8> = MmapUniversal<u8>,
-> {
+pub struct ImmutableDenseVectors<T: PrimitiveVectorElement, S: StorageRead<u8> = MmapUniversal<u8>>
+{
     pub dim: usize,
     pub num_vectors: usize,
-    /// Byte-addressable vector data storage, providing read access via [`UniversalRead<u8>`].
-    storage: S,
+    storage: SingleFile<u8, S>,
     /// Context for io_uring-based async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     uring_reader: Option<Mutex<UringReader<T>>>,
@@ -48,7 +47,7 @@ pub struct ImmutableDenseVectors<
     pub deleted_count: usize,
 }
 
-impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S> {
+impl<T: PrimitiveVectorElement, S: StorageRead<u8>> ImmutableDenseVectors<T, S> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -69,7 +68,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead<u8>> ImmutableDenseVectors<T, S
             populate: Some(populate),
             advice: None,
         };
-        let storage = UniversalRead::<u8>::open(vectors_path, options).map_err(|e| {
+        let storage = SingleFile::<u8, S>::open(vectors_path, options).map_err(|e| {
             crate::common::operation_error::OperationError::service_error(format!(
                 "Failed to open vector mmap at {}: {e}",
                 vectors_path.display()

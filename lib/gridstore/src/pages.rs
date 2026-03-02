@@ -2,7 +2,7 @@ use std::mem::MaybeUninit;
 use std::path::Path;
 
 use common::maybe_uninit::assume_init_vec;
-use common::universal_io::{ElementsRange, MultiUniversalRead, SourceId};
+use common::universal_io::{ElementsRange, SourceId, StorageRead};
 use smallvec::SmallVec;
 
 use crate::Result;
@@ -16,7 +16,7 @@ pub(crate) struct Pages<S> {
 }
 
 #[allow(dead_code)]
-impl<S: MultiUniversalRead<u8>> Pages<S> {
+impl<S: StorageRead<u8>> Pages<S> {
     pub fn open(dir: &Path) -> Result<Self> {
         let open_options = common::universal_io::OpenOptions {
             need_sequential: true,
@@ -108,14 +108,18 @@ impl<S: MultiUniversalRead<u8>> Pages<S> {
 
             read_ranges.push((SourceId(page_id as usize), element_range));
 
+            if unread_bytes == 0 {
+                break;
+            }
+
             block_offset = 0;
             length = unread_bytes as u32;
         }
 
         self.file_access
-            .read_batch_multi::<READ_SEQUENTIAL>(read_ranges, |idx, slice| {
+            .read_batch_multi::<READ_SEQUENTIAL>(read_ranges, |idx, data| {
                 let offset = range_offset[idx];
-                raw_sections[offset..offset + slice.len()].write_copy_of_slice(slice);
+                raw_sections[offset..offset + data.len()].write_copy_of_slice(&data);
                 Ok(())
             })?;
 

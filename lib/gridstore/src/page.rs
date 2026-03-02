@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use common::fs::clear_disk_cache;
 use common::mmap::create_and_ensure_length;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, Flusher, UniversalRead, UniversalWrite};
+use common::universal_io::{
+    ElementsRange, Flusher, OpenOptions, SingleFile, StorageRead, StorageWrite,
+};
 
 use crate::Result;
 use crate::error::GridstoreError;
@@ -13,7 +15,7 @@ use crate::tracker::BlockOffset;
 #[derive(Debug)]
 pub(crate) struct Page<S> {
     path: PathBuf,
-    file_access: S,
+    file_access: SingleFile<u8, S>,
 }
 
 // Constructors -- always produce MmapUniversal-backed pages
@@ -22,9 +24,9 @@ impl Page<MmapUniversal<u8>> {
     pub fn new(path: &Path, size: usize) -> Result<Self> {
         create_and_ensure_length(path, size)?;
 
-        let file_access = MmapUniversal::open(
+        let file_access = SingleFile::open(
             path,
-            common::universal_io::OpenOptions {
+            OpenOptions {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
@@ -47,9 +49,9 @@ impl Page<MmapUniversal<u8>> {
             )));
         }
 
-        let file_access = MmapUniversal::open(
+        let file_access = SingleFile::open(
             path,
-            common::universal_io::OpenOptions {
+            OpenOptions {
                 need_sequential: true,
                 disk_parallel: None,
                 populate: Some(false),
@@ -62,8 +64,8 @@ impl Page<MmapUniversal<u8>> {
     }
 }
 
-// Read operations -- only require UniversalRead
-impl<S: UniversalRead<u8>> Page<S> {
+// Read operations
+impl<S: StorageRead<u8>> Page<S> {
     /// Read a value from the page
     ///
     /// # Arguments
@@ -115,8 +117,8 @@ impl<S: UniversalRead<u8>> Page<S> {
     }
 }
 
-// Write operations -- require UniversalWrite
-impl<S: UniversalWrite<u8>> Page<S> {
+// Write operations
+impl<S: StorageWrite<u8>> Page<S> {
     pub(crate) fn flusher(&self) -> Flusher {
         self.file_access.flusher()
     }
