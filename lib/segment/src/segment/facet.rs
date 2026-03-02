@@ -57,6 +57,7 @@ impl Segment {
                         &filter_cardinality,
                         hw_counter,
                         is_stopped,
+                        self.deferred_internal_id,
                     )
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
@@ -137,6 +138,7 @@ impl Segment {
                     &filter_cardinality,
                     hw_counter,
                     is_stopped,
+                    self.deferred_internal_id,
                 )
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {

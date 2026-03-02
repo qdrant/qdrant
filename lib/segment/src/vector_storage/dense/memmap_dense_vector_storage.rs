@@ -452,7 +452,7 @@ mod tests {
             2,
         );
         let res = searcher
-            .peek_top_all(&DEFAULT_STOPPED)
+            .peek_top_all(&DEFAULT_STOPPED, None)
             .unwrap()
             .into_iter()
             .exactly_one()
@@ -597,7 +597,7 @@ mod tests {
             5,
         );
         let closest = searcher
-            .peek_top_all(&DEFAULT_STOPPED)
+            .peek_top_all(&DEFAULT_STOPPED, None)
             .unwrap()
             .into_iter()
             .exactly_one()

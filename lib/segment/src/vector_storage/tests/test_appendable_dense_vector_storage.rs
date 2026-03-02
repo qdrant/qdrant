@@ -122,7 +122,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         5,
     );
     let closest = searcher
-        .peek_top_all(&DEFAULT_STOPPED)
+        .peek_top_all(&DEFAULT_STOPPED, None)
         .unwrap()
         .into_iter()
         .exactly_one()

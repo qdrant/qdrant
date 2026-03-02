@@ -20,6 +20,7 @@ use crate::index::payload_config::PayloadConfig;
 use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
+use crate::segment::Segment;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
@@ -166,11 +167,15 @@ impl PayloadIndex for PlainPayloadIndex {
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Vec<PointOffsetType> {
         let filter_context = self.filter_context(filter, hw_counter);
         let id_tracker = self.id_tracker.borrow();
         let all_points_iter = id_tracker.iter_internal();
         all_points_iter
+            .take_while(|&internal_id| {
+                !Segment::is_internal_id_deferred(internal_id, deferred_internal_id)
+            })
             .stop_if(is_stopped)
             .filter(|id| filter_context.check(*id))
             .collect()

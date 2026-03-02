@@ -28,6 +28,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
+                self.deferred_internal_id,
             )
             .filter_map(|internal_id| id_tracker.external_id(internal_id));
 

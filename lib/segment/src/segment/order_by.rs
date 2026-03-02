@@ -45,6 +45,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
+                self.deferred_internal_id,
             )
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has

@@ -72,6 +72,7 @@ impl Segment {
         self.id_tracker
             .borrow()
             .iter_from(offset)
+            .filter(|(_, internal_id)| !self.is_point_deferred_internal(*internal_id)) // TODO(jonas): Maybe find a better way instead of filtering)
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
@@ -87,6 +88,7 @@ impl Segment {
         self.id_tracker
             .borrow()
             .iter_from(offset)
+            .filter(|(_, internal_id)| !self.is_point_deferred_internal(*internal_id)) // TODO(jonas): Maybe find a better way instead of filtering)
             .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
@@ -111,6 +113,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
+                self.deferred_internal_id,
             )
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);

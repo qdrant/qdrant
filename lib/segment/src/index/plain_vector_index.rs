@@ -133,13 +133,20 @@ impl VectorIndex for PlainVectorIndex {
             query_context.hardware_counter(),
         )?;
 
+        let deferred_internal_id = query_context.deferred_internal_id();
+
         let mut search_results = match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                let filtered_ids_vec = payload_index.query_points(filter, &hw_counter, &is_stopped);
-                batch_searcher.peek_top_iter(&mut filtered_ids_vec.iter().copied(), &is_stopped)?
+                let filtered_ids_vec = payload_index.query_points(
+                    filter,
+                    &hw_counter,
+                    &is_stopped,
+                    deferred_internal_id,
+                );
+                batch_searcher.peek_top_iter(filtered_ids_vec.iter().copied(), &is_stopped)?
             }
-            None => batch_searcher.peek_top_all(&is_stopped)?,
+            None => batch_searcher.peek_top_all(&is_stopped, deferred_internal_id)?,
         };
 
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
