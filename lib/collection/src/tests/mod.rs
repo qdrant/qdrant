@@ -242,6 +242,7 @@ async fn test_new_segment_when_all_over_capacity() {
         max_segment_size_kb: 1,
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
+        deferred_points_threshold_bytes: None,
     };
     let hnsw_config = Default::default();
     let segment_config =

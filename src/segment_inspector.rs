@@ -48,7 +48,7 @@ fn main() {
             .and_then(|s| Uuid::try_parse(s.to_str()?).ok())
             .unwrap_or(Uuid::nil());
 
-        let segment = load_segment(path, segment_uuid, &AtomicBool::new(false)).unwrap();
+        let segment = load_segment(path, segment_uuid, None, &AtomicBool::new(false)).unwrap();
 
         eprintln!(
             "path = {:#?}, size-points = {}",

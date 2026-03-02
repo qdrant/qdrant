@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -452,11 +453,13 @@ pub(crate) fn create_sparse_vector_storage(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_segment(
     initial_version: Option<SeqNumberType>,
     version: Option<SeqNumberType>,
     segment_path: &Path,
     uuid: Uuid,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     config: &SegmentConfig,
     stopped: &AtomicBool,
     create: bool,
@@ -626,7 +629,7 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    Ok(Segment {
+    let mut segment = Segment {
         uuid,
         initial_version,
         version,
@@ -644,7 +647,13 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-    })
+        deferred_points_threshold_bytes,
+        deferred_internal_id: None,
+    };
+
+    segment.update_deferred_internal_id();
+
+    Ok(segment)
 }
 
 fn create_segment_id_tracker(
@@ -768,7 +777,12 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
 /// Preferably, the `uuid` should match the last component of `path`.
 /// In production use [`normalize_segment_dir`] to obtain correct path and UUID.
 /// In tests it is acceptable to pass an arbitrary UUID, e.g., [`Uuid::nil()`].
-pub fn load_segment(path: &Path, uuid: Uuid, stopped: &AtomicBool) -> OperationResult<Segment> {
+pub fn load_segment(
+    path: &Path,
+    uuid: Uuid,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    stopped: &AtomicBool,
+) -> OperationResult<Segment> {
     let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
         OperationError::service_error(format!(
             "Segment version file not found in segment: {}",
@@ -814,6 +828,7 @@ pub fn load_segment(path: &Path, uuid: Uuid, stopped: &AtomicBool) -> OperationR
         segment_state.version,
         path,
         uuid,
+        deferred_points_threshold_bytes,
         &segment_state.config,
         stopped,
         false,
@@ -849,6 +864,7 @@ pub fn load_segment(path: &Path, uuid: Uuid, stopped: &AtomicBool) -> OperationR
 pub fn build_segment(
     segments_path: &Path,
     config: &SegmentConfig,
+    deferred_points_threshold_bytes: Option<NonZeroUsize>,
     ready: bool,
 ) -> OperationResult<Segment> {
     let uuid = Uuid::new_v4();
@@ -856,7 +872,16 @@ pub fn build_segment(
     let stopped = AtomicBool::new(false);
 
     fs::create_dir_all(&segment_path)?;
-    let segment = create_segment(None, None, &segment_path, uuid, config, &stopped, true)?;
+    let segment = create_segment(
+        None,
+        None,
+        &segment_path,
+        uuid,
+        deferred_points_threshold_bytes,
+        config,
+        &stopped,
+        true,
+    )?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.

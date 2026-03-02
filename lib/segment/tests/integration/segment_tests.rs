@@ -206,7 +206,7 @@ fn ordered_deletion_test() {
         segment.segment_path.clone()
     };
 
-    let segment = load_segment(&path, Uuid::nil(), &AtomicBool::new(false)).unwrap();
+    let segment = load_segment(&path, Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment

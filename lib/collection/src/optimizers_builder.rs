@@ -1,8 +1,10 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
 use fs_err as fs;
 use schemars::JsonSchema;
+use segment::common::BYTES_IN_KB;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
@@ -148,6 +150,7 @@ impl OptimizersConfig {
             memmap_threshold_kb,
             indexing_threshold_kb,
             max_segment_size_kb: self.get_max_segment_size_in_kilobytes(num_indexing_threads),
+            deferred_points_threshold_bytes: self.get_deferred_points_threshold_bytes(),
         }
     }
 
@@ -157,6 +160,12 @@ impl OptimizersConfig {
         } else {
             num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
         }
+    }
+
+    pub fn get_deferred_points_threshold_bytes(&self) -> Option<NonZeroUsize> {
+        (self.prevent_unoptimized == Some(true))
+            .then(|| self.get_indexing_threshold_kb().saturating_mul(BYTES_IN_KB))
+            .and_then(NonZeroUsize::new)
     }
 }
 

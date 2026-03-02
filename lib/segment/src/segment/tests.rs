@@ -249,7 +249,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     assert_eq!(entry.file_name(), segment_id);
 
     let restored_segment =
-        load_segment(&entry.path(), Uuid::nil(), &AtomicBool::new(false)).unwrap();
+        load_segment(&entry.path(), Uuid::nil(), None, &AtomicBool::new(false)).unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(

@@ -104,13 +104,15 @@ impl EdgeShard {
                 continue;
             };
 
-            let mut segment = load_segment(&segment_path, segment_uuid, &AtomicBool::new(false))
-                .map_err(|err| {
-                    OperationError::service_error(format!(
-                        "failed to load segment {}: {err}",
-                        segment_path.display(),
-                    ))
-                })?;
+            let mut segment =
+                load_segment(&segment_path, segment_uuid, None, &AtomicBool::new(false)).map_err(
+                    |err| {
+                        OperationError::service_error(format!(
+                            "failed to load segment {}: {err}",
+                            segment_path.display(),
+                        ))
+                    },
+                )?;
 
             if let Some(config) = &config {
                 if !config.is_compatible(segment.config()) {
@@ -156,6 +158,7 @@ impl EdgeShard {
                 &segments_path,
                 config.clone(),
                 Arc::new(payload_index_schema),
+                None,
             )?;
 
             debug_assert!(segments.has_appendable_segment());
