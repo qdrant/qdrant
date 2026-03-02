@@ -63,7 +63,7 @@ pub struct GpuDriver {
     ) -> i32,
 
     // ---- streams ----
-    pub stream_create: unsafe extern "C" fn(stream: *mut Handle) -> i32,
+    pub stream_create: unsafe extern "C" fn(stream: *mut Handle, flags: u32) -> i32,
     pub stream_synchronize: unsafe extern "C" fn(stream: Handle) -> i32,
     pub stream_destroy: unsafe extern "C" fn(stream: Handle) -> i32,
 }
@@ -216,6 +216,8 @@ impl GpuDriver {
     // These match CUdevice_attribute enum values (stable across CUDA versions).
     pub const CUDA_ATTR_WARP_SIZE: i32 = 10; // CU_DEVICE_ATTRIBUTE_WARP_SIZE
     pub const CUDA_ATTR_MAX_GRID_DIM_X: i32 = 5; // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X
+    pub const CUDA_ATTR_COMPUTE_CAPABILITY_MAJOR: i32 = 75;
+    pub const CUDA_ATTR_COMPUTE_CAPABILITY_MINOR: i32 = 76;
 
     // ---- HIP (AMD) device attribute indices ----
     // HIP re-numbers its enum between ROCm releases, so we cannot hardcode a single

@@ -34,7 +34,7 @@ impl CudaContext {
 
         let mut stream: Handle = 0;
         crate::cuda::driver::GpuDriver::check(
-            unsafe { (device.driver().stream_create)(&mut stream) },
+            unsafe { (device.driver().stream_create)(&mut stream, 0) },
             "stream_create",
         )?;
 

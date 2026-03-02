@@ -694,7 +694,7 @@ fn compile_nvcc(
     tmp_dir: &Path,
     module_name: &str,
     cu_path: &Path,
-    _device: &CudaDevice,
+    device: &CudaDevice,
 ) -> GpuResult<Vec<u8>> {
     let out_path = tmp_dir.join(format!("{module_name}.ptx"));
 
@@ -702,20 +702,62 @@ fn compile_nvcc(
     let mut cmd = std::process::Command::new(&nvcc);
     cmd.arg("-ptx")
         .arg("-O2")
-        .arg(cu_path)
-        .arg("-o")
-        .arg(&out_path);
+        // Must match the define passed to slangc so the Slang CUDA prelude
+        // uses pointer-only StructuredBuffer (no count field).
+        .arg("-DSLANG_CUDA_STRUCTURED_BUFFER_NO_COUNT");
+
+    // On Windows, nvcc requires MSVC cl.exe as the host compiler.
+    // Point it there via -ccbin if cl.exe isn't already in PATH.
+    #[cfg(target_os = "windows")]
+    if let Some(ccbin) = find_msvc_ccbin() {
+        cmd.arg("-ccbin").arg(&ccbin);
+    }
+
+    // Pass target architecture from the device's compute capability.
+    if let Some((major, minor)) = device.compute_capability() {
+        cmd.arg(format!("-arch=sm_{major}{minor}"));
+    }
+
+    // Add Slang include directory so nvcc can find slang-cuda-prelude.h.
+    let slangc = slangc_path();
+    if let Some(slang_bin) = std::path::Path::new(&slangc).parent() {
+        if let Some(slang_dir) = slang_bin.parent() {
+            cmd.arg("-I").arg(slang_dir);
+        }
+    }
+
+    cmd.arg(cu_path).arg("-o").arg(&out_path);
 
     let out = cmd
         .output()
         .map_err(|e| GpuError::Other(format!("Failed to run nvcc: {e}")))?;
-    if !out.status.success() && !out_path.exists() {
+    if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(GpuError::Other(format!("nvcc failed:\n{stderr}")));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        log::error!(
+            "nvcc exited with status {:?}, stderr:\n{stderr}",
+            out.status.code()
+        );
+        if !stdout.is_empty() {
+            log::error!("nvcc stdout:\n{stdout}");
+        }
+        if !out_path.exists() {
+            let mut msg = format!("nvcc failed:\n{stderr}");
+            if !stdout.is_empty() {
+                msg.push_str(&format!("\nstdout:\n{stdout}"));
+            }
+            return Err(GpuError::Other(msg));
+        }
+        log::warn!("nvcc reported errors but .ptx file exists; continuing");
     }
 
-    std::fs::read(&out_path)
-        .map_err(|e| GpuError::Other(format!("Failed to read nvcc output: {e}")))
+    let mut ptx = std::fs::read(&out_path)
+        .map_err(|e| GpuError::Other(format!("Failed to read nvcc output: {e}")))?;
+    // cuModuleLoadData requires PTX to be null-terminated.
+    if ptx.last() != Some(&0) {
+        ptx.push(0);
+    }
+    Ok(ptx)
 }
 
 fn find_hipcc() -> GpuResult<String> {
@@ -768,6 +810,71 @@ fn find_hipcc() -> GpuResult<String> {
     Err(GpuError::NotSupported(
         "hipcc not found; install ROCm/HIP SDK or set ROCM_PATH/HIP_PATH".to_string(),
     ))
+}
+
+/// Find the MSVC `cl.exe` directory for use as nvcc's `-ccbin`.
+///
+/// nvcc on Windows requires MSVC's `cl.exe` as the host compiler. If it's not
+/// already in PATH we locate it via `vswhere.exe` or environment variables.
+#[cfg(target_os = "windows")]
+fn find_msvc_ccbin() -> Option<String> {
+    // If cl.exe is already reachable, nvcc will find it on its own.
+    if which_in_path("cl") {
+        return None;
+    }
+
+    // Try VCToolsInstallDir (set inside a VS Developer Command Prompt).
+    if let Ok(vc_tools) = std::env::var("VCToolsInstallDir") {
+        let dir = std::path::Path::new(&vc_tools)
+            .join("bin")
+            .join("Hostx64")
+            .join("x64");
+        if dir.join("cl.exe").exists() {
+            return Some(dir.to_string_lossy().into_owned());
+        }
+    }
+
+    // Use vswhere.exe (ships with every VS 2017+ install at a fixed path).
+    let vswhere = r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe";
+    if std::path::Path::new(vswhere).exists() {
+        if let Ok(output) = std::process::Command::new(vswhere)
+            .args([
+                "-latest",
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+            ])
+            .output()
+        {
+            let vs_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !vs_path.is_empty() {
+                let msvc_dir = std::path::Path::new(&vs_path)
+                    .join("VC")
+                    .join("Tools")
+                    .join("MSVC");
+                if let Ok(entries) = std::fs::read_dir(&msvc_dir) {
+                    // Pick the latest toolset version.
+                    let mut versions: Vec<_> = entries
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                        .collect();
+                    versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                    if let Some(latest) = versions.first() {
+                        let cl_dir = latest.path().join("bin").join("Hostx64").join("x64");
+                        if cl_dir.join("cl.exe").exists() {
+                            return Some(cl_dir.to_string_lossy().into_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    log::warn!("Could not locate MSVC cl.exe for nvcc -ccbin; nvcc may fail");
+    None
 }
 
 fn find_nvcc() -> GpuResult<String> {

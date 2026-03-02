@@ -35,6 +35,9 @@ pub struct CudaDevice {
 
     /// AMD GPU target string (e.g. "gfx90a") — only set for HIP.
     pub(super) amdgpu_target: Option<String>,
+
+    /// CUDA compute capability (major, minor) — only set for CUDA.
+    pub(super) compute_capability: Option<(i32, i32)>,
 }
 
 impl CudaDevice {
@@ -91,9 +94,20 @@ impl CudaDevice {
             "ctx_create",
         )?;
 
+        // Query CUDA compute capability (NVIDIA only).
+        let compute_capability = if runtime == Runtime::Cuda {
+            let major =
+                driver.get_attribute(GpuDriver::CUDA_ATTR_COMPUTE_CAPABILITY_MAJOR, cu_device)?;
+            let minor =
+                driver.get_attribute(GpuDriver::CUDA_ATTR_COMPUTE_CAPABILITY_MINOR, cu_device)?;
+            Some((major, minor))
+        } else {
+            None
+        };
+
         log::info!(
             "Found {runtime:?} device [{device_index}]: {name} \
-             (subgroup_size={subgroup_size})"
+             (subgroup_size={subgroup_size}, compute_capability={compute_capability:?})"
         );
 
         Ok(Arc::new(CudaDevice {
@@ -108,6 +122,7 @@ impl CudaDevice {
             has_half_precision,
             name,
             amdgpu_target: None,
+            compute_capability,
         }))
     }
 
@@ -151,6 +166,10 @@ impl CudaDevice {
 
     pub fn runtime(&self) -> Runtime {
         self.runtime
+    }
+
+    pub fn compute_capability(&self) -> Option<(i32, i32)> {
+        self.compute_capability
     }
 
     pub fn driver(&self) -> &Arc<GpuDriver> {
