@@ -17,11 +17,18 @@ use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::SnapshotEntry as _;
 use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
-use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
-use crate::types::{Distance, Filter, Payload, SnapshotFormat, WithPayload, WithVector};
+use crate::segment_constructor::{build_segment, load_segment};
+use crate::types::{
+    Distance, Filter, Indexes, Payload, SnapshotFormat, VectorDataConfig, VectorStorageType,
+    WithPayload, WithVector,
+};
+
+fn init_logger() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
 
 #[test]
 fn test_search_batch_equivalence_single() {
@@ -716,4 +723,89 @@ fn test_handle_point_version() {
         .handle_point_version(101, None, |_segment| Ok((true, None)))
         .unwrap();
     assert!(applied);
+}
+
+#[test]
+fn test_dense_deferred_points() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+    let hw_counter = HardwareCounterCell::new();
+
+    // Create a segment with a deferred_points_threshold_bytes set
+    // Vector size: 4 f32 = 16 bytes per vector
+    // We set threshold to 200 bytes, so deferred threshold should be at internal_id 13
+    // (200 / 16 = 12.5, rounded up = 13 via div_ceil)
+    let deferred_threshold_bytes = std::num::NonZeroUsize::new(200).unwrap();
+
+    let mut segment = build_segment(
+        dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(deferred_threshold_bytes),
+        true,
+    )
+    .unwrap();
+
+    // Initially, no deferred points (empty segment)
+    assert!(!segment.has_deferred_points());
+    for i in 0..=20 {
+        assert!(!segment.point_is_deferred((i as u64).into()));
+    }
+
+    // Insert points with small vectors to reach the threshold
+    // Each vector is 4 f32 = 16 bytes
+    // We need to insert enough vectors to exceed 200 bytes
+    // Points 1-12 will be non-deferred (internal_id 0-11), points 13+ will be deferred
+    for i in 1..=20 {
+        segment
+            .insert_new_vectors(
+                (i as u64).into(),
+                i as u64,
+                &only_default_vector(&[
+                    0.1 * i as f32,
+                    0.2 * i as f32,
+                    0.3 * i as f32,
+                    0.4 * i as f32,
+                ]),
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    // Now we should have deferred points
+    assert!(segment.has_deferred_points());
+    assert_eq!(segment.deferred_internal_id, Some(13));
+
+    // Points 1-13 (internal_ids 0-12) should NOT be deferred
+    for i in 1..=13 {
+        assert!(
+            !segment.point_is_deferred((i as u64).into()),
+            "Point {} should not be deferred",
+            i
+        );
+    }
+
+    // Points 14+ (internal_ids 13+) should be deferred
+    for i in 14..=20 {
+        assert!(
+            segment.point_is_deferred((i as u64).into()),
+            "Point {} should be deferred",
+            i
+        );
+    }
 }

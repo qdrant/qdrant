@@ -662,6 +662,15 @@ impl Segment {
         self.deferred_internal_id.is_some()
     }
 
+    pub fn point_is_deferred(&self, point_id: PointIdType) -> bool {
+        let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id) else {
+            return false;
+        };
+        self.deferred_internal_id
+            .map(|deferred_from| internal_id >= deferred_from)
+            .unwrap_or(false)
+    }
+
     pub(crate) fn update_deferred_internal_id(&mut self) {
         if self.deferred_internal_id.is_some()
             || !self.is_appendable()
@@ -671,7 +680,7 @@ impl Segment {
         }
 
         if let Some(deferred_points_threshold_bytes) = self.deferred_points_threshold_bytes {
-            self.deferred_internal_id = self
+            let deferred_internal_id = self
                 .vector_data
                 .iter()
                 .filter(|(vector_name, _)| {
@@ -698,6 +707,10 @@ impl Segment {
                     }
                 })
                 .min();
+            if let Some(deferred_internal_id) = deferred_internal_id {
+                log::debug!("Setting deferred internal ID to {deferred_internal_id}");
+                self.deferred_internal_id = Some(deferred_internal_id);
+            }
         }
     }
 }
