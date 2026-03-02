@@ -1,6 +1,10 @@
 name: Qdrant Edge Rust Release
 
 on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
   workflow_dispatch:
     inputs:
       publish:
