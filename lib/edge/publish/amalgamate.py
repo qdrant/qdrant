@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 from collections.abc import Iterable
 from pathlib import Path
@@ -52,7 +53,9 @@ EXCLUDED_DEPENDENCIES = {
 
 
 def main() -> None:
-    root_manifest = tomlkit.loads(Path(REPO_ROOT / "Cargo.toml").read_text())
+    root_manifest = tomlkit.loads(
+        Path(REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    )
     packages = all_file_dependencies(REPO_ROOT / "lib/edge")
 
     shutil.rmtree(AMALGAMATION, ignore_errors=True)
@@ -65,16 +68,32 @@ def main() -> None:
             AMALGAMATION / "src" / pkg / "mod.rs",
         )
 
-    # Copy C sources and related build scripts.
+    # Copy C sources and build scripts.
     shutil.copytree(
         REPO_ROOT / "lib/quantization/cpp", AMALGAMATION / "cpp/quantization"
     )
     shutil.copy2(
-        REPO_ROOT / "lib/quantization/build.rs",
-        AMALGAMATION / "build-quantization.rs",
+        REPO_ROOT / "lib/common/common/build.rs", AMALGAMATION / "build_common.rs"
     )
-    (AMALGAMATION / "build.rs").write_text('include!("build-quantization.rs");\n')
-    # TODO: segment/build.rs - for arm neon .c files.
+    shutil.copy2(REPO_ROOT / "lib/segment/build.rs", AMALGAMATION / "build_segment.rs")
+    shutil.copy2(
+        REPO_ROOT / "lib/quantization/build.rs", AMALGAMATION / "build_quantization.rs"
+    )
+    (AMALGAMATION / "build.rs").write_text(
+        textwrap.dedent(
+            """
+            mod build_common;
+            mod build_quantization;
+            mod build_segment;
+            fn main() {
+                build_common::main();
+                build_quantization::main();
+                build_segment::main();
+            }
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
 
     # Copy resources.
     shutil.copytree(REPO_ROOT / "lib/segment/tokenizer", AMALGAMATION / "tokenizer")
@@ -87,13 +106,14 @@ def main() -> None:
             "authors": ["Qdrant Team <info@qdrant.tech>"],
             "license": "Apache-2.0",
             "edition": "2024",
+            "description": "A lightweight, in-process vector search engine designed for embedded devices, autonomous systems, and mobile agents.",
             "publish": True,
         },
         **gather_dependencies(
             root_manifest, [manifest for _, manifest in packages.values()]
         ),
     }
-    (AMALGAMATION / "Cargo.toml").write_text(tomlkit.dumps(manifest))
+    (AMALGAMATION / "Cargo.toml").write_text(tomlkit.dumps(manifest), encoding="utf-8")
 
     # Write src/lib.rs.
     # It just re-exports everything.
@@ -107,22 +127,53 @@ def main() -> None:
             pub mod shard;
             """
         ).lstrip()
-        + "".join(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"})
+        + "".join(
+            sorted(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"})
+        ),
+        encoding="utf-8",
     )
 
     # Regex-based fixups.
     substitute(
         AMALGAMATION / "src/api/grpc/qdrant.rs",
+        # ast-grep don't replace string literals
         (r'custom\(function = "crate::(.*)"\)', r'custom(function = "crate::api::\1")'),
         (r'custom\(function = "(common::.*)"\)', r'custom(function = "crate::\1")'),
     )
     substitute(
-        AMALGAMATION / "build-quantization.rs",
-        (r"cpp/", r"cpp/quantization/"),
+        AMALGAMATION / "build_common.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Won't compile because we don't package benchmarks.
+        (r".*cargo:rustc-link-arg-benches.*", ""),
     )
-    # Remove code that doesn't compile.
+    substitute(
+        AMALGAMATION / "build_segment.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Fix paths to C sources.
+        (r'"src/', r'"src/segment/'),
+        # Resolve C library name conflict.
+        (
+            r'builder\.compile\("simd_utils"\);',
+            'builder.compile("simd_utils_segment");',
+        ),
+    )
+    substitute(
+        AMALGAMATION / "build_quantization.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Fix paths to C sources.
+        (r'"cpp/', r'"cpp/quantization/'),
+        # Resolve C library name conflict.
+        (
+            r'builder\.compile\("simd_utils"\);',
+            'builder.compile("simd_utils_quantization");',
+        ),
+    )
     substitute(
         AMALGAMATION / "src/api/grpc/mod.rs",
+        # Remove code that doesn't compile.
         (r"^pub mod dynamic_channel_pool;$\n", ""),
         (r"^pub mod dynamic_pool;$\n", ""),
         (r"^pub mod transport_channel_pool;$\n", ""),
@@ -130,11 +181,12 @@ def main() -> None:
     )
     substitute(
         AMALGAMATION / "src/segment/common/anonymize.rs",
+        # Remove code that doesn't compile.
         (r"^pub use macros::Anonymize;$\n", ""),
     )
-    # Cleanup public API
     substitute(
         AMALGAMATION.glob("src/**/*.rs"),
+        # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
     )
 
@@ -142,7 +194,9 @@ def main() -> None:
     shutil.rmtree(AMALGAMATION / "src/segment/index/hnsw_index/gpu")
 
     # Ast-grep-based fixups.
-    RULES_TEMPLATE = (Path(__file__).parent / "ast-grep-rules.yaml").read_text()
+    RULES_TEMPLATE = (Path(__file__).parent / "ast-grep-rules.yaml").read_text(
+        encoding="utf-8"
+    )
     for package, (_, manifest) in packages.items():
         deps = (
             "|".join(
@@ -159,16 +213,21 @@ def main() -> None:
             file=sys.stderr,
             flush=True,
         )
-        subprocess.run(
-            [
-                "ast-grep",
-                "scan",
-                "--update-all",
-                f"--inline-rules={rules}",
-                AMALGAMATION / "src" / package,
-            ],
-            check=True,
-        )
+
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", suffix=".yaml") as f:
+            f.write(rules)
+            f.flush()
+
+            subprocess.run(
+                [
+                    shutil.which("ast-grep") or "ast-grep",
+                    "scan",
+                    "--update-all",
+                    f"--rule={f.name}",
+                    AMALGAMATION / "src" / package,
+                ],
+                check=True,
+            )
 
 
 def gather_dependencies(
@@ -224,7 +283,7 @@ def substitute(paths: Path | Iterable[Path], *replacements: tuple[str, str]) -> 
     if isinstance(paths, Path):
         paths = (paths,)
     for path in paths:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         changed = False
         for i in range(len(replacements)):
             new_text = regexes[i].sub(replacements[i][1], text)
@@ -233,7 +292,7 @@ def substitute(paths: Path | Iterable[Path], *replacements: tuple[str, str]) -> 
                 changed = True
                 seen[i] = True
         if changed:
-            path.write_text(text)
+            path.write_text(text, encoding="utf-8")
     for seen, (pattern, _) in zip(seen, replacements):
         assert seen, f"Pattern {pattern!r} not found"
 
@@ -248,7 +307,7 @@ def all_file_dependencies(root: Path) -> dict[str, tuple[Path, tomlkit.TOMLDocum
 
     while stack:
         path = stack.pop()
-        manifest = tomlkit.loads((path / "Cargo.toml").read_text())
+        manifest = tomlkit.loads((path / "Cargo.toml").read_text(encoding="utf-8"))
         name = manifest["package"]["name"]
         if name in PACKAGES_TO_INCLUDE:
             result[manifest["package"]["name"]] = (path, manifest)
