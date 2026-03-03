@@ -7633,13 +7633,12 @@
         "type": "object",
         "required": [
           "default_segment_number",
-          "deleted_threshold",
-          "flush_interval_sec",
-          "vacuum_min_vector_number"
+          "flush_interval_sec"
         ],
         "properties": {
           "deleted_threshold": {
             "description": "The minimal fraction of deleted vectors in a segment, required to perform segment optimization",
+            "default": 0.2,
             "type": "number",
             "format": "double",
             "maximum": 1,
@@ -7647,6 +7646,7 @@
           },
           "vacuum_min_vector_number": {
             "description": "The minimal number of vectors in a segment, required to perform segment optimization",
+            "default": 1000,
             "type": "integer",
             "format": "uint",
             "minimum": 100
