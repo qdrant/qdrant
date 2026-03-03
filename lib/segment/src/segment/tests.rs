@@ -802,7 +802,7 @@ fn create_deferred_segment(
         let mut payload = Payload::default();
         payload.0.insert(
             "color".to_string(),
-            ["red", "blue", "yellow"][i as usize % 3].to_string().into(),
+            ["red", "blue", "yellow"][i % 3].to_string().into(),
         );
         payload.0.insert(
             "number".to_string(),
@@ -844,7 +844,7 @@ fn create_deferred_segment(
         );
     }
 
-    // Non-existent pont should be non deferred
+    // Non-existent point should be non deferred
     assert!(
         !segment.point_is_deferred(PointIdType::from(total_vectors as u64 + 1)),
         "Non-existent point should not be deferred"
