@@ -92,6 +92,7 @@ def main() -> None:
             "authors": ["Qdrant Team <info@qdrant.tech>"],
             "license": "Apache-2.0",
             "edition": "2024",
+            "description": "A lightweight, in-process vector search engine designed for embedded devices, autonomous systems, and mobile agents.",
             "publish": True,
         },
         **gather_dependencies(
