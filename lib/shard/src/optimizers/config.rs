@@ -85,10 +85,7 @@ impl OptimizerSourceConfig {
     /// `fallback_hnsw` is used for vectors that have `Indexes::Plain` (no HNSW
     /// config stored yet). Typically this is inferred from the first HNSW-indexed
     /// vector in the shard, or `HnswConfig::default()`.
-    pub fn from_segment_config(
-        segment_config: &SegmentConfig,
-        fallback_hnsw: HnswConfig,
-    ) -> Self {
+    pub fn from_segment_config(segment_config: &SegmentConfig, fallback_hnsw: HnswConfig) -> Self {
         let dense_vectors = segment_config
             .vector_data
             .iter()

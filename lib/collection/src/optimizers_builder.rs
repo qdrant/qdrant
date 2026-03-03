@@ -14,8 +14,7 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
     DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput, OptimizerSourceConfig,
-    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
-    default_segment_number,
+    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH, default_segment_number,
 };
 use validator::Validate;
 
