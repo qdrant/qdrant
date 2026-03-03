@@ -127,7 +127,9 @@ def main() -> None:
             pub mod shard;
             """
         ).lstrip()
-        + "".join(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"}),
+        + "".join(
+            sorted(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"})
+        ),
         encoding="utf-8",
     )
 
