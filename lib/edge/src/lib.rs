@@ -23,6 +23,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
+use shard::files::SEGMENTS_PATH;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -38,8 +39,6 @@ pub struct EdgeShard {
 }
 
 const WAL_PATH: &str = "wal";
-const SEGMENTS_PATH: &str = "segments";
-
 impl EdgeShard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
@@ -171,8 +170,6 @@ impl EdgeShard {
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
         };
-
-        shard.optimize_all_segments_blocking()?;
 
         Ok(shard)
     }

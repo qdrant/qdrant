@@ -9,9 +9,12 @@ use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
+use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
+    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH,
 };
 use validator::Validate;
 
@@ -23,18 +26,15 @@ use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::update_handler::Optimizer;
 
-const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
-pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
-const SEGMENTS_PATH: &str = "segments";
-const TEMP_SEGMENTS_PATH: &str = "temp_segments";
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
 #[anonymize(false)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_deleted_threshold")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_vacuum_min_vector_number")]
     #[validate(range(min = 100))]
     pub vacuum_min_vector_number: usize,
     /// Target amount of segments optimizer will try to keep.
@@ -96,6 +96,14 @@ pub struct OptimizersConfig {
     /// Default is disabled.
     #[serde(default)]
     pub prevent_unoptimized: Option<bool>,
+}
+
+fn default_deleted_threshold() -> f64 {
+    DEFAULT_DELETED_THRESHOLD
+}
+
+fn default_vacuum_min_vector_number() -> usize {
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER
 }
 
 impl OptimizersConfig {

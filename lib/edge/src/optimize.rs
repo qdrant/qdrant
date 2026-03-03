@@ -10,7 +10,9 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, VectorStorageType};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
+    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -20,16 +22,6 @@ use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
 use crate::{EdgeShard, SEGMENTS_PATH};
-
-const EDGE_OPTIMIZER_TEMP_PATH: &str = "optimizer_tmp";
-
-/// Defaults below mirror the server-side collection `OptimizersConfig` values
-/// (see `lib/collection/src/optimizers_builder.rs`).
-/// Edge has no user-facing optimizer config, so they are hard-coded here.
-const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
-const DEFAULT_INDEXING_THRESHOLD_KB: usize = 100_000;
-const DEFAULT_DELETED_THRESHOLD: f64 = 0.1;
-const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
 
 impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
@@ -93,7 +85,7 @@ impl EdgeShard {
         })();
 
         // Clean up the temporary directory used by optimizers, regardless of success or failure.
-        let temp_segments_path = self.path.join(EDGE_OPTIMIZER_TEMP_PATH);
+        let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
         if temp_segments_path.exists() {
             let _ = fs::remove_dir_all(&temp_segments_path);
         }
@@ -103,7 +95,7 @@ impl EdgeShard {
 
     fn build_blocking_optimizers(&self) -> OperationResult<Vec<Arc<Optimizer>>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
-        let temp_segments_path = self.path.join(EDGE_OPTIMIZER_TEMP_PATH);
+        let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
         Self::reset_temp_segments_dir(&temp_segments_path)?;
 
         let hnsw_config = HnswConfig::default();
@@ -286,9 +278,10 @@ mod tests {
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
     use uuid::Uuid;
 
-    use super::{EDGE_OPTIMIZER_TEMP_PATH, default_segment_number};
+    use super::default_segment_number;
     use crate::EdgeShard;
 
     const VECTOR_NAME: &str = "edge-test-vector";
@@ -786,7 +779,7 @@ mod tests {
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(optimized);
 
-        let temp_path = dir.path().join(EDGE_OPTIMIZER_TEMP_PATH);
+        let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
         assert!(
             !temp_path.exists(),
             "temp directory should be cleaned up after optimization"
@@ -804,7 +797,7 @@ mod tests {
         let _shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
         // Load already ran optimize (no-op for empty shard).
 
-        let temp_path = dir.path().join(EDGE_OPTIMIZER_TEMP_PATH);
+        let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
         assert!(
             !temp_path.exists(),
             "temp directory should be cleaned up even on no-op optimization"

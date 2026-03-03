@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use segment::common::BYTES_IN_KB;
 use segment::types::VectorNameBuf;
 use shard::locked_segment::LockedSegment;
+use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::segment_holder::SegmentHolder;
 
 use crate::config::CollectionConfigInternal;
-use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 /// Returns the number of vectors which will be excluded from requests with `indexed_only` enabled.
 /// Note: For vectors names without any excluded vectors, we return `0` instead of skipping them in the output.

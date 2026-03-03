@@ -5,6 +5,12 @@ use segment::types::{
     VectorDataConfig, VectorNameBuf,
 };
 
+pub const TEMP_SEGMENTS_PATH: &str = "temp_segments";
+pub const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
+pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
+pub const DEFAULT_DELETED_THRESHOLD: f64 = 0.2;
+pub const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
+
 #[derive(Debug, Clone)]
 pub struct DenseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
