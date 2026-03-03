@@ -7013,6 +7013,7 @@ dependencies = [
  "bitvec",
  "chrono",
  "common",
+ "criterion",
  "fs-err",
  "fs4",
  "indexmap 2.13.0",

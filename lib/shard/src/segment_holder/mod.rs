@@ -5,9 +5,9 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
-use std::cmp::{max, min};
+use std::cmp::{Reverse, max, min};
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::Path;
@@ -21,6 +21,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -35,25 +36,6 @@ use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
-
-/// Internal structure for deduplication of points. Used for BinaryHeap
-#[derive(Eq, PartialEq)]
-struct DedupPoint {
-    point_id: PointIdType,
-    segment_id: SegmentId,
-}
-
-impl Ord for DedupPoint {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.point_id.cmp(&other.point_id).reverse()
-    }
-}
-
-impl PartialOrd for DedupPoint {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
@@ -913,7 +895,13 @@ impl SegmentHolder {
             .collect::<Vec<_>>()
     }
 
-    fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
+    pub fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
+        struct DedupPoint {
+            segment_id: SegmentId,
+            point_id: PointIdType,
+            version: Option<SeqNumberType>,
+        }
+
         let segments = self
             .iter()
             .map(|(segment_id, locked_segment)| (segment_id, locked_segment.get()))
@@ -922,77 +910,58 @@ impl SegmentHolder {
             .iter()
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
-        let mut iterators = locked_segments
+
+        // Iterator produces groups of points by point ID
+        let point_group_iter = locked_segments
             .iter()
-            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points()))
-            .collect::<BTreeMap<_, _>>();
-
-        // heap contains the current iterable point id from each segment
-        let mut heap = iterators
-            .iter_mut()
-            .filter_map(|(&segment_id, iter)| {
-                iter.next().map(|point_id| DedupPoint {
-                    point_id,
-                    segment_id,
-                })
+            .map(|(&segment_id, locked_segment)| {
+                locked_segment
+                    .iter_points()
+                    .map(move |point_id| DedupPoint {
+                        segment_id,
+                        point_id,
+                        version: None,
+                    })
             })
-            .collect::<BinaryHeap<_>>();
+            .kmerge_by(|a, b| a.point_id < b.point_id)
+            .chunk_by(|entry| entry.point_id);
 
-        let mut last_point_id_opt = None;
-        let mut last_segment_id_opt = None;
-        let mut last_point_version_opt = None;
-        let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = Default::default();
+        let mut points = Vec::new();
+        let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
-        while let Some(entry) = heap.pop() {
-            let point_id = entry.point_id;
-            let segment_id = entry.segment_id;
-            if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
-                heap.push(DedupPoint {
-                    segment_id,
-                    point_id: next_point_id,
-                });
+        for (point_id, group_iter) in &point_group_iter {
+            // Fill buffer with points of current chunk, need at least 2 points to deduplicate
+            points.clear();
+            points.extend(group_iter);
+            if points.len() < 2 {
+                continue;
             }
 
-            if last_point_id_opt == Some(point_id) {
-                let last_segment_id = last_segment_id_opt.unwrap();
+            // Enrich with point version
+            for dedup_point in &mut points {
+                dedup_point.version =
+                    locked_segments[&dedup_point.segment_id].point_version(point_id);
+            }
 
-                let point_version = locked_segments[&segment_id].point_version(point_id);
-                let last_point_version = if let Some(last_point_version) = last_point_version_opt {
-                    last_point_version
-                } else {
-                    let version = locked_segments[&last_segment_id].point_version(point_id);
-                    last_point_version_opt = Some(version);
-                    version
-                };
+            // Sort points from highest to lowest version
+            points.sort_unstable_by_key(|p| Reverse(p.version));
 
-                // choose newer version between point_id and last_point_id
-                if point_version < last_point_version {
-                    log::trace!(
-                        "Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})",
-                    );
-
-                    points_to_remove
-                        .entry(segment_id)
-                        .or_default()
-                        .push(point_id);
-                } else {
-                    log::trace!(
-                        "Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})",
-                    );
-
-                    points_to_remove
-                        .entry(last_segment_id)
-                        .or_default()
-                        .push(point_id);
-
-                    last_point_id_opt = Some(point_id);
-                    last_segment_id_opt = Some(segment_id);
-                    last_point_version_opt = Some(point_version);
-                }
-            } else {
-                last_point_id_opt = Some(point_id);
-                last_segment_id_opt = Some(segment_id);
-                last_point_version_opt = None;
+            // Keep the first point, remove all others which are older
+            for &DedupPoint {
+                segment_id,
+                point_id,
+                version,
+            } in &points[1..]
+            {
+                log::trace!(
+                    "Selected point {point_id} in segment {segment_id} for deduplication (version {version:?} versus {:?} in segment {})",
+                    points[0].version,
+                    points[0].segment_id,
+                );
+                points_to_remove
+                    .entry(segment_id)
+                    .or_default()
+                    .push(point_id);
             }
         }
 
