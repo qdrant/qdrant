@@ -167,10 +167,7 @@ impl EdgeShard {
             .unwrap_or_default()
     }
 
-    fn build_segment_optimizer_config(
-        &self,
-        hnsw_config: HnswConfig,
-    ) -> SegmentOptimizerConfig {
+    fn build_segment_optimizer_config(&self, hnsw_config: HnswConfig) -> SegmentOptimizerConfig {
         let appendable_quantization = common::flags::feature_flags().appendable_quantization;
 
         let base_vector_data = self
@@ -284,10 +281,8 @@ mod tests {
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
+    use shard::optimizers::config::{TEMP_SEGMENTS_PATH, default_segment_number};
     use uuid::Uuid;
-
-    use shard::optimizers::config::default_segment_number;
 
     use crate::EdgeShard;
 
