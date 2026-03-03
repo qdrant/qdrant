@@ -56,7 +56,7 @@ itertools = { workspace = true }
 rstest = { workspace = true }
 self_cell = { workspace = true }
 serde_json = { workspace = true }
-tango-bench = "0.6.0"
+tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thread-priority = "3.0.0"
