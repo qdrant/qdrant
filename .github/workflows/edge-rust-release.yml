@@ -17,15 +17,21 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          - macos-latest
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+          - windows-11-arm
+          - windows-latest
 
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install mold
-        if: matrix.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu')
         uses: rui314/setup-mold@v1
 
       - name: Install Protoc
@@ -48,9 +54,9 @@ jobs:
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py
 
-      - name: Cargo check
+      - name: Cargo build
         working-directory: lib/edge/publish
-        run: cargo check -p examples
+        run: cargo build -p examples
 
 
   publish:
@@ -87,4 +93,4 @@ jobs:
         working-directory: lib/edge/publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN_EDGE }}
-        run: cargo publish -p qdrant-edge
+        run: cargo publish -p qdrant-edge --no-verify
