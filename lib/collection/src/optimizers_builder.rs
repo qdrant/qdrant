@@ -14,7 +14,7 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
     DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
-    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH,
+    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH, default_segment_number,
 };
 use validator::Validate;
 
@@ -125,13 +125,7 @@ impl OptimizersConfig {
 
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
-            let num_cpus = common::cpu::get_num_cpus();
-            // Configure 1 segment per 2 CPUs, as a middle ground between
-            // latency and RPS.
-            let expected_segments = num_cpus / 2;
-            // Do not configure less than 2 and more than 8 segments
-            // until it is not explicitly requested
-            expected_segments.clamp(2, 8)
+            default_segment_number()
         } else {
             self.default_segment_number
         }

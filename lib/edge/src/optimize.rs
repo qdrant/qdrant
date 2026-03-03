@@ -12,7 +12,7 @@ use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
     DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
-    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH,
+    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH, default_segment_number,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -98,7 +98,7 @@ impl EdgeShard {
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
         Self::reset_temp_segments_dir(&temp_segments_path)?;
 
-        let hnsw_config = HnswConfig::default();
+        let hnsw_config = self.infer_hnsw_config();
         let hnsw_global_config = HnswGlobalConfig::default();
         let segment_optimizer_config = self.build_segment_optimizer_config(hnsw_config);
         let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
@@ -154,9 +154,22 @@ impl EdgeShard {
         }
     }
 
+    /// Infer HNSW config from the first indexed vector in the segment config.
+    /// Falls back to default if no HNSW-indexed vector exists (e.g. all Plain).
+    fn infer_hnsw_config(&self) -> HnswConfig {
+        self.config
+            .vector_data
+            .values()
+            .find_map(|vdc| match &vdc.index {
+                Indexes::Hnsw(hnsw) => Some(*hnsw),
+                Indexes::Plain {} => None,
+            })
+            .unwrap_or_default()
+    }
+
     fn build_segment_optimizer_config(
         &self,
-        default_hnsw_config: HnswConfig,
+        hnsw_config: HnswConfig,
     ) -> SegmentOptimizerConfig {
         let appendable_quantization = common::flags::feature_flags().appendable_quantization;
 
@@ -196,7 +209,7 @@ impl EdgeShard {
             .iter()
             .map(|(name, config)| {
                 let target_hnsw = match &config.index {
-                    Indexes::Plain {} => default_hnsw_config,
+                    Indexes::Plain {} => hnsw_config,
                     Indexes::Hnsw(hnsw) => *hnsw,
                 };
 
@@ -255,13 +268,6 @@ impl EdgeShard {
     }
 }
 
-/// Target segment count for the merge optimizer.
-/// Mirrors `OptimizerConfig::get_number_segments` from `lib/collection/src/optimizers_builder.rs`.
-fn default_segment_number() -> usize {
-    let expected_segments = common::cpu::get_num_cpus() / 2;
-    expected_segments.clamp(2, 8)
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -281,7 +287,8 @@ mod tests {
     use shard::optimizers::config::TEMP_SEGMENTS_PATH;
     use uuid::Uuid;
 
-    use super::default_segment_number;
+    use shard::optimizers::config::default_segment_number;
+
     use crate::EdgeShard;
 
     const VECTOR_NAME: &str = "edge-test-vector";

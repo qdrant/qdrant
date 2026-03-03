@@ -41,3 +41,13 @@ impl SegmentOptimizerConfig {
         }
     }
 }
+
+/// Target segment count for the merge optimizer.
+pub fn default_segment_number() -> usize {
+    // Configure 1 segment per 2 CPUs, as a middle ground between
+    // latency and RPS.
+    let expected_segments = common::cpu::get_num_cpus() / 2;
+    // Do not configure less than 2 and more than 8 segments
+    // until it is not explicitly requested
+    expected_segments.clamp(2, 8)
+}
