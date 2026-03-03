@@ -8150,7 +8150,7 @@
             "nullable": true
           },
           "ascii_folding": {
-            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"a\u00e7\u00e3o\" -> \"acao\"). Default: false.",
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default: false.",
             "type": "boolean",
             "nullable": true
           },
@@ -11222,7 +11222,7 @@
             "nullable": true
           },
           "ascii_folding": {
-            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"a\u00e7\u00e3o\" -> \"acao\"). Default is `false`.",
+            "description": "If true, normalize tokens by folding accented characters to ASCII (e.g., \"ação\" -> \"acao\"). Default is `false`.",
             "type": "boolean",
             "nullable": true
           },
