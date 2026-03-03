@@ -7302,7 +7302,7 @@ dependencies = [
  "env_logger",
  "fs-err",
  "futures",
- "http 1.4.0",
+ "http 0.2.12",
  "issues",
  "itertools 0.14.0",
  "log",
