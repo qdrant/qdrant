@@ -1,73 +1,16 @@
 pub mod mmap;
-pub mod multi_universal_read;
-pub mod multi_universal_write;
-pub mod vec_multi_universal_io;
+pub mod read;
+pub mod write;
 
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-pub use multi_universal_read::{MultiUniversalRead, SourceId};
-pub use multi_universal_write::MultiUniversalWrite;
 use serde::de::DeserializeOwned;
-pub use vec_multi_universal_io::VecMultiUniversalIo;
 
-use crate::mmap::AdviceSetting;
+pub use self::read::UniversalRead;
+pub use self::write::UniversalWrite;
+use crate::mmap::{Advice, AdviceSetting};
 
-/// Interface for accessing files in a universal way, abstracting away possible
-/// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead<T: Copy + 'static> {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized;
-
-    /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
-
-    /// Read the entire file in one logical access.
-    ///
-    /// Implementations may override this to avoid the two accesses that would result from
-    /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        let n = self.len()?;
-        self.read::<false>(ElementsRange {
-            start: 0,
-            length: n,
-        })
-    }
-
-    fn read_batch<const SEQUENTIAL: bool>(
-        &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()>;
-
-    fn len(&self) -> Result<u64>;
-
-    fn is_empty(&self) -> Result<bool> {
-        Ok(self.len()? == 0)
-    }
-
-    /// Fill RAM cache with related data, if applicable for this implementation.
-    ///
-    /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.
-    fn populate(&self) -> Result<()>;
-
-    /// Ask to evict related data from RAM cache, if applicable for this implementation.
-    ///
-    /// For example in MMAP-based files we do `fadvise` with `POSIX_FADV_DONTNEED`.
-    fn clear_ram_cache(&self) -> Result<()>;
-}
-
-pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
-    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()>;
-
-    fn write_batch<'a>(
-        &mut self,
-        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
-    ) -> Result<()>;
-
-    fn flusher(&self) -> Flusher;
-}
+pub type FileIndex = usize;
 
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
@@ -122,21 +65,25 @@ pub enum UniversalIoError {
     #[error("Not found: {path:?}")]
     NotFound { path: PathBuf },
     /// Source id is not valid for this multi-source storage.
-    #[error("Invalid source id {source_id} (num sources: {num_sources})")]
-    InvalidSourceId {
-        source_id: usize,
-        num_sources: usize,
-    },
+    #[error("Invalid source id {file_index} (num sources: {num_files})")]
+    InvalidFileIndex { file_index: usize, num_files: usize },
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
 ///
 /// Uses a single logical read when the backend overrides [`UniversalRead::read_whole`].
-pub fn read_json_via<S, T>(path: impl AsRef<Path>, options: OpenOptions) -> Result<T>
+pub fn read_json_via<S, T>(path: impl AsRef<Path>) -> Result<T>
 where
     S: UniversalRead<u8> + Sized,
     T: DeserializeOwned,
 {
+    let options = OpenOptions {
+        need_sequential: false,
+        disk_parallel: None,
+        populate: Some(false),
+        advice: Some(AdviceSetting::Advice(Advice::Sequential)),
+    };
+
     let storage = S::open(path, options)?;
     let bytes = storage.read_whole()?;
     serde_json::from_slice(&bytes).map_err(UniversalIoError::from)

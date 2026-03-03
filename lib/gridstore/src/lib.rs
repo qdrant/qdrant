@@ -4,7 +4,7 @@ pub mod config;
 pub mod error;
 pub mod fixtures;
 mod gridstore;
-mod page;
+mod pages;
 mod tracker;
 
 pub use blob::Blob;
