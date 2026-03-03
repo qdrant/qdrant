@@ -1,7 +1,8 @@
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
-    DenseVector, MultiDenseVectorInternal, NamedVectorStruct, VectorInternal, VectorStructInternal,
+    DenseVector, MultiDenseVector, MultiDenseVectorInternal, NamedVectorStruct, VectorInternal,
+    VectorStructInternal,
 };
 use sparse::common::sparse_vector::SparseVector;
 use tonic::Status;
@@ -13,7 +14,7 @@ use crate::rest::schema as rest;
 fn convert_to_plain_multi_vector(
     data: Vec<f32>,
     vectors_count: usize,
-) -> Result<rest::MultiDenseVector, OperationError> {
+) -> Result<MultiDenseVector, OperationError> {
     let dim = data.len() / vectors_count;
     if dim * vectors_count != data.len() {
         return Err(OperationError::ValidationError {

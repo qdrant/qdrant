@@ -264,6 +264,9 @@ pub type TypedDenseVector<T> = Vec<T>;
 pub type DenseVector = TypedDenseVector<VectorElementType>;
 
 /// Type for multi dense vector
+pub type MultiDenseVector = Vec<DenseVector>;
+
+/// Type for multi dense vector
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct TypedMultiDenseVector<T> {
     pub flattened_vectors: TypedDenseVector<T>, // vectors are flattened into a single vector

@@ -1,9 +1,9 @@
 use api::rest::{
-    BatchVectorStruct, MultiDenseVector, PointInsertOperations, PointsBatch, PointsList,
-    UpdateVectors, Vector, VectorStruct,
+    BatchVectorStruct, PointInsertOperations, PointsBatch, PointsList, UpdateVectors, Vector,
+    VectorStruct,
 };
 use segment::data_types::tiny_map::TinyMap;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVector};
 use segment::types::{
     Filter, StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig, VectorName,
     VectorNameBuf,

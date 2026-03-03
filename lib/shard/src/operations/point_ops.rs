@@ -4,9 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::mem;
 
 use api::conversions::json::payload_to_proto;
-use api::rest::{
-    DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
-};
+use api::rest::{ShardKeySelector, VectorOutput, VectorStructOutput};
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -16,8 +14,8 @@ use segment::common::utils::unordered_hash_unique;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{
-    BatchVectorStructInternal, DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal,
-    VectorStructInternal,
+    BatchVectorStructInternal, DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVector,
+    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};

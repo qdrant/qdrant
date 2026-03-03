@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
+use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
 use uuid::Uuid;
 
 use super::schema::{ScoredPoint, Vector};
@@ -10,8 +10,8 @@ use super::{
     Query, QueryInterface, VectorOutput, VectorStructOutput,
 };
 use crate::grpc;
+use crate::rest::NamedVectorStruct;
 use crate::rest::models::InferenceUsage;
-use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {
