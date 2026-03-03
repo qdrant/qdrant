@@ -1,6 +1,8 @@
 use common::mmap;
 use common::universal_io::UniversalIoError;
 
+use crate::tracker::PageId;
+
 #[derive(thiserror::Error, Debug)]
 pub enum GridstoreError {
     #[error("{0}")]
@@ -17,6 +19,8 @@ pub enum GridstoreError {
     FlushCancelled,
     #[error("Validation error: {message}")]
     ValidationError { message: String },
+    #[error("Page {page_id} not found")]
+    PageNotFound { page_id: PageId },
 }
 
 impl GridstoreError {

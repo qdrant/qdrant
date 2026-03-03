@@ -41,3 +41,18 @@ pub const unsafe fn assume_init_mut<T>(this: &mut [MaybeUninit<T>]) -> &mut [T] 
     // mutable reference which is also guaranteed to be valid for writes.
     unsafe { &mut *(this as *mut [MaybeUninit<T>] as *mut [T]) }
 }
+
+/// # Safety
+///
+/// Calling this when the content is not yet fully initialized causes undefined
+/// behavior: it is up to the caller to guarantee that every `MaybeUninit<T>` in the
+/// vec really is in an initialized state. For instance, `.assume_init_vec()` cannot
+/// be used to initialize a `MaybeUninit` vec.
+#[inline(always)]
+pub unsafe fn assume_init_vec<T>(this: Vec<MaybeUninit<T>>) -> Vec<T> {
+    // SAFETY: caller must guarantee every element was initialized.
+    unsafe {
+        let (ptr, len, cap) = this.into_raw_parts();
+        Vec::from_raw_parts(ptr.cast::<T>(), len, cap)
+    }
+}
