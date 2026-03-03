@@ -8,10 +8,13 @@ use common::bitpacking_ordered;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng as _};
+use tango_bench::metrics::WallClock;
 use tango_bench::{
-    Bencher, Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
+    Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
 };
 use zerocopy::IntoBytes;
+
+type Bencher = tango_bench::Bencher<WallClock>;
 
 pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
     let data8 = StateBencher::new(move || {
@@ -24,7 +27,7 @@ pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
     });
 
     [
-        data8.benchmark_fn("bitpacking/read", move |b, data8| {
+        data8.benchmark_fn("bitpacking/read", move |b: Bencher, data8| {
             let mut rng = StdRng::seed_from_u64(42);
             b.iter(move || {
                 let bits = rng.random_range(1..=32);
@@ -39,7 +42,7 @@ pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
                 }
             })
         }),
-        data32.benchmark_fn("bitpacking/write", move |b, data32| {
+        data32.benchmark_fn("bitpacking/write", move |b: Bencher, data32| {
             let mut rng = StdRng::seed_from_u64(42);
             let mut out = Vec::new();
             b.iter(move || {
@@ -110,20 +113,22 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
         })
     });
 
-    [b.benchmark_fn("bitpacking_links/read", move |b, state| {
-        let mut rng = rand::rng();
-        b.iter(move || {
-            let idx = rng.random_range(1..state.items.len());
-            iterate_packed_links(
-                &state.links[state.items[idx - 1].offset..state.items[idx].offset],
-                state.items[idx].bits_per_unsorted,
-                state.items[idx].sorted_count,
-            )
-            .for_each(|x| {
-                black_box(x);
-            });
-        })
-    })]
+    [
+        b.benchmark_fn("bitpacking_links/read", move |b: Bencher, state| {
+            let mut rng = rand::rng();
+            b.iter(move || {
+                let idx = rng.random_range(1..state.items.len());
+                iterate_packed_links(
+                    &state.links[state.items[idx - 1].offset..state.items[idx].offset],
+                    state.items[idx].bits_per_unsorted,
+                    state.items[idx].sorted_count,
+                )
+                .for_each(|x| {
+                    black_box(x);
+                });
+            })
+        }),
+    ]
 }
 
 fn benchmarks_ordered() -> impl IntoBenchmarks {
@@ -165,7 +170,7 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
 
     [
         b.benchmark_fn("ordered/get", {
-            move |b, state| {
+            move |b: Bencher, state| {
                 let mut rng = rand::rng();
                 let len = state.borrow_owner().values.len() - 1;
                 b.iter(move || {
@@ -175,7 +180,7 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
             }
         }),
         b.benchmark_fn("ordered/get2", {
-            move |b, state| {
+            move |b: Bencher, state| {
                 let mut rng = rand::rng();
                 let len = state.borrow_owner().values.len() - 1;
                 b.iter(move || {
