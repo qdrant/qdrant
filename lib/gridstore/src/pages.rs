@@ -2,7 +2,7 @@ use std::mem::MaybeUninit;
 use std::path::Path;
 
 use common::maybe_uninit::assume_init_vec;
-use common::universal_io::{ElementsRange, OpenOptions, UniversalReadMulti};
+use common::universal_io::{ElementsRange, OpenOptions, UniversalRead};
 use smallvec::SmallVec;
 
 use crate::Result;
@@ -22,7 +22,7 @@ impl<S> Default for Pages<S> {
 }
 
 #[allow(dead_code)]
-impl<S: UniversalReadMulti<u8>> Pages<S> {
+impl<S: UniversalRead<u8>> Pages<S> {
     pub fn open(dir: &Path) -> Result<Self> {
         let mut pages = Self::default();
 

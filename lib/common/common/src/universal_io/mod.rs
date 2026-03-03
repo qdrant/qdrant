@@ -1,69 +1,16 @@
 pub mod mmap;
-pub mod multi_io;
+pub mod read;
+pub mod write;
 
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
-pub use self::multi_io::*;
+pub use self::read::UniversalRead;
+pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
 
-/// Interface for accessing files in a universal way, abstracting away possible
-/// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead<T: Copy + 'static> {
-    fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
-    where
-        Self: Sized;
-
-    /// Prefer [`read_batch`] if you need high performance.
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>>;
-
-    /// Read the entire file in one logical access.
-    ///
-    /// Implementations may override this to avoid the two accesses that would result from
-    /// `len()` followed by `read(0..len())`. Default implementation does exactly that.
-    fn read_whole(&self) -> Result<Cow<'_, [T]>> {
-        let n = self.len()?;
-        self.read::<true>(ElementsRange {
-            start: 0,
-            length: n,
-        })
-    }
-
-    fn read_batch<const SEQUENTIAL: bool>(
-        &self,
-        ranges: impl IntoIterator<Item = ElementsRange>,
-        callback: impl FnMut(usize, &[T]) -> Result<()>,
-    ) -> Result<()>;
-
-    fn len(&self) -> Result<u64>;
-
-    fn is_empty(&self) -> Result<bool> {
-        Ok(self.len()? == 0)
-    }
-
-    /// Fill RAM cache with related data, if applicable for this implementation.
-    ///
-    /// For example in MMAP-based files we do `madvise` with `MADV_POPULATE_READ`.
-    fn populate(&self) -> Result<()>;
-
-    /// Ask to evict related data from RAM cache, if applicable for this implementation.
-    ///
-    /// For example in MMAP-based files we do `fadvise` with `POSIX_FADV_DONTNEED`.
-    fn clear_ram_cache(&self) -> Result<()>;
-}
-
-pub trait UniversalWrite<T: Copy + 'static>: UniversalRead<T> {
-    fn write(&mut self, offset: ElementOffset, data: &[T]) -> Result<()>;
-
-    fn write_batch<'a>(
-        &mut self,
-        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
-    ) -> Result<()>;
-
-    fn flusher(&self) -> Flusher;
-}
+pub type FileIndex = usize;
 
 #[derive(Copy, Clone, Debug)]
 pub struct OpenOptions {
