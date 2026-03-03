@@ -6,13 +6,12 @@ use common::progress_tracker::new_progress_tracker;
 use fs_err as fs;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, VectorStorageType};
+use segment::types::{HnswConfig, HnswGlobalConfig, Indexes};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
-    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH, default_segment_number,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, OptimizerSourceConfig, TEMP_SEGMENTS_PATH,
+    default_segment_number,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -100,7 +99,8 @@ impl EdgeShard {
 
         let hnsw_config = self.infer_hnsw_config();
         let hnsw_global_config = HnswGlobalConfig::default();
-        let segment_optimizer_config = self.build_segment_optimizer_config(hnsw_config);
+        let segment_optimizer_config =
+            OptimizerSourceConfig::from_segment_config(&self.config, hnsw_config).build();
         let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
         let default_segments_number = default_segment_number();
 
@@ -165,83 +165,6 @@ impl EdgeShard {
                 Indexes::Plain {} => None,
             })
             .unwrap_or_default()
-    }
-
-    fn build_segment_optimizer_config(&self, hnsw_config: HnswConfig) -> SegmentOptimizerConfig {
-        let appendable_quantization = common::flags::feature_flags().appendable_quantization;
-
-        let base_vector_data = self
-            .config
-            .vector_data
-            .iter()
-            .map(|(name, config)| {
-                let mut config = config.clone();
-                config.index = Indexes::Plain {};
-                config.storage_type = if config.storage_type.is_on_disk() {
-                    VectorStorageType::ChunkedMmap
-                } else {
-                    VectorStorageType::InRamChunkedMmap
-                };
-                config.quantization_config = config
-                    .quantization_config
-                    .filter(|q| appendable_quantization && q.supports_appendable());
-                (name.clone(), config)
-            })
-            .collect();
-
-        let base_sparse_vector_data = self
-            .config
-            .sparse_vector_data
-            .iter()
-            .map(|(name, config)| {
-                let mut config = *config;
-                config.index.index_type = SparseIndexType::MutableRam;
-                (name.clone(), config)
-            })
-            .collect();
-
-        let dense_vector = self
-            .config
-            .vector_data
-            .iter()
-            .map(|(name, config)| {
-                let target_hnsw = match &config.index {
-                    Indexes::Plain {} => hnsw_config,
-                    Indexes::Hnsw(hnsw) => *hnsw,
-                };
-
-                (
-                    name.clone(),
-                    DenseVectorOptimizerConfig {
-                        on_disk: Some(config.storage_type.is_on_disk()),
-                        hnsw_config: target_hnsw,
-                        quantization_config: config.quantization_config.clone(),
-                    },
-                )
-            })
-            .collect();
-
-        let sparse_vector = self
-            .config
-            .sparse_vector_data
-            .iter()
-            .map(|(name, config)| {
-                (
-                    name.clone(),
-                    SparseVectorOptimizerConfig {
-                        on_disk: Some(config.index.index_type.is_on_disk()),
-                    },
-                )
-            })
-            .collect();
-
-        SegmentOptimizerConfig {
-            payload_storage_type: self.config.payload_storage_type,
-            base_vector_data,
-            base_sparse_vector_data,
-            dense_vector,
-            sparse_vector,
-        }
     }
 
     fn reset_temp_segments_dir(temp_segments_path: &std::path::Path) -> OperationResult<()> {
@@ -327,7 +250,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect::<Vec<_>>();
+        // Delete 250/1000 = 25%, above DEFAULT_DELETED_THRESHOLD (20%)
+        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -342,7 +266,7 @@ mod tests {
         );
 
         // Verify surviving points are queryable with correct vectors
-        assert_points_retrievable_with_vectors(&shard, &[201, 500, 999, 1000]);
+        assert_points_retrievable_with_vectors(&shard, &[251, 500, 999, 1000]);
     }
 
     /// A fresh shard with a single small segment and no deletions should not
@@ -404,8 +328,7 @@ mod tests {
         multiply_segments(dir.path(), target_count);
 
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
-        // Load already runs optimize_all_segments_blocking, so segments
-        // should already be reduced.
+        reopened.optimize_all_segments_blocking().unwrap();
         let info = reopened.info();
         assert!(
             info.segments_count <= default_segment_number() + 1,
@@ -449,8 +372,9 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        // First load triggers optimization.
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        // First explicit optimization triggers merge.
+        reopened.optimize_all_segments_blocking().unwrap();
         let segments_after_first = reopened.info().segments_count;
 
         // Second explicit optimization should be a no-op.
@@ -464,7 +388,7 @@ mod tests {
         assert_points_retrievable_with_vectors(&reopened, &[1]);
     }
 
-    /// Deleting less than 10% of points (below the vacuum threshold)
+    /// Deleting less than 20% of points (below the vacuum threshold)
     /// should NOT trigger the vacuum optimizer.
     #[test]
     fn vacuum_below_threshold_is_noop() {
@@ -480,7 +404,7 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete 5% — below the 10% threshold
+        // Delete 5% — below the 20% threshold (DEFAULT_DELETED_THRESHOLD)
         let deleted_ids = (1..=50).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
@@ -489,7 +413,7 @@ mod tests {
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(
             !optimized,
-            "5% deletion should not trigger vacuum (threshold is 10%)"
+            "5% deletion should not trigger vacuum (threshold is 20%)"
         );
 
         // Surviving points should still have correct vectors
@@ -513,7 +437,7 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete 50% — above ratio threshold, but total count is below minimum
+        // Delete 50% — above ratio threshold (20%), but total count is below minimum
         let deleted_ids = (1..=50).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
@@ -545,8 +469,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete points 1..=200 (20%)
-        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect::<Vec<_>>();
+        // Delete points 1..=250 (25%, above DEFAULT_DELETED_THRESHOLD=20%)
+        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect::<Vec<_>>();
         shard
             .update(PointOperation(DeletePoints {
                 ids: deleted_ids.clone(),
@@ -554,7 +478,7 @@ mod tests {
             .unwrap();
 
         let optimized = shard.optimize_all_segments_blocking().unwrap();
-        assert!(optimized, "20% deletion should trigger vacuum");
+        assert!(optimized, "25% deletion should trigger vacuum");
 
         // Verify point count
         let count = shard
@@ -563,7 +487,7 @@ mod tests {
                 exact: true,
             })
             .unwrap();
-        assert_eq!(count, 800, "should have 800 remaining points after vacuum");
+        assert_eq!(count, 750, "should have 750 remaining points after vacuum");
 
         // Verify deleted points are gone
         let deleted_results = shard
@@ -579,7 +503,7 @@ mod tests {
         );
 
         // Verify surviving points are accessible with correct vectors
-        assert_points_retrievable_with_vectors(&shard, &[201, 500, 800, 1000]);
+        assert_points_retrievable_with_vectors(&shard, &[251, 500, 750, 1000]);
     }
 
     /// Deleting all points from a segment should be handled gracefully.
@@ -634,8 +558,8 @@ mod tests {
         assert_points_retrievable_with_vectors(&shard, &[9999]);
     }
 
-    /// Vacuum at exactly the threshold boundary (10% deleted, 1000 total).
-    /// The threshold check is strictly greater-than, so exactly 10% should
+    /// Vacuum at exactly the threshold boundary (20% deleted, 1000 total).
+    /// The threshold check is strictly greater-than, so exactly 20% should
     /// NOT trigger vacuum.
     #[test]
     fn vacuum_at_exact_threshold_boundary_is_noop() {
@@ -651,8 +575,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete exactly 10% (100 out of 1000)
-        let deleted_ids = (1..=100).map(ExtendedPointId::NumId).collect();
+        // Delete exactly 20% (200 out of 1000) — matches DEFAULT_DELETED_THRESHOLD
+        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -660,10 +584,10 @@ mod tests {
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(
             !optimized,
-            "exactly 10% deletion (not strictly greater) should not trigger vacuum"
+            "exactly 20% deletion (not strictly greater) should not trigger vacuum"
         );
 
-        assert_points_retrievable_with_vectors(&shard, &[101, 500, 1000]);
+        assert_points_retrievable_with_vectors(&shard, &[201, 500, 1000]);
     }
 
     /// Just above the vacuum threshold should trigger optimization.
@@ -681,8 +605,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete 101 out of 1000 = 10.1% — just above threshold
-        let deleted_ids = (1..=101).map(ExtendedPointId::NumId).collect();
+        // Delete 201 out of 1000 = 20.1% — just above DEFAULT_DELETED_THRESHOLD (20%)
+        let deleted_ids = (1..=201).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -690,11 +614,11 @@ mod tests {
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(
             optimized,
-            "10.1% deletion should trigger vacuum (threshold is >10%)"
+            "20.1% deletion should trigger vacuum (threshold is >20%)"
         );
 
-        // Points 102..=1000 should survive with correct vectors
-        assert_points_retrievable_with_vectors(&shard, &[102, 500, 1000]);
+        // Points 202..=1000 should survive with correct vectors
+        assert_points_retrievable_with_vectors(&shard, &[202, 500, 1000]);
     }
 
     /// When there are excess segments AND some have high deletion ratios,
@@ -710,12 +634,12 @@ mod tests {
 
         let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
-        // Insert 1000 points, then delete 200 (20% — above vacuum threshold)
+        // Insert 1000 points, then delete 250 (25% — above DEFAULT_DELETED_THRESHOLD=20%)
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
-        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
+        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -724,8 +648,9 @@ mod tests {
         // Create excess segments
         multiply_segments(dir.path(), target_count);
 
-        // Load triggers optimization (both merge and vacuum should run)
+        // Explicit optimization (both merge and vacuum should run)
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        reopened.optimize_all_segments_blocking().unwrap();
 
         let info = reopened.info();
         assert!(
@@ -734,7 +659,7 @@ mod tests {
             info.segments_count,
         );
 
-        // The duplicated segments each had 800 surviving points (same IDs).
+        // The duplicated segments each had 750 surviving points (same IDs).
         // After merge, the shard should be functional with correct data.
         // We use count(exact=true) since info().points_count sums per-segment
         // counts without cross-segment deduplication.
@@ -745,12 +670,12 @@ mod tests {
             })
             .unwrap();
         assert!(
-            count >= 800,
+            count >= 750,
             "merged shard should preserve surviving points"
         );
 
-        // Surviving points (201..=1000) should be queryable with correct vectors
-        assert_points_retrievable_with_vectors(&reopened, &[201, 500, 1000]);
+        // Surviving points (251..=1000) should be queryable with correct vectors
+        assert_points_retrievable_with_vectors(&reopened, &[251, 500, 1000]);
 
         // Second run should be idle
         let optimized = reopened.optimize_all_segments_blocking().unwrap();
@@ -773,7 +698,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
+        // Delete 250/1000 = 25%, above DEFAULT_DELETED_THRESHOLD (20%)
+        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -821,8 +747,8 @@ mod tests {
             .update(PointOperation(UpsertPoints(PointsList(points))))
             .unwrap();
 
-        // Delete 200 points, then optimize
-        let deleted_ids = (1..=200).map(ExtendedPointId::NumId).collect();
+        // Delete 250 points (25%, above DEFAULT_DELETED_THRESHOLD=20%), then optimize
+        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect();
         shard
             .update(PointOperation(DeletePoints { ids: deleted_ids }))
             .unwrap();
@@ -831,7 +757,7 @@ mod tests {
         assert!(optimized);
         drop(shard);
 
-        // Reload the shard — the load itself also calls optimize_all_segments_blocking
+        // Reload the shard
         let reopened = EdgeShard::load(dir.path(), None).unwrap();
 
         let count = reopened
@@ -840,10 +766,10 @@ mod tests {
                 exact: true,
             })
             .unwrap();
-        assert_eq!(count, 800, "point count should be preserved across reload");
+        assert_eq!(count, 750, "point count should be preserved across reload");
 
         // Verify specific points survive reload with correct vectors
-        assert_points_retrievable_with_vectors(&reopened, &[201, 500, 800, 1000]);
+        assert_points_retrievable_with_vectors(&reopened, &[251, 500, 750, 1000]);
     }
 
     /// Retrieve points by ID and verify each one is present with the correct

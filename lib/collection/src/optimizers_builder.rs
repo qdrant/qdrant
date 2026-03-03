@@ -7,14 +7,15 @@ use schemars::JsonSchema;
 use segment::common::BYTES_IN_KB;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerConfig, SegmentOptimizerConfig,
-    SparseVectorOptimizerConfig, TEMP_SEGMENTS_PATH, default_segment_number,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput, OptimizerSourceConfig,
+    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
+    default_segment_number,
 };
 use validator::Validate;
 
@@ -188,13 +189,15 @@ pub fn build_segment_optimizer_config(
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> SegmentOptimizerConfig {
-    let dense_vector = collection_params
+    let dense_vectors = collection_params
         .vectors
         .params_iter()
         .map(|(name, params)| {
             (
                 name.into(),
-                DenseVectorOptimizerConfig {
+                DenseVectorOptimizerInput {
+                    size: params.size.get() as usize,
+                    distance: params.distance,
                     on_disk: params.on_disk,
                     hnsw_config: hnsw_config.update_opt(params.hnsw_config.as_ref()),
                     quantization_config: params
@@ -202,12 +205,14 @@ pub fn build_segment_optimizer_config(
                         .as_ref()
                         .or(quantization_config.as_ref())
                         .cloned(),
+                    multivector_config: params.multivector_config,
+                    datatype: params.datatype.map(VectorStorageDatatype::from),
                 },
             )
         })
         .collect();
 
-    let sparse_vector = collection_params
+    let sparse_vectors = collection_params
         .sparse_vectors
         .as_ref()
         .map(|config| {
@@ -216,8 +221,17 @@ pub fn build_segment_optimizer_config(
                 .map(|(name, params)| {
                     (
                         name.clone(),
-                        SparseVectorOptimizerConfig {
+                        SparseVectorOptimizerInput {
                             on_disk: params.index.and_then(|index| index.on_disk),
+                            full_scan_threshold: params
+                                .index
+                                .and_then(|index| index.full_scan_threshold),
+                            index_datatype: params
+                                .index
+                                .and_then(|index| index.datatype)
+                                .map(VectorStorageDatatype::from),
+                            storage_type: params.storage_type(),
+                            modifier: params.modifier,
                         },
                     )
                 })
@@ -225,13 +239,13 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    SegmentOptimizerConfig {
+    let source = OptimizerSourceConfig {
         payload_storage_type: collection_params.payload_storage_type(),
-        base_vector_data: collection_params.to_base_vector_data(quantization_config.as_ref()),
-        base_sparse_vector_data: collection_params.to_sparse_vector_data(),
-        dense_vector,
-        sparse_vector,
-    }
+        dense_vectors,
+        sparse_vectors,
+    };
+
+    source.build()
 }
 
 pub fn build_optimizers(
