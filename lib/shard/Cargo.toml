@@ -51,8 +51,13 @@ tempfile = { workspace = true }
 segment = { path = "../segment", default-features = false, features = ["testing"] }
 shard = { path = ".", default-features = false, features = ["testing"] }
 
+criterion = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 proptest = { workspace = true }
 rstest = { workspace = true }
 serde_cbor = { workspace = true }
 tar = { workspace = true }
+
+[[bench]]
+name = "find_duplicated_points"
+harness = false
