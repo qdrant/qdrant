@@ -23,6 +23,10 @@ pub struct CudaPipeline {
     /// map to consecutive 8-byte slots in SLANG_globalParams.
     param_order: Vec<(usize, usize)>,
 
+    /// Cached device pointer and size of the `SLANG_globalParams` constant symbol.
+    global_params_ptr: Handle,
+    global_params_size: usize,
+
     /// Keep shader alive.
     _shader: Arc<CudaShader>,
 }
@@ -84,11 +88,28 @@ impl CudaPipeline {
             )));
         }
 
+        // Cache the SLANG_globalParams constant symbol location.
+        let mut global_params_ptr: Handle = 0;
+        let mut global_params_size: usize = 0;
+        GpuDriver::check(
+            unsafe {
+                (device.driver().module_get_global)(
+                    &mut global_params_ptr,
+                    &mut global_params_size,
+                    module,
+                    c"SLANG_globalParams".as_ptr() as *const i8,
+                )
+            },
+            "module_get_global(SLANG_globalParams)",
+        )?;
+
         Ok(Arc::new(CudaPipeline {
             device,
             module,
             function,
             param_order: shader.param_order().to_vec(),
+            global_params_ptr,
+            global_params_size,
             _shader: shader,
         }))
     }
@@ -103,6 +124,14 @@ impl CudaPipeline {
 
     pub fn param_order(&self) -> &[(usize, usize)] {
         &self.param_order
+    }
+
+    pub fn global_params_ptr(&self) -> Handle {
+        self.global_params_ptr
+    }
+
+    pub fn global_params_size(&self) -> usize {
+        self.global_params_size
     }
 }
 

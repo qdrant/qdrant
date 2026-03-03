@@ -689,19 +689,28 @@ __device__ __forceinline__ _SlangDimHelper _slang_threadIdx() {
 #define threadIdx (_slang_threadIdx())
 "#;
 
-/// Compile a `.cu` file with `nvcc` to PTX (`.ptx`).
+/// Compile a `.cu` file with `nvcc` to a native CUBIN (`.cubin`).
+///
+/// CUBIN is pre-compiled native GPU code for the target architecture,
+/// avoiding the JIT compilation overhead of PTX and potentially producing
+/// better-optimised code.  Falls back to PTX if no compute capability is
+/// available (PTX can be JIT-compiled for any GPU).
 fn compile_nvcc(
     tmp_dir: &Path,
     module_name: &str,
     cu_path: &Path,
     device: &CudaDevice,
 ) -> GpuResult<Vec<u8>> {
-    let out_path = tmp_dir.join(format!("{module_name}.ptx"));
+    // Prefer CUBIN (native) when we know the target architecture.
+    let use_cubin = device.compute_capability().is_some();
+    let ext = if use_cubin { "cubin" } else { "ptx" };
+    let out_path = tmp_dir.join(format!("{module_name}.{ext}"));
 
     let nvcc = find_nvcc()?;
     let mut cmd = std::process::Command::new(&nvcc);
-    cmd.arg("-ptx")
-        .arg("-O2")
+    cmd.arg(if use_cubin { "-cubin" } else { "-ptx" })
+        .arg("-O3")
+        .arg("--use_fast_math")
         // Must match the define passed to slangc so the Slang CUDA prelude
         // uses pointer-only StructuredBuffer (no count field).
         .arg("-DSLANG_CUDA_STRUCTURED_BUFFER_NO_COUNT");
@@ -748,16 +757,18 @@ fn compile_nvcc(
             }
             return Err(GpuError::Other(msg));
         }
-        log::warn!("nvcc reported errors but .ptx file exists; continuing");
+        log::warn!("nvcc reported errors but .{ext} file exists; continuing");
     }
 
-    let mut ptx = std::fs::read(&out_path)
+    let mut binary = std::fs::read(&out_path)
         .map_err(|e| GpuError::Other(format!("Failed to read nvcc output: {e}")))?;
-    // cuModuleLoadData requires PTX to be null-terminated.
-    if ptx.last() != Some(&0) {
-        ptx.push(0);
+    if !use_cubin {
+        // cuModuleLoadData requires PTX to be null-terminated.
+        if binary.last() != Some(&0) {
+            binary.push(0);
+        }
     }
-    Ok(ptx)
+    Ok(binary)
 }
 
 fn find_hipcc() -> GpuResult<String> {

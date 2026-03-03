@@ -31,9 +31,22 @@ pub struct GpuDriver {
     // ---- memory ----
     pub mem_alloc: unsafe extern "C" fn(dptr: *mut Handle, size: usize) -> i32,
     pub mem_free: unsafe extern "C" fn(dptr: Handle) -> i32,
+    pub mem_host_alloc: unsafe extern "C" fn(pp: *mut *mut c_void, size: usize, flags: u32) -> i32,
+    pub mem_free_host: unsafe extern "C" fn(p: *mut c_void) -> i32,
+    pub mem_host_get_device_pointer:
+        unsafe extern "C" fn(dptr: *mut Handle, p: *mut c_void, flags: u32) -> i32,
     pub memcpy_htod: unsafe extern "C" fn(dst: Handle, src: *const c_void, size: usize) -> i32,
     pub memcpy_dtoh: unsafe extern "C" fn(dst: *mut c_void, src: Handle, size: usize) -> i32,
+    pub memcpy_dtod: unsafe extern "C" fn(dst: Handle, src: Handle, size: usize) -> i32,
+    pub memcpy_htod_async:
+        unsafe extern "C" fn(dst: Handle, src: *const c_void, size: usize, stream: Handle) -> i32,
+    pub memcpy_dtoh_async:
+        unsafe extern "C" fn(dst: *mut c_void, src: Handle, size: usize, stream: Handle) -> i32,
+    pub memcpy_dtod_async:
+        unsafe extern "C" fn(dst: Handle, src: Handle, size: usize, stream: Handle) -> i32,
     pub memset_d8: unsafe extern "C" fn(dst: Handle, value: u8, count: usize) -> i32,
+    pub memset_d8_async:
+        unsafe extern "C" fn(dst: Handle, value: u8, count: usize, stream: Handle) -> i32,
 
     // ---- modules / kernels ----
     pub module_load_data: unsafe extern "C" fn(module: *mut Handle, image: *const c_void) -> i32,
@@ -64,6 +77,7 @@ pub struct GpuDriver {
 
     // ---- streams ----
     pub stream_create: unsafe extern "C" fn(stream: *mut Handle, flags: u32) -> i32,
+    pub stream_query: unsafe extern "C" fn(stream: Handle) -> i32,
     pub stream_synchronize: unsafe extern "C" fn(stream: Handle) -> i32,
     pub stream_destroy: unsafe extern "C" fn(stream: Handle) -> i32,
 }
@@ -146,15 +160,27 @@ impl GpuDriver {
             ctx_set_current: load_fn!(b"cuCtxSetCurrent\0", b"hipCtxSetCurrent\0"),
             mem_alloc: load_fn!(b"cuMemAlloc_v2\0", b"hipMalloc\0"),
             mem_free: load_fn!(b"cuMemFree_v2\0", b"hipFree\0"),
+            mem_host_alloc: load_fn!(b"cuMemHostAlloc\0", b"hipHostMalloc\0"),
+            mem_free_host: load_fn!(b"cuMemFreeHost\0", b"hipHostFree\0"),
+            mem_host_get_device_pointer: load_fn!(
+                b"cuMemHostGetDevicePointer_v2\0",
+                b"hipHostGetDevicePointer\0"
+            ),
             memcpy_htod: load_fn!(b"cuMemcpyHtoD_v2\0", b"hipMemcpyHtoD\0"),
             memcpy_dtoh: load_fn!(b"cuMemcpyDtoH_v2\0", b"hipMemcpyDtoH\0"),
+            memcpy_dtod: load_fn!(b"cuMemcpyDtoD_v2\0", b"hipMemcpyDtoD\0"),
+            memcpy_htod_async: load_fn!(b"cuMemcpyHtoDAsync_v2\0", b"hipMemcpyHtoDAsync\0"),
+            memcpy_dtoh_async: load_fn!(b"cuMemcpyDtoHAsync_v2\0", b"hipMemcpyDtoHAsync\0"),
+            memcpy_dtod_async: load_fn!(b"cuMemcpyDtoDAsync_v2\0", b"hipMemcpyDtoDAsync\0"),
             memset_d8: load_fn!(b"cuMemsetD8_v2\0", b"hipMemsetD8\0"),
+            memset_d8_async: load_fn!(b"cuMemsetD8Async\0", b"hipMemsetD8Async\0"),
             module_load_data: load_fn!(b"cuModuleLoadData\0", b"hipModuleLoadData\0"),
             module_unload: load_fn!(b"cuModuleUnload\0", b"hipModuleUnload\0"),
             module_get_function: load_fn!(b"cuModuleGetFunction\0", b"hipModuleGetFunction\0"),
             module_get_global: load_fn!(b"cuModuleGetGlobal_v2\0", b"hipModuleGetGlobal\0"),
             launch_kernel: load_fn!(b"cuLaunchKernel\0", b"hipModuleLaunchKernel\0"),
             stream_create: load_fn!(b"cuStreamCreate\0", b"hipStreamCreate\0"),
+            stream_query: load_fn!(b"cuStreamQuery\0", b"hipStreamQuery\0"),
             stream_synchronize: load_fn!(b"cuStreamSynchronize\0", b"hipStreamSynchronize\0"),
             stream_destroy: load_fn!(b"cuStreamDestroy_v2\0", b"hipStreamDestroy\0"),
             _lib: lib,
@@ -187,6 +213,37 @@ impl GpuDriver {
         Ok(ptr)
     }
 
+    /// Allocate pinned host memory mapped into device address space.
+    /// Returns (host_ptr, device_ptr).
+    pub fn alloc_host_mapped(&self, size: usize) -> GpuResult<(*mut c_void, Handle)> {
+        // CU_MEMHOSTALLOC_DEVICEMAP = 0x02, same value for hipHostMallocMapped.
+        const DEVICE_MAP: u32 = 0x02;
+        let mut host_ptr: *mut c_void = std::ptr::null_mut();
+        Self::check(
+            unsafe { (self.mem_host_alloc)(&mut host_ptr, size, DEVICE_MAP) },
+            "mem_host_alloc",
+        )?;
+        let mut dev_ptr: Handle = 0;
+        let rc = unsafe { (self.mem_host_get_device_pointer)(&mut dev_ptr, host_ptr, 0) };
+        if rc != 0 {
+            unsafe { (self.mem_free_host)(host_ptr) };
+            return Err(GpuError::Other(format!(
+                "mem_host_get_device_pointer failed (error code {rc})"
+            )));
+        }
+        Ok((host_ptr, dev_ptr))
+    }
+
+    /// Free pinned host memory.
+    pub fn free_host(&self, ptr: *mut c_void) {
+        if !ptr.is_null() {
+            let rc = unsafe { (self.mem_free_host)(ptr) };
+            if rc != 0 {
+                log::error!("GPU free_host failed (error code {rc})");
+            }
+        }
+    }
+
     /// Free device memory.
     pub fn free(&self, ptr: Handle) {
         if ptr != 0 {
@@ -205,6 +262,67 @@ impl GpuDriver {
     /// Copy device → host (synchronous).
     pub fn memcpy_dtoh(&self, dst: *mut c_void, src: Handle, size: usize) -> GpuResult<()> {
         Self::check(unsafe { (self.memcpy_dtoh)(dst, src, size) }, "memcpy_dtoh")
+    }
+
+    /// Copy device → device (synchronous).
+    pub fn memcpy_dtod(&self, dst: Handle, src: Handle, size: usize) -> GpuResult<()> {
+        Self::check(unsafe { (self.memcpy_dtod)(dst, src, size) }, "memcpy_dtod")
+    }
+
+    /// Copy host → device (async, queued on stream).
+    pub fn memcpy_htod_async(
+        &self,
+        dst: Handle,
+        src: *const c_void,
+        size: usize,
+        stream: Handle,
+    ) -> GpuResult<()> {
+        Self::check(
+            unsafe { (self.memcpy_htod_async)(dst, src, size, stream) },
+            "memcpy_htod_async",
+        )
+    }
+
+    /// Copy device → host (async, queued on stream).
+    pub fn memcpy_dtoh_async(
+        &self,
+        dst: *mut c_void,
+        src: Handle,
+        size: usize,
+        stream: Handle,
+    ) -> GpuResult<()> {
+        Self::check(
+            unsafe { (self.memcpy_dtoh_async)(dst, src, size, stream) },
+            "memcpy_dtoh_async",
+        )
+    }
+
+    /// Copy device → device (async, queued on stream).
+    pub fn memcpy_dtod_async(
+        &self,
+        dst: Handle,
+        src: Handle,
+        size: usize,
+        stream: Handle,
+    ) -> GpuResult<()> {
+        Self::check(
+            unsafe { (self.memcpy_dtod_async)(dst, src, size, stream) },
+            "memcpy_dtod_async",
+        )
+    }
+
+    /// Set device memory bytes to `value` (async, queued on stream).
+    pub fn memset_async(
+        &self,
+        dst: Handle,
+        value: u8,
+        count: usize,
+        stream: Handle,
+    ) -> GpuResult<()> {
+        Self::check(
+            unsafe { (self.memset_d8_async)(dst, value, count, stream) },
+            "memset_async",
+        )
     }
 
     /// Set device memory bytes to `value`.
