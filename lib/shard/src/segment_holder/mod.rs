@@ -5,11 +5,10 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
-use std::cmp::{Reverse, max, min};
+use std::cmp::Reverse;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
-use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -337,17 +336,6 @@ impl SegmentHolder {
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
-    /// Selects point ids, which is stored in this segment
-    fn segment_points(
-        ids: &[PointIdType],
-        segment: &dyn NonAppendableSegmentEntry,
-    ) -> Vec<PointIdType> {
-        ids.iter()
-            .cloned()
-            .filter(|id| segment.has_point(*id))
-            .collect()
-    }
-
     /// Select what point IDs to update and delete in each segment
     ///
     /// Each external point ID might have multiple point versions across all segments.
@@ -363,63 +351,113 @@ impl SegmentHolder {
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
     ) {
-        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
+        // Pass 1: For each point, find the latest non-deferred version and latest deferred version
+        // separately across all segments.
+        //
+        // latest_non_deferred: point_id -> (version, segment_ids)
+        // latest_deferred: point_id -> (version, segment_ids)
+        let mut latest_non_deferred: AHashMap<
+            PointIdType,
+            (SeqNumberType, SmallVec<[SegmentId; 1]>),
+        > = AHashMap::with_capacity(ids.len());
+        let mut latest_deferred: AHashMap<PointIdType, (SeqNumberType, SmallVec<[SegmentId; 1]>)> =
+            AHashMap::new();
+        // Track all occurrences so we can mark non-winners for deletion
+        let mut all_occurrences: Vec<(PointIdType, SeqNumberType, bool, SegmentId)> = Vec::new();
 
-        // Find in which segments latest point versions are located, mark older points for deletion
-        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SmallVec<[SegmentId; 1]>)> =
-            AHashMap::with_capacity(ids.len());
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
-            let segment_points = Self::segment_points(ids, segment_lock.deref());
-            for segment_point in segment_points {
-                let Some(point_version) = segment_lock.point_version(segment_point) else {
+            for &point_id in ids {
+                // point_version returns Some for both normal and deferred points,
+                // but None for soft-deleted or non-existent points
+                let Some(point_version) = segment_lock.point_version(point_id) else {
                     continue;
                 };
+                let is_deferred = segment_lock.point_is_deferred(point_id);
 
-                match latest_points.entry(segment_point) {
-                    // First time we see the point, add it
+                all_occurrences.push((point_id, point_version, is_deferred, segment_id));
+
+                let map = if is_deferred {
+                    &mut latest_deferred
+                } else {
+                    &mut latest_non_deferred
+                };
+
+                match map.entry(point_id) {
                     Entry::Vacant(entry) => {
                         entry.insert((point_version, smallvec![segment_id]));
                     }
-                    // Point we have seen before is older, replace it and mark older for deletion
-                    Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                        let (old_version, old_segment_ids) =
-                            entry.insert((point_version, smallvec![segment_id]));
-
-                        // Mark other point for deletion if the version is older
-                        // TODO(timvisee): remove this check once deleting old points uses correct version
-                        if old_version < point_version {
-                            for old_segment_id in old_segment_ids {
-                                to_delete
-                                    .entry(old_segment_id)
-                                    .or_default()
-                                    .push(segment_point);
+                    Entry::Occupied(mut entry) => {
+                        let (existing_version, ref mut existing_segments) = *entry.get_mut();
+                        match point_version.cmp(&existing_version) {
+                            std::cmp::Ordering::Greater => {
+                                entry.insert((point_version, smallvec![segment_id]));
+                            }
+                            std::cmp::Ordering::Equal => {
+                                existing_segments.push(segment_id);
+                            }
+                            std::cmp::Ordering::Less => {
+                                // Will be handled in pass 2
                             }
                         }
-                    }
-                    // Ignore points with the same version, only update one of them
-                    // TODO(timvisee): remove this branch once deleting old points uses correct version
-                    Entry::Occupied(mut entry) if entry.get().0 == point_version => {
-                        entry.get_mut().1.push(segment_id);
-                    }
-                    // Point we have seen before is newer, mark this point for deletion
-                    Entry::Occupied(_) => {
-                        to_delete.entry(segment_id).or_default().push(segment_point);
                     }
                 }
             }
         }
 
-        // Group points to update by segments
-        let segment_count = self.len();
-        let mut to_update = AHashMap::with_capacity(min(segment_count, latest_points.len()));
-        let default_capacity = ids.len() / max(segment_count / 2, 1);
-        for (point_id, (_point_version, segment_ids)) in latest_points {
-            for segment_id in segment_ids {
+        // Pass 2: Decide what to update and delete
+        //
+        // Rules:
+        // - Latest non-deferred → always to_update
+        // - Latest deferred → to_update only if its version > latest non-deferred version
+        // - All other copies → to_delete
+        let segment_count = self.len().max(1);
+        let default_vec_capacity = ids.len() / segment_count;
+        let mut to_update: AHashMap<SegmentId, Vec<PointIdType>> =
+            AHashMap::with_capacity(segment_count);
+        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> =
+            AHashMap::with_capacity(segment_count);
+
+        for (point_id, point_version, is_deferred, segment_id) in all_occurrences {
+            let latest_nd = latest_non_deferred.get(&point_id);
+            let latest_d = latest_deferred.get(&point_id);
+
+            let is_winner = if is_deferred {
+                // This is a deferred copy. It's a winner if:
+                // 1. It matches the latest deferred version, AND
+                // 2. Its version is strictly greater than the latest non-deferred version
+                //    (or there is no non-deferred version)
+                if let Some((best_d_ver, best_d_segs)) = latest_d {
+                    let matches_best =
+                        point_version == *best_d_ver && best_d_segs.contains(&segment_id);
+                    let beats_non_deferred = match latest_nd {
+                        Some((best_nd_ver, _)) => *best_d_ver > *best_nd_ver,
+                        None => true,
+                    };
+                    matches_best && beats_non_deferred
+                } else {
+                    false
+                }
+            } else {
+                // This is a non-deferred copy. It's a winner if it matches the latest
+                // non-deferred version.
+                if let Some((best_nd_ver, best_nd_segs)) = latest_nd {
+                    point_version == *best_nd_ver && best_nd_segs.contains(&segment_id)
+                } else {
+                    false
+                }
+            };
+
+            if is_winner {
                 to_update
                     .entry(segment_id)
-                    .or_insert_with(|| Vec::with_capacity(default_capacity))
+                    .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
+                    .push(point_id);
+            } else {
+                to_delete
+                    .entry(segment_id)
+                    .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
                     .push(point_id);
             }
         }
