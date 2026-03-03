@@ -73,9 +73,7 @@ impl DebuggerState {
                         }
                     }
 
-                    if let Some(new_config) = new_config {
-                        *pyroscope_guard = PyroscopeState::from_config(Some(new_config));
-                    }
+                    *pyroscope_guard = PyroscopeState::from_config(new_config);
                     true
                 }
             }
