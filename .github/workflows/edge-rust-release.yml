@@ -53,9 +53,9 @@ jobs:
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py
 
-      - name: Cargo check
+      - name: Cargo build
         working-directory: lib/edge/publish
-        run: cargo check -p examples
+        run: cargo build -p examples
 
 
   publish:
