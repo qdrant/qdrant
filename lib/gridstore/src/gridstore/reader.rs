@@ -131,19 +131,13 @@ impl<V> GridstoreReader<V> {
 pub(super) fn read_config_and_tracker(
     base_path: &std::path::Path,
 ) -> Result<(StorageConfig, Tracker)> {
-    if !base_path.exists() {
-        return Err(GridstoreError::service_error(format!(
-            "Path '{base_path:?}' does not exist"
-        )));
-    }
-    if !base_path.is_dir() {
-        return Err(GridstoreError::service_error(format!(
-            "Path '{base_path:?}' is not a directory"
-        )));
-    }
-
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig = read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path)?;
+    let config: StorageConfig = read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path)
+        .map_err(|err| {
+            GridstoreError::service_error(format!(
+                "Failed to read config from '{config_path:?}': {err}"
+            ))
+        })?;
 
     let tracker = Tracker::open(base_path)?;
 
