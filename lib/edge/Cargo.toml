@@ -14,7 +14,7 @@ staging = ["shard/staging"]
 [dependencies]
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
-shard = { path = "../shard" }
+shard = { path = "../shard", default-features = false }
 wal = { path = "../wal" }
 
 ahash = { workspace = true }

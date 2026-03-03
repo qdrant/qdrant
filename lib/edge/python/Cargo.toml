@@ -22,7 +22,7 @@ abi3 = ["pyo3/abi3-py310"]
 edge = { path = ".." }
 edge-py-codegen = { path = "./codegen" }
 segment = { path = "../../segment", default-features = false }
-shard = { path = "../../shard" }
+shard = { path = "../../shard", default-features = false }
 sparse = { path = "../../sparse" }
 
 ahash = { workspace = true }

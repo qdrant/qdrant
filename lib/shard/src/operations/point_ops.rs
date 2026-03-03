@@ -3,8 +3,6 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem;
 
-use api::conversions::json::payload_to_proto;
-use api::rest::{ShardKeySelector, VectorOutput, VectorStructOutput};
 use common::validation::validate_multi_vector;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -21,7 +19,6 @@ use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use sparse::common::types::{DimId, DimWeight};
 use strum::{EnumDiscriminants, EnumIter};
-use tonic::Status;
 use validator::{Validate, ValidationErrors};
 
 /// Defines the mode of the upsert operation
@@ -45,14 +42,16 @@ pub enum UpdateMode {
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
+    #[cfg(feature = "api")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
+    pub shard_key: Option<api::rest::ShardKeySelector>,
 }
 
 impl From<Vec<PointIdType>> for PointIdsList {
     fn from(points: Vec<PointIdType>) -> Self {
         Self {
             points,
+            #[cfg(feature = "api")]
             shard_key: None,
         }
     }
@@ -276,8 +275,9 @@ pub struct BatchPersisted {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
+#[cfg(feature = "api")]
 impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
-    type Error = Status;
+    type Error = tonic::Status;
 
     fn try_from(batch: BatchPersisted) -> Result<Self, Self::Error> {
         let BatchPersisted {
@@ -294,7 +294,7 @@ impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
             let payload = payloads.as_ref().and_then(|payloads| {
                 payloads.get(i).map(|payload| match payload {
                     None => HashMap::new(),
-                    Some(payload) => payload_to_proto(payload.clone()),
+                    Some(payload) => api::conversions::json::payload_to_proto(payload.clone()),
                 })
             });
             let vectors: Option<VectorStructInternal> = vector.map(|v| v.into());
@@ -431,6 +431,7 @@ impl PointStructPersisted {
     }
 }
 
+#[cfg(feature = "api")]
 impl TryFrom<api::rest::schema::Record> for PointStructPersisted {
     type Error = String;
 
@@ -455,8 +456,9 @@ impl TryFrom<api::rest::schema::Record> for PointStructPersisted {
     }
 }
 
+#[cfg(feature = "api")]
 impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
-    type Error = Status;
+    type Error = tonic::Status;
 
     fn try_from(value: PointStructPersisted) -> Result<Self, Self::Error> {
         let PointStructPersisted {
@@ -465,13 +467,14 @@ impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
             payload,
         } = value;
 
-        let vectors_internal = VectorStructInternal::try_from(vector)
-            .map_err(|e| Status::invalid_argument(format!("Failed to convert vectors: {e}")))?;
+        let vectors_internal = VectorStructInternal::try_from(vector).map_err(|e| {
+            tonic::Status::invalid_argument(format!("Failed to convert vectors: {e}"))
+        })?;
 
         let vectors = api::grpc::qdrant::Vectors::from(vectors_internal);
         let converted_payload = match payload {
             None => HashMap::new(),
-            Some(payload) => payload_to_proto(payload),
+            Some(payload) => api::conversions::json::payload_to_proto(payload),
         };
 
         Ok(Self {
@@ -592,12 +595,15 @@ impl From<VectorStructInternal> for VectorStructPersisted {
     }
 }
 
-impl From<VectorStructOutput> for VectorStructPersisted {
-    fn from(value: VectorStructOutput) -> Self {
+#[cfg(feature = "api")]
+impl From<api::rest::VectorStructOutput> for VectorStructPersisted {
+    fn from(value: api::rest::VectorStructOutput) -> Self {
         match value {
-            VectorStructOutput::Single(vector) => VectorStructPersisted::Single(vector),
-            VectorStructOutput::MultiDense(vector) => VectorStructPersisted::MultiDense(vector),
-            VectorStructOutput::Named(vectors) => VectorStructPersisted::Named(
+            api::rest::VectorStructOutput::Single(vector) => VectorStructPersisted::Single(vector),
+            api::rest::VectorStructOutput::MultiDense(vector) => {
+                VectorStructPersisted::MultiDense(vector)
+            }
+            api::rest::VectorStructOutput::Named(vectors) => VectorStructPersisted::Named(
                 vectors
                     .into_iter()
                     .map(|(k, v)| (k, VectorPersisted::from(v)))
@@ -759,12 +765,13 @@ impl From<VectorInternal> for VectorPersisted {
     }
 }
 
-impl From<VectorOutput> for VectorPersisted {
-    fn from(value: VectorOutput) -> Self {
+#[cfg(feature = "api")]
+impl From<api::rest::VectorOutput> for VectorPersisted {
+    fn from(value: api::rest::VectorOutput) -> Self {
         match value {
-            VectorOutput::Dense(vector) => VectorPersisted::Dense(vector),
-            VectorOutput::Sparse(vector) => VectorPersisted::Sparse(vector),
-            VectorOutput::MultiDense(vector) => VectorPersisted::MultiDense(vector),
+            api::rest::VectorOutput::Dense(vector) => VectorPersisted::Dense(vector),
+            api::rest::VectorOutput::Sparse(vector) => VectorPersisted::Sparse(vector),
+            api::rest::VectorOutput::MultiDense(vector) => VectorPersisted::MultiDense(vector),
         }
     }
 }
