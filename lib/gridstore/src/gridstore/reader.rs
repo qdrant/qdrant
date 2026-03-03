@@ -10,7 +10,7 @@ use super::view::GridstoreView;
 use crate::blob::Blob;
 use crate::config::StorageConfig;
 use crate::error::GridstoreError;
-use crate::page::Page;
+use crate::pages::Pages;
 use crate::tracker::{PageId, PointOffset};
 use crate::{Result, Tracker};
 
@@ -24,7 +24,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 pub struct GridstoreReader<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Tracker,
-    pub(super) pages: Vec<Page<MmapUniversal<u8>>>,
+    pub(super) pages: Pages<MmapUniversal<u8>>,
     pub(super) base_path: PathBuf,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
@@ -39,11 +39,12 @@ impl<V: Blob> GridstoreReader<V> {
     ///
     /// Note: does not include bitmask files. Use [`super::Gridstore::files`] for the full list.
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut paths = Vec::with_capacity(self.pages.len() + 2);
+        let num_pages = self.pages.num_pages();
+        let mut paths = Vec::with_capacity(num_pages + 2);
         for tracker_file in self.tracker.files() {
             paths.push(tracker_file);
         }
-        for page_id in 0..self.pages.len() as PageId {
+        for page_id in 0..num_pages as PageId {
             paths.push(self.page_path(page_id));
         }
         paths.push(self.base_path.join(CONFIG_FILENAME));
@@ -60,19 +61,7 @@ impl<V: Blob> GridstoreReader<V> {
     pub fn open(base_path: PathBuf) -> Result<Self> {
         let (config, tracker) = read_config_and_tracker(&base_path)?;
 
-        let mut page_id = 0;
-        let mut pages = Vec::new();
-        loop {
-            let page_path = base_path.join(format!("page_{page_id}.dat"));
-            if !page_path.exists() {
-                break;
-            }
-
-            let page = Page::<MmapUniversal<u8>>::open(&page_path)?;
-            pages.push(page);
-
-            page_id += 1;
-        }
+        let pages = Pages::<MmapUniversal<u8>>::open(&base_path)?;
 
         Ok(Self {
             tracker,
@@ -124,18 +113,14 @@ impl<V: Blob> GridstoreReader<V> {
 impl<V> GridstoreReader<V> {
     /// Populate all pages and the tracker in the mmap.
     pub fn populate(&self) -> Result<()> {
-        for page in self.pages.iter() {
-            page.populate()?;
-        }
+        self.pages.populate()?;
         self.tracker.populate()?;
         Ok(())
     }
 
     /// Drop disk cache for pages.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        for page in self.pages.iter() {
-            page.clear_cache()?;
-        }
+    pub fn clear_cache(&self) -> crate::Result<()> {
+        self.pages.clear_cache()?;
         Ok(())
     }
 }

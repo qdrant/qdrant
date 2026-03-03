@@ -39,7 +39,7 @@ fn test_put_single_empty_value() {
     // TODO: should we actually use the pages for empty values?
     let payload = Payload::default();
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
     assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
     let hw_counter = HardwareCounterCell::new();
@@ -63,7 +63,7 @@ fn test_put_single_payload() {
     let hw_counter = hw_counter.ref_payload_io_write_counter();
 
     storage.put_value(0, &payload, hw_counter).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
     assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
     let page_mapping = storage.get_pointer(0).unwrap();
@@ -90,7 +90,7 @@ fn test_storage_files() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
     assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
     let files = storage.files();
     let actual_files: Vec<_> = fs::read_dir(dir.path()).unwrap().try_collect().unwrap();
@@ -159,7 +159,7 @@ fn test_delete_single_payload() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -172,7 +172,7 @@ fn test_delete_single_payload() {
     // delete payload
     let deleted = storage.delete_value(0).unwrap();
     assert_eq!(deleted, stored_payload);
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     // get payload again
     let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
@@ -196,7 +196,7 @@ fn test_update_single_payload() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().len(), 1);
+            assert_eq!(storage.pages.read().num_pages(), 1);
             assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
@@ -237,13 +237,17 @@ fn test_write_across_pages() {
         .collect::<Vec<_>>();
 
     // Let's write it near the end
-    let block_offset = DEFAULT_REGION_SIZE_BLOCKS - 10;
+    let block_offset = (DEFAULT_REGION_SIZE_BLOCKS - 10) as u32;
+    let pointer = ValuePointer::new(0, block_offset, value_len as u32);
+
     storage
-        .write_into_pages(&value, 0, block_offset as u32)
+        .pages
+        .write()
+        .write_to_pages(pointer, &value, DEFAULT_BLOCK_SIZE_BYTES)
         .unwrap();
 
     let read_value = storage
-        .with_view(|view| view.read_from_pages::<false>(0, block_offset as u32, value_len as u32))
+        .with_view(|view| view.read_from_pages::<false>(pointer))
         .unwrap();
     assert_eq!(value, read_value);
 }
@@ -501,7 +505,7 @@ fn test_behave_like_hashmap(
 #[test]
 fn test_handle_huge_payload() {
     let (_dir, mut storage) = empty_storage();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     let mut payload = Payload::default();
 
@@ -517,7 +521,7 @@ fn test_handle_huge_payload() {
     let hw_counter = HardwareCounterCell::new();
     let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     storage.put_value(0, &payload, hw_counter_ref).unwrap();
-    assert_eq!(storage.pages.read().len(), 2);
+    assert_eq!(storage.pages.read().num_pages(), 2);
 
     let page_mapping = storage.get_pointer(0).unwrap();
     assert_eq!(page_mapping.page_id, 0); // first page
@@ -539,7 +543,7 @@ fn test_handle_huge_payload() {
         // delete payload
         let deleted = storage.delete_value(0).unwrap();
         assert!(deleted.is_some());
-        assert_eq!(storage.pages.read().len(), 2);
+        assert_eq!(storage.pages.read().num_pages(), 2);
 
         assert!(
             storage
@@ -566,7 +570,7 @@ fn test_storage_persistence_basic() {
     {
         let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
         storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.read().len(), 1);
+        assert_eq!(storage.pages.read().num_pages(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
@@ -582,7 +586,7 @@ fn test_storage_persistence_basic() {
 
     // reopen storage
     let storage = Gridstore::<Payload>::open(path).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     let stored_payload = storage.get_value::<false>(0, &hw_counter).unwrap();
     assert!(stored_payload.is_some());
@@ -659,7 +663,7 @@ fn test_with_real_hm_data() {
     let point_offset = write_data(&mut storage, 0);
     assert_eq!(point_offset, EXPECTED_LEN as u32);
     assert_eq!(storage.tracker.read().mapping_len().unwrap(), EXPECTED_LEN);
-    assert_eq!(storage.pages.read().len(), 2);
+    assert_eq!(storage.pages.read().num_pages(), 2);
 
     let point_offset = write_data(&mut storage, point_offset);
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
@@ -667,7 +671,7 @@ fn test_with_real_hm_data() {
         storage.tracker.read().mapping_len().unwrap(),
         EXPECTED_LEN * 2
     );
-    assert_eq!(storage.pages.read().len(), 4);
+    assert_eq!(storage.pages.read().num_pages(), 4);
 
     storage_double_pass_is_consistent(&storage, 0);
 
@@ -676,7 +680,7 @@ fn test_with_real_hm_data() {
 
     let mut storage = Gridstore::open(dir.path().to_path_buf()).unwrap();
     assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
-    assert_eq!(storage.pages.read().len(), 4);
+    assert_eq!(storage.pages.read().num_pages(), 4);
     assert_eq!(
         storage.tracker.read().mapping_len().unwrap(),
         EXPECTED_LEN * 2
@@ -750,7 +754,7 @@ fn test_different_block_sizes(#[case] block_size_bytes: usize) {
     storage.flusher()().unwrap();
     println!("{last_point_id}");
 
-    assert_eq!(storage.pages.read().len(), 4);
+    assert_eq!(storage.pages.read().num_pages(), 4);
     let last_pointer = storage.get_pointer(last_point_id).unwrap();
     assert_eq!(last_pointer.block_offset, 0);
     assert_eq!(last_pointer.page_id, 3);
@@ -789,7 +793,7 @@ fn test_deferred_flush() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().len(), 1);
+            assert_eq!(storage.pages.read().num_pages(), 1);
             assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
@@ -833,7 +837,7 @@ fn test_deferred_flush() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(path).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, we expect to read the data at the time the flusher was created
     assert_eq!(get_payload(&storage), "value 3");
@@ -881,7 +885,7 @@ fn test_deferred_flush_with_delete() {
             );
 
             storage.put_value(0, &payload, hw_counter_ref).unwrap();
-            assert_eq!(storage.pages.read().len(), 1);
+            assert_eq!(storage.pages.read().num_pages(), 1);
             assert_eq!(storage.tracker.read().mapping_len().unwrap(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
@@ -915,7 +919,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     let flusher = storage.flusher();
 
@@ -934,7 +938,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, delete was flushed this time, expect point to be missing
     assert!(get_payload(&storage).is_none());
@@ -959,7 +963,7 @@ fn test_deferred_flush_with_delete() {
     // Reopen gridstore
     drop(storage);
     let mut storage = Gridstore::<Payload>::open(path.clone()).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
 
     // On reopen, value 4 was flushed, expect to read it
     assert_eq!(get_payload(&storage).unwrap(), "value 4");
@@ -1040,7 +1044,7 @@ fn test_skip_deferred_flush_after_clear() {
         storage
             .put_value(point_offset, &payload, hw_counter_ref)
             .unwrap();
-        assert_eq!(storage.pages.read().len(), 1);
+        assert_eq!(storage.pages.read().num_pages(), 1);
 
         let hw_counter = HardwareCounterCell::new();
         let stored_payload = storage
@@ -1087,7 +1091,7 @@ fn test_skip_deferred_flush_after_clear() {
     // If we reopen the storage it must still be empty
     drop(storage);
     let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
-    assert_eq!(storage.pages.read().len(), 1);
+    assert_eq!(storage.pages.read().num_pages(), 1);
     assert!(storage.get_pointer(0).is_none(), "point must not exist");
     assert_eq!(storage.max_point_offset(), 0, "must have zero points");
 }

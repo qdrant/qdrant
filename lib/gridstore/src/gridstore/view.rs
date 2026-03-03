@@ -1,4 +1,4 @@
-use std::ops::{ControlFlow, Deref};
+use std::ops::ControlFlow;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
@@ -9,8 +9,8 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
-use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker as TrackerGeneric, ValuePointer};
+use crate::pages::Pages;
+use crate::tracker::{PointOffset, Tracker as TrackerGeneric, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -25,14 +25,14 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// A non-owning view into gridstore data.
 ///
 /// Holds borrowed references to pages and tracker, and contains all reading logic.
-/// Generic over the storage backend `S` for both pages and tracker (same as [`Page<S>`] and
+/// Generic over the storage backend `S` for both pages and tracker (same as [`Pages<S>`] and
 /// [`Tracker<S>`]).
 ///
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
 pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
     pub(super) config: &'a StorageConfig,
     pub(super) tracker: &'a TrackerGeneric<S>,
-    pub(super) pages: &'a [Page<S>],
+    pub(super) pages: &'a Pages<S>,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
 
@@ -40,7 +40,7 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
         tracker: &'a TrackerGeneric<S>,
-        pages: &'a [Page<S>],
+        pages: &'a Pages<S>,
     ) -> Self {
         Self {
             config,
@@ -60,42 +60,16 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
 
     /// Return the storage size in bytes (approximate: total page capacity).
     pub fn get_storage_size_bytes(&self) -> usize {
-        self.pages.len() * self.config.page_size_bytes
+        self.pages.num_pages() * self.config.page_size_bytes
     }
 
     /// Read raw value from the pages, considering that values can span more than one page.
     pub fn read_from_pages<const READ_SEQUENTIAL: bool>(
         &self,
-        start_page_id: PageId,
-        mut block_offset: BlockOffset,
-        mut length: u32,
+        pointer: ValuePointer,
     ) -> Result<Vec<u8>> {
-        let mut raw_sections = Vec::with_capacity(length as usize);
-
-        for page_id in start_page_id.. {
-            let page = &self.pages.get(page_id as usize).ok_or_else(|| {
-                GridstoreError::service_error(format!(
-                    "Expected existing page {page_id}, but wasn't found"
-                ))
-            })?;
-
-            let (raw, unread_bytes) = page.read_value::<READ_SEQUENTIAL>(
-                block_offset,
-                length,
-                self.config.block_size_bytes,
-            )?;
-
-            raw_sections.extend(raw.deref());
-
-            if unread_bytes == 0 {
-                break;
-            }
-
-            block_offset = 0;
-            length = unread_bytes as u32;
-        }
-
-        Ok(raw_sections)
+        self.pages
+            .read_from_pages::<READ_SEQUENTIAL>(pointer, self.config.block_size_bytes)
     }
 }
 
@@ -124,13 +98,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             return Ok(None);
         };
 
-        let ValuePointer {
-            page_id,
-            block_offset,
-            length,
-        } = pointer;
-
-        let raw = self.read_from_pages::<READ_SEQUENTIAL>(page_id, block_offset, length)?;
+        let raw = self.read_from_pages::<READ_SEQUENTIAL>(pointer)?;
         hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
@@ -179,13 +147,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
             }
             nth += 1;
 
-            let ValuePointer {
-                page_id,
-                block_offset,
-                length,
-            } = pointer;
-
-            let raw = self.read_from_pages::<true>(page_id, block_offset, length)?;
+            let raw = self.read_from_pages::<true>(pointer)?;
 
             hw_counter.incr_delta(raw.len());
 

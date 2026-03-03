@@ -11,7 +11,6 @@ use crate::Result;
 use crate::error::GridstoreError;
 use crate::tracker::{BlockOffset, PageId, ValuePointer};
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct Pages<S> {
     pages: Vec<S>,
@@ -23,7 +22,12 @@ impl<S> Default for Pages<S> {
     }
 }
 
-#[allow(dead_code)]
+impl<S> Pages<S> {
+    pub fn clear(&mut self) {
+        self.pages.clear();
+    }
+}
+
 impl<S: UniversalRead<u8>> Pages<S> {
     pub fn open(dir: &Path) -> Result<Self> {
         let mut pages = Self::default();
@@ -153,7 +157,6 @@ impl<S: UniversalRead<u8>> Pages<S> {
     }
 }
 
-#[allow(dead_code)]
 impl<S: UniversalWrite<u8>> Pages<S> {
     pub fn write_to_pages(
         &mut self,

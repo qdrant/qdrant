@@ -12,6 +12,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::fs::atomic_save_json;
 use common::is_alive_lock::IsAliveLock;
+use common::mmap::create_and_ensure_length;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use itertools::Itertools;
@@ -24,7 +25,7 @@ use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
-use crate::page::Page;
+use crate::pages::Pages;
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
 use crate::{Result, Tracker};
 
@@ -38,7 +39,7 @@ pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), GridstoreError> +
 pub struct Gridstore<V> {
     pub(super) config: StorageConfig,
     pub(super) tracker: Arc<RwLock<Tracker>>,
-    pub(super) pages: Arc<RwLock<Vec<Page<MmapUniversal<u8>>>>>,
+    pub(super) pages: Arc<RwLock<Pages<MmapUniversal<u8>>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
@@ -60,7 +61,7 @@ impl<V: Blob> Gridstore<V> {
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
     pub fn files(&self) -> Vec<PathBuf> {
         let tracker = self.tracker.read();
-        let num_pages = self.pages.read().len();
+        let num_pages = self.pages.read().num_pages();
 
         let mut paths = Vec::with_capacity(num_pages + 2);
         for tracker_file in tracker.files() {
@@ -129,8 +130,8 @@ impl<V: Blob> Gridstore<V> {
 
         let new_page_id = storage.next_page_id();
         let path = storage.page_path(new_page_id);
-        let page = Page::<MmapUniversal<u8>>::new(&path, storage.config.page_size_bytes)?;
-        storage.pages.write().push(page);
+        create_and_ensure_length(&path, storage.config.page_size_bytes)?;
+        storage.pages.write().attach_page(&path)?;
 
         atomic_save_json(&config_path, &storage.config)
             .map_err(|err| GridstoreError::service_error(err.to_string()))?;
@@ -146,11 +147,10 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = Bitmask::open(&base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let mut pages = Vec::with_capacity(num_pages);
+        let mut pages = Pages::default();
         for page_id in 0..num_pages as PageId {
             let page_path = base_path.join(format!("page_{page_id}.dat"));
-            let page = Page::<MmapUniversal<u8>>::open(&page_path)?;
-            pages.push(page);
+            pages.attach_page(&page_path)?;
         }
 
         Ok(Self {
@@ -169,8 +169,8 @@ impl<V: Blob> Gridstore<V> {
     fn create_new_page(&mut self) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = self.page_path(new_page_id);
-        let page = Page::<MmapUniversal<u8>>::new(&path, self.config.page_size_bytes)?;
-        self.pages.write().push(page);
+        create_and_ensure_length(&path, self.config.page_size_bytes)?;
+        self.pages.write().attach_page(&path)?;
 
         self.bitmask.write().cover_new_page()?;
 
@@ -214,27 +214,12 @@ impl<V: Blob> Gridstore<V> {
         &mut self,
         value: &[u8],
         start_page_id: PageId,
-        mut block_offset: BlockOffset,
+        block_offset: BlockOffset,
     ) -> Result<()> {
-        let value_size = value.len();
-
-        let mut unwritten_tail = value_size;
-
-        let mut pages = self.pages.write();
-        for page_id in start_page_id.. {
-            let page = &mut pages[page_id as usize];
-
-            let range = (value_size - unwritten_tail)..;
-            unwritten_tail =
-                page.write_value(block_offset, &value[range], self.config.block_size_bytes)?;
-            if unwritten_tail == 0 {
-                break;
-            }
-
-            block_offset = 0;
-        }
-
-        Ok(())
+        let pointer = ValuePointer::new(start_page_id, block_offset, value.len() as u32);
+        self.pages
+            .write()
+            .write_to_pages(pointer, value, self.config.block_size_bytes)
     }
 
     /// Put a value in the storage.
@@ -329,14 +314,7 @@ impl<V: Blob> Gridstore<V> {
             return Ok(None);
         };
 
-        let ValuePointer {
-            page_id,
-            block_offset,
-            length,
-        } = pointer;
-
-        let raw =
-            self.with_view(|view| view.read_from_pages::<false>(page_id, block_offset, length))?;
+        let raw = self.with_view(|view| view.read_from_pages::<false>(pointer))?;
         let decompressed = self.with_view(|view| view.decompress(raw));
         let value = V::from_bytes(&decompressed);
 
@@ -435,7 +413,7 @@ impl<V: Blob> Gridstore<V> {
 
 impl<V> Gridstore<V> {
     fn next_page_id(&self) -> PageId {
-        self.pages.read().len() as PageId
+        self.pages.read().num_pages() as PageId
     }
 
     fn page_path(&self, page_id: u32) -> PathBuf {
@@ -472,10 +450,8 @@ impl<V> Gridstore<V> {
             let bitmask_flusher = bitmask.read().flusher();
             bitmask_flusher()?;
 
-            let page_flushers: Vec<_> = pages.read().iter().map(|p| p.flusher()).collect();
-            for flusher in page_flushers {
-                flusher()?;
-            }
+            let pages_flusher = pages.read().flusher();
+            pages_flusher()?;
 
             let old_pointers = Self::flush_tracker(&tracker, pending_updates)?;
 
@@ -533,19 +509,15 @@ impl<V> Gridstore<V> {
 
     /// Populate all pages, tracker, and bitmask in the mmap.
     pub fn populate(&self) -> Result<()> {
-        for page in self.pages.read().iter() {
-            page.populate()?;
-        }
+        self.pages.read().populate()?;
         self.tracker.read().populate()?;
         self.bitmask.read().populate()?;
         Ok(())
     }
 
     /// Drop disk cache.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        for page in self.pages.read().iter() {
-            page.clear_cache()?;
-        }
+    pub fn clear_cache(&self) -> crate::Result<()> {
+        self.pages.read().clear_cache()?;
         self.bitmask.read().clear_cache()?;
         Ok(())
     }
