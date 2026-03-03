@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
@@ -29,10 +30,11 @@ use crate::segment_constructor::simple_segment_constructor::{
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Condition, Distance, FieldCondition, Filter, Indexes, Match, Payload, PayloadFieldSchema,
-    PayloadSchemaType, PointIdType, SnapshotFormat, ValueVariants, VectorDataConfig,
-    VectorStorageType, WithPayload, WithVector,
+    Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
+    Payload, PayloadFieldSchema, PayloadSchemaType, PointIdType, SnapshotFormat, ValueVariants,
+    VectorDataConfig, VectorStorageType, WithPayload, WithVector,
 };
+use crate::utils::maybe_arc::MaybeArc;
 
 fn init_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -863,12 +865,6 @@ fn test_dense_deferred_points() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    // Create a segment with a deferred_points_threshold_bytes set
-    // Vector size: 4 f32 = 16 bytes per vector
-    // We set threshold to 200 bytes, so deferred threshold should be at internal_id 13
-    // (200 / 16 = 12.5, rounded up = 13 via div_ceil)
-    let deferred_threshold_bytes = std::num::NonZeroUsize::new(200).unwrap();
-
     let segment = create_deferred_segment(&dir, dim, 13, 7);
 
     // Points 1-13 (internal_ids 0-12) should NOT be deferred
@@ -899,6 +895,9 @@ fn test_dense_deferred_points() {
     // Close segment
     segment.flush(true).unwrap();
     let path = segment.segment_path.clone();
+
+    let deferred_threshold_bytes = segment.deferred_points_threshold_bytes.unwrap();
+
     drop(segment);
 
     // Reopen segment to ensure deferred points are loaded correctly from disk
@@ -937,123 +936,6 @@ fn test_dense_deferred_point_segment_combinations() {
 }
 
 #[test]
-fn test_deferred_search() {
-    init_logger();
-
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::new("color"),
-        Match::new_value(ValueVariants::String("blue".to_string())),
-    )));
-
-    const N_POINTS: usize = 12;
-
-    // Test different amount of deferred points
-    for n_deferred in [0, 1, 10] {
-        // Test with and without a filter.
-        for filter in [None, Some(&filter)] {
-            let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
-
-            let do_search = |segment: &Segment, filter: Option<&Filter>| {
-                segment
-                    .search(
-                        DEFAULT_VECTOR_NAME,
-                        &QueryVector::Nearest(VectorInternal::Dense(vec![0.1, 0.1, 0.2, 0.2, 0.3])),
-                        &WithPayload::default(),
-                        &WithVector::Bool(false),
-                        filter,
-                        usize::MAX,
-                        None,
-                    )
-                    .unwrap()
-            };
-
-            let expected_points = if filter.is_some() {
-                // Filter has 3 possible values so our filter matches 1/3 of the points.
-                N_POINTS.div_ceil(3)
-            } else {
-                N_POINTS
-            };
-
-            let expected_deferred = if filter.is_some() {
-                n_deferred.div_ceil(3)
-            } else {
-                n_deferred
-            };
-
-            // Search with deferred mode
-            let search_res_deferred = do_search(&segment, filter);
-            assert!(!search_res_deferred.is_empty());
-            assert_eq!(search_res_deferred.len(), expected_points);
-
-            // All points in result must always be non deferred.
-            for point in search_res_deferred.iter() {
-                assert!(!segment.point_is_deferred(point.id));
-            }
-
-            // Disable deferred points and search again.
-            segment.deferred_internal_id = None;
-            let search_res_normal = do_search(&segment, filter);
-            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
-        }
-    }
-}
-
-#[test]
-fn test_deferred_read_filtered() {
-    init_logger();
-    let hw_counter = HardwareCounterCell::new();
-
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::new("color"),
-        Match::new_value(ValueVariants::String("blue".to_string())),
-    )));
-
-    const N_POINTS: usize = 12;
-
-    // Test different amount of deferred points
-    for n_deferred in [0, 1, 10] {
-        // Test with and without a filter.
-        for filter in [None, Some(&filter)] {
-            let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
-
-            let do_search = |segment: &Segment| {
-                segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
-            };
-
-            let expected_points = if filter.is_some() {
-                // Filter has 3 possible values so our filter matches 1/3 of the points.
-                N_POINTS.div_ceil(3)
-            } else {
-                N_POINTS
-            };
-
-            let expected_deferred = if filter.is_some() {
-                n_deferred.div_ceil(3)
-            } else {
-                n_deferred
-            };
-
-            // Search with deferred mode
-            let search_res_deferred = do_search(&segment);
-            assert!(!search_res_deferred.is_empty());
-            assert_eq!(search_res_deferred.len(), expected_points);
-
-            // All points in result must always be non deferred.
-            for point in search_res_deferred.iter() {
-                assert!(!segment.point_is_deferred(*point));
-            }
-
-            // Disable deferred points and search again.
-            segment.deferred_internal_id = None;
-            let search_res_normal = do_search(&segment);
-            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
-        }
-    }
-}
-
-#[test]
 fn test_deferred_point_estimation_with_filter() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();
@@ -1087,69 +969,155 @@ fn test_deferred_point_estimation_with_filter() {
 }
 
 #[test]
-fn test_deferred_read_ordered_filtered() {
+fn test_deferred_point_read_operations() {
     init_logger();
     let hw_counter = HardwareCounterCell::new();
 
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+    // Search
+    assert_deferred_points_excluded(
+        "Search",
+        |segment, filter| {
+            segment
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    &QueryVector::Nearest(VectorInternal::Dense(vec![0.1, 0.1, 0.2, 0.2, 0.3])),
+                    &WithPayload::default(),
+                    &WithVector::Bool(false),
+                    filter,
+                    usize::MAX,
+                    None,
+                )
+                .unwrap()
+        },
+        |i| i.id,
+    );
+
+    // Read filtered (count API)
+    assert_deferred_points_excluded(
+        "Read Filtered",
+        |segment, filter| {
+            segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
+        },
+        |i| *i,
+    );
+
+    // Read filtered ordered (scroll)
+    assert_deferred_points_excluded(
+        "Read ordered filtered",
+        |segment, filter| {
+            segment
+                .read_ordered_filtered(
+                    None,
+                    filter,
+                    &OrderBy {
+                        key: JsonPath::new("number"),
+                        direction: None,
+                        start_from: None,
+                    },
+                    &AtomicBool::new(false),
+                    &hw_counter,
+                )
+                .unwrap()
+        },
+        |i| i.1,
+    );
+}
+
+/// Extensively tests whether deferred points are excluded from the result of the given `operation`.
+fn assert_deferred_points_excluded<F, R, T>(name: &str, operation: F, to_external_id: R)
+where
+    F: Fn(&Segment, Option<&Filter>) -> Vec<T>,
+    R: Fn(&T) -> ExtendedPointId,
+{
+    init_logger();
+
+    // Always test with 12 (visible) points.
+    const N_POINTS: usize = 12;
+
+    /// Helper to craft more complex cases where we also can use filters.
+    struct FilterSet {
+        // Optional filter to be applied to the operation.
+        filter: Option<Filter>,
+
+        // How many visible points we expect to be selected by the filter.
+        expected_visible: usize,
+
+        // How many deferred points we expect to be selected by the filter.
+        expected_deferred: Box<dyn Fn(usize) -> usize>,
+    }
+
+    let filter_field = Filter::new_must(Condition::Field(FieldCondition::new_match(
         JsonPath::new("color"),
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
-    const N_POINTS: usize = 12;
+    let filter_ids = Filter::new_must(Condition::HasId(HasIdCondition {
+        has_id: MaybeArc::NoArc(AHashSet::from_iter([
+            // Normally visible points.
+            ExtendedPointId::NumId(1),
+            ExtendedPointId::NumId(3),
+            ExtendedPointId::NumId(2),
+            // Deferred point.
+            ExtendedPointId::NumId(13),
+        ])),
+    }));
 
-    // Test different amount of deferred points
+    // Case 1: No filter, we expect all points to be available and deferred.
+    let filter_case_1 = FilterSet {
+        filter: None,
+        expected_visible: N_POINTS,
+        expected_deferred: Box::new(|n_deferred| n_deferred),
+    };
+
+    // Case 2: Simple field condition. We expect 1/3 of the points being selected since the field filters 1/3 of the points.
+    let filter_case_2 = FilterSet {
+        filter: Some(filter_field),
+        expected_visible: N_POINTS.div_ceil(3),
+        expected_deferred: Box::new(|n_deferred| n_deferred.div_ceil(3)),
+    };
+
+    // Case 3: Filter by ID condition, which has 3 visible points and 1 deferred point.
+    let filter_case_3 = FilterSet {
+        filter: Some(filter_ids),
+        expected_visible: 3,
+        expected_deferred: Box::new(|n_deferred| if n_deferred > 0 { 1 } else { 0 }),
+    };
+
+    log::debug!("Testing deferred read operation: {name:?}");
+
+    // Test different amount of deferred points.
     for n_deferred in [0, 1, 10, 300] {
-        // Test with and without a filter.
-        for filter in [None, Some(&filter)] {
+        // Test with different types of filters.
+        for (filter_set_id, filter_set) in [&filter_case_1, &filter_case_2, &filter_case_3]
+            .into_iter()
+            .enumerate()
+        {
+            log::debug!("  => deferred points = {n_deferred}; filter-set ID = {filter_set_id}",);
+
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
             let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
-            let do_search = |segment: &Segment| {
-                let order_by = OrderBy {
-                    key: JsonPath::new("number"),
-                    direction: None,
-                    start_from: None,
-                };
-
-                segment
-                    .read_ordered_filtered(
-                        None,
-                        filter,
-                        &order_by,
-                        &AtomicBool::new(false),
-                        &hw_counter,
-                    )
-                    .unwrap()
-            };
-
-            let expected_points = if filter.is_some() {
-                // Filter has 3 possible values so our filter matches 1/3 of the points.
-                N_POINTS.div_ceil(3)
-            } else {
-                N_POINTS
-            };
-
-            let expected_deferred = if filter.is_some() {
-                n_deferred.div_ceil(3)
-            } else {
-                n_deferred
-            };
-
             // Search with deferred mode
-            let search_res_deferred = do_search(&segment);
+            let search_res_deferred = operation(&segment, filter_set.filter.as_ref());
             assert!(!search_res_deferred.is_empty());
-            assert_eq!(search_res_deferred.len(), expected_points);
+            assert_eq!(search_res_deferred.len(), filter_set.expected_visible);
 
             // All points in result must always be non deferred.
-            for &(_, external_id) in search_res_deferred.iter() {
+            for id_t in search_res_deferred.iter() {
+                let external_id = to_external_id(id_t);
                 assert!(!segment.point_is_deferred(external_id));
             }
 
             // Disable deferred points and search again.
             segment.deferred_internal_id = None;
-            let search_res_normal = do_search(&segment);
-            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
+            let search_res_normal = operation(&segment, filter_set.filter.as_ref());
+            assert_eq!(
+                search_res_normal.len(),
+                filter_set.expected_visible + (filter_set.expected_deferred)(n_deferred)
+            );
+
+            drop(segment);
+            dir.close().unwrap();
         }
     }
 }
