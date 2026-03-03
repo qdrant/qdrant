@@ -2,7 +2,9 @@ use std::mem::MaybeUninit;
 use std::path::Path;
 
 use common::maybe_uninit::assume_init_vec;
-use common::universal_io::{ElementsRange, OpenOptions, UniversalRead};
+use common::universal_io::{
+    ElementOffset, ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
+};
 use smallvec::SmallVec;
 
 use crate::Result;
@@ -148,5 +150,65 @@ impl<S: UniversalRead<u8>> Pages<S> {
             page.clear_ram_cache()?;
         }
         Ok(())
+    }
+}
+
+#[allow(dead_code)]
+impl<S: UniversalWrite<u8>> Pages<S> {
+    pub fn write_to_pages(
+        &mut self,
+        pointer: ValuePointer,
+        value: &[u8],
+        block_size_bytes: usize,
+    ) -> Result<()> {
+        let ValuePointer {
+            page_id: start_page_id,
+            mut block_offset,
+            mut length,
+        } = pointer;
+
+        // Phase 1: compute write ranges (immutable borrow of self.pages)
+        let mut write_positions = SmallVec::<[(FileIndex, ElementOffset); 2]>::new();
+        let mut slice_offsets = SmallVec::<[(usize, usize); 2]>::new();
+
+        let mut written_so_far = 0usize;
+        for page_id in start_page_id.. {
+            let (range, unwritten_tail) =
+                self.page_access_range(page_id, block_offset, length, block_size_bytes)?;
+
+            let chunk_len = range.length as usize;
+            write_positions.push((page_id as FileIndex, range.start));
+            slice_offsets.push((written_so_far, chunk_len));
+            written_so_far += chunk_len;
+
+            if unwritten_tail == 0 {
+                break;
+            }
+
+            block_offset = 0;
+            length = unwritten_tail as u32;
+        }
+
+        // Phase 2: execute writes (mutable borrow of self.pages)
+        let writes = write_positions.iter().zip(slice_offsets.iter()).map(
+            |(&(file_idx, offset), &(start, len))| (file_idx, offset, &value[start..start + len]),
+        );
+
+        S::write_multi(self.pages.as_mut_slice(), writes)?;
+
+        Ok(())
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        let mut flushers = Vec::with_capacity(self.pages.len());
+        for page in &self.pages {
+            flushers.push(page.flusher());
+        }
+        Box::new(move || {
+            for flusher in flushers {
+                flusher()?;
+            }
+            Ok(())
+        })
     }
 }
