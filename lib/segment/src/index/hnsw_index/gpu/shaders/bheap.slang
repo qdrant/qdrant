@@ -248,9 +248,25 @@ struct BHeap
         else return _popMaxBinary();
     }
 
+    // intoArray must be called by ALL waves when WORKGROUP_WAVES > 1,
+    // because the linear path calls sort() which uses GroupMemoryBarrierWithGroupSync.
     [mutating] uint intoArray()
     {
-        if (BHEAP_LINEAR) return _intoArrayLinear();
-        else return _intoArrayBinary();
+        if (BHEAP_LINEAR) {
+            // sort() requires all waves to participate in barriers
+            sort(offset, size);
+            uint result = size;
+            if (workgroupWaveIndex() == 0) {
+                size = 0;
+            }
+            return result;
+        } else {
+            // Binary heap extraction only uses wave 0 (no cross-wave barriers)
+            if (workgroupWaveIndex() == 0) {
+                return _intoArrayBinary();
+            } else {
+                return size;
+            }
+        }
     }
 };

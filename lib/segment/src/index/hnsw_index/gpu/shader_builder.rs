@@ -174,6 +174,7 @@ impl ShaderBuilder {
 
         // Default values for uint constants that may not always be set.
         let uint_defaults = [
+            ("WORKGROUP_WAVES", 1),
             ("BQ_SKIP_COUNT", 0),
             ("PQ_DIVISIONS_COUNT", 0),
             ("PQ_CENTROIDS_DIM", 0),

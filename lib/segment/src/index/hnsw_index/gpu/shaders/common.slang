@@ -5,6 +5,7 @@ import distance_metric;
 static uint3 gl_GlobalInvocationID;
 
 uint waveId() { return gl_GlobalInvocationID.x / WAVE_SIZE; }
+uint workgroupWaveIndex() { return gl_GlobalInvocationID.y; }
 
 static const float positive_infinity = 1.0 / 0.0;
 static const float negative_infinity = -1.0 / 0.0;

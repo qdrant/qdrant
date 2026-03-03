@@ -75,6 +75,7 @@ pub enum CompiledShader {
     Cuda {
         binary: Vec<u8>,
         param_order: Vec<(usize, usize)>,
+        block_dims: (u32, u32, u32),
     },
 }
 
@@ -369,6 +370,7 @@ impl Device {
                 Ok(CompiledShader::Cuda {
                     binary: cs.binary,
                     param_order: cs.param_order,
+                    block_dims: cs.block_dims,
                 })
             }
         }
@@ -474,9 +476,15 @@ impl Shader {
                 CompiledShader::Cuda {
                     binary,
                     param_order,
+                    block_dims,
                 },
             ) => {
-                let s = cuda::CudaShader::new(d.clone(), binary.clone(), param_order.clone())?;
+                let s = cuda::CudaShader::new(
+                    d.clone(),
+                    binary.clone(),
+                    param_order.clone(),
+                    *block_dims,
+                )?;
                 Ok(Arc::new(Shader::Cuda(s)))
             }
             _ => Err(GpuError::Other(

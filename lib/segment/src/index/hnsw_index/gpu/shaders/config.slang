@@ -2,6 +2,7 @@
 
 // Hardware
 static const uint WAVE_SIZE = 32;
+static const uint WORKGROUP_WAVES = 1;
 
 // Dimensions
 static const uint DIM = 128;

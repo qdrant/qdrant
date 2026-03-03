@@ -14,7 +14,7 @@ struct SearchRequest {
 [[vk::binding(1, 0)]] RWStructuredBuffer<uint> search_results;
 
 [shader("compute")]
-[numthreads(WAVE_SIZE, 1, 1)]
+[numthreads(WAVE_SIZE, WORKGROUP_WAVES, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
@@ -25,7 +25,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
     float entry_score = similarity(search_request.entry);
     ScoredPoint result = ctx.greedySearch(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
-    if (WaveIsFirstLane()) {
+    if (workgroupWaveIndex() == 0 && WaveIsFirstLane()) {
         search_results[wave_index] = result.id;
     }
 }

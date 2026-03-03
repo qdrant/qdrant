@@ -13,6 +13,9 @@ pub struct CudaShader {
 
     /// Parameter layout: [(set_index, binding_index)] in GlobalParams_0 member order.
     pub(super) param_order: Vec<(usize, usize)>,
+
+    /// Block dimensions from `[numthreads(X, Y, Z)]`.
+    pub(super) block_dims: (u32, u32, u32),
 }
 
 impl CudaShader {
@@ -20,11 +23,13 @@ impl CudaShader {
         device: Arc<CudaDevice>,
         binary: Vec<u8>,
         param_order: Vec<(usize, usize)>,
+        block_dims: (u32, u32, u32),
     ) -> GpuResult<Arc<Self>> {
         Ok(Arc::new(CudaShader {
             device,
             binary,
             param_order,
+            block_dims,
         }))
     }
 
@@ -34,6 +39,10 @@ impl CudaShader {
 
     pub fn param_order(&self) -> &[(usize, usize)] {
         &self.param_order
+    }
+
+    pub fn block_dims(&self) -> (u32, u32, u32) {
+        self.block_dims
     }
 }
 

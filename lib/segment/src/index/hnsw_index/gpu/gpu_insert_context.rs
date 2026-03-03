@@ -85,6 +85,7 @@ impl ShaderBuilderParameters for GpuInsertResources {
     fn shader_defines(&self) -> HashMap<String, Option<String>> {
         let mut defines = HashMap::new();
         defines.insert("EF".to_owned(), Some(self.ef.to_string()));
+        defines.insert("WORKGROUP_WAVES".to_owned(), Some("4".to_string()));
         if self.exact {
             defines.insert("EXACT".to_owned(), None);
         }

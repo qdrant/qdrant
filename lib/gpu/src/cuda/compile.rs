@@ -22,6 +22,9 @@ pub struct CudaShader {
     /// Ordered list of (set_index=0, binding_index) extracted from GlobalParams_0 in the .cu file.
     /// Each slot corresponds to one 8-byte pointer in SLANG_globalParams.
     pub param_order: Vec<(usize, usize)>,
+
+    /// Block dimensions parsed from `[numthreads(X, Y, Z)]` in the shader source.
+    pub block_dims: (u32, u32, u32),
 }
 
 static COMPILE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -148,6 +151,10 @@ fn compile_inner(
     let param_order = parse_global_params_order(&cu_source, &all_sources);
     log::debug!("param_order for {shader_name}: {param_order:?}");
 
+    // Parse [numthreads(X, Y, Z)] from the shader source for CUDA block dimensions.
+    let block_dims = parse_numthreads(shader, defines, includes, device.subgroup_size() as u32);
+    log::debug!("block_dims for {shader_name}: {block_dims:?}");
+
     // Now compile the .cu to a GPU binary.
     let binary = match device.runtime() {
         Runtime::Hip => compile_hip(tmp_dir, module_name, &cu_path, device)?,
@@ -157,6 +164,7 @@ fn compile_inner(
     Ok(CudaShader {
         binary,
         param_order,
+        block_dims,
     })
 }
 
@@ -200,6 +208,72 @@ pub fn parse_global_params_order(cu_source: &str, shader_sources: &[&str]) -> Ve
             }
         })
         .collect()
+}
+
+/// Parse `[numthreads(X, Y, Z)]` from the shader source to determine CUDA block dimensions.
+///
+/// Values can be integer literals or named constants resolved from defines and includes.
+/// Falls back to `(subgroup_size, 1, 1)` if the attribute is not found or cannot be resolved.
+fn parse_numthreads(
+    shader_source: &str,
+    defines: Option<&HashMap<String, Option<String>>>,
+    includes: Option<&HashMap<String, String>>,
+    subgroup_size: u32,
+) -> (u32, u32, u32) {
+    let default_dims = (subgroup_size, 1, 1);
+
+    // Find [numthreads(X, Y, Z)] in the shader source.
+    let prefix = "[numthreads(";
+    let start = match shader_source.find(prefix) {
+        Some(s) => s + prefix.len(),
+        None => return default_dims,
+    };
+    let end = match shader_source[start..].find(")]") {
+        Some(e) => start + e,
+        None => return default_dims,
+    };
+
+    let args_str = &shader_source[start..end];
+    let parts: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
+    if parts.len() != 3 {
+        return default_dims;
+    }
+
+    // Build a resolution map from defines and static const declarations in includes.
+    let mut constants: HashMap<&str, u32> = HashMap::new();
+    if let Some(defs) = defines {
+        for (key, val) in defs {
+            if let Some(val_str) = val {
+                if let Ok(n) = val_str.parse::<u32>() {
+                    constants.insert(key.as_str(), n);
+                }
+            }
+        }
+    }
+    if let Some(incs) = includes {
+        for source in incs.values() {
+            for line in source.lines() {
+                let line = line.trim();
+                if let Some(rest) = line.strip_prefix("static const uint ") {
+                    if let Some(eq_pos) = rest.find('=') {
+                        let name = rest[..eq_pos].trim();
+                        let val_str = rest[eq_pos + 1..].trim().trim_end_matches(';').trim();
+                        if let Ok(n) = val_str.parse::<u32>() {
+                            constants.insert(name, n);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let resolve =
+        |s: &str| -> Option<u32> { s.parse::<u32>().ok().or_else(|| constants.get(s).copied()) };
+
+    match (resolve(parts[0]), resolve(parts[1]), resolve(parts[2])) {
+        (Some(x), Some(y), Some(z)) => (x, y, z),
+        _ => default_dims,
+    }
 }
 
 /// Parse member names from the `GlobalParams_0` struct in generated CUDA source.

@@ -199,9 +199,9 @@ impl CudaContext {
             self.stream,
         )?;
 
-        // Launch the kernel: x work-groups, block size = subgroup_size (set by shader define).
-        let block_x = self.device.subgroup_size() as u32;
+        // Launch the kernel: x work-groups, block dims from [numthreads(X, Y, Z)] in shader.
         let function = pipeline.function();
+        let (block_x, block_y, block_z) = pipeline.block_dims();
         crate::cuda::driver::GpuDriver::check(
             unsafe {
                 (self.device.driver().launch_kernel)(
@@ -210,8 +210,8 @@ impl CudaContext {
                     1,
                     1,
                     block_x,
-                    1,
-                    1,
+                    block_y,
+                    block_z,
                     0,
                     self.stream,
                     std::ptr::null_mut(),

@@ -27,6 +27,9 @@ pub struct CudaPipeline {
     global_params_ptr: Handle,
     global_params_size: usize,
 
+    /// Block dimensions from `[numthreads(X, Y, Z)]` in the shader source.
+    block_dims: (u32, u32, u32),
+
     /// Keep shader alive.
     _shader: Arc<CudaShader>,
 }
@@ -103,6 +106,7 @@ impl CudaPipeline {
             "module_get_global(SLANG_globalParams)",
         )?;
 
+        let block_dims = shader.block_dims();
         Ok(Arc::new(CudaPipeline {
             device,
             module,
@@ -110,6 +114,7 @@ impl CudaPipeline {
             param_order: shader.param_order().to_vec(),
             global_params_ptr,
             global_params_size,
+            block_dims,
             _shader: shader,
         }))
     }
@@ -132,6 +137,10 @@ impl CudaPipeline {
 
     pub fn global_params_size(&self) -> usize {
         self.global_params_size
+    }
+
+    pub fn block_dims(&self) -> (u32, u32, u32) {
+        self.block_dims
     }
 }
 

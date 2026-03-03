@@ -15,7 +15,7 @@ struct SearchRequest {
 [[vk::binding(1, 0)]] RWStructuredBuffer<ScoredPoint> search_results;
 
 [shader("compute")]
-[numthreads(WAVE_SIZE, 1, 1)]
+[numthreads(WAVE_SIZE, WORKGROUP_WAVES, 1)]
 void main(uint3 dtid : SV_DispatchThreadID) {
     gl_GlobalInvocationID = dtid;
     SearchContext ctx = SearchContext();
@@ -28,7 +28,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
 
     GroupMemoryBarrierWithGroupSync();
 
-    if (WaveIsFirstLane()) {
+    if (workgroupWaveIndex() == 0 && WaveIsFirstLane()) {
         uint result_index_offset = EF * wave_index;
         uint i = 0;
         for (; i < count; i++) {

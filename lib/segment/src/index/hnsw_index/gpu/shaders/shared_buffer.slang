@@ -3,6 +3,15 @@ import common;
 
 groupshared ScoredPoint shared_buffer[SHARED_BUFFER_CAPACITY];
 
+// Scratch area for multi-wave inter-wave communication.
+groupshared ScoredPoint scratch_results[WORKGROUP_WAVES];
+groupshared uint scratch_valid[WORKGROUP_WAVES];
+groupshared float scratch_dists[WORKGROUP_WAVES];
+groupshared ScoredPoint scratch_candidate;
+groupshared uint scratch_should_process;
+groupshared uint scratch_loop_done;
+groupshared uint scratch_is_good;
+
 uint _subgroup_bubble_sort(float score) {
     uint invocation = WaveGetLaneIndex();
     bool is_even = invocation % 2 == 0;
@@ -58,8 +67,11 @@ void _bitonic_cmp(uint offset, uint count, uint b_i, uint b_j) {
 
 // Sort the shared buffer in place using bitonic sort
 void sort(uint offset, uint count) {
+    uint wave_y = workgroupWaveIndex();
+
     // To increase performance, sort blocks of size `WAVE_SIZE` using bubble sort.
-    for (uint group_offset = 0; group_offset < count; group_offset += WAVE_SIZE) {
+    // Each wave sorts its own block in parallel.
+    for (uint group_offset = wave_y * WAVE_SIZE; group_offset < count; group_offset += WORKGROUP_WAVES * WAVE_SIZE) {
         ScoredPoint scored_point = {0, negative_infinity};
         uint i = group_offset + WaveGetLaneIndex();
         if (i < count) {
@@ -77,20 +89,21 @@ void sort(uint offset, uint count) {
             shared_buffer[offset + i] = scored_point;
         }
     }
-    GroupMemoryBarrier();
+    GroupMemoryBarrierWithGroupSync();
 
     // Start bitonic sort. Start from `k = 2 * WAVE_SIZE` instead of `1` because we have already sorted blocks of size `WAVE_SIZE`.
+    // All waves participate in the bitonic merge phase.
     for (uint k = 2 * WAVE_SIZE; (k >> 1) < count; k <<= 1) {
-        for (uint i = WaveGetLaneIndex(); i < count; i += WAVE_SIZE) {
+        for (uint i = wave_y * WAVE_SIZE + WaveGetLaneIndex(); i < count; i += WORKGROUP_WAVES * WAVE_SIZE) {
             _bitonic_cmp(offset, count, i, i ^ (k - 1));
         }
-        GroupMemoryBarrier();
+        GroupMemoryBarrierWithGroupSync();
 
         for (uint j = k >> 1; 0 < j; j >>= 1) {
-            for (uint i = WaveGetLaneIndex(); i < count; i += WAVE_SIZE) {
+            for (uint i = wave_y * WAVE_SIZE + WaveGetLaneIndex(); i < count; i += WORKGROUP_WAVES * WAVE_SIZE) {
                 _bitonic_cmp(offset, count, i, i ^ j);
             }
-            GroupMemoryBarrier();
+            GroupMemoryBarrierWithGroupSync();
         }
     }
 }
