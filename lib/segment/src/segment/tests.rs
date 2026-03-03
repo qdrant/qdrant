@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -6,13 +5,17 @@ use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
+use serde_json::{Number, Value};
 use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::OrderBy;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, only_default_vector,
@@ -26,8 +29,9 @@ use crate::segment_constructor::simple_segment_constructor::{
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Condition, Distance, FieldCondition, Filter, Indexes, Match, Payload, PointIdType,
-    SnapshotFormat, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    Condition, Distance, FieldCondition, Filter, Indexes, Match, Payload, PayloadFieldSchema,
+    PayloadSchemaType, PointIdType, SnapshotFormat, ValueVariants, VectorDataConfig,
+    VectorStorageType, WithPayload, WithVector,
 };
 
 fn init_logger() {
@@ -779,25 +783,45 @@ fn create_deferred_segment(
 
     let default_vector: Vec<_> = (0..dim).map(|i| i as f32 / 10.0).collect();
 
+    let mut op_num_counter = 0u64;
+
+    let mut rng = StdRng::seed_from_u64(41);
+
     for i in 1..=total_vectors {
         let point_id = PointIdType::from(i as u64);
         segment
             .insert_new_vectors(
                 point_id,
-                i as u64,
+                op_num_counter,
                 &only_default_vector(&default_vector),
                 &hw_counter,
             )
             .unwrap();
+        op_num_counter += 1;
+
         let mut payload = Payload::default();
         payload.0.insert(
             "color".to_string(),
-            ["red", "blue", "yellow"][i % 3].to_string().into(),
+            ["red", "blue", "yellow"][i as usize % 3].to_string().into(),
+        );
+        payload.0.insert(
+            "number".to_string(),
+            Value::Number(Number::from_u128(rng.random_range(0..2)).unwrap()),
         );
         segment
-            .set_full_payload((total_vectors + i) as u64, point_id, &payload, &hw_counter)
+            .set_full_payload(op_num_counter, point_id, &payload, &hw_counter)
             .unwrap();
+        op_num_counter += 1;
     }
+
+    segment
+        .create_field_index(
+            op_num_counter,
+            &JsonPath::new("number"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+            &hw_counter,
+        )
+        .unwrap();
 
     // Now we should have deferred points
     if n_deferred > 0 {
@@ -917,7 +941,7 @@ fn test_deferred_search() {
     init_logger();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::from_str("color").unwrap(),
+        JsonPath::new("color"),
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
@@ -927,12 +951,6 @@ fn test_deferred_search() {
     for n_deferred in [0, 1, 10] {
         // Test with and without a filter.
         for filter in [None, Some(&filter)] {
-            log::debug!(
-                "Testing with {} deferred and filter: {}",
-                n_deferred,
-                filter.is_some()
-            );
-
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
             let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
@@ -987,7 +1005,7 @@ fn test_deferred_read_filtered() {
     let hw_counter = HardwareCounterCell::new();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::from_str("color").unwrap(),
+        JsonPath::new("color"),
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
@@ -997,12 +1015,6 @@ fn test_deferred_read_filtered() {
     for n_deferred in [0, 1, 10] {
         // Test with and without a filter.
         for filter in [None, Some(&filter)] {
-            log::debug!(
-                "Testing with {} deferred and filter: {}",
-                n_deferred,
-                filter.is_some()
-            );
-
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
             let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
 
@@ -1047,7 +1059,7 @@ fn test_deferred_point_estimation_with_filter() {
     let hw_counter = HardwareCounterCell::new();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        JsonPath::from_str("color").unwrap(),
+        JsonPath::new("color"),
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
 
@@ -1070,6 +1082,74 @@ fn test_deferred_point_estimation_with_filter() {
             let estimation = segment.estimate_point_count(Some(&filter), &hw_counter);
             assert_eq!(estimation.exp, 6);
             assert_eq!(estimation.max, 12);
+        }
+    }
+}
+
+#[test]
+fn test_deferred_read_ordered_filtered() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("color"),
+        Match::new_value(ValueVariants::String("blue".to_string())),
+    )));
+
+    const N_POINTS: usize = 12;
+
+    // Test different amount of deferred points
+    for n_deferred in [0, 1, 10, 300] {
+        // Test with and without a filter.
+        for filter in [None, Some(&filter)] {
+            let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+            let do_search = |segment: &Segment| {
+                let order_by = OrderBy {
+                    key: JsonPath::new("number"),
+                    direction: None,
+                    start_from: None,
+                };
+
+                segment
+                    .read_ordered_filtered(
+                        None,
+                        filter,
+                        &order_by,
+                        &AtomicBool::new(false),
+                        &hw_counter,
+                    )
+                    .unwrap()
+            };
+
+            let expected_points = if filter.is_some() {
+                // Filter has 3 possible values so our filter matches 1/3 of the points.
+                N_POINTS.div_ceil(3)
+            } else {
+                N_POINTS
+            };
+
+            let expected_deferred = if filter.is_some() {
+                n_deferred.div_ceil(3)
+            } else {
+                n_deferred
+            };
+
+            // Search with deferred mode
+            let search_res_deferred = do_search(&segment);
+            assert!(!search_res_deferred.is_empty());
+            assert_eq!(search_res_deferred.len(), expected_points);
+
+            // All points in result must always be non deferred.
+            for &(_, external_id) in search_res_deferred.iter() {
+                assert!(!segment.point_is_deferred(external_id));
+            }
+
+            // Disable deferred points and search again.
+            segment.deferred_internal_id = None;
+            let search_res_normal = do_search(&segment);
+            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
         }
     }
 }

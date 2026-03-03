@@ -104,7 +104,10 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
-        let range_iter = numeric_index.stream_range(&order_by.as_range());
+        let range_iter = numeric_index
+            .stream_range(&order_by.as_range())
+            // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
+            .filter(|&(_, internal_id)| !self.is_point_deferred_internal(internal_id));
 
         let directed_range_iter = match order_by.direction() {
             Direction::Asc => Either::Left(range_iter),
