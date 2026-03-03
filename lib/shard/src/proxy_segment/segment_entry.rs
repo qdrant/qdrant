@@ -704,12 +704,20 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn point_is_deferred(&self, point_id: PointIdType) -> bool {
-        !self.deleted_points.contains_key(&point_id)
-            && self
-                .wrapped_segment
-                .get()
-                .read()
-                .point_is_deferred(point_id)
+        let wrapped = self.wrapped_segment.get().read();
+
+        // Mirror point_version: only consider deletion effective when
+        // wrapped_version <= delete.local_version
+        if let Some(delete) = self.deleted_points.get(&point_id) {
+            let dominated = wrapped
+                .point_version(point_id)
+                .is_none_or(|v| v <= delete.local_version);
+            if dominated {
+                return false;
+            }
+        }
+
+        wrapped.point_is_deferred(point_id)
     }
 }
 
