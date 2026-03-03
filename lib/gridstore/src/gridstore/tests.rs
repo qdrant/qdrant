@@ -225,6 +225,12 @@ fn test_update_single_payload() {
 fn test_write_across_pages() {
     let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
     let (_dir, mut storage) = empty_storage_sized(page_size, Compression::None);
+    let config = StorageConfig {
+        page_size_bytes: page_size,
+        block_size_bytes: DEFAULT_BLOCK_SIZE_BYTES,
+        region_size_blocks: DEFAULT_REGION_SIZE_BLOCKS,
+        compression: Compression::None,
+    };
 
     storage.create_new_page().unwrap();
 
@@ -243,7 +249,7 @@ fn test_write_across_pages() {
     storage
         .pages
         .write()
-        .write_to_pages(pointer, &value, DEFAULT_BLOCK_SIZE_BYTES)
+        .write_to_pages(pointer, &value, &config)
         .unwrap();
 
     let read_value = storage
