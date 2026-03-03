@@ -219,7 +219,7 @@ impl<V: Blob> Gridstore<V> {
         let pointer = ValuePointer::new(start_page_id, block_offset, value.len() as u32);
         self.pages
             .write()
-            .write_to_pages(pointer, value, self.config.block_size_bytes)
+            .write_to_pages(pointer, value, &self.config)
     }
 
     /// Put a value in the storage.
