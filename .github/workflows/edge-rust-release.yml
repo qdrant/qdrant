@@ -18,14 +18,19 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          - macos-latest
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+          - windows-11-arm
+          - windows-latest
 
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install mold
-        if: matrix.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu')
         uses: rui314/setup-mold@v1
 
       - name: Install Protoc
