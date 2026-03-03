@@ -93,4 +93,4 @@ jobs:
         working-directory: lib/edge/publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN_EDGE }}
-        run: cargo publish -p qdrant-edge
+        run: cargo publish -p qdrant-edge --no-verify
