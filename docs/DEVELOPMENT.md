@@ -279,6 +279,36 @@ fn some_other_function() {
 [`log`]: https://docs.rs/log/latest/log/
 [tracing-log-warning]: https://docs.rs/tracing-log/latest/tracing_log/#caution-mixing-both-conversions
 
+### Pyroscope (continuous CPU profiling)
+
+Qdrant has built-in [Pyroscope](https://grafana.com/oss/pyroscope/) integration for continuous CPU profiling. Linux only.
+
+**Local setup** — start Pyroscope:
+
+```bash
+docker run -d --name pyroscope -p 4040:4040 grafana/pyroscope:latest
+```
+
+Pyroscope UI is available at `http://localhost:4040`.
+
+**Enable on a running Qdrant instance:**
+
+```bash
+curl -X PATCH http://localhost:6333/debugger \
+  -H 'Content-Type: application/json' \
+  -d '{"pyroscope": {"url": "http://localhost:4040", "identifier": "qdrant-local"}}'
+```
+
+**Disable:**
+
+```bash
+curl -X PATCH http://localhost:6333/debugger \
+  -H 'Content-Type: application/json' \
+  -d '{"pyroscope": null}'
+```
+
+View flame graphs at `http://localhost:4040` — select application `qdrant`, filter by `identifier = qdrant-local` (`process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="qdrant", identifier="qdrant-local"}`).
+
 ## API changes
 
 ### REST
