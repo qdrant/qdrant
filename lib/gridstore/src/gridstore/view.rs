@@ -69,7 +69,7 @@ impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         pointer: ValuePointer,
     ) -> Result<Vec<u8>> {
         self.pages
-            .read_from_pages::<READ_SEQUENTIAL>(pointer, self.config.block_size_bytes)
+            .read_from_pages::<READ_SEQUENTIAL>(pointer, self.config)
     }
 }
 

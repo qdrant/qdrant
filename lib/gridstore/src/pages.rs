@@ -3,13 +3,16 @@ use std::path::Path;
 
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
-    ElementOffset, ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
+    ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
 };
 use smallvec::SmallVec;
 
 use crate::Result;
-use crate::error::GridstoreError;
-use crate::tracker::{BlockOffset, PageId, ValuePointer};
+use crate::config::StorageConfig;
+use crate::tracker::ValuePointer;
+
+type PageRanges = SmallVec<[(FileIndex, ElementsRange); 2]>;
+type BufferOffsets = SmallVec<[usize; 2]>;
 
 #[derive(Debug)]
 pub(crate) struct Pages<S> {
@@ -63,80 +66,83 @@ impl<S: UniversalRead<u8>> Pages<S> {
         self.pages.len()
     }
 
-    fn page_access_range(
-        &self,
-        page_id: PageId,
-        block_offset: BlockOffset,
-        length: u32,
-        block_size_bytes: usize,
-    ) -> Result<(ElementsRange, u64)> {
-        let page_len = self
-            .pages
-            .get(page_id as usize)
-            .ok_or(GridstoreError::PageNotFound { page_id })?
-            .len()?;
+    /// Computes the page ranges and relative offsets for reading or writing a value described by
+    /// the given [`ValuePointer`].
+    ///
+    /// A value may span across two consecutive pages if it starts near the end of a page. This
+    /// method returns the list of `(page_index, range)` pairs that together cover the full extent
+    /// of the value, along with the corresponding byte offsets into the value buffer so that each
+    /// section can be read into or written from the correct position.
+    ///
+    /// Returns a tuple of:
+    /// - `SmallVec<[(FileIndex, ElementsRange); 2]>` — the per-page file ranges to access.
+    /// - `SmallVec<[usize; 2]>` — the offset within the value buffer that each page range
+    ///   corresponds to.
+    fn get_page_value_ranges(
+        pointer: ValuePointer,
+        config: &StorageConfig,
+    ) -> (PageRanges, BufferOffsets) {
+        let ValuePointer {
+            page_id,
+            block_offset,
+            length,
+        } = pointer;
 
-        let length = u64::from(length);
+        let page_len = config.page_size_bytes as u64;
+        let block_size_bytes = config.block_size_bytes as u64;
+        let total_length = u64::from(length);
 
-        let value_start = u64::from(block_offset) * block_size_bytes as u64;
+        let value_start = u64::from(block_offset) * block_size_bytes;
         assert!(value_start < page_len);
 
-        let value_end = value_start + length;
-        let unread_tail = value_end.saturating_sub(page_len);
+        // Do not expect payload to span more than 2 pages, but can be easily extended if needed
+        let mut page_ranges = SmallVec::<[_; 2]>::new();
+        // Store relative offsets to fill the raw_value buffer after fetching in batch
+        let mut buffer_offsets = SmallVec::<[_; 2]>::new();
 
-        Ok((
-            ElementsRange {
-                start: value_start,
-                length: length - unread_tail,
-            },
-            unread_tail,
-        ))
+        let mut length_so_far: u64 = 0;
+        let mut page_idx = page_id as FileIndex;
+        let mut start = value_start;
+
+        while length_so_far < total_length {
+            let remaining = total_length - length_so_far;
+            let available_on_page = page_len - start;
+            let section_len = remaining.min(available_on_page);
+
+            page_ranges.push((
+                page_idx,
+                ElementsRange {
+                    start,
+                    length: section_len,
+                },
+            ));
+            buffer_offsets.push(length_so_far as usize);
+
+            length_so_far += section_len;
+            page_idx += 1;
+            start = 0;
+        }
+
+        (page_ranges, buffer_offsets)
     }
 
     pub fn read_from_pages<const READ_SEQUENTIAL: bool>(
         &self,
         pointer: ValuePointer,
-        block_size_bytes: usize,
+        config: &StorageConfig,
     ) -> Result<Vec<u8>> {
-        let ValuePointer {
-            page_id: start_page_id,
-            mut block_offset,
-            mut length,
-        } = pointer;
-
         // Avoid initializing buffer with zeros, as it will be overwritten by file access;
-        let mut raw_sections = vec![MaybeUninit::<u8>::uninit(); length as usize];
+        let mut raw_value = vec![MaybeUninit::<u8>::uninit(); pointer.length as usize];
 
-        // Do not expect payload to span more than 2 pages, but can be easily extended if needed
-        let mut read_ranges = SmallVec::<[_; 2]>::new();
-        // Store relative offsets to fill the raw_sections buffer in the callback
-        let mut range_offset = SmallVec::<[_; 2]>::new();
-
-        let mut length_so_far = 0;
-        for page_id in start_page_id.. {
-            let (element_range, unread_bytes) =
-                self.page_access_range(page_id, block_offset, length, block_size_bytes)?;
-
-            range_offset.push(length_so_far as usize);
-            length_so_far += element_range.length;
-
-            read_ranges.push((page_id as _, element_range));
-
-            if unread_bytes == 0 {
-                break;
-            }
-
-            block_offset = 0;
-            length = unread_bytes as u32;
-        }
+        let (read_ranges, buffer_offsets) = Self::get_page_value_ranges(pointer, config);
 
         S::read_multi::<READ_SEQUENTIAL>(self.pages.as_slice(), read_ranges, |idx, _, slice| {
-            let offset = range_offset[idx];
-            raw_sections[offset..offset + slice.len()].write_copy_of_slice(slice);
+            let offset = buffer_offsets[idx];
+            raw_value[offset..offset + slice.len()].write_copy_of_slice(slice);
             Ok(())
         })?;
 
-        Ok(unsafe { assume_init_vec(raw_sections) })
+        Ok(unsafe { assume_init_vec(raw_value) })
     }
 
     /// Populate all pages in the mmap.
@@ -162,41 +168,23 @@ impl<S: UniversalWrite<u8>> Pages<S> {
         &mut self,
         pointer: ValuePointer,
         value: &[u8],
-        block_size_bytes: usize,
+        config: &StorageConfig,
     ) -> Result<()> {
-        let ValuePointer {
-            page_id: start_page_id,
-            mut block_offset,
-            mut length,
-        } = pointer;
+        // Compute write ranges
+        let (page_ranges, buffer_offsets) = Self::get_page_value_ranges(pointer, config);
 
-        // Phase 1: compute write ranges (immutable borrow of self.pages)
-        let mut write_positions = SmallVec::<[(FileIndex, ElementOffset); 2]>::new();
-        let mut slice_offsets = SmallVec::<[(usize, usize); 2]>::new();
+        let writes = page_ranges
+            .iter()
+            .zip(&buffer_offsets)
+            .map(|(&(file_idx, range), &start)| {
+                (
+                    file_idx,
+                    range.start,
+                    &value[start..start + range.length as usize],
+                )
+            });
 
-        let mut written_so_far = 0usize;
-        for page_id in start_page_id.. {
-            let (range, unwritten_tail) =
-                self.page_access_range(page_id, block_offset, length, block_size_bytes)?;
-
-            let chunk_len = range.length as usize;
-            write_positions.push((page_id as FileIndex, range.start));
-            slice_offsets.push((written_so_far, chunk_len));
-            written_so_far += chunk_len;
-
-            if unwritten_tail == 0 {
-                break;
-            }
-
-            block_offset = 0;
-            length = unwritten_tail as u32;
-        }
-
-        // Phase 2: execute writes (mutable borrow of self.pages)
-        let writes = write_positions.iter().zip(slice_offsets.iter()).map(
-            |(&(file_idx, offset), &(start, len))| (file_idx, offset, &value[start..start + len]),
-        );
-
+        // Execute writes (mutable borrow of self.pages)
         S::write_multi(self.pages.as_mut_slice(), writes)?;
 
         Ok(())
