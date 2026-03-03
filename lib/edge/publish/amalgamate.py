@@ -68,18 +68,32 @@ def main() -> None:
             AMALGAMATION / "src" / pkg / "mod.rs",
         )
 
-    # Copy C sources and related build scripts.
+    # Copy C sources and build scripts.
     shutil.copytree(
         REPO_ROOT / "lib/quantization/cpp", AMALGAMATION / "cpp/quantization"
     )
     shutil.copy2(
-        REPO_ROOT / "lib/quantization/build.rs",
-        AMALGAMATION / "build-quantization.rs",
+        REPO_ROOT / "lib/common/common/build.rs", AMALGAMATION / "build_common.rs"
+    )
+    shutil.copy2(REPO_ROOT / "lib/segment/build.rs", AMALGAMATION / "build_segment.rs")
+    shutil.copy2(
+        REPO_ROOT / "lib/quantization/build.rs", AMALGAMATION / "build_quantization.rs"
     )
     (AMALGAMATION / "build.rs").write_text(
-        'include!("build-quantization.rs");\n', encoding="utf-8"
+        textwrap.dedent(
+            """
+            mod build_common;
+            mod build_quantization;
+            mod build_segment;
+            fn main() {
+                build_common::main();
+                build_quantization::main();
+                build_segment::main();
+            }
+            """
+        ).lstrip(),
+        encoding="utf-8",
     )
-    # TODO: segment/build.rs - for arm neon .c files.
 
     # Copy resources.
     shutil.copytree(REPO_ROOT / "lib/segment/tokenizer", AMALGAMATION / "tokenizer")
@@ -120,16 +134,44 @@ def main() -> None:
     # Regex-based fixups.
     substitute(
         AMALGAMATION / "src/api/grpc/qdrant.rs",
+        # ast-grep don't replace string literals
         (r'custom\(function = "crate::(.*)"\)', r'custom(function = "crate::api::\1")'),
         (r'custom\(function = "(common::.*)"\)', r'custom(function = "crate::\1")'),
     )
     substitute(
-        AMALGAMATION / "build-quantization.rs",
-        (r"cpp/", r"cpp/quantization/"),
+        AMALGAMATION / "build_common.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Won't compile because we don't package benchmarks.
+        (r".*cargo:rustc-link-arg-benches.*", ""),
     )
-    # Remove code that doesn't compile.
+    substitute(
+        AMALGAMATION / "build_segment.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Fix paths to C sources.
+        (r'"src/', r'"src/segment/'),
+        # Resolve C library name conflict.
+        (
+            r'builder\.compile\("simd_utils"\);',
+            'builder.compile("simd_utils_segment");',
+        ),
+    )
+    substitute(
+        AMALGAMATION / "build_quantization.rs",
+        # Make it callable from the main build.rs.
+        (r"^fn main\(\)", "pub fn main()"),
+        # Fix paths to C sources.
+        (r'"cpp/', r'"cpp/quantization/'),
+        # Resolve C library name conflict.
+        (
+            r'builder\.compile\("simd_utils"\);',
+            'builder.compile("simd_utils_quantization");',
+        ),
+    )
     substitute(
         AMALGAMATION / "src/api/grpc/mod.rs",
+        # Remove code that doesn't compile.
         (r"^pub mod dynamic_channel_pool;$\n", ""),
         (r"^pub mod dynamic_pool;$\n", ""),
         (r"^pub mod transport_channel_pool;$\n", ""),
@@ -137,11 +179,12 @@ def main() -> None:
     )
     substitute(
         AMALGAMATION / "src/segment/common/anonymize.rs",
+        # Remove code that doesn't compile.
         (r"^pub use macros::Anonymize;$\n", ""),
     )
-    # Cleanup public API
     substitute(
         AMALGAMATION.glob("src/**/*.rs"),
+        # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
     )
 
