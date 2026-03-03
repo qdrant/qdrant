@@ -92,11 +92,11 @@ jobs:
       - name: Install lcov
         run: sudo apt install -y lcov
       - name: Download unit test coverage
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: unit-test-coverage
       - name: Download integration test coverage
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: integration-test-coverage
       - name: Merge coverage reports
