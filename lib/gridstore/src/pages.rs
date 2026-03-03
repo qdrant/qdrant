@@ -96,9 +96,9 @@ impl<S: UniversalRead<u8>> Pages<S> {
         assert!(value_start < page_len);
 
         // Do not expect payload to span more than 2 pages, but can be easily extended if needed
-        let mut page_ranges = SmallVec::<[_; 2]>::new();
+        let mut page_ranges = PageRanges::new();
         // Store relative offsets to fill the raw_value buffer after fetching in batch
-        let mut buffer_offsets = SmallVec::<[_; 2]>::new();
+        let mut buffer_offsets = BufferOffsets::new();
 
         let mut length_so_far: u64 = 0;
         let mut page_idx = page_id as FileIndex;
