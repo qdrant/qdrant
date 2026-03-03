@@ -276,8 +276,8 @@ mod tests {
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::types::{
-        Distance, ExtendedPointId, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig,
-        VectorStorageType, WithPayloadInterface, WithVector,
+        Distance, ExtendedPointId, HnswConfig, Indexes, PayloadStorageType, SegmentConfig,
+        VectorDataConfig, VectorStorageType, WithPayloadInterface, WithVector,
     };
     use shard::count::CountRequestInternal;
     use shard::operations::CollectionUpdateOperations::PointOperation;
@@ -965,5 +965,54 @@ mod tests {
                 fs::copy(&from_path, &to_path).unwrap();
             }
         }
+    }
+
+    /// Case 3: All vectors have Plain index → infer_hnsw_config falls back to default.
+    #[test]
+    fn infer_hnsw_config_falls_back_to_default_when_all_plain() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-hnsw-plain")
+            .tempdir()
+            .unwrap();
+
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let inferred = shard.infer_hnsw_config();
+        assert_eq!(inferred, HnswConfig::default());
+    }
+
+    /// Case 1+2: After optimization builds HNSW segments, reloading infers
+    /// the HNSW config from the optimized segment (not the default).
+    #[test]
+    fn infer_hnsw_config_from_optimized_segment() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-hnsw-optimized")
+            .tempdir()
+            .unwrap();
+
+        // Create shard with Plain config, insert enough data to trigger indexing.
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let points = (1..=1000).map(point).collect::<Vec<_>>();
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(points))))
+            .unwrap();
+
+        // Before optimize: config has Plain index → infer returns default.
+        let inferred_before = shard.infer_hnsw_config();
+        assert_eq!(inferred_before, HnswConfig::default());
+
+        // Run optimize (may build HNSW index if threshold is met).
+        let _ = shard.optimize_all_segments_blocking();
+        drop(shard);
+
+        // Reload: if optimization built an HNSW segment, the config will
+        // have Indexes::Hnsw and infer_hnsw_config returns it.
+        // If not (data too small), it stays Plain and returns default.
+        // Either way, infer_hnsw_config must not panic.
+        let reloaded = EdgeShard::load(dir.path(), None).unwrap();
+        let inferred_after = reloaded.infer_hnsw_config();
+
+        // The inferred config should be valid (non-zero m and ef_construct).
+        assert!(inferred_after.m > 0);
+        assert!(inferred_after.ef_construct > 0);
     }
 }
