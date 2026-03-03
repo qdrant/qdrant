@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 from collections.abc import Iterable
 from pathlib import Path
@@ -166,16 +167,21 @@ def main() -> None:
             file=sys.stderr,
             flush=True,
         )
-        subprocess.run(
-            [
-                shutil.which("ast-grep") or "ast-grep",
-                "scan",
-                "--update-all",
-                f"--inline-rules={rules}",
-                AMALGAMATION / "src" / package,
-            ],
-            check=True,
-        )
+
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", suffix=".yaml") as f:
+            f.write(rules)
+            f.flush()
+
+            subprocess.run(
+                [
+                    shutil.which("ast-grep") or "ast-grep",
+                    "scan",
+                    "--update-all",
+                    f"--rule={f.name}",
+                    AMALGAMATION / "src" / package,
+                ],
+                check=True,
+            )
 
 
 def gather_dependencies(
