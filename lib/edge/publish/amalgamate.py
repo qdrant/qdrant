@@ -168,7 +168,7 @@ def main() -> None:
         )
         subprocess.run(
             [
-                "ast-grep",
+                shutil.which("ast-grep") or "ast-grep",
                 "scan",
                 "--update-all",
                 f"--inline-rules={rules}",
