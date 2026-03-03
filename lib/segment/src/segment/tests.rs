@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -6,24 +7,27 @@ use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
 use rstest::rstest;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
-use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+use crate::data_types::vectors::{
+    DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, only_default_vector,
+};
 use crate::entry::SnapshotEntry as _;
 use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
+use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Distance, Filter, Indexes, Payload, PointIdType, SnapshotFormat, VectorDataConfig,
-    VectorStorageType, WithPayload, WithVector,
+    Condition, Distance, FieldCondition, Filter, Indexes, Match, Payload, PointIdType,
+    SnapshotFormat, ValueVariants, VectorDataConfig, VectorStorageType, WithPayload, WithVector,
 };
 
 fn init_logger() {
@@ -732,15 +736,14 @@ fn test_handle_point_version() {
     assert!(applied);
 }
 
-#[test]
-fn test_dense_deferred_points() {
-    init_logger();
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let dim = 4;
+fn create_deferred_segment(
+    dir: &TempDir,
+    dim: usize,
+    n_vectors: usize,
+    n_deferred: usize,
+) -> Segment {
     let hw_counter = HardwareCounterCell::new();
 
-    // Create a segment with a deferred_internal_id set
-    const DEFERRED_POINTS_ID: PointOffsetType = 13;
     let mut segment = build_segment(
         dir.path(),
         &SegmentConfig {
@@ -759,43 +762,90 @@ fn test_dense_deferred_points() {
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
-        Some(DEFERRED_POINTS_ID),
+        Some(n_deferred as PointOffsetType),
         true,
     )
     .unwrap();
 
     // Initially, no deferred points (empty segment)
+
     assert!(!segment.has_deferred_points());
-    for i in 0..=20 {
+    for i in 0..n_vectors {
         assert!(
             !segment.point_is_deferred(PointIdType::from(i as u64)),
             "Point {i} should not be deferred in an empty segment"
         );
     }
 
-    // Insert points with small vectors to reach the threshold
-    // Each vector is 4 f32 = 16 bytes
-    // We need to insert enough vectors to exceed 200 bytes
-    // Points 1-13 will be non-deferred (internal_id 0-12), points 14+ will be deferred
-    for i in 1..=20 {
+    let default_vector: Vec<_> = (0..dim).map(|i| i as f32 / 10.0).collect();
+
+    for i in 1..=total_vectors {
+        let point_id = PointIdType::from(i as u64);
         segment
             .insert_new_vectors(
-                PointIdType::from(i as u64),
+                point_id,
                 i as u64,
-                &only_default_vector(&[
-                    0.1 * i as f32,
-                    0.2 * i as f32,
-                    0.3 * i as f32,
-                    0.4 * i as f32,
-                ]),
+                &only_default_vector(&default_vector),
                 &hw_counter,
             )
+            .unwrap();
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "color".to_string(),
+            ["red", "blue", "yellow"][i % 3].to_string().into(),
+        );
+        segment
+            .set_full_payload((total_vectors + i) as u64, point_id, &payload, &hw_counter)
             .unwrap();
     }
 
     // Now we should have deferred points
-    assert!(segment.has_deferred_points());
-    assert_eq!(segment.deferred_internal_id, Some(13));
+    if n_deferred > 0 {
+        assert!(segment.has_deferred_points());
+        assert_eq!(segment.deferred_internal_id, Some(n_vectors as u32));
+    }
+
+    // Points 1 to n_vectors should NOT be deferred
+    for i in 1..=n_vectors {
+        assert!(
+            !segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should not be deferred"
+        );
+    }
+
+    for i in (n_vectors + 1)..=total_vectors {
+        assert!(
+            segment.point_is_deferred(PointIdType::from(i as u64)),
+            "Point {i} should be deferred"
+        );
+    }
+
+    // Non-existent pont should be non deferred
+    assert!(
+        !segment.point_is_deferred(PointIdType::from(total_vectors as u64 + 1)),
+        "Non-existent point should not be deferred"
+    );
+
+    // Test deferred point count estimation.
+    assert_eq!(segment.deferred_point_count_estimated(), n_deferred);
+    assert_eq!(segment.non_deferred_point_count_estimated(), n_vectors);
+
+    segment
+}
+
+#[test]
+fn test_dense_deferred_points() {
+    init_logger();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let dim = 4;
+
+    // Create a segment with a deferred_points_threshold_bytes set
+    // Vector size: 4 f32 = 16 bytes per vector
+    // We set threshold to 200 bytes, so deferred threshold should be at internal_id 13
+    // (200 / 16 = 12.5, rounded up = 13 via div_ceil)
+    let deferred_threshold_bytes = std::num::NonZeroUsize::new(200).unwrap();
+
+    let segment = create_deferred_segment(&dir, dim, 13, 7);
 
     // Points 1-13 (internal_ids 0-12) should NOT be deferred
     for i in 1..=13 {
@@ -846,4 +896,180 @@ fn test_dense_deferred_points() {
         Some(DEFERRED_POINTS_ID),
         "Deferred internal ID should still be `DEFERRED_POINTS_ID` after reopening"
     );
+}
+
+#[test]
+fn test_dense_deferred_point_segment_combinations() {
+    init_logger();
+
+    for dim in (2..40).step_by(3) {
+        for n_deferred in 0..15 {
+            for n_vectors in 1..15 {
+                let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+                create_deferred_segment(&dir, dim, n_vectors, n_deferred);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_deferred_search() {
+    init_logger();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::from_str("color").unwrap(),
+        Match::new_value(ValueVariants::String("blue".to_string())),
+    )));
+
+    const N_POINTS: usize = 12;
+
+    // Test different amount of deferred points
+    for n_deferred in [0, 1, 10] {
+        // Test with and without a filter.
+        for filter in [None, Some(&filter)] {
+            log::debug!(
+                "Testing with {} deferred and filter: {}",
+                n_deferred,
+                filter.is_some()
+            );
+
+            let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+            let do_search = |segment: &Segment, filter: Option<&Filter>| {
+                segment
+                    .search(
+                        DEFAULT_VECTOR_NAME,
+                        &QueryVector::Nearest(VectorInternal::Dense(vec![0.1, 0.1, 0.2, 0.2, 0.3])),
+                        &WithPayload::default(),
+                        &WithVector::Bool(false),
+                        filter,
+                        usize::MAX,
+                        None,
+                    )
+                    .unwrap()
+            };
+
+            let expected_points = if filter.is_some() {
+                // Filter has 3 possible values so our filter matches 1/3 of the points.
+                N_POINTS.div_ceil(3)
+            } else {
+                N_POINTS
+            };
+
+            let expected_deferred = if filter.is_some() {
+                n_deferred.div_ceil(3)
+            } else {
+                n_deferred
+            };
+
+            // Search with deferred mode
+            let search_res_deferred = do_search(&segment, filter);
+            assert!(!search_res_deferred.is_empty());
+            assert_eq!(search_res_deferred.len(), expected_points);
+
+            // All points in result must always be non deferred.
+            for point in search_res_deferred.iter() {
+                assert!(!segment.point_is_deferred(point.id));
+            }
+
+            // Disable deferred points and search again.
+            segment.deferred_internal_id = None;
+            let search_res_normal = do_search(&segment, filter);
+            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
+        }
+    }
+}
+
+#[test]
+fn test_deferred_read_filtered() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::from_str("color").unwrap(),
+        Match::new_value(ValueVariants::String("blue".to_string())),
+    )));
+
+    const N_POINTS: usize = 12;
+
+    // Test different amount of deferred points
+    for n_deferred in [0, 1, 10] {
+        // Test with and without a filter.
+        for filter in [None, Some(&filter)] {
+            log::debug!(
+                "Testing with {} deferred and filter: {}",
+                n_deferred,
+                filter.is_some()
+            );
+
+            let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+            let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+            let do_search = |segment: &Segment| {
+                segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
+            };
+
+            let expected_points = if filter.is_some() {
+                // Filter has 3 possible values so our filter matches 1/3 of the points.
+                N_POINTS.div_ceil(3)
+            } else {
+                N_POINTS
+            };
+
+            let expected_deferred = if filter.is_some() {
+                n_deferred.div_ceil(3)
+            } else {
+                n_deferred
+            };
+
+            // Search with deferred mode
+            let search_res_deferred = do_search(&segment);
+            assert!(!search_res_deferred.is_empty());
+            assert_eq!(search_res_deferred.len(), expected_points);
+
+            // All points in result must always be non deferred.
+            for point in search_res_deferred.iter() {
+                assert!(!segment.point_is_deferred(*point));
+            }
+
+            // Disable deferred points and search again.
+            segment.deferred_internal_id = None;
+            let search_res_normal = do_search(&segment);
+            assert_eq!(search_res_normal.len(), expected_points + expected_deferred);
+        }
+    }
+}
+
+#[test]
+fn test_deferred_point_estimation_with_filter() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::from_str("color").unwrap(),
+        Match::new_value(ValueVariants::String("blue".to_string())),
+    )));
+
+    const N_POINTS: usize = 12;
+
+    for n_deferred in [0, 3, 10, 20, 100] {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+        let estimation = segment.estimate_point_count(Some(&filter), &hw_counter);
+
+        // We test with different amount of deferred points (including no deferred points) and expect the
+        // cardinality to not change.
+        assert_eq!(estimation.exp, 6);
+        assert_eq!(estimation.max, 12);
+
+        // For consistency we also test that the same cardinality is estimated if no deferred points exist.
+        if n_deferred == 0 {
+            assert_eq!(segment.deferred_internal_id, None);
+            let estimation = segment.estimate_point_count(Some(&filter), &hw_counter);
+            assert_eq!(estimation.exp, 6);
+            assert_eq!(estimation.max, 12);
+        }
+    }
 }
