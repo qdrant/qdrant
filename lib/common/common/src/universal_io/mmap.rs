@@ -32,6 +32,10 @@ where
     fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
         local_list_files(prefix_path)
     }
+
+    fn exists(path: &Path) -> Result<bool> {
+        Ok(path.exists())
+    }
 }
 
 impl<T> UniversalRead<T> for MmapUniversal<T>

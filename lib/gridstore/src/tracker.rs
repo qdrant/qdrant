@@ -270,22 +270,8 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     /// If the file does not exist, return an error
     pub fn open(path: &Path) -> Result<Self> {
         let path = Self::tracker_file_name(path);
-        let storage = match S::open(&path, tracker_open_options()) {
-            Err(UniversalIoError::NotFound { .. }) => {
-                return Err(GridstoreError::service_error(format!(
-                    "Tracker file does not exist: {}",
-                    path.display()
-                )));
-            }
-            other => other?,
-        };
-        let header_bytes = storage.read::<false>(ElementsRange {
-            start: 0,
-            length: std::mem::size_of::<TrackerHeader>() as u64,
-        })?;
-        #[expect(deprecated, reason = "legacy code")]
-        let header: TrackerHeader =
-            *unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) };
+        let storage = Self::open_storage(&path)?;
+        let header: TrackerHeader = Self::read_header(&storage)?;
         let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
@@ -294,6 +280,60 @@ impl<S: UniversalRead<u8>> Tracker<S> {
             storage,
             pending_updates,
         })
+    }
+
+    fn read_header(storage: &S) -> Result<TrackerHeader> {
+        let header_bytes = storage.read::<false>(ElementsRange {
+            start: 0,
+            length: std::mem::size_of::<TrackerHeader>() as u64,
+        })?;
+        #[expect(deprecated, reason = "legacy code")]
+        Ok(*unsafe { transmute_from_u8::<TrackerHeader>(header_bytes.as_ref()) })
+    }
+
+    fn open_storage(path: &Path) -> Result<S> {
+        let storage = match S::open(path, tracker_open_options()) {
+            Err(UniversalIoError::NotFound { .. }) => {
+                return Err(GridstoreError::service_error(format!(
+                    "Tracker file does not exist: {}",
+                    path.display()
+                )));
+            }
+            other => other?,
+        };
+        Ok(storage)
+    }
+
+    /// This method reloads the tracker storage from "disk", so that
+    /// it should make newly written data visible to the tracker.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Should only be called on read-only instances of the tracker.
+    /// - Only appending new pointers is supported, not modifications of existing pointers.
+    /// - Partial writes are possible, but ignored. Header is a source of truth.
+    ///
+    /// Returns `true` if there are new changes, `false` if the tracker is already up to date.
+    pub fn live_reload(&mut self) -> Result<bool> {
+        let new_header = Self::read_header(&self.storage)?;
+
+        if new_header.next_pointer_offset < self.next_pointer_offset {
+            Err(GridstoreError::service_error(format!(
+                "live reload cannot decrease pointer count, possible data loss: old size {:#?}, new size {:#?}",
+                self.next_pointer_offset, new_header.next_pointer_offset
+            )))
+        } else if new_header.next_pointer_offset == self.next_pointer_offset {
+            // No new pointers, no need to reload
+            Ok(false)
+        } else {
+            // Update in-memory state to reflect new pointers
+            self.header = new_header;
+            self.next_pointer_offset = new_header.next_pointer_offset;
+            // reopen storage to make new data visible
+            // For some storages it should be a no-op.
+            self.storage = Self::open_storage(&self.path)?;
+            Ok(true)
+        }
     }
 
     /// Get the raw value at the given point offset
