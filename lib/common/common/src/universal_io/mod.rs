@@ -1,3 +1,5 @@
+mod file_ops;
+mod local_file_ops;
 pub mod mmap;
 pub mod read;
 pub mod write;
