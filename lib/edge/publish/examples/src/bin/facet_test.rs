@@ -4,8 +4,8 @@ use std::path::Path;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::shard::facet::FacetRequestInternal;
 
-const SNAPSHOT_PATH: &str = "./test_edge_facet/shard.snapshot";
-const DATA_DIR: &str = "./test_edge_facet/shard_data";
+const SNAPSHOT_PATH: &str = "./data/facet_test/shard.snapshot";
+const DATA_DIR: &str = "./data/facet_test/shard_data";
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("---- Unpack snapshot ----");
