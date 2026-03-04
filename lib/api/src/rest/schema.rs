@@ -8,7 +8,7 @@ use ordered_float::NotNan;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::OrderByInterface;
 use segment::data_types::vectors::{DenseVector, MultiDenseVector};
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -503,14 +503,6 @@ pub enum NamedVectorStruct {
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
     // No support for multi-dense vectors in search
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Hash)]
-#[serde(untagged)]
-#[serde(expecting = "Expected a string, or an object with a key, direction and/or start_from")]
-pub enum OrderByInterface {
-    Key(JsonPath),
-    Struct(OrderBy),
 }
 
 /// Fusion algorithm allows to combine results of multiple prefetches.

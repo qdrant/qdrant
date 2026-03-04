@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
 
 use ahash::AHashSet;
-use api::rest::{OrderByInterface, SearchRequestInternal};
+use api::rest::SearchRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{
@@ -19,7 +19,7 @@ use collection::shards::replica_set::replica_set_state::{ReplicaSetState, Replic
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fs_err::File;
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,

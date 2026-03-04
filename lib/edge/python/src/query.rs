@@ -6,13 +6,12 @@ use ordered_float::OrderedFloat;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use segment::data_types::order_by::{Direction, OrderBy, StartFrom};
+use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, StartFrom};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::json_path::JsonPath;
 use shard::query::query_enum::QueryEnum;
 use shard::query::*;
-use shard::scroll::OrderByInterface;
 
 use super::*;
 use crate::repr::*;

@@ -1,5 +1,5 @@
-pub use api::rest::OrderByInterface;
 use schemars::JsonSchema;
+use segment::data_types::order_by::OrderByInterface;
 use segment::types::{Filter, PointIdType, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
