@@ -319,6 +319,10 @@ pub enum PyFusion {
         weights: Option<Vec<f32>>,
     },
     Dbsf {},
+    #[pyo3(constructor = (weights = None))]
+    Blo {
+        weights: Option<Vec<f32>>,
+    },
 }
 
 #[pymethods]
@@ -339,6 +343,10 @@ impl Repr for PyFusion {
                 weights: Some(weights),
             } => f.complex_enum::<Self>("Rrf", &[("k", k as &dyn Repr), ("weights", weights)]),
             PyFusion::Dbsf {} => f.complex_enum::<Self>("Dbsf", &[]),
+            PyFusion::Blo { weights: None } => f.complex_enum::<Self>("Blo", &[]),
+            PyFusion::Blo {
+                weights: Some(weights),
+            } => f.complex_enum::<Self>("Blo", &[("weights", weights as &dyn Repr)]),
         }
     }
 }
@@ -351,6 +359,9 @@ impl From<FusionInternal> for PyFusion {
                 weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
             },
             FusionInternal::Dbsf => PyFusion::Dbsf {},
+            FusionInternal::Blo { weights } => PyFusion::Blo {
+                weights: weights.map(|w| w.into_iter().map(|f| f.into_inner()).collect()),
+            },
         }
     }
 }
@@ -363,6 +374,9 @@ impl From<PyFusion> for FusionInternal {
                 weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
             },
             PyFusion::Dbsf {} => FusionInternal::Dbsf,
+            PyFusion::Blo { weights } => FusionInternal::Blo {
+                weights: weights.map(|w| w.into_iter().map(ordered_float::OrderedFloat).collect()),
+            },
         }
     }
 }

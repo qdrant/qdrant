@@ -524,11 +524,13 @@ pub enum OrderByInterface {
 ///
 /// * `rrf` - Reciprocal Rank Fusion (with default parameters)
 /// * `dbsf` - Distribution-Based Score Fusion
+/// * `blo` - Balanced Log-Odds fusion (with default parameters)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
     Dbsf,
+    Blo,
 }
 
 /// Parameters for Reciprocal Rank Fusion
@@ -540,6 +542,17 @@ pub struct Rrf {
     #[serde(default)]
     pub k: Option<usize>,
 
+    /// Weights for each prefetch source. Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights: Option<Vec<f32>>,
+}
+
+/// Parameters for Balanced Log-Odds fusion
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct Blo {
     /// Weights for each prefetch source. Higher weight gives more influence on the final ranking.
     /// If not specified, all prefetches are weighted equally.
     /// The number of weights should match the number of prefetches.
@@ -656,6 +669,9 @@ pub enum Query {
     /// Apply reciprocal rank fusion to multiple prefetches
     Rrf(RrfQuery),
 
+    /// Apply balanced log-odds fusion to multiple prefetches
+    Blo(BloQuery),
+
     /// Score boosting via an arbitrary formula
     Formula(FormulaQuery),
 
@@ -719,6 +735,13 @@ pub struct FusionQuery {
 pub struct RrfQuery {
     #[validate(nested)]
     pub rrf: Rrf,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct BloQuery {
+    #[validate(nested)]
+    pub blo: Blo,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

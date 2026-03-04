@@ -15605,6 +15605,9 @@
             "$ref": "#/components/schemas/RrfQuery"
           },
           {
+            "$ref": "#/components/schemas/BloQuery"
+          },
+          {
             "$ref": "#/components/schemas/FormulaQuery"
           },
           {
@@ -15807,11 +15810,12 @@
         }
       },
       "Fusion": {
-        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion (with default parameters) * `dbsf` - Distribution-Based Score Fusion",
+        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion (with default parameters) * `dbsf` - Distribution-Based Score Fusion * `blo` - Balanced Log-Odds fusion (with default parameters)",
         "type": "string",
         "enum": [
           "rrf",
-          "dbsf"
+          "dbsf",
+          "blo"
         ]
       },
       "RrfQuery": {
@@ -15837,6 +15841,32 @@
             "minimum": 1,
             "nullable": true
           },
+          "weights": {
+            "description": "Weights for each prefetch source. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches.",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "nullable": true
+          }
+        }
+      },
+      "BloQuery": {
+        "type": "object",
+        "required": [
+          "blo"
+        ],
+        "properties": {
+          "blo": {
+            "$ref": "#/components/schemas/Blo"
+          }
+        }
+      },
+      "Blo": {
+        "description": "Parameters for Balanced Log-Odds fusion",
+        "type": "object",
+        "properties": {
           "weights": {
             "description": "Weights for each prefetch source. Higher weight gives more influence on the final ranking. If not specified, all prefetches are weighted equally. The number of weights should match the number of prefetches.",
             "type": "array",

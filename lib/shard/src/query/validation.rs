@@ -91,5 +91,18 @@ fn validate_fusion(fusion: &FusionInternal, num_sources: usize) -> OperationResu
             weights: None,
         } => Ok(()),
         FusionInternal::Dbsf => Ok(()),
+        FusionInternal::Blo {
+            weights: Some(weights),
+        } => {
+            if weights.len() != num_sources {
+                return Err(OperationError::validation_error(format!(
+                    "BLO weights length ({}) does not match number of prefetches ({})",
+                    weights.len(),
+                    num_sources
+                )));
+            }
+            Ok(())
+        }
+        FusionInternal::Blo { weights: None } => Ok(()),
     }
 }

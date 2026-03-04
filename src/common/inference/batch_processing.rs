@@ -111,6 +111,7 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
         Query::OrderBy(_)
         | Query::Fusion(_)
         | Query::Rrf(_)
+        | Query::Blo(_)
         | Query::Formula(_)
         | Query::Sample(_) => {}
     }

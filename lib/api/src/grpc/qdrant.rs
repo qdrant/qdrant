@@ -6503,12 +6503,25 @@ pub struct Rrf {
     #[prost(float, repeated, tag = "2")]
     pub weights: ::prost::alloc::vec::Vec<f32>,
 }
+/// Parameterized balanced log-odds fusion
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Blo {
+    /// Weights for each prefetch source.
+    /// Higher weight gives more influence on the final ranking.
+    /// If not specified, all prefetches are weighted equally.
+    /// The number of weights should match the number of prefetches.
+    #[prost(float, repeated, tag = "1")]
+    pub weights: ::prost::alloc::vec::Vec<f32>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -6551,6 +6564,9 @@ pub mod query {
         /// Search with feedback from some oracle.
         #[prost(message, tag = "11")]
         RelevanceFeedback(super::RelevanceFeedbackInput),
+        /// Parameterized balanced log-odds fusion
+        #[prost(message, tag = "12")]
+        Blo(super::Blo),
     }
 }
 #[derive(validator::Validate)]
@@ -7756,6 +7772,8 @@ pub enum Fusion {
     Rrf = 0,
     /// Distribution-Based Score Fusion
     Dbsf = 1,
+    /// Balanced Log-Odds fusion (with default parameters)
+    Blo = 2,
 }
 impl Fusion {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -7766,6 +7784,7 @@ impl Fusion {
         match self {
             Fusion::Rrf => "RRF",
             Fusion::Dbsf => "DBSF",
+            Fusion::Blo => "BLO",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -7773,6 +7792,7 @@ impl Fusion {
         match value {
             "RRF" => Some(Self::Rrf),
             "DBSF" => Some(Self::Dbsf),
+            "BLO" => Some(Self::Blo),
             _ => None,
         }
     }
@@ -10879,7 +10899,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -10909,6 +10929,9 @@ pub mod query_shard_points {
             /// Parameterized RRF fusion
             #[prost(message, tag = "7")]
             Rrf(super::super::Rrf),
+            /// Parameterized balanced log-odds fusion
+            #[prost(message, tag = "8")]
+            Blo(super::super::Blo),
         }
     }
     #[derive(serde::Serialize)]

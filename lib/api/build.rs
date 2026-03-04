@@ -355,7 +355,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchMatrixPoints.sample", "range(min = 2)"),
             ("SearchMatrixPoints.limit", "range(min = 1)"),
             ("SearchMatrixPoints.timeout", "range(min = 1)")
-        ], &[])
+        ], &["Blo"])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[

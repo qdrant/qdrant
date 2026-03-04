@@ -185,6 +185,7 @@ pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result
         query::Variant::OrderBy(_) => {}
         query::Variant::Fusion(_) => {}
         query::Variant::Rrf(_) => {}
+        query::Variant::Blo(_) => {}
         query::Variant::Sample(_) => {}
         query::Variant::Formula(_) => {}
         query::Variant::NearestWithMmr(nearest_with_mmr) => {
