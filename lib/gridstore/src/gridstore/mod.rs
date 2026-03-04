@@ -25,7 +25,7 @@ use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::error::GridstoreError;
-use crate::pages::Pages;
+use crate::pages::{Pages, page_path};
 use crate::tracker::{BlockOffset, PageId, PointOffset, PointerUpdates, ValuePointer};
 use crate::{Result, Tracker};
 
@@ -61,14 +61,15 @@ impl<V: Blob> Gridstore<V> {
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
     pub fn files(&self) -> Vec<PathBuf> {
         let tracker = self.tracker.read();
-        let num_pages = self.pages.read().num_pages();
+        let pages = self.pages.read();
+        let num_pages = pages.num_pages();
 
         let mut paths = Vec::with_capacity(num_pages + 2);
         for tracker_file in tracker.files() {
             paths.push(tracker_file);
         }
         for page_id in 0..num_pages as PageId {
-            paths.push(self.page_path(page_id));
+            paths.push(pages.page_path(page_id));
         }
         paths.push(self.base_path.join(CONFIG_FILENAME));
         for bitmask_file in self.bitmask.read().files() {
@@ -111,7 +112,7 @@ impl<V: Blob> Gridstore<V> {
 
         let storage = Self {
             tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None)?)),
-            pages: Default::default(),
+            pages: Arc::new(RwLock::new(Pages::new(base_path.clone()))),
             base_path,
             config,
             _value_type: std::marker::PhantomData,
@@ -120,7 +121,7 @@ impl<V: Blob> Gridstore<V> {
         };
 
         let new_page_id = storage.next_page_id();
-        let path = storage.page_path(new_page_id);
+        let path = page_path(&storage.base_path, new_page_id);
         create_and_ensure_length(&path, storage.config.page_size_bytes)?;
         storage.pages.write().attach_page(&path)?;
 
@@ -138,10 +139,13 @@ impl<V: Blob> Gridstore<V> {
         let bitmask = Bitmask::open(&base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
-        let mut pages = Pages::default();
-        for page_id in 0..num_pages as PageId {
-            let page_path = base_path.join(format!("page_{page_id}.dat"));
-            pages.attach_page(&page_path)?;
+        let pages = Pages::open(&base_path)?;
+        let loaded_pages = pages.num_pages();
+
+        if loaded_pages != num_pages {
+            return Err(GridstoreError::service_error(format!(
+                "Inconsistent number of gridstore pages at {base_path:?}: expected {num_pages}, but found {loaded_pages}",
+            )));
         }
 
         Ok(Self {
@@ -159,7 +163,7 @@ impl<V: Blob> Gridstore<V> {
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn create_new_page(&mut self) -> Result<u32> {
         let new_page_id = self.next_page_id();
-        let path = self.page_path(new_page_id);
+        let path = page_path(&self.base_path, new_page_id);
         create_and_ensure_length(&path, self.config.page_size_bytes)?;
         self.pages.write().attach_page(&path)?;
 
@@ -392,9 +396,15 @@ impl<V: Blob> Gridstore<V> {
         let mut from_offset = 0;
         // Iterate in batches to allow releasing read locks, see:
         // <https://github.com/qdrant/qdrant/pull/7983>
-        while let ControlFlow::Continue(next_offset) =
-            self.with_view(|view| view.iter(from_offset, BATCH_SIZE, &mut callback, hw_counter))?
-        {
+        while let ControlFlow::Continue(next_offset) = self.with_view(|view| {
+            view.iter(
+                from_offset,
+                PointOffset::MAX,
+                BATCH_SIZE,
+                &mut callback,
+                hw_counter,
+            )
+        })? {
             from_offset = next_offset;
         }
 
@@ -405,10 +415,6 @@ impl<V: Blob> Gridstore<V> {
 impl<V> Gridstore<V> {
     fn next_page_id(&self) -> PageId {
         self.pages.read().num_pages() as PageId
-    }
-
-    fn page_path(&self, page_id: u32) -> PathBuf {
-        self.base_path.join(format!("page_{page_id}.dat"))
     }
 
     #[inline]

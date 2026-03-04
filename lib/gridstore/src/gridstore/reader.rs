@@ -87,6 +87,7 @@ impl<V: Blob> GridstoreReader<V> {
 
     pub fn iter<F, E>(
         &self,
+        max_id: PointOffset,
         callback: F,
         hw_counter: HwMetricRefCounter,
     ) -> std::result::Result<(), E>
@@ -94,7 +95,9 @@ impl<V: Blob> GridstoreReader<V> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let control_flow = self.view().iter(0, usize::MAX, callback, hw_counter)?;
+        let control_flow = self
+            .view()
+            .iter(0, max_id, usize::MAX, callback, hw_counter)?;
 
         // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
         debug_assert!(matches!(control_flow, ControlFlow::Break(())));
@@ -107,6 +110,26 @@ impl<V: Blob> GridstoreReader<V> {
     /// For the precise used-space calculation, use [`super::Gridstore::get_storage_size_bytes`].
     pub fn get_storage_size_bytes(&self) -> usize {
         self.view().get_storage_size_bytes()
+    }
+
+    /// This method reloads the Gridstore data from "disk", so that
+    /// it should make newly written data is readable.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
+    /// - Partial writes are possible, it is up to the caller to read only fully written data.
+    ///
+    pub fn live_reload(&mut self) -> Result<()> {
+        let has_new_data = self.tracker.live_reload()?;
+
+        if !has_new_data {
+            return Ok(());
+        }
+
+        self.pages.live_reload()?;
+
+        Ok(())
     }
 }
 
