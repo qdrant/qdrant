@@ -1,5 +1,5 @@
 use std::mem::MaybeUninit;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ahash::HashSet;
 use common::maybe_uninit::assume_init_vec;
@@ -10,20 +10,19 @@ use smallvec::SmallVec;
 
 use crate::Result;
 use crate::config::StorageConfig;
-use crate::tracker::ValuePointer;
+use crate::tracker::{PageId, ValuePointer};
 
 type PageRanges = SmallVec<[(FileIndex, ElementsRange); 2]>;
 type BufferOffsets = SmallVec<[usize; 2]>;
 
-#[derive(Debug)]
-pub(crate) struct Pages<S> {
-    pages: Vec<S>,
+pub fn page_path(base_path: &Path, page_id: PageId) -> PathBuf {
+    base_path.join(format!("page_{page_id}.dat"))
 }
 
-impl<S> Default for Pages<S> {
-    fn default() -> Self {
-        Self { pages: Vec::new() }
-    }
+#[derive(Debug)]
+pub(crate) struct Pages<S> {
+    base_path: PathBuf,
+    pages: Vec<S>,
 }
 
 impl<S> Pages<S> {
@@ -33,18 +32,23 @@ impl<S> Pages<S> {
 }
 
 impl<S: UniversalRead<u8>> Pages<S> {
+    pub fn new(base_path: PathBuf) -> Self {
+        Self {
+            base_path,
+            pages: Vec::new(),
+        }
+    }
+
     pub fn open(dir: &Path) -> Result<Self> {
-        let mut pages = Self::default();
+        let mut pages = Self::new(dir.to_path_buf());
 
         let page_files: HashSet<_> = S::list_files(&dir.join("page_"))?.into_iter().collect();
 
         for page_id in 0.. {
-            let page_path = dir.join(format!("page_{page_id}.dat"));
-
+            let page_path = pages.page_path(page_id);
             if !page_files.contains(&page_path) {
                 break;
             }
-
             pages.attach_page(&page_path)?;
         }
 
@@ -67,6 +71,10 @@ impl<S: UniversalRead<u8>> Pages<S> {
 
     pub fn num_pages(&self) -> usize {
         self.pages.len()
+    }
+
+    pub fn page_path(&self, page_id: PageId) -> PathBuf {
+        page_path(&self.base_path, page_id)
     }
 
     /// Computes the page ranges and relative offsets for reading or writing a value described by
@@ -162,6 +170,36 @@ impl<S: UniversalRead<u8>> Pages<S> {
         for page in &self.pages {
             page.clear_ram_cache()?;
         }
+        Ok(())
+    }
+
+    /// This method reloads the pages storage from "disk", so that
+    /// it should make newly written data is readable.
+    ///
+    /// Important assumptions:
+    ///
+    /// - Should only be called on read-only instances of the Pages.
+    /// - Only appending new data is supported, for modifications of existing data there are no consistency guarantees.
+    /// - Partial writes are possible, it is up to the caller to read only fully written data.
+    pub fn live_reload(&mut self) -> Result<()> {
+        let num_pages = self.pages.len();
+        let next_page_id = num_pages as PageId;
+
+        if num_pages > 0 {
+            // Re-attach the last page, which should have the latest data.
+            self.pages.pop();
+            let page_path = self.page_path((num_pages - 1) as PageId);
+            self.attach_page(&page_path)?;
+        }
+
+        for page_id in next_page_id.. {
+            let page_path = self.page_path(page_id);
+            if !S::exists(&page_path)? {
+                break;
+            }
+            self.attach_page(&page_path)?;
+        }
+
         Ok(())
     }
 }

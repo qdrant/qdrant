@@ -10,7 +10,7 @@ use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig};
 use crate::error::GridstoreError;
 use crate::pages::Pages;
-use crate::tracker::{PointOffset, Tracker as TrackerGeneric, ValuePointer};
+use crate::tracker::{PointOffset, Tracker, ValuePointer};
 
 #[inline]
 pub(super) fn compress_lz4(value: &[u8]) -> Vec<u8> {
@@ -31,7 +31,7 @@ pub(super) fn decompress_lz4(value: &[u8]) -> Vec<u8> {
 /// Constructed from either [`super::Gridstore`] or [`super::GridstoreReader`].
 pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
     pub(super) config: &'a StorageConfig,
-    pub(super) tracker: &'a TrackerGeneric<S>,
+    pub(super) tracker: &'a Tracker<S>,
     pub(super) pages: &'a Pages<S>,
     pub(super) _value_type: std::marker::PhantomData<V>,
 }
@@ -39,7 +39,7 @@ pub struct GridstoreView<'a, V, S: UniversalRead<u8>> {
 impl<'a, V, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     pub(crate) fn new(
         config: &'a StorageConfig,
-        tracker: &'a TrackerGeneric<S>,
+        tracker: &'a Tracker<S>,
         pages: &'a Pages<S>,
     ) -> Self {
         Self {
@@ -125,7 +125,8 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
     /// Returns `Err(e)` if reading from the tracker fails (no silent skip).
     pub fn iter<F, E>(
         &self,
-        from: PointOffset,
+        from_id: PointOffset,
+        max_id: PointOffset,
         max_iters: usize,
         mut callback: F,
         hw_counter: HwMetricRefCounter,
@@ -135,7 +136,7 @@ impl<'a, V: Blob, S: UniversalRead<u8>> GridstoreView<'a, V, S> {
         E: From<GridstoreError>,
     {
         let mut nth = 0;
-        for (point_offset, res) in self.tracker.iter_pointers(from) {
+        for (point_offset, res) in self.tracker.iter_pointers(from_id, max_id) {
             let pointer = match res {
                 Ok(Some(p)) => p,
                 Ok(None) => continue,

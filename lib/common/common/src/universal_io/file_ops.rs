@@ -10,4 +10,7 @@ pub trait UniversalReadFileOps {
     /// - `./gridstore/page_2.dat`
     /// - `./gridstore/page_3.dat`
     fn list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>>;
+
+    /// Check if a file exists at the given path.
+    fn exists(path: &Path) -> crate::universal_io::Result<bool>;
 }
