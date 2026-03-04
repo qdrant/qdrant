@@ -7,3 +7,7 @@ storage:
 
 service:
   static_content_dir: /var/lib/qdrant/static
+
+metrics:
+  # Enable or disable per-collection granularity in Prometheus metrics
+  record_per_collection: false
