@@ -326,12 +326,13 @@ impl<S: UniversalRead<u8>> Tracker<S> {
             // No new pointers, no need to reload
             Ok(false)
         } else {
-            // Update in-memory state to reflect new pointers
-            self.header = new_header;
-            self.next_pointer_offset = new_header.next_pointer_offset;
             // reopen storage to make new data visible
             // For some storages it should be a no-op.
             self.storage = Self::open_storage(&self.path)?;
+
+            // Update in-memory state to reflect new pointers
+            self.header = new_header;
+            self.next_pointer_offset = new_header.next_pointer_offset;
             Ok(true)
         }
     }
@@ -376,7 +377,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
         from: PointOffset,
         max: PointOffset,
     ) -> impl Iterator<Item = (PointOffset, Result<Option<ValuePointer>>)> + '_ {
-        let to = self.next_pointer_offset.min(max + 1);
+        let to = self.next_pointer_offset.min(max.saturating_add(1));
         (from..to).map(move |i| (i, self.get(i)))
     }
 
