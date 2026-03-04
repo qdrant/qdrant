@@ -124,10 +124,14 @@ def main() -> None:
             pub use edge::*;
             pub mod segment;
             pub mod shard;
+            pub mod sparse;
             """
         ).lstrip()
         + "".join(
-            sorted(f"mod {pkg};\n" for pkg in packages.keys() - {"segment", "shard"})
+            sorted(
+                f"mod {pkg};\n"
+                for pkg in packages.keys() - {"segment", "shard", "sparse"}
+            )
         ),
         encoding="utf-8",
     )
