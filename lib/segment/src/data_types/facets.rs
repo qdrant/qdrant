@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -30,9 +31,9 @@ impl FacetParams {
 
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum FacetValueRef<'a> {
-    Keyword(&'a str),
-    Int(&'a IntPayloadType),
-    Uuid(&'a u128),
+    Keyword(Cow<'a, str>),
+    Int(IntPayloadType),
+    Uuid(UuidIntType),
     Bool(bool),
 }
 
@@ -40,28 +41,45 @@ impl FacetValueRef<'_> {
     pub fn to_owned(&self) -> FacetValue {
         match self {
             FacetValueRef::Keyword(s) => FacetValue::Keyword((*s).to_string()),
-            FacetValueRef::Int(i) => FacetValue::Int(**i),
-            FacetValueRef::Uuid(uuid) => FacetValue::Uuid(**uuid),
+            FacetValueRef::Int(i) => FacetValue::Int(*i),
+            FacetValueRef::Uuid(uuid) => FacetValue::Uuid(*uuid),
             FacetValueRef::Bool(b) => FacetValue::Bool(*b),
         }
     }
 }
 
+impl<'a> From<Cow<'a, str>> for FacetValueRef<'a> {
+    fn from(s: Cow<'a, str>) -> Self {
+        FacetValueRef::Keyword(s)
+    }
+}
+
 impl<'a> From<&'a str> for FacetValueRef<'a> {
     fn from(s: &'a str) -> Self {
-        FacetValueRef::Keyword(s)
+        FacetValueRef::Keyword(Cow::Borrowed(s))
+    }
+}
+
+impl<'a> From<Cow<'a, IntPayloadType>> for FacetValueRef<'a> {
+    fn from(i: Cow<'a, IntPayloadType>) -> Self {
+        FacetValueRef::Int(*i)
     }
 }
 
 impl<'a> From<&'a IntPayloadType> for FacetValueRef<'a> {
     fn from(i: &'a IntPayloadType) -> Self {
-        FacetValueRef::Int(i)
+        FacetValueRef::Int(*i)
+    }
+}
+impl<'a> From<Cow<'a, UuidIntType>> for FacetValueRef<'a> {
+    fn from(uuid: Cow<'a, UuidIntType>) -> Self {
+        FacetValueRef::Uuid(*uuid)
     }
 }
 
 impl<'a> From<&'a UuidIntType> for FacetValueRef<'a> {
     fn from(uuid: &'a UuidIntType) -> Self {
-        FacetValueRef::Uuid(uuid)
+        FacetValueRef::Uuid(*uuid)
     }
 }
 

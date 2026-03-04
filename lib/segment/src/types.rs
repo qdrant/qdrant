@@ -10,6 +10,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use ahash::AHashSet;
+use bytemuck::{Pod, Zeroable};
 use common::stable_hash::StableHash;
 use common::types::ScoreType;
 use ecow::EcoString;
@@ -1760,8 +1761,11 @@ pub type RawGeoPoint = (f64, f64);
     Default,
     PartialOrd,
     Ord,
+    Pod,
+    Zeroable,
 )]
 #[serde(try_from = "GeoPointShadow")]
+#[repr(C)]
 pub struct GeoPoint {
     pub lon: OrderedFloat<f64>,
     pub lat: OrderedFloat<f64>,

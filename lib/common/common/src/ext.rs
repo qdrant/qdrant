@@ -28,3 +28,18 @@ impl<T: BitStore, O: BitOrder> BitSliceExt for BitSlice<T, O> {
         self.get(index).as_deref().copied()
     }
 }
+
+pub trait ResultOptionExt<T, E> {
+    fn map_some<U, F>(self, f: F) -> Result<Option<U>, E>
+    where
+        F: FnOnce(T) -> U;
+}
+
+impl<T, E> ResultOptionExt<T, E> for Result<Option<T>, E> {
+    fn map_some<U, F>(self, f: F) -> Result<Option<U>, E>
+    where
+        F: FnOnce(T) -> U,
+    {
+        Ok(self?.map(f))
+    }
+}

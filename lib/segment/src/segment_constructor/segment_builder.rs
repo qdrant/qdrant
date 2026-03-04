@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -253,7 +254,7 @@ impl SegmentBuilder {
                 }
                 FieldIndex::UuidMapIndex(index) => {
                     if let Some(ids) = index.get_values(internal_id) {
-                        uuid_hash(&mut ordering, ids.copied());
+                        uuid_hash(&mut ordering, ids.map(Cow::into_owned));
                     }
                     break;
                 }
