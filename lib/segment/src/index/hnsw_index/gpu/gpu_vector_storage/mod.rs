@@ -843,7 +843,7 @@ impl GpuVectorStorage {
 
     /// Number of vectors in each gpu buffer.
     fn points_in_storage_count(num_vectors: usize) -> usize {
-        num_vectors.next_multiple_of(STORAGES_COUNT) / STORAGES_COUNT
+        num_vectors.div_ceil(STORAGES_COUNT)
     }
 
     pub fn descriptor_set_layout(&self) -> Arc<gpu::DescriptorSetLayout> {
