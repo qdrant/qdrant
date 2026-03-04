@@ -1047,9 +1047,10 @@ fn test_live_reload() {
 
     let make_payload = |key: &str, value: &str| -> Payload {
         let mut payload = Payload::default();
-        payload
-            .0
-            .insert(key.to_string(), serde_json::Value::String(value.to_string()));
+        payload.0.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
         payload
     };
 
