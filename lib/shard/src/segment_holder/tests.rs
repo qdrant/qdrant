@@ -628,8 +628,8 @@ fn test_find_points_to_update_and_delete_with_deferred() {
         .unwrap();
 
     // Segment 2 (with deferred): points 1-5 at version 6
-    //   Points 1, 2, 3: NOT deferred (has_point = true)
-    //   Points 4, 5: deferred (has_point = false)
+    //   Points 1, 2, 3: NOT deferred
+    //   Points 4, 5: deferred
     let segment2 = build_segment_with_deferred_1(dir.path());
 
     let mut holder = SegmentHolder::default();
