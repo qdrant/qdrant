@@ -101,6 +101,35 @@ pub trait IdTracker: fmt::Debug {
     /// Excludes soft deleted points.
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
+    /// Iterate over all internal IDs. Optionally filter all deferred points.
+    fn iter_internal_visible(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        match deferred_internal_id {
+            None => self.iter_internal(),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_internal()
+                    .take_while(move |&id| id < deferred_internal_id),
+            ),
+        }
+    }
+
+    /// Iterate starting from a given ID. Optionally filter all deferred points.
+    fn iter_from_visible(
+        &self,
+        external_id: Option<PointIdType>,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        match deferred_internal_id {
+            None => self.iter_from(external_id),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_from(external_id)
+                    .filter(move |&(_, iid)| iid < deferred_internal_id),
+            ),
+        }
+    }
+
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
 

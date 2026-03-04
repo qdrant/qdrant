@@ -71,8 +71,7 @@ impl Segment {
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
-            .iter_from(offset)
-            .filter(|(_, internal_id)| !self.is_point_deferred_internal(*internal_id)) // TODO(jonas): Maybe find a better way instead of filtering)
+            .iter_from_visible(offset, self.deferred_internal_id)
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
@@ -87,8 +86,7 @@ impl Segment {
     ) -> Vec<PointIdType> {
         self.id_tracker
             .borrow()
-            .iter_from(offset)
-            .filter(|(_, internal_id)| !self.is_point_deferred_internal(*internal_id)) // TODO(jonas): Maybe find a better way instead of filtering)
+            .iter_from_visible(offset, self.deferred_internal_id)
             .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()

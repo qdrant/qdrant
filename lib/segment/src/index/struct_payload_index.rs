@@ -624,12 +624,7 @@ impl StructPayloadIndex {
         deferred_internal_id: Option<PointOffsetType>,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = id_tracker
-                .iter_internal()
-                // Filter out deferred points.
-                .take_while(move |point_internal_id| {
-                    !Segment::is_internal_id_deferred(*point_internal_id, deferred_internal_id)
-                });
+            let full_scan_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
 
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
@@ -686,12 +681,7 @@ impl StructPayloadIndex {
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
-            let id_tracker_iterator = id_tracker
-                .iter_internal()
-                // Filter out deferred points.
-                .take_while(move |&internal_point_id| {
-                    !Segment::is_internal_id_deferred(internal_point_id, deferred_internal_id)
-                });
+            let id_tracker_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
 
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)
