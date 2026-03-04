@@ -1028,6 +1028,153 @@ fn test_deferred_flush_with_delete() {
     );
 }
 
+/// Test that `GridstoreReader::live_reload` picks up new data written by a `Gridstore`.
+///
+/// Scenario:
+/// 1. Create a writable Gridstore, write some data, flush.
+/// 2. Open a GridstoreReader on the same path.
+/// 3. Verify reader sees initial data.
+/// 4. Write more data via Gridstore, flush.
+/// 5. Call `live_reload` on reader, verify it sees new data.
+/// 6. Also test that live_reload is a no-op when nothing changed.
+#[test]
+fn test_live_reload() {
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    let make_payload = |key: &str, value: &str| -> Payload {
+        let mut payload = Payload::default();
+        payload
+            .0
+            .insert(key.to_string(), serde_json::Value::String(value.to_string()));
+        payload
+    };
+
+    // Step 1: Write initial data and flush
+    let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
+
+    let payload_0 = make_payload("key", "value_0");
+    let payload_1 = make_payload("key", "value_1");
+    storage.put_value(0, &payload_0, hw_counter_ref).unwrap();
+    storage.put_value(1, &payload_1, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    // Step 2: Open a reader
+    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    assert_eq!(reader.max_point_offset(), 2);
+
+    // Step 3: Verify reader sees initial data
+    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    assert_eq!(v0.as_ref(), Some(&payload_0));
+    let v1 = reader.get_value::<false>(1, &hw_counter).unwrap();
+    assert_eq!(v1.as_ref(), Some(&payload_1));
+
+    // Step 4: live_reload when nothing changed should be a no-op
+    reader.live_reload().unwrap();
+    assert_eq!(reader.max_point_offset(), 2);
+    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    assert_eq!(v0.as_ref(), Some(&payload_0));
+
+    // Step 5: Write more data via writable storage and flush
+    let payload_2 = make_payload("key", "value_2");
+    let payload_3 = make_payload("key", "value_3");
+    storage.put_value(2, &payload_2, hw_counter_ref).unwrap();
+    storage.put_value(3, &payload_3, hw_counter_ref).unwrap();
+    storage.flusher()().unwrap();
+
+    // Reader's max_point_offset is stale before live_reload
+    assert_eq!(reader.max_point_offset(), 2);
+
+    // Step 6: live_reload should update max_point_offset and make new data accessible
+    reader.live_reload().unwrap();
+    assert_eq!(reader.max_point_offset(), 4);
+    let v2 = reader.get_value::<false>(2, &hw_counter).unwrap();
+    assert_eq!(v2.as_ref(), Some(&payload_2));
+    let v3 = reader.get_value::<false>(3, &hw_counter).unwrap();
+    assert_eq!(v3.as_ref(), Some(&payload_3));
+
+    // Original data should still be readable
+    let v0 = reader.get_value::<false>(0, &hw_counter).unwrap();
+    assert_eq!(v0.as_ref(), Some(&payload_0));
+    let v1 = reader.get_value::<false>(1, &hw_counter).unwrap();
+    assert_eq!(v1.as_ref(), Some(&payload_1));
+}
+
+/// Test that `live_reload` works across page boundaries.
+///
+/// Writes enough data to fill pages, then writes more data that creates new pages,
+/// and verifies that live_reload picks up the new pages too.
+#[test]
+fn test_live_reload_across_pages() {
+    use crate::config::DEFAULT_BLOCK_SIZE_BYTES;
+    use crate::fixtures::minimal_payload;
+
+    let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+
+    let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+
+    // Use small page size to force multiple pages
+    let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    let options = StorageOptions {
+        page_size_bytes: Some(page_size),
+        ..Default::default()
+    };
+    let mut storage = Gridstore::new(path.clone(), options).unwrap();
+
+    let payload = minimal_payload();
+
+    // Fill one page
+    let blocks_per_page = page_size / DEFAULT_BLOCK_SIZE_BYTES;
+    let first_batch = blocks_per_page as u32;
+    for i in 0..first_batch {
+        storage.put_value(i, &payload, hw_counter_ref).unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let initial_pages = storage.pages.read().num_pages();
+
+    // Open reader
+    let mut reader = GridstoreReader::<Payload>::open(path.clone()).unwrap();
+    assert_eq!(reader.max_point_offset(), first_batch);
+
+    // Verify reader can read all initial data
+    for i in 0..first_batch {
+        let v = reader.get_value::<false>(i, &hw_counter).unwrap();
+        assert_eq!(v.as_ref(), Some(&payload), "missing point {i}");
+    }
+
+    // Write more data that should create new pages
+    let second_batch = blocks_per_page as u32;
+    for i in first_batch..(first_batch + second_batch) {
+        storage.put_value(i, &payload, hw_counter_ref).unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let new_pages = storage.pages.read().num_pages();
+    assert!(
+        new_pages > initial_pages,
+        "expected more pages after second batch: {new_pages} vs {initial_pages}"
+    );
+
+    // Reader should not see new data yet
+    assert_eq!(reader.max_point_offset(), first_batch);
+
+    // Live reload should pick up new pages and data
+    reader.live_reload().unwrap();
+    assert_eq!(reader.max_point_offset(), first_batch + second_batch);
+
+    // Verify all data is readable
+    for i in 0..(first_batch + second_batch) {
+        let v = reader.get_value::<false>(i, &hw_counter).unwrap();
+        assert_eq!(v.as_ref(), Some(&payload), "missing point {i} after reload");
+    }
+}
+
 /// Test that data is only actually flushed when the Gridstore instance is still valid
 ///
 /// Specifically:
