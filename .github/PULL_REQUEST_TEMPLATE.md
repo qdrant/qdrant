@@ -7,6 +7,9 @@
 <!-- You can erase any parts of this template not applicable to your Pull Request. -->
 
 ### New Feature Submissions:
+* [ ] Add `/claim #3322` to the PR body to claim bounty
+
+### New Feature Submissions:
 
 1. [ ] Does your submission pass tests?
 2. [ ] Have you formatted your code locally using `cargo +nightly fmt --all` command prior to submission?

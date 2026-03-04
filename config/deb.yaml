@@ -7,3 +7,7 @@ storage:
 
 service:
   static_content_dir: /var/lib/qdrant/static
+
+# Enable or disable per-collection metrics (default false)
+metrics:
+  record_per_collection: false
