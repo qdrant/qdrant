@@ -5,6 +5,8 @@ use crate::mmap::{
     Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, MmapSlice, MmapSliceReadOnly, open_read_mmap,
     open_write_mmap,
 };
+use crate::universal_io::file_ops::UniversalReadFileOps;
+use crate::universal_io::local_file_ops::local_list_files;
 use crate::universal_io::{
     ElementOffset, ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead,
     UniversalWrite,
@@ -21,6 +23,15 @@ pub struct MmapUniversal<T: Copy + 'static> {
     ///
     /// `None` on platforms that do not support multiple memory maps to the same file.
     mmap_seq: Option<MmapSliceReadOnly<T>>,
+}
+
+impl<T> UniversalReadFileOps for MmapUniversal<T>
+where
+    T: 'static + Copy,
+{
+    fn list_files(prefix_path: &Path) -> Result<Vec<PathBuf>> {
+        local_list_files(prefix_path)
+    }
 }
 
 impl<T> UniversalRead<T> for MmapUniversal<T>

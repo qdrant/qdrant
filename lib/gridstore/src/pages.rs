@@ -1,6 +1,7 @@
 use std::mem::MaybeUninit;
 use std::path::Path;
 
+use ahash::HashSet;
 use common::maybe_uninit::assume_init_vec;
 use common::universal_io::{
     ElementsRange, FileIndex, Flusher, OpenOptions, UniversalRead, UniversalWrite,
@@ -35,10 +36,12 @@ impl<S: UniversalRead<u8>> Pages<S> {
     pub fn open(dir: &Path) -> Result<Self> {
         let mut pages = Self::default();
 
+        let page_files: HashSet<_> = S::list_files(&dir.join("page_"))?.into_iter().collect();
+
         for page_id in 0.. {
             let page_path = dir.join(format!("page_{page_id}.dat"));
 
-            if !page_path.exists() {
+            if !page_files.contains(&page_path) {
                 break;
             }
 

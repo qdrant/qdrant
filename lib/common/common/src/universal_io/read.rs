@@ -2,10 +2,11 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use super::*;
+use crate::universal_io::file_ops::UniversalReadFileOps;
 
 /// Interface for accessing files in a universal way, abstracting away possible
 /// implementations, such as memory map, io_uring, DIRECTIO, S3, etc.
-pub trait UniversalRead<T: Copy + 'static> {
+pub trait UniversalRead<T: Copy + 'static>: UniversalReadFileOps {
     fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self>
     where
         Self: Sized;

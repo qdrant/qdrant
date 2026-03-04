@@ -104,15 +104,6 @@ impl<V: Blob> Gridstore<V> {
     /// `base_path` is the directory where the storage files will be stored.
     /// It should exist already.
     pub fn new(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
-        if !base_path.exists() {
-            return Err(GridstoreError::service_error("Base path does not exist"));
-        }
-        if !base_path.is_dir() {
-            return Err(GridstoreError::service_error(
-                "Base path is not a directory",
-            ));
-        }
-
         let config = StorageConfig::try_from(options).map_err(GridstoreError::service_error)?;
         let config_path = base_path.join(CONFIG_FILENAME);
 
