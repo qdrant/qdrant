@@ -319,7 +319,7 @@ impl<S: UniversalRead<u8>> Tracker<S> {
 
         if new_header.next_pointer_offset < self.next_pointer_offset {
             Err(GridstoreError::service_error(format!(
-                "live reload cannot decrease pointer count, possible data loss: old size {:#?}, new size {:#?}",
+                "live reload cannot decrease pointer count, possible data loss: old count {:#?}, new count {:#?}",
                 self.next_pointer_offset, new_header.next_pointer_offset
             )))
         } else if new_header.next_pointer_offset == self.next_pointer_offset {
@@ -374,8 +374,10 @@ impl<S: UniversalRead<u8>> Tracker<S> {
     pub fn iter_pointers(
         &self,
         from: PointOffset,
+        max: PointOffset,
     ) -> impl Iterator<Item = (PointOffset, Result<Option<ValuePointer>>)> + '_ {
-        (from..self.next_pointer_offset).map(move |i| (i, self.get(i)))
+        let to = self.next_pointer_offset.min(max + 1);
+        (from..to).map(move |i| (i, self.get(i)))
     }
 
     pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {

@@ -87,6 +87,7 @@ impl<V: Blob> GridstoreReader<V> {
 
     pub fn iter<F, E>(
         &self,
+        max_id: PointOffset,
         callback: F,
         hw_counter: HwMetricRefCounter,
     ) -> std::result::Result<(), E>
@@ -94,7 +95,9 @@ impl<V: Blob> GridstoreReader<V> {
         F: FnMut(PointOffset, V) -> std::result::Result<bool, E>,
         E: From<GridstoreError>,
     {
-        let control_flow = self.view().iter(0, usize::MAX, callback, hw_counter)?;
+        let control_flow = self
+            .view()
+            .iter(0, max_id, usize::MAX, callback, hw_counter)?;
 
         // we set usize::MAX as the max iteration, so we should always iterate the entire thing.
         debug_assert!(matches!(control_flow, ControlFlow::Break(())));

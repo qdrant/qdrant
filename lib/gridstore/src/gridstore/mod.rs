@@ -396,9 +396,15 @@ impl<V: Blob> Gridstore<V> {
         let mut from_offset = 0;
         // Iterate in batches to allow releasing read locks, see:
         // <https://github.com/qdrant/qdrant/pull/7983>
-        while let ControlFlow::Continue(next_offset) =
-            self.with_view(|view| view.iter(from_offset, BATCH_SIZE, &mut callback, hw_counter))?
-        {
+        while let ControlFlow::Continue(next_offset) = self.with_view(|view| {
+            view.iter(
+                from_offset,
+                PointOffset::MAX,
+                BATCH_SIZE,
+                &mut callback,
+                hw_counter,
+            )
+        })? {
             from_offset = next_offset;
         }
 
