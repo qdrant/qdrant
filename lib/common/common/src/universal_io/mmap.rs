@@ -34,7 +34,7 @@ where
     }
 
     fn exists(path: &Path) -> Result<bool> {
-        Ok(path.exists())
+        fs_err::exists(path).map_err(Into::into)
     }
 }
 

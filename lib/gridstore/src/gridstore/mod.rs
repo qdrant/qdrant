@@ -61,14 +61,15 @@ impl<V: Blob> Gridstore<V> {
     /// List all files belonging to this storage (tracker, pages, bitmask, config).
     pub fn files(&self) -> Vec<PathBuf> {
         let tracker = self.tracker.read();
-        let num_pages = self.pages.read().num_pages();
+        let pages = self.pages.read();
+        let num_pages = pages.num_pages();
 
         let mut paths = Vec::with_capacity(num_pages + 2);
         for tracker_file in tracker.files() {
             paths.push(tracker_file);
         }
         for page_id in 0..num_pages as PageId {
-            paths.push(self.pages.read().page_path(page_id));
+            paths.push(pages.page_path(page_id));
         }
         paths.push(self.base_path.join(CONFIG_FILENAME));
         for bitmask_file in self.bitmask.read().files() {

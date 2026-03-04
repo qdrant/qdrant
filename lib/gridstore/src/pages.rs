@@ -183,19 +183,25 @@ impl<S: UniversalRead<u8>> Pages<S> {
     /// - Partial writes are possible, it is up to the caller to read only fully written data.
     pub fn live_reload(&mut self) -> Result<()> {
         let num_pages = self.pages.len();
-        let mut last_page_id = (num_pages - 1) as PageId;
+        let next_page_id = if num_pages == 0 {
+            0
+        } else {
+            num_pages as PageId
+        };
+
         if num_pages > 0 {
             self.pages.pop();
             // Re-attach the last page, which should have the latest data.
-            let page_path = self.page_path(last_page_id);
+            let page_path = self.page_path((num_pages - 1) as PageId);
             self.attach_page(&page_path)?;
         }
 
+        let mut page_id = next_page_id;
         loop {
-            last_page_id += 1;
-            let page_path = self.page_path(last_page_id);
+            let page_path = self.page_path(page_id);
             if S::exists(&page_path)? {
                 self.attach_page(&page_path)?;
+                page_id += 1;
             } else {
                 break;
             }
