@@ -90,6 +90,11 @@ jobs:
             if [ "$base" = "__init__.py" ]; then
               continue
             fi
+            # Requires collection "test" with specific segment state; skip in CI
+            if [ "$base" = "download_partial.py" ]; then
+              echo "Skipping $f (needs pre-populated collection)"
+              continue
+            fi
             echo "Running example: $f"
             python "$f"
           done
