@@ -196,7 +196,7 @@ impl<'a> IoUringRuntime<'a> {
             self.io_uring
                 .submission()
                 .push(&entry)
-                .map_err(|err| io::Error::other(err))?;
+                .map_err(io::Error::other)?;
         }
 
         Ok(())
