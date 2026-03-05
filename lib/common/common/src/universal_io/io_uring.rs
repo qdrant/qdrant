@@ -68,6 +68,7 @@ impl UniversalRead<u8> for IoUringFile {
             rt.submit_and_wait(1).expect("read operation submitted");
 
             let (_, buffer) = rt.completed().next().expect("read operation completed")?;
+            let buffer = buffer.expect("associated buffer returned");
             Ok(Cow::from(buffer))
         })
     }
@@ -96,6 +97,7 @@ impl UniversalRead<u8> for IoUringFile {
 
                 for result in rt.completed() {
                     let (id, buffer) = result?;
+                    let buffer = buffer.expect("associated buffer returned");
                     callback(id as _, &buffer)?;
                 }
             }
@@ -164,7 +166,7 @@ impl UniversalWrite<u8> for IoUringFile {
                 rt.submit_and_wait(1)?;
 
                 for result in rt.completed() {
-                    result?; // TODO: Handle `opcode::Write` that does not have associated buffer
+                    let _ = result?;
                 }
             }
 
@@ -214,7 +216,7 @@ impl<'a> IoUringRuntime<'a> {
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, Vec<u8>)>> {
+    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, Option<Vec<u8>>)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
@@ -232,11 +234,7 @@ impl<'a> IoUringRuntime<'a> {
 
             let length = result as _;
 
-            let buffer = self
-                .buffers
-                .take(id, length)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, format!("")))?;
-
+            let buffer = self.buffers.take(id, length);
             Ok((id, buffer))
         })
     }
@@ -252,7 +250,7 @@ impl<'a> Drop for IoUringRuntime<'a> {
 
             for result in self.completed() {
                 match result {
-                    Ok((_, buffer)) => drop(buffer),
+                    Ok(_) => (),
                     Err(err) => log::debug!("{err}"),
                 }
             }
