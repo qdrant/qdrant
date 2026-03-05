@@ -28,7 +28,7 @@ use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
 use super::FieldIndexBuilderTrait;
 use super::facet_index::FacetIndex;
-use super::mmap_point_to_values::StoredValue;
+use super::stored_point_to_values::StoredValue;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};

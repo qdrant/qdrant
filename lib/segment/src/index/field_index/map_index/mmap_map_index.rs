@@ -22,7 +22,7 @@ use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
+use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
 const DELETED_PATH: &str = "deleted.bin";
 const HASHMAP_PATH: &str = "values_to_points.bin";
@@ -38,7 +38,7 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
 
 pub(super) struct Storage<N: MapIndexKey + Key + ?Sized> {
     pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
-    point_to_values: MmapPointToValues<N, MmapUniversal<u8>>,
+    point_to_values: StoredPointToValues<N, MmapUniversal<u8>>,
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
 }
 
@@ -64,7 +64,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let do_populate = !is_on_disk;
 
         let hashmap = MmapHashMap::open(&hashmap_path, do_populate)?;
-        let point_to_values = MmapPointToValues::open(path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
         let deleted = mmap::open_write_mmap(&deleted_path, AdviceSetting::Global, do_populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
@@ -109,7 +109,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
 
-        MmapPointToValues::<N, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<N, MmapUniversal<u8>>::from_iter(
             path,
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (

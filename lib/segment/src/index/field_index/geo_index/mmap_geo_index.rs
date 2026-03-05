@@ -18,7 +18,7 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::GeoHash;
-use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
+use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 use crate::types::GeoPoint;
 
 const DELETED_PATH: &str = "deleted.bin";
@@ -76,7 +76,7 @@ pub(super) struct Storage {
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
     pub(super) points_map_ids: MmapSlice<PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    pub(super) point_to_values: MmapPointToValues<GeoPoint, MmapUniversal<u8>>,
+    pub(super) point_to_values: StoredPointToValues<GeoPoint, MmapUniversal<u8>>,
     /// Deleted flags for each PointOffsetType
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
 }
@@ -102,7 +102,7 @@ impl MmapGeoMapIndex {
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
         // Create the point-to-value mapping and persist in the mmap file
-        MmapPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
             path,
             dynamic_index
                 .point_to_values
@@ -236,7 +236,7 @@ impl MmapGeoMapIndex {
                 populate,
             )?)?
         };
-        let point_to_values = MmapPointToValues::open(path, true)?;
+        let point_to_values = StoredPointToValues::open(path, true)?;
 
         let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
