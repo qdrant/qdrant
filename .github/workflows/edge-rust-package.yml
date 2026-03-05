@@ -39,6 +39,19 @@ jobs:
       - name: Amalgamate
         run: lib/edge/publish/amalgamate.py
 
-      - name: Cargo check
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Prepare facet_test snapshot
         working-directory: lib/edge/publish
-        run: cargo check -p examples
+        run: examples/prepare_facet_snapshot.sh
+
+      - name: Build and run Rust example binaries
+        working-directory: lib/edge/publish
+        run: |
+          cargo build -p examples --release
+          for bin in examples/src/bin/*.rs; do
+            name=$(basename "$bin" .rs)
+            echo "Running example: $name"
+            cargo run -p examples --release --bin "$name"
+          done
