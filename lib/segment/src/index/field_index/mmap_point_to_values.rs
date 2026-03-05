@@ -42,8 +42,8 @@ impl<T: bytemuck::Pod> MmapValue for T {
 
     fn read_from_mmap(bytes: Cow<'_, [u8]>, _count: usize) -> Option<Self::CowValues<'_>> {
         let cow = match bytes {
-            Cow::Borrowed(slice) => Cow::Borrowed(bytemuck::cast_slice(slice)),
-            Cow::Owned(vec) => Cow::Owned(bytemuck::cast_vec(vec)),
+            Cow::Borrowed(slice) => Cow::Borrowed(bytemuck::try_cast_slice(slice).ok()?),
+            Cow::Owned(vec) => Cow::Owned(bytemuck::try_cast_vec(vec).ok()?),
         };
         Some(CowSlice(cow))
     }
