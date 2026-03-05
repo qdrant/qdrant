@@ -376,28 +376,34 @@ impl SegmentHolder {
         // - Never delete deferred points — optimizer handles them
         // - Delete older non-deferred copies only if the best version has a non-deferred copy too
         // - Keep older non-deferred copies when the latest is deferred
-        let mut latest: AHashMap<PointIdType, PointLatest> = AHashMap::with_capacity(ids.len());
+        let mut latest_points: AHashMap<PointIdType, PointLatest> =
+            AHashMap::with_capacity(ids.len());
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         let segment_count = self.len().max(1);
         let default_vec_capacity = ids.len() / segment_count;
 
         for (segment_id, segment) in self.iter() {
-            let segment_lock = segment.get().read();
+            let segment_arc = segment.get();
+            let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
-            for point_id in segment_points {
-                let Some(version) = segment_lock.point_version(point_id) else {
+            for segment_point in segment_points {
+                let Some(point_version) = segment_lock.point_version(segment_point) else {
                     continue;
                 };
-                let is_deferred = segment_lock.point_is_deferred(point_id);
-                match latest.entry(point_id) {
+                let is_deferred = segment_lock.point_is_deferred(segment_point);
+                match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((version, smallvec![(segment_id, is_deferred)], !is_deferred));
+                        entry.insert((
+                            point_version,
+                            smallvec![(segment_id, is_deferred)],
+                            !is_deferred,
+                        ));
                     }
                     Entry::Occupied(mut entry) => {
                         let (best_ver, best_segs, best_has_non_deferred) = entry.get_mut();
-                        match version.cmp(best_ver) {
+                        match point_version.cmp(best_ver) {
                             std::cmp::Ordering::Greater => {
                                 // Displace old latest copies to delete, but only if:
                                 // - the old copy is non-deferred, AND
@@ -411,13 +417,13 @@ impl SegmentHolder {
                                                 .or_insert_with(|| {
                                                     Vec::with_capacity(default_vec_capacity)
                                                 })
-                                                .push(point_id);
+                                                .push(segment_point);
                                         }
                                     }
                                 } else {
                                     best_segs.clear();
                                 }
-                                *best_ver = version;
+                                *best_ver = point_version;
                                 *best_has_non_deferred = !is_deferred;
                                 best_segs.push((segment_id, is_deferred));
                             }
@@ -433,7 +439,7 @@ impl SegmentHolder {
                                     to_delete
                                         .entry(segment_id)
                                         .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
-                                        .push(point_id);
+                                        .push(segment_point);
                                 }
                             }
                         }
@@ -445,7 +451,7 @@ impl SegmentHolder {
         // Group points to update by segments
         let mut to_update: AHashMap<SegmentId, Vec<PointIdType>> =
             AHashMap::with_capacity(segment_count);
-        for (point_id, (_version, segments, _)) in latest {
+        for (point_id, (_version, segments, _)) in latest_points {
             for (segment_id, _) in segments {
                 to_update
                     .entry(segment_id)
