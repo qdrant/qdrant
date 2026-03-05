@@ -1,4 +1,4 @@
-# %PACKAGE% and %DEPS% are injected by python script.
+# %PACKAGE%, %DEPS%, and %VERSION% are injected by python script.
 
 # Insert `%PACKAGE%` after `crate::`.
 # Before: `crate::types::Distance`
@@ -61,3 +61,14 @@ language: rust
 rule:
   pattern: "#[anonymize($$$ARGS)]"
 fix: ""
+
+# Inline package versions.
+# Why: these are significant for migration logic.
+# Before: `env!("CARGO_PKG_VERSION")`
+# After:  `"0.6.0"`
+---
+id: replace-pkg-version
+language: rust
+rule:
+  pattern: env!("CARGO_PKG_VERSION")
+fix: '"%VERSION%"'
