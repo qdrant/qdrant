@@ -29,11 +29,6 @@ jobs:
           rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/mold"]
           EOF
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install Python
         uses: actions/setup-python@v6
         with:

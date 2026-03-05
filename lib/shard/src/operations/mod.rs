@@ -171,6 +171,7 @@ impl ClockTag {
     }
 }
 
+#[cfg(feature = "api")]
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
         let api::grpc::qdrant::ClockTag {
@@ -190,6 +191,7 @@ impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     }
 }
 
+#[cfg(feature = "api")]
 impl From<ClockTag> for api::grpc::qdrant::ClockTag {
     fn from(tag: ClockTag) -> Self {
         let ClockTag {
@@ -337,6 +339,7 @@ mod tests {
             let delete = Self::DeleteVectors(
                 PointIdsList {
                     points: Vec::new(),
+                    #[cfg(feature = "api")]
                     shard_key: None,
                 },
                 Vec::new(),

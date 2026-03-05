@@ -1,6 +1,7 @@
 use bytemuck::TransparentWrapper as _;
 use derive_more::Into;
 use pyo3::prelude::*;
+use segment::data_types::order_by::OrderByInterface;
 use segment::types::*;
 use shard::scroll::*;
 

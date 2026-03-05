@@ -1,5 +1,3 @@
-use api::conversions::json::payload_to_proto;
-use api::grpc::conversions::convert_shard_key_to_grpc;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::segment_record::SegmentRecord;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal};
@@ -89,8 +87,12 @@ impl TryFrom<RecordInternal> for PointStructPersisted {
     }
 }
 
+#[cfg(feature = "api")]
 impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: RecordInternal) -> Self {
+        use api::conversions::json::payload_to_proto;
+        use api::grpc::conversions::convert_shard_key_to_grpc;
+
         let RecordInternal {
             id,
             payload,
@@ -108,6 +110,7 @@ impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
     }
 }
 
+#[cfg(feature = "api")]
 impl From<RecordInternal> for api::rest::Record {
     fn from(value: RecordInternal) -> Self {
         let RecordInternal {

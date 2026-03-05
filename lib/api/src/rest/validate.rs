@@ -6,8 +6,8 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::{
     Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
-    OrderByInterface, PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput,
-    Sample, VectorInput,
+    PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput, Sample,
+    VectorInput,
 };
 use crate::rest::FeedbackStrategy;
 
@@ -141,15 +141,6 @@ impl Validate for FormulaQuery {
         }
 
         Ok(())
-    }
-}
-
-impl Validate for OrderByInterface {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            OrderByInterface::Key(_key) => Ok(()), // validated during parsing
-            OrderByInterface::Struct(order_by) => order_by.validate(),
-        }
     }
 }
 

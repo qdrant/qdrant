@@ -12,11 +12,12 @@ edition = "2024"
 workspace = true
 
 [features]
+default = ["api"]
 testing = []
 staging = []
 
 [dependencies]
-api = { path = "../api" }
+api = { path = "../api", optional = true }
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 sparse = { path = "../sparse" }

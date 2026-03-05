@@ -1,10 +1,11 @@
-use api::rest::SearchRequestInternal;
 use common::types::ScoreType;
+#[cfg(feature = "api")]
 use itertools::Itertools as _;
-use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, VectorInternal};
+#[cfg(feature = "api")]
+use segment::data_types::vectors::NamedQuery;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use sparse::common::sparse_vector::validate_sparse_vector_impl;
+#[cfg(feature = "api")]
+use segment::{data_types::vectors::VectorInternal, vector_storage::query::ContextPair};
 
 use crate::query::query_enum::QueryEnum;
 
@@ -42,9 +43,13 @@ impl CoreSearchRequest {
     }
 }
 
-impl From<SearchRequestInternal> for CoreSearchRequest {
-    fn from(request: SearchRequestInternal) -> Self {
-        let SearchRequestInternal {
+#[cfg(feature = "api")]
+impl From<api::rest::SearchRequestInternal> for CoreSearchRequest {
+    fn from(request: api::rest::SearchRequestInternal) -> Self {
+        #[cfg(feature = "api")]
+        use segment::data_types::vectors::NamedVectorStruct;
+
+        let api::rest::SearchRequestInternal {
             vector,
             filter,
             score_threshold,
@@ -67,10 +72,14 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
     }
 }
 
+#[cfg(feature = "api")]
 impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     type Error = tonic::Status;
 
     fn try_from(value: api::grpc::qdrant::CoreSearchPoints) -> Result<Self, Self::Error> {
+        use segment::data_types::vectors::VectorInternal;
+        use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
+
         let query = value
             .query
             .and_then(|query| query.query)
@@ -148,6 +157,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     }
 }
 
+#[cfg(feature = "api")]
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
 ) -> Result<ContextPair<VectorInternal>, tonic::Status> {
@@ -163,10 +173,13 @@ fn try_context_pair_from_grpc(
     }
 }
 
+#[cfg(feature = "api")]
 impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
     type Error = tonic::Status;
 
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
+        use sparse::common::sparse_vector::validate_sparse_vector_impl;
+
         let api::grpc::qdrant::SearchPoints {
             collection_name: _,
             vector,

@@ -352,9 +352,7 @@ impl Auth {
 mod tests_ops {
     use std::fmt::Debug;
 
-    use api::rest::{
-        self, LookupLocation, OrderByInterface, RecommendStrategy, SearchRequestInternal,
-    };
+    use api::rest::{self, LookupLocation, RecommendStrategy, SearchRequestInternal};
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, ConditionalInsertOperationInternal,
@@ -371,6 +369,7 @@ mod tests_ops {
         CollectionUpdateOperationsDiscriminants, CreateIndex, FieldIndexOperations,
         FieldIndexOperationsDiscriminants,
     };
+    use segment::data_types::order_by::OrderByInterface;
     use segment::data_types::vectors::NamedQuery;
     use segment::types::{
         Condition, ExtendedPointId, Filter, Payload, PointIdType, SearchParams,

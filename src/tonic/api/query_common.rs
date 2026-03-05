@@ -11,7 +11,6 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse,
 };
 use api::grpc::{InferenceUsage, Usage};
-use api::rest::OrderByInterface;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -22,7 +21,7 @@ use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::{OrderBy, OrderByInterface};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use shard::count::CountRequestInternal;
 use shard::query::query_enum::QueryEnum;

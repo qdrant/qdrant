@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 
-use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
+use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
 use uuid::Uuid;
 
 use super::schema::{ScoredPoint, Vector};
 use super::{
-    FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, OrderByInterface,
-    Query, QueryInterface, VectorOutput, VectorStructOutput,
+    FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, Query,
+    QueryInterface, VectorOutput, VectorStructOutput,
 };
 use crate::grpc;
+use crate::rest::NamedVectorStruct;
 use crate::rest::models::InferenceUsage;
-use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {
@@ -124,19 +123,6 @@ impl From<DenseVector> for NamedVectorStruct {
 impl From<segment::data_types::vectors::NamedVector> for NamedVectorStruct {
     fn from(v: segment::data_types::vectors::NamedVector) -> Self {
         NamedVectorStruct::Dense(v)
-    }
-}
-
-impl From<OrderByInterface> for OrderBy {
-    fn from(order_by: OrderByInterface) -> Self {
-        match order_by {
-            OrderByInterface::Key(key) => OrderBy {
-                key,
-                direction: None,
-                start_from: None,
-            },
-            OrderByInterface::Struct(order_by) => order_by,
-        }
     }
 }
 
