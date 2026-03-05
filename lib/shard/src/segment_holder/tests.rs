@@ -671,19 +671,21 @@ fn test_find_points_to_update_and_delete_with_deferred() {
     assert!(delete_2.contains(&3.into()));
 
     // Point 4: seg1 v10 (non-deferred) vs seg2 v6 (deferred)
-    // seg1 v10 is latest non-deferred → update seg1
-    // seg2 v6 deferred is NOT newer than non-deferred v10 → delete seg2
+    // seg1 v10 is latest → update seg1
+    // seg2 v6 is deferred → never deleted (optimizer handles it)
     assert!(update_1.contains(&4.into()));
     assert!(!update_2.contains(&4.into()));
-    assert!(delete_2.contains(&4.into()));
+    assert!(!delete_2.contains(&4.into()));
 
     // Point 5: seg1 v10 (non-deferred) vs seg2 v6 (deferred) → same as point 4
     assert!(update_1.contains(&5.into()));
     assert!(!update_2.contains(&5.into()));
-    assert!(delete_2.contains(&5.into()));
+    assert!(!delete_2.contains(&5.into()));
 
-    // No deletes for seg1 — it always had the higher non-deferred version
+    // No deletes at all — seg1 always had the latest, seg2 deferred copies are left alone
     assert!(delete_1.is_empty());
+    assert!(!delete_2.contains(&4.into()));
+    assert!(!delete_2.contains(&5.into()));
 }
 
 /// Test that a deferred-only point (no non-deferred copy anywhere) is kept for update.
@@ -773,17 +775,19 @@ fn test_find_points_to_update_and_delete_with_deferred_winning() {
     let delete_2 = delete_set(&sid2);
 
     // Point 4: seg1 v3 (non-deferred) vs seg2 v6 (deferred)
-    // seg1 v3 is latest non-deferred → update seg1
-    // seg2 v6 deferred is strictly newer than non-deferred v3 → also update seg2
-    assert!(update_1.contains(&4.into()));
+    // seg2 v6 is latest → update seg2
+    // seg1 v3 is older non-deferred but best is deferred → keep seg1 (don't discard
+    // the non-deferred copy in favor of a deferred one)
+    assert!(!update_1.contains(&4.into()));
     assert!(update_2.contains(&4.into()));
+    assert!(!delete_1.contains(&4.into()));
 
     // Point 5: same situation as point 4
-    assert!(update_1.contains(&5.into()));
+    assert!(!update_1.contains(&5.into()));
     assert!(update_2.contains(&5.into()));
+    assert!(!delete_1.contains(&5.into()));
 
-    // No deletes — both copies are winners
-    assert!(delete_1.is_empty());
+    // No deletes at all — deferred copies never deleted, non-deferred kept as safety net
     assert!(delete_2.is_empty());
 }
 
