@@ -67,6 +67,36 @@ impl Hash for StartFrom {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected a string, or an object with a key, direction and/or start_from")]
+pub enum OrderByInterface {
+    Key(JsonPath),
+    Struct(OrderBy),
+}
+
+impl From<OrderByInterface> for OrderBy {
+    fn from(interface: OrderByInterface) -> Self {
+        match interface {
+            OrderByInterface::Key(key) => OrderBy {
+                key,
+                direction: None,
+                start_from: None,
+            },
+            OrderByInterface::Struct(order_by) => order_by,
+        }
+    }
+}
+
+impl Validate for OrderByInterface {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            OrderByInterface::Key(_) => Ok(()), // validated during parsing
+            OrderByInterface::Struct(order_by) => order_by.validate(),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {

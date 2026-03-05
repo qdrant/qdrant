@@ -33,7 +33,6 @@ REPO_ROOT = Path(__file__).parent.parent.parent.parent
 AMALGAMATION = Path(__file__).parent / "qdrant-edge"
 
 PACKAGES_TO_INCLUDE = [
-    "api",
     "common",
     "edge",
     "gridstore",
@@ -135,12 +134,6 @@ def main() -> None:
 
     # Regex-based fixups.
     substitute(
-        AMALGAMATION / "src/api/grpc/qdrant.rs",
-        # ast-grep don't replace string literals
-        (r'custom\(function = "crate::(.*)"\)', r'custom(function = "crate::api::\1")'),
-        (r'custom\(function = "(common::.*)"\)', r'custom(function = "crate::\1")'),
-    )
-    substitute(
         AMALGAMATION / "build_common.rs",
         # Make it callable from the main build.rs.
         (r"^fn main\(\)", "pub fn main()"),
@@ -170,14 +163,6 @@ def main() -> None:
             r'builder\.compile\("simd_utils"\);',
             'builder.compile("simd_utils_quantization");',
         ),
-    )
-    substitute(
-        AMALGAMATION / "src/api/grpc/mod.rs",
-        # Remove code that doesn't compile.
-        (r"^pub mod dynamic_channel_pool;$\n", ""),
-        (r"^pub mod dynamic_pool;$\n", ""),
-        (r"^pub mod transport_channel_pool;$\n", ""),
-        (r"^pub const QDRANT_DESCRIPTOR_SET:.*$\n", ""),
     )
     substitute(
         AMALGAMATION / "src/segment/common/anonymize.rs",

@@ -72,7 +72,7 @@ common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 issues = { path = "../common/issues" }
 segment = { path = "../segment", default-features = false }
-shard = { path = "../shard", default-features = false }
+shard = { path = "../shard", default-features = false, features = ["api"] }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 wal = { path = "../wal" }

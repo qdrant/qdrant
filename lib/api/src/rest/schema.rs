@@ -8,7 +8,8 @@ use ordered_float::NotNan;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::index::{StemmingAlgorithm, StopwordsInterface, TokenizerType};
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::OrderByInterface;
+use segment::data_types::vectors::{DenseVector, MultiDenseVector};
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, Filter, GeoPoint, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey,
@@ -20,12 +21,6 @@ use sparse::common::sparse_vector::SparseVector;
 use validator::{Validate, ValidationErrors};
 
 use crate::rest::validate::validate_relevance_feedback_input;
-
-/// Type for dense vector
-pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
-
-/// Type for multi dense vector
-pub type MultiDenseVector = Vec<DenseVector>;
 
 /// Vector Data
 /// Vectors can be described directly with values
@@ -508,14 +503,6 @@ pub enum NamedVectorStruct {
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
     // No support for multi-dense vectors in search
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Hash)]
-#[serde(untagged)]
-#[serde(expecting = "Expected a string, or an object with a key, direction and/or start_from")]
-pub enum OrderByInterface {
-    Key(JsonPath),
-    Struct(OrderBy),
 }
 
 /// Fusion algorithm allows to combine results of multiple prefetches.
