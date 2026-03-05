@@ -113,10 +113,7 @@ impl Raft for RaftService {
             );
 
             self.consensus_state
-                .propose_consensus_op_with_await(
-                    ConsensusOperations::RemovePeer(old_peer_id),
-                    None,
-                )
+                .propose_consensus_op_with_await(ConsensusOperations::RemovePeer(old_peer_id), None)
                 .await
                 .map_err(|err| {
                     Status::internal(format!("Failed to remove old peer {old_peer_id}: {err}"))
