@@ -60,10 +60,10 @@ impl UniversalRead<u8> for IoUringFile {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
-            let entry = rt.buffers.read(0, self.fd(), range).expect("ID is unique");
+            let entry = rt.buffers.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
 
-            rt.submit_and_wait(1).expect("read operation submitted");
+            rt.submit_and_wait(1)?;
 
             let (_, buffer) = rt.completed().next().expect("read operation completed")?;
             let buffer = buffer.expect("associated buffer returned");
@@ -82,14 +82,14 @@ impl UniversalRead<u8> for IoUringFile {
 
             while ranges.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|buffers| {
-                    let (id, range) = ranges.next()?;
+                    let Some((id, range)) = ranges.next() else {
+                        return Ok(None);
+                    };
 
-                    let entry = buffers
-                        .read(id as _, self.fd(), range)
-                        .expect("ID is unique");
+                    let entry = buffers.read(id as _, self.fd(), range)?;
 
-                    Some(entry)
-                });
+                    Ok(Some(entry))
+                })?;
 
                 rt.submit_and_wait(1)?;
 
@@ -146,7 +146,9 @@ impl UniversalWrite<u8> for IoUringFile {
 
             while offset_data.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|_| {
-                    let (id, (offset, data)) = offset_data.next()?;
+                    let Some((id, (offset, data))) = offset_data.next() else {
+                        return Ok(None);
+                    };
 
                     let length = u32::try_from(data.len()).expect("data length is within u32");
                     let entry = opcode::Write::new(self.fd(), data.as_ptr(), length)
@@ -154,8 +156,8 @@ impl UniversalWrite<u8> for IoUringFile {
                         .build()
                         .user_data(id as _);
 
-                    Some(entry)
-                });
+                    Ok(Some(entry))
+                })?;
 
                 rt.submit_and_wait(1)?;
 
@@ -194,26 +196,31 @@ impl<'a> IoUringRuntime<'a> {
             self.io_uring
                 .submission()
                 .push(&entry)
-                .expect("SQE is not full");
+                .map_err(|err| io::Error::other(err))?;
         }
 
         Ok(())
     }
 
-    pub fn enqueue(&mut self, mut entries: impl FnMut(&mut BufferStore) -> Option<squeue::Entry>) {
+    pub fn enqueue(
+        &mut self,
+        mut entries: impl FnMut(&mut BufferStore) -> io::Result<Option<squeue::Entry>>,
+    ) -> io::Result<()> {
         let mut sqe = self.io_uring.submission();
 
         if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
-            return;
+            return Ok(());
         }
 
-        while let Some(entry) = entries(&mut self.buffers) {
+        while let Some(entry) = entries(&mut self.buffers)? {
             unsafe { sqe.push(&entry).expect("SQE is not full") };
 
             if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
                 break;
             }
         }
+
+        Ok(())
     }
 
     pub fn submit_and_wait(&mut self, want: usize) -> io::Result<()> {
@@ -274,7 +281,7 @@ impl BufferStore {
         }
     }
 
-    pub fn read(&mut self, id: u64, fd: Fd, range: ElementsRange) -> Option<squeue::Entry> {
+    pub fn read(&mut self, id: u64, fd: Fd, range: ElementsRange) -> io::Result<squeue::Entry> {
         let ElementsRange {
             start: offset,
             length,
@@ -288,16 +295,16 @@ impl BufferStore {
             .build()
             .user_data(id);
 
-        Some(entry)
+        Ok(entry)
     }
 
-    pub fn create(&mut self, id: u64, length: usize) -> Option<&mut Vec<u8>> {
+    pub fn create(&mut self, id: u64, length: usize) -> io::Result<&mut Vec<u8>> {
         let hash_map::Entry::Vacant(entry) = self.buffers.entry(id) else {
-            return None;
+            return Err(io::Error::other(format!("buffer {id} already exists")));
         };
 
         let buffer = entry.insert(Vec::with_capacity(length));
-        Some(buffer)
+        Ok(buffer)
     }
 
     pub fn take(&mut self, id: u64, length: usize) -> Option<Vec<u8>> {
