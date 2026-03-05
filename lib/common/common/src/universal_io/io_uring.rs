@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, hash_map};
-use std::fs::{self, File};
 use std::io;
 use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{IoUring, opcode, squeue};
+use fs_err as fs;
 
 use super::*;
 
@@ -19,7 +19,7 @@ const IO_URING_QUEUE_LENGTH: u32 = 16;
 
 #[derive(Debug)]
 pub struct IoUringFile {
-    file: Arc<File>,
+    file: Arc<fs::File>,
 }
 
 impl IoUringFile {
@@ -47,7 +47,7 @@ impl UniversalRead<u8> for IoUringFile {
             .read(true)
             .write(true)
             .create(false)
-            .open(path)?;
+            .open(path.as_ref())?;
 
         let file = Self {
             file: Arc::new(file),
@@ -226,10 +226,9 @@ impl<'a> IoUringRuntime<'a> {
             if result < 0 {
                 self.buffers.drop(id);
 
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("io_uring operation {id} failed ({result})"),
-                ));
+                return Err(io::Error::other(format!(
+                    "io_uring operation {id} failed ({result})"
+                )));
             }
 
             let length = result as _;
