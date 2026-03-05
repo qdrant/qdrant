@@ -402,15 +402,18 @@ impl SegmentHolder {
                         ));
                     }
                     Entry::Occupied(mut entry) => {
-                        let (best_ver, best_segs, best_has_non_deferred) = entry.get_mut();
-                        match point_version.cmp(best_ver) {
+                        let (latest_version, segments_with_latest, latest_has_non_deferred) =
+                            entry.get_mut();
+                        match point_version.cmp(latest_version) {
                             std::cmp::Ordering::Greater => {
                                 // Displace old latest copies to delete, but only if:
                                 // - the old copy is non-deferred, AND
                                 // - the new latest is also non-deferred
                                 // (keep non-deferred copies when displaced by deferred)
                                 if !is_deferred {
-                                    for (old_seg_id, old_is_deferred) in best_segs.drain(..) {
+                                    for (old_seg_id, old_is_deferred) in
+                                        segments_with_latest.drain(..)
+                                    {
                                         if !old_is_deferred {
                                             to_delete
                                                 .entry(old_seg_id)
@@ -421,21 +424,21 @@ impl SegmentHolder {
                                         }
                                     }
                                 } else {
-                                    best_segs.clear();
+                                    segments_with_latest.clear();
                                 }
-                                *best_ver = point_version;
-                                *best_has_non_deferred = !is_deferred;
-                                best_segs.push((segment_id, is_deferred));
+                                *latest_version = point_version;
+                                *latest_has_non_deferred = !is_deferred;
+                                segments_with_latest.push((segment_id, is_deferred));
                             }
                             std::cmp::Ordering::Equal => {
-                                *best_has_non_deferred |= !is_deferred;
-                                best_segs.push((segment_id, is_deferred));
+                                *latest_has_non_deferred |= !is_deferred;
+                                segments_with_latest.push((segment_id, is_deferred));
                             }
                             std::cmp::Ordering::Less => {
                                 // Older non-deferred: only delete if latest has a
                                 // non-deferred copy (don't discard the last
                                 // non-deferred copy in favor of a deferred latest)
-                                if !is_deferred && *best_has_non_deferred {
+                                if !is_deferred && *latest_has_non_deferred {
                                     to_delete
                                         .entry(segment_id)
                                         .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
