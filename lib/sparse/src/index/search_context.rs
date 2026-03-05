@@ -239,10 +239,10 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         for posting_iterator in to_inspect.iter_mut() {
             if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
                 // Skip deferred points
-                if let Some(deferred_internal_id) = deferred_internal_id {
-                    if next_element.record_id >= deferred_internal_id {
-                        continue;
-                    }
+                if let Some(deferred_internal_id) = deferred_internal_id
+                    && next_element.record_id >= deferred_internal_id
+                {
+                    continue;
                 }
 
                 match min_record_id {
