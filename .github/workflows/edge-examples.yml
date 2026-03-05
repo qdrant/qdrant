@@ -1,0 +1,147 @@
+# Run all Edge examples (Rust and Python).
+# Setup steps (amalgamate, maturin develop) are shared with existing edge CI;
+# this workflow adds running the example binaries/scripts.
+# See: https://github.com/qdrant/qdrant/pull/8295
+
+name: Qdrant Edge Examples
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  edge-rust-examples:
+    name: Run Rust Edge examples
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install ast-grep
+        run: npm install --global @ast-grep/cli
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Amalgamate
+        run: lib/edge/publish/amalgamate.py
+
+      - name: Prepare facet_test snapshot
+        working-directory: lib/edge/publish
+        run: examples/prepare_facet_snapshot.sh
+
+      - name: Build Rust examples
+        working-directory: lib/edge/publish
+        run: cargo build -p examples --release
+
+      - name: Run all Rust example binaries
+        working-directory: lib/edge/publish
+        run: |
+          for bin in examples/src/bin/*.rs; do
+            name=$(basename "$bin" .rs)
+            echo "Running example: $name"
+            cargo run -p examples --release --bin "$name"
+          done
+
+  edge-python-examples:
+    name: Run Python Edge examples
+
+    runs-on: ubuntu-latest
+
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          - 6334:6334
+
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      - name: Enable mold
+        run: |
+          mkdir .cargo
+          cat >.cargo/config.toml <<-EOF
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/mold"]
+          EOF
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Qdrant Edge Python
+        run: |
+          cd lib/edge/python
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install requests
+          maturin develop --no-default-features --features abi3
+
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:6333/ >/dev/null; then
+              echo "Qdrant is up"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Qdrant did not start in time"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Run all Python example scripts
+        run: |
+          cd lib/edge/python
+          source .venv/bin/activate
+          for f in examples/*.py; do
+            base=$(basename "$f")
+            if [ "$base" = "__init__.py" ]; then
+              continue
+            fi
+            echo "Running example: $f"
+            python "$f"
+          done
