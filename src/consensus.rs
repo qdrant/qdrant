@@ -636,53 +636,28 @@ impl Consensus {
                     .map(|(peer_id, url)| (url, peer_id))
                     .collect::<HashMap<_, _>>();
 
-                // Check if a different peer already registered with this URI.
+                // Don't allow a peer URI to join if already in consensus
                 // - new URIs can always join
                 // - existing URIs can re-join with the same peer ID
-                // - existing URIs can replace the old peer if it has no shards
                 // See: <https://github.com/qdrant/qdrant/pull/7375>
-                let replaced_peer_id = match existing_uris
-                    .get(&uri.parse::<Uri>().context("peer URI is not a valid URI")?)
+                if let Some(registered_peer_id) =
+                    existing_uris.get(&uri.parse::<Uri>().context("peer URI is not a valid URI")?)
+                    && registered_peer_id != &peer_id
                 {
-                    Some(registered_peer_id) if registered_peer_id != &peer_id => {
-                        if self
-                            .broker
-                            .consensus_state
-                            .peer_has_shards(*registered_peer_id)
-                        {
-                            log::warn!(
-                                "Rejected peer {peer_id} to join consensus, URI is already registered by peer {registered_peer_id} ({uri}) which still has shards",
-                            );
-                            return Err(anyhow!(
-                                "peer URI {uri} already used by peer {registered_peer_id} which still has shards, \
-                                 remove its shards first or use a different URI",
-                            ));
-                        }
-
-                        log::info!(
-                            "Peer {peer_id} is replacing peer {registered_peer_id} which has no shards ({uri})",
-                        );
-                        Some(*registered_peer_id)
-                    }
-                    _ => None,
-                };
-
-                let mut changes = Vec::new();
-
-                if let Some(old_peer_id) = replaced_peer_id {
-                    changes.push(raft_proto::new_conf_change_single(
-                        old_peer_id,
-                        ConfChangeType::RemoveNode,
+                    log::warn!(
+                        "Rejected peer {peer_id} to join consensus, URI is already registered by peer {registered_peer_id} ({uri})",
+                    );
+                    return Err(anyhow!(
+                        "peer URI {uri} already used by peer {registered_peer_id}, remove it first or use a different URI",
                     ));
                 }
 
-                changes.push(raft_proto::new_conf_change_single(
+                let mut change = ConfChangeV2::default();
+
+                change.set_changes(vec![raft_proto::new_conf_change_single(
                     peer_id,
                     ConfChangeType::AddLearnerNode,
-                ));
-
-                let mut change = ConfChangeV2::default();
-                change.set_changes(changes);
+                )]);
 
                 log::debug!("Proposing network configuration change: {change:?}");
                 self.node

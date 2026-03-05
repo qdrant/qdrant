@@ -461,6 +461,7 @@ def test_replace_peer_without_shards_same_uri(tmp_path: pathlib.Path):
 
     # The new peer should successfully join, replacing the old one
     wait_for_peer_online(new_extra_peer_api_uri)
+    wait_peer_added(peer_api_uris[0], expected_size=N_PEERS + 1)
 
     new_peer_id = get_cluster_info(new_extra_peer_api_uri)['peer_id']
     assert new_peer_id != extra_peer_id
@@ -487,7 +488,7 @@ def test_reject_replace_peer_with_shards_same_uri(tmp_path: pathlib.Path):
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
 
     # Create collection with enough shards and replication to ensure all peers have data
-    create_collection(peer_api_uris[0], shard_number=N_PEERS, replication_factor=1)
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
     upsert_random_points(peer_api_uris[0], 100)
 
