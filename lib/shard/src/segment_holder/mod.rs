@@ -381,7 +381,7 @@ impl SegmentHolder {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         let segment_count = self.len().max(1);
-        let default_vec_capacity = ids.len() / segment_count;
+        let default_capacity = ids.len() / segment_count;
 
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
@@ -406,10 +406,10 @@ impl SegmentHolder {
                             entry.get_mut();
                         match point_version.cmp(latest_version) {
                             std::cmp::Ordering::Greater => {
-                                // Displace old latest copies to delete, but only if:
+                                // Mark old copies for deletion, but only if:
                                 // - the old copy is non-deferred, AND
                                 // - the new latest is also non-deferred
-                                // (keep non-deferred copies when displaced by deferred)
+                                // (keep non-deferred copies when superseded by deferred)
                                 if !is_deferred {
                                     for (old_seg_id, old_is_deferred) in
                                         segments_with_latest.drain(..)
@@ -418,7 +418,7 @@ impl SegmentHolder {
                                             to_delete
                                                 .entry(old_seg_id)
                                                 .or_insert_with(|| {
-                                                    Vec::with_capacity(default_vec_capacity)
+                                                    Vec::with_capacity(default_capacity)
                                                 })
                                                 .push(segment_point);
                                         }
@@ -441,7 +441,7 @@ impl SegmentHolder {
                                 if !is_deferred && *latest_has_non_deferred {
                                     to_delete
                                         .entry(segment_id)
-                                        .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
+                                        .or_insert_with(|| Vec::with_capacity(default_capacity))
                                         .push(segment_point);
                                 }
                             }
@@ -458,7 +458,7 @@ impl SegmentHolder {
             for (segment_id, _) in segments {
                 to_update
                     .entry(segment_id)
-                    .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
+                    .or_insert_with(|| Vec::with_capacity(default_capacity))
                     .push(point_id);
             }
         }
