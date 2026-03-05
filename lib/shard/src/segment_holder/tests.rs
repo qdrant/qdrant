@@ -791,6 +791,74 @@ fn test_find_points_to_update_and_delete_with_deferred_winning() {
     assert!(delete_2.is_empty());
 }
 
+/// Test that stale non-deferred copies are deleted even when a same-version
+/// non-deferred copy is discovered after a deferred copy at the latest version.
+///
+/// Scenario (3 segments, point P):
+///   seg1: v5 non-deferred (older, should be deleted)
+///   seg2: v10 deferred (latest version)
+///   seg3: v10 non-deferred (latest version, makes it safe to delete seg1)
+///
+/// This is order-independent: regardless of which segment is visited first,
+/// seg1's stale copy must be deleted.
+#[test]
+fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
+    use std::collections::HashSet;
+
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
+
+    // Segment 1 (normal): point 4 at version 5 (older non-deferred)
+    let mut segment1 = empty_segment(dir.path());
+    segment1
+        .upsert_point(5, 4.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+
+    // Segment 2 (with deferred): point 4 at version 6 (deferred)
+    let segment2 = build_segment_with_deferred_1(dir.path());
+
+    // Segment 3 (normal): point 4 at version 6 (non-deferred, same as deferred)
+    let mut segment3 = empty_segment(dir.path());
+    segment3
+        .upsert_point(6, 4.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+
+    let mut holder = SegmentHolder::default();
+    let sid1 = holder.add_new(segment1);
+    let sid2 = holder.add_new(segment2);
+    let sid3 = holder.add_new(segment3);
+
+    let ids: Vec<PointIdType> = vec![4.into()];
+    let (to_update, to_delete) = holder.find_points_to_update_and_delete(&ids);
+
+    let update_set = |sid: &SegmentId| -> HashSet<PointIdType> {
+        to_update
+            .get(sid)
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default()
+    };
+    let delete_set = |sid: &SegmentId| -> HashSet<PointIdType> {
+        to_delete
+            .get(sid)
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default()
+    };
+
+    // Latest version (v6) in seg2 (deferred) and seg3 (non-deferred) → both updated
+    assert!(!update_set(&sid1).contains(&4.into()));
+    assert!(update_set(&sid2).contains(&4.into()));
+    assert!(update_set(&sid3).contains(&4.into()));
+
+    // Seg1 v5 non-deferred is older and latest has a non-deferred copy (seg3) → deleted
+    assert!(delete_set(&sid1).contains(&4.into()));
+    // Deferred copies are never deleted
+    assert!(!delete_set(&sid2).contains(&4.into()));
+    assert!(!delete_set(&sid3).contains(&4.into()));
+}
+
 fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
     let mut removed_points = 0;
 

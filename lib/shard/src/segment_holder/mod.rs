@@ -6,7 +6,6 @@ mod snapshot;
 mod tests;
 
 use std::cmp::Reverse;
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
@@ -30,16 +29,15 @@ use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::types::{ExtendedPointId, Payload, PointIdType, SegmentConfig, SeqNumberType};
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 
 use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
 
-/// Tracks the latest version of a point: its version, which segments hold it
-/// (with their deferred status), and whether any of those copies is non-deferred.
-type PointLatest = (SeqNumberType, SmallVec<[(SegmentId, bool); 1]>, bool);
+/// All occurrences of a point across segments: (segment_id, version, is_deferred).
+type PointOccurrences = SmallVec<[(SegmentId, SeqNumberType, bool); 2]>;
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
@@ -369,19 +367,20 @@ impl SegmentHolder {
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
     ) {
-        // Track latest version per point and build to_delete in a single pass.
+        // Two-pass approach for order-independent correctness.
         //
         // Rules:
         // - Always update the latest version regardless of deferred status
         // - Never delete deferred points — optimizer handles them
-        // - Delete older non-deferred copies only if the best version has a non-deferred copy too
+        // - Delete older non-deferred copies only if the latest version has a non-deferred copy too
         // - Keep older non-deferred copies when the latest is deferred
-        let mut latest_points: AHashMap<PointIdType, PointLatest> =
-            AHashMap::with_capacity(ids.len());
-        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         let segment_count = self.len().max(1);
         let default_capacity = ids.len() / segment_count;
+
+        // Pass 1: collect all occurrences of each point across segments
+        let mut all_occurrences: AHashMap<PointIdType, PointOccurrences> =
+            AHashMap::with_capacity(ids.len());
 
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
@@ -392,74 +391,47 @@ impl SegmentHolder {
                     continue;
                 };
                 let is_deferred = segment_lock.point_is_deferred(segment_point);
-                match latest_points.entry(segment_point) {
-                    // First time we see the point, add it
-                    Entry::Vacant(entry) => {
-                        entry.insert((
-                            point_version,
-                            smallvec![(segment_id, is_deferred)],
-                            !is_deferred,
-                        ));
-                    }
-                    Entry::Occupied(mut entry) => {
-                        let (latest_version, segments_with_latest, latest_has_non_deferred) =
-                            entry.get_mut();
-                        match point_version.cmp(latest_version) {
-                            std::cmp::Ordering::Greater => {
-                                // Mark old copies for deletion, but only if:
-                                // - the old copy is non-deferred, AND
-                                // - the new latest is also non-deferred
-                                // (keep non-deferred copies when superseded by deferred)
-                                if !is_deferred {
-                                    for (old_seg_id, old_is_deferred) in
-                                        segments_with_latest.drain(..)
-                                    {
-                                        if !old_is_deferred {
-                                            to_delete
-                                                .entry(old_seg_id)
-                                                .or_insert_with(|| {
-                                                    Vec::with_capacity(default_capacity)
-                                                })
-                                                .push(segment_point);
-                                        }
-                                    }
-                                } else {
-                                    segments_with_latest.clear();
-                                }
-                                *latest_version = point_version;
-                                *latest_has_non_deferred = !is_deferred;
-                                segments_with_latest.push((segment_id, is_deferred));
-                            }
-                            std::cmp::Ordering::Equal => {
-                                *latest_has_non_deferred |= !is_deferred;
-                                segments_with_latest.push((segment_id, is_deferred));
-                            }
-                            std::cmp::Ordering::Less => {
-                                // Older non-deferred: only delete if latest has a
-                                // non-deferred copy (don't discard the last
-                                // non-deferred copy in favor of a deferred latest)
-                                if !is_deferred && *latest_has_non_deferred {
-                                    to_delete
-                                        .entry(segment_id)
-                                        .or_insert_with(|| Vec::with_capacity(default_capacity))
-                                        .push(segment_point);
-                                }
-                            }
-                        }
-                    }
-                }
+                all_occurrences.entry(segment_point).or_default().push((
+                    segment_id,
+                    point_version,
+                    is_deferred,
+                ));
             }
         }
 
-        // Group points to update by segments
+        // Pass 2: for each point, determine what to update and what to delete
         let mut to_update: AHashMap<SegmentId, Vec<PointIdType>> =
             AHashMap::with_capacity(segment_count);
-        for (point_id, (_version, segments, _)) in latest_points {
-            for (segment_id, _) in segments {
-                to_update
-                    .entry(segment_id)
-                    .or_insert_with(|| Vec::with_capacity(default_capacity))
-                    .push(point_id);
+        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
+
+        for (point_id, occurrences) in all_occurrences {
+            let latest_version = occurrences
+                .iter()
+                .map(|(_, version, _)| *version)
+                .max()
+                .unwrap();
+
+            let latest_has_non_deferred = occurrences
+                .iter()
+                .any(|(_, version, is_deferred)| *version == latest_version && !*is_deferred);
+
+            for (segment_id, version, is_deferred) in occurrences {
+                if version == latest_version {
+                    // Latest version: always update
+                    to_update
+                        .entry(segment_id)
+                        .or_insert_with(|| Vec::with_capacity(default_capacity))
+                        .push(point_id);
+                } else if !is_deferred && latest_has_non_deferred {
+                    // Older non-deferred copy: safe to delete only if the latest
+                    // version also has a non-deferred copy
+                    to_delete
+                        .entry(segment_id)
+                        .or_insert_with(|| Vec::with_capacity(default_capacity))
+                        .push(point_id);
+                }
+                // Otherwise: deferred copies are never deleted (optimizer handles them),
+                // and older non-deferred copies are kept when the latest is deferred-only
             }
         }
 
