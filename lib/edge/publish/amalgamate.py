@@ -191,7 +191,12 @@ def main() -> None:
             )
             or "some-nonexistent-package"
         )
-        rules = RULES_TEMPLATE.replace("%PACKAGE%", package).replace("%DEPS%", deps)
+        version = manifest["package"]["version"]
+        rules = (
+            RULES_TEMPLATE.replace("%PACKAGE%", package)
+            .replace("%DEPS%", deps)
+            .replace("%VERSION%", version)
+        )
         # ast-grep prints stats but it doesn't print the directory it's working on.
         print(
             end=(package + ": ").ljust(max(len(pkg) for pkg in packages.keys()) + 2),

@@ -19,7 +19,7 @@ use qdrant_edge::shard::query::{ScoringQuery, ShardQueryRequest};
 use qdrant_edge::shard::scroll::ScrollRequestInternal;
 use serde_json::{Value, json};
 
-const DATA_DIR: &str = "./qdrant-edge-data";
+const DATA_DIR: &str = "./data/demo";
 const VECTOR_NAME: &str = "example-vector";
 
 fn main() -> Result<(), Box<dyn Error>> {
