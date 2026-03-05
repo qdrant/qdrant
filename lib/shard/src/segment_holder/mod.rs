@@ -6,6 +6,7 @@ mod snapshot;
 mod tests;
 
 use std::cmp::Reverse;
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
@@ -389,54 +390,54 @@ impl SegmentHolder {
                     continue;
                 };
                 let is_deferred = segment_lock.point_is_deferred(point_id);
-                if let Some((best_ver, best_segs, best_has_non_deferred)) =
-                    latest.get_mut(&point_id)
-                {
-                    match version.cmp(best_ver) {
-                        std::cmp::Ordering::Greater => {
-                            // Displace old latest copies to delete, but only if:
-                            // - the old copy is non-deferred, AND
-                            // - the new latest is also non-deferred
-                            // (keep non-deferred copies when displaced by deferred)
-                            if !is_deferred {
-                                for (old_seg_id, old_is_deferred) in best_segs.drain(..) {
-                                    if !old_is_deferred {
-                                        to_delete
-                                            .entry(old_seg_id)
-                                            .or_insert_with(|| {
-                                                Vec::with_capacity(default_vec_capacity)
-                                            })
-                                            .push(point_id);
+                match latest.entry(point_id) {
+                    // First time we see the point, add it
+                    Entry::Vacant(entry) => {
+                        entry.insert((version, smallvec![(segment_id, is_deferred)], !is_deferred));
+                    }
+                    Entry::Occupied(mut entry) => {
+                        let (best_ver, best_segs, best_has_non_deferred) = entry.get_mut();
+                        match version.cmp(best_ver) {
+                            std::cmp::Ordering::Greater => {
+                                // Displace old latest copies to delete, but only if:
+                                // - the old copy is non-deferred, AND
+                                // - the new latest is also non-deferred
+                                // (keep non-deferred copies when displaced by deferred)
+                                if !is_deferred {
+                                    for (old_seg_id, old_is_deferred) in best_segs.drain(..) {
+                                        if !old_is_deferred {
+                                            to_delete
+                                                .entry(old_seg_id)
+                                                .or_insert_with(|| {
+                                                    Vec::with_capacity(default_vec_capacity)
+                                                })
+                                                .push(point_id);
+                                        }
                                     }
+                                } else {
+                                    best_segs.clear();
                                 }
-                            } else {
-                                best_segs.clear();
+                                *best_ver = version;
+                                *best_has_non_deferred = !is_deferred;
+                                best_segs.push((segment_id, is_deferred));
                             }
-                            *best_ver = version;
-                            *best_has_non_deferred = !is_deferred;
-                            best_segs.push((segment_id, is_deferred));
-                        }
-                        std::cmp::Ordering::Equal => {
-                            *best_has_non_deferred |= !is_deferred;
-                            best_segs.push((segment_id, is_deferred));
-                        }
-                        std::cmp::Ordering::Less => {
-                            // Older non-deferred: only delete if best has a
-                            // non-deferred copy (don't discard the last
-                            // non-deferred copy in favor of a deferred best)
-                            if !is_deferred && *best_has_non_deferred {
-                                to_delete
-                                    .entry(segment_id)
-                                    .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
-                                    .push(point_id);
+                            std::cmp::Ordering::Equal => {
+                                *best_has_non_deferred |= !is_deferred;
+                                best_segs.push((segment_id, is_deferred));
+                            }
+                            std::cmp::Ordering::Less => {
+                                // Older non-deferred: only delete if latest has a
+                                // non-deferred copy (don't discard the last
+                                // non-deferred copy in favor of a deferred latest)
+                                if !is_deferred && *best_has_non_deferred {
+                                    to_delete
+                                        .entry(segment_id)
+                                        .or_insert_with(|| Vec::with_capacity(default_vec_capacity))
+                                        .push(point_id);
+                                }
                             }
                         }
                     }
-                } else {
-                    latest.insert(
-                        point_id,
-                        (version, smallvec![(segment_id, is_deferred)], !is_deferred),
-                    );
                 }
             }
         }
