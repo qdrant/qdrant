@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Creates snapshot for `facet_test.rs` example.
 
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
 SNAPSHOT_DIR="./data/facet_test"
 QDRANT_URL="http://localhost:6333"
 COLLECTION_NAME="test_facet"
 CONTAINER_NAME="qdrant-facet-test"
-
-set -euo pipefail
-cd "$(dirname "$0")/.."
 
 # Let our logs stand out
 log() { printf "\x1b[33m# %s\x1b[0m\n" "$*"; }
