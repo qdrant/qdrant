@@ -107,7 +107,7 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
-    ) -> Self {
+    ) -> Result<Self, StorageError> {
         let collections_path = storage_config.storage_path.join(COLLECTIONS_DIR);
         fs::create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
@@ -206,8 +206,15 @@ impl TableOfContent {
         }
 
         let alias_path = storage_config.storage_path.join(ALIASES_PATH);
-        let alias_persistence = AliasPersistence::open(&alias_path)
-            .expect("Can't open database by the provided config");
+        let alias_config_path = AliasPersistence::get_config_path(&alias_path);
+        let alias_persistence = AliasPersistence::open(&alias_path).map_err(|err| {
+            StorageError::service_error(format!(
+                "Failed to open aliases file at {}: {err}. \
+                 Please verify the file contains valid JSON, \
+                 then restart Qdrant.",
+                alias_config_path.display(),
+            ))
+        })?;
 
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),
@@ -226,7 +233,7 @@ impl TableOfContent {
             }
         };
 
-        TableOfContent {
+        Ok(TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
             search_runtime,
@@ -242,7 +249,7 @@ impl TableOfContent {
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
             telemetry,
-        }
+        })
     }
 
     /// Return `true` if service is working in distributed mode.
