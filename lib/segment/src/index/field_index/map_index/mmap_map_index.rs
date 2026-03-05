@@ -200,11 +200,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let is_deleted = self.storage.deleted.get(idx as usize).is_some_and(|b| b);
 
         Ok(!is_deleted
-            && self.storage.point_to_values.check_values_any(
-                idx,
-                |v| check_fn(&*v),
-                &hw_counter,
-            )?)
+            && self
+                .storage
+                .point_to_values
+                .check_values_any(idx, |v| check_fn(v), &hw_counter)?)
     }
 
     pub fn get_values(

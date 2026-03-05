@@ -62,13 +62,17 @@ impl MmapValue for str {
     }
 
     fn read_from_mmap(bytes: Cow<'_, [u8]>, count: usize) -> Option<Self::CowValues<'_>> {
+        fn parse_str(slice: &[u8], start: usize) -> Option<&str> {
+            let (len, rest) = u32::read_from_prefix(slice.get(start..)?).ok()?;
+            std::str::from_utf8(rest.get(..len as usize)?).ok()
+        }
+
         let cow = match bytes {
             Cow::Borrowed(slice) => {
                 let mut holder = Vec::with_capacity(count);
                 let mut start = 0;
                 for _ in 0..count {
-                    let (len, _) = u32::read_from_prefix(slice.get(start..)?).ok()?;
-                    let string = std::str::from_utf8(slice.get(start..len as usize)?).ok()?;
+                    let string = parse_str(slice, start)?;
                     start += Self::mmapped_size(string);
                     holder.push(Cow::Borrowed(string));
                 }
@@ -78,12 +82,9 @@ impl MmapValue for str {
                 let mut holder = Vec::with_capacity(count);
                 let mut start = 0;
                 for _ in 0..count {
-                    let (len, _) = u32::read_from_prefix(vec.get(start..)?).ok()?;
-                    let string = std::str::from_utf8(vec.get(start..len as usize)?)
-                        .ok()?
-                        .to_owned();
-                    start += Self::mmapped_size(&string);
-                    holder.push(Cow::Owned(string));
+                    let string = parse_str(&vec, start)?;
+                    start += Self::mmapped_size(string);
+                    holder.push(Cow::Owned(string.to_owned()));
                 }
                 holder
             }
