@@ -196,7 +196,7 @@ where
         mmap.flush()?;
         drop(mmap);
 
-        Self::open(&path, true)
+        Self::open(path, true)
     }
 
     pub fn open(path: &Path, populate: bool) -> OperationResult<Self> {
