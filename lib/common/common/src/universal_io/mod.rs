@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
+pub use self::file_ops::UniversalReadFileOps;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};

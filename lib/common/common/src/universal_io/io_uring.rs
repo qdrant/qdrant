@@ -28,6 +28,16 @@ impl IoUringFile {
     }
 }
 
+impl UniversalReadFileOps for IoUringFile {
+    fn list_files(prefix_path: &Path) -> crate::universal_io::Result<Vec<PathBuf>> {
+        local_file_ops::local_list_files(prefix_path)
+    }
+
+    fn exists(path: &Path) -> crate::universal_io::Result<bool> {
+        fs::exists(path).map_err(UniversalIoError::from)
+    }
+}
+
 impl UniversalRead<u8> for IoUringFile {
     fn open(path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self>
     where
