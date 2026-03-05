@@ -368,9 +368,6 @@ impl SegmentHolder {
         AHashMap<SegmentId, Vec<PointIdType>>,
         AHashMap<SegmentId, Vec<PointIdType>>,
     ) {
-        let segment_count = self.len().max(1);
-        let default_vec_capacity = ids.len() / segment_count;
-
         // Track latest version per point and build to_delete in a single pass.
         //
         // Rules:
@@ -379,8 +376,10 @@ impl SegmentHolder {
         // - Delete older non-deferred copies only if the best version has a non-deferred copy too
         // - Keep older non-deferred copies when the latest is deferred
         let mut latest: AHashMap<PointIdType, PointLatest> = AHashMap::with_capacity(ids.len());
-        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> =
-            AHashMap::with_capacity(segment_count);
+        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
+
+        let segment_count = self.len().max(1);
+        let default_vec_capacity = ids.len() / segment_count;
 
         for (segment_id, segment) in self.iter() {
             let segment_lock = segment.get().read();
@@ -442,7 +441,7 @@ impl SegmentHolder {
             }
         }
 
-        // Convert the best entries to to_update
+        // Group points to update by segments
         let mut to_update: AHashMap<SegmentId, Vec<PointIdType>> =
             AHashMap::with_capacity(segment_count);
         for (point_id, (_version, segments, _)) in latest {
