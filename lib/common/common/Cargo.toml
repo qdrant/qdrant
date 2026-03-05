@@ -59,6 +59,7 @@ serde_json = { workspace = true }
 tango-bench = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.7.11"
 thread-priority = "3.0.0"
 
 [[bench]]

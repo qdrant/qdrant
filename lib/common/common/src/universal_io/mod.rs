@@ -1,4 +1,6 @@
 mod file_ops;
+#[cfg(target_os = "linux")]
+pub mod io_uring;
 mod local_file_ops;
 pub mod mmap;
 pub mod read;
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
+pub use self::file_ops::UniversalReadFileOps;
 pub use self::read::UniversalRead;
 pub use self::write::UniversalWrite;
 use crate::mmap::{Advice, AdviceSetting};
