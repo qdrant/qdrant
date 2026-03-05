@@ -280,10 +280,10 @@ impl BufferStore {
             length,
         } = range;
 
-        let length = u32::try_from(length).expect("range length is within u32");
-
         let buffer = self.create(id, length as _)?;
-        let entry = opcode::Read::new(fd, buffer.as_mut_ptr(), length as _)
+
+        let length = u32::try_from(length).expect("range length is within u32");
+        let entry = opcode::Read::new(fd, buffer.as_mut_ptr(), length)
             .offset(offset)
             .build()
             .user_data(id);
