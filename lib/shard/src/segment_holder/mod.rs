@@ -384,10 +384,11 @@ impl SegmentHolder {
             AHashMap::with_capacity(ids.len());
 
         for (segment_id, segment) in self.iter() {
-            let segment_lock = segment.get().read();
+            let segment_arc = segment.get();
+            let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
-            for point_id in segment_points {
-                let Some(version) = segment_lock.point_version(point_id) else {
+            for segment_point in segment_points {
+                let Some(point_version) = segment_lock.point_version(segment_point) else {
                     continue;
                 };
                 let is_deferred = segment_lock.point_is_deferred(segment_point);
