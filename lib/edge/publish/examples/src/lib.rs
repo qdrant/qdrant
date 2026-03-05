@@ -8,12 +8,16 @@ use std::path::Path;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::config::shard::EdgeShardConfig;
 use qdrant_edge::config::vectors::EdgeVectorParams;
-use qdrant_edge::segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
-use qdrant_edge::segment::types::{Distance, ExtendedPointId, Payload};
-use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
-use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
-use qdrant_edge::shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+use qdrant_edge::internal::segment::data_types::vectors::{
+    DEFAULT_VECTOR_NAME, VectorStructInternal,
+};
+use qdrant_edge::internal::segment::types::{Distance, ExtendedPointId, Payload};
+use qdrant_edge::internal::shard::operations::CollectionUpdateOperations::PointOperation;
+use qdrant_edge::internal::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+use qdrant_edge::internal::shard::operations::point_ops::PointOperations::UpsertPoints;
+use qdrant_edge::internal::shard::operations::point_ops::{
+    PointStructPersisted, VectorStructPersisted,
+};
 use serde_json::{Value, json};
 
 pub const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");

@@ -4,12 +4,15 @@ use std::error::Error;
 
 use examples::{fill_dummy_data, load_new_shard};
 use ordered_float::OrderedFloat;
-use qdrant_edge::segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
-use qdrant_edge::segment::types::{
+use qdrant_edge::Fusion;
+use qdrant_edge::internal::segment::data_types::vectors::{
+    DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal,
+};
+use qdrant_edge::internal::segment::types::{
     Condition, FieldCondition, Filter, Match, ValueVariants, WithPayloadInterface, WithVector,
 };
-use qdrant_edge::shard::query::query_enum::QueryEnum;
-use qdrant_edge::shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use qdrant_edge::internal::shard::query::query_enum::QueryEnum;
+use qdrant_edge::internal::shard::query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let shard = load_new_shard()?;
@@ -41,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 score_threshold: None,
             },
         ],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf {
             k: 2,
             weights: None,
         })),
@@ -79,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 score_threshold: None,
             },
         ],
-        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf {
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf {
             k: 2,
             weights: Some(vec![OrderedFloat(3.0), OrderedFloat(1.0)]), // First prefetch has 3x weight
         })),

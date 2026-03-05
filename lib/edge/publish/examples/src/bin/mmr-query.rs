@@ -4,9 +4,10 @@ use std::error::Error;
 
 use examples::{fill_dummy_data, load_new_shard};
 use ordered_float::OrderedFloat;
-use qdrant_edge::segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use qdrant_edge::segment::types::{WithPayloadInterface, WithVector};
-use qdrant_edge::shard::query::{MmrInternal, ScoringQuery, ShardQueryRequest};
+use qdrant_edge::Mmr;
+use qdrant_edge::internal::segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use qdrant_edge::internal::segment::types::{WithPayloadInterface, WithVector};
+use qdrant_edge::internal::shard::query::{ScoringQuery, ShardQueryRequest};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let shard = load_new_shard()?;
@@ -14,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let result = shard.query(ShardQueryRequest {
         prefetches: vec![],
-        query: Some(ScoringQuery::Mmr(MmrInternal {
+        query: Some(ScoringQuery::Mmr(Mmr {
             vector: vec![6.0, 9.0, 4.0, 2.0].into(),
             using: DEFAULT_VECTOR_NAME.to_string(),
             lambda: OrderedFloat(0.9),

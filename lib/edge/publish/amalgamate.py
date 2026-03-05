@@ -128,17 +128,9 @@ def main() -> None:
             #![allow(unexpected_cfgs)]
             #![allow(dead_code, unused_imports)]
             pub use edge::*;
-            pub mod segment;
-            pub mod shard;
-            pub mod sparse;
             """
         ).lstrip()
-        + "".join(
-            sorted(
-                f"mod {pkg};\n"
-                for pkg in packages.keys() - {"segment", "shard", "sparse"}
-            )
-        ),
+        + "".join(sorted(f"mod {pkg};\n" for pkg in packages.keys())),
         encoding="utf-8",
     )
 

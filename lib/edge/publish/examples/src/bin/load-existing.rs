@@ -4,13 +4,12 @@ use std::error::Error;
 use std::path::Path;
 
 use examples::{TMP_DIR, load_new_shard, point};
-use qdrant_edge::EdgeShard;
-use qdrant_edge::segment::data_types::vectors::VectorStructInternal;
-use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
-use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
-use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
-use qdrant_edge::shard::scroll::ScrollRequestInternal;
+use qdrant_edge::internal::segment::data_types::vectors::VectorStructInternal;
+use qdrant_edge::internal::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
+use qdrant_edge::internal::shard::operations::CollectionUpdateOperations::PointOperation;
+use qdrant_edge::internal::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+use qdrant_edge::internal::shard::operations::point_ops::PointOperations::UpsertPoints;
+use qdrant_edge::{EdgeShard, ScrollRequest};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -60,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ),
     ]))))?;
 
-    let (expected_points, _) = edge.scroll(ScrollRequestInternal {
+    let (expected_points, _) = edge.scroll(ScrollRequest {
         offset: None,
         limit: Some(5),
         filter: None,
@@ -74,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(edge);
     let edge = EdgeShard::load(Path::new(TMP_DIR), None)?;
 
-    let (points, _) = edge.scroll(ScrollRequestInternal {
+    let (points, _) = edge.scroll(ScrollRequest {
         offset: None,
         limit: Some(5),
         filter: None,

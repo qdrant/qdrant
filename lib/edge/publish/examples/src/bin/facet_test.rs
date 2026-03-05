@@ -2,8 +2,7 @@ use std::error::Error;
 use std::path::Path;
 
 use examples::DATA_DIR;
-use qdrant_edge::EdgeShard;
-use qdrant_edge::shard::facet::FacetRequestInternal;
+use qdrant_edge::{EdgeShard, FacetRequest};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let facet_dir = Path::new(DATA_DIR).join("facet_test");
@@ -32,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Shard loaded. Points: {}", shard.info().points_count);
 
     println!("---- Test Facet on 'color' field ----");
-    let response = shard.facet(FacetRequestInternal {
+    let response = shard.facet(FacetRequest {
         key: "color".try_into().unwrap(),
         limit: 10,
         filter: None,
@@ -45,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("---- Test Facet on 'city' field ----");
-    let response = shard.facet(FacetRequestInternal {
+    let response = shard.facet(FacetRequest {
         key: "city".try_into().unwrap(),
         limit: 10,
         filter: None,
@@ -58,14 +57,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("---- Test Facet with filter ----");
-    use qdrant_edge::segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
+    use qdrant_edge::internal::segment::types::{
+        Condition, FieldCondition, Filter, Match, ValueVariants,
+    };
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         "color".try_into().unwrap(),
         Match::new_value(ValueVariants::String("red".to_string())),
     )));
 
-    let response = shard.facet(FacetRequestInternal {
+    let response = shard.facet(FacetRequest {
         key: "city".try_into().unwrap(),
         limit: 10,
         filter: Some(filter),

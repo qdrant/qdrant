@@ -6,27 +6,26 @@ use std::path::Path;
 
 use examples::{TMP_DIR, load_new_shard, point};
 use ordered_float::OrderedFloat;
-use qdrant_edge::EdgeShard;
-use qdrant_edge::segment::data_types::vectors::{
+use qdrant_edge::internal::segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
-use qdrant_edge::segment::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, Match, MatchTextAny, PayloadFieldSchema,
-    PayloadSchemaType, Range, WithPayloadInterface, WithVector,
+use qdrant_edge::internal::segment::types::{
+    Condition, ExtendedPointId, FieldCondition, Filter, Match, PayloadFieldSchema, Range,
+    WithPayloadInterface, WithVector,
 };
-use qdrant_edge::shard::count::CountRequestInternal;
-use qdrant_edge::shard::facet::FacetRequestInternal;
-use qdrant_edge::shard::operations::CollectionUpdateOperations::{
+use qdrant_edge::internal::shard::operations::CollectionUpdateOperations::{
     FieldIndexOperation, PointOperation,
 };
-use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
-use qdrant_edge::shard::operations::{CreateIndex, FieldIndexOperations};
-use qdrant_edge::shard::query::query_enum::QueryEnum;
-use qdrant_edge::shard::query::{ScoringQuery, ShardQueryRequest};
-use qdrant_edge::shard::scroll::ScrollRequestInternal;
-use qdrant_edge::shard::search::CoreSearchRequest;
-use qdrant_edge::sparse::common::sparse_vector::SparseVector;
+use qdrant_edge::internal::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+use qdrant_edge::internal::shard::operations::point_ops::PointOperations::UpsertPoints;
+use qdrant_edge::internal::shard::operations::{CreateIndex, FieldIndexOperations};
+use qdrant_edge::internal::shard::query::query_enum::QueryEnum;
+use qdrant_edge::internal::shard::query::{ScoringQuery, ShardQueryRequest};
+use qdrant_edge::internal::shard::search::CoreSearchRequest;
+use qdrant_edge::{
+    CountRequest, EdgeShard, FacetRequest, MatchTextAny, PayloadSchemaType, ScrollRequest,
+    SparseVector,
+};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -202,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Scroll ----");
 
-    let (scroll_result, mut next_offset) = shard.scroll(ScrollRequestInternal {
+    let (scroll_result, mut next_offset) = shard.scroll(ScrollRequest {
         offset: None,
         limit: Some(2),
         filter: None,
@@ -216,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     while let Some(offset) = next_offset {
         println!("--- Next scroll (offset = {offset})---");
-        let (scroll_result, next) = shard.scroll(ScrollRequestInternal {
+        let (scroll_result, next) = shard.scroll(ScrollRequest {
             offset: Some(offset),
             limit: Some(2),
             filter: None,
@@ -232,7 +231,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Count ----");
 
-    let count = shard.count(CountRequestInternal {
+    let count = shard.count(CountRequest {
         filter: None,
         exact: true,
     })?;
@@ -247,7 +246,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )))?;
 
-    let response = shard.facet(FacetRequestInternal {
+    let response = shard.facet(FacetRequest {
         key: "hello".try_into().unwrap(),
         limit: 10,
         filter: None,

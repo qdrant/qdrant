@@ -15,6 +15,7 @@ staging = ["shard/staging"]
 common = { path = "../common/common" }
 segment = { path = "../segment", default-features = false }
 shard = { path = "../shard", default-features = false }
+sparse = { path = "../sparse" }
 wal = { path = "../wal" }
 
 ahash = { workspace = true }

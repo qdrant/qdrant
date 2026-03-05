@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use examples::DATA_DIR;
 use qdrant_edge::EdgeShard;
-use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
-use qdrant_edge::shard::files::{clear_data, move_data};
-use qdrant_edge::shard::snapshots::snapshot_manifest::SnapshotManifest;
+use qdrant_edge::internal::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
+use qdrant_edge::internal::shard::files::{clear_data, move_data};
+use qdrant_edge::internal::shard::snapshots::snapshot_manifest::SnapshotManifest;
 
 const SNAPSHOT_URL: &str =
     "https://storage.googleapis.com/qdrant-benchmark-snapshots/test-shard.snapshot";
