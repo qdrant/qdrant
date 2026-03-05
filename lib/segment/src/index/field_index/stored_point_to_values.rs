@@ -135,7 +135,8 @@ where
                 let bytes = mmap
                     .get_mut(point_values_offset..)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
-                value.write_to(bytes)
+                value
+                    .write_to(bytes)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
                 point_values_offset += T::stored_size(value);
             }
