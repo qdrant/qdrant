@@ -8,6 +8,7 @@ mod tests;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -338,6 +339,17 @@ impl SegmentHolder {
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
+    /// Selects point ids, which is stored in this segment
+    fn segment_points(
+        ids: &[PointIdType],
+        segment: &dyn NonAppendableSegmentEntry,
+    ) -> Vec<PointIdType> {
+        ids.iter()
+            .cloned()
+            .filter(|id| segment.has_point(*id))
+            .collect()
+    }
+
     /// Select what point IDs to update and delete in each segment
     ///
     /// Each external point ID might have multiple point versions across all segments.
@@ -371,12 +383,10 @@ impl SegmentHolder {
             AHashMap::with_capacity(ids.len());
 
         for (segment_id, segment) in self.iter() {
-            let segment_arc = segment.get();
-            let segment_lock = segment_arc.read();
-            for &point_id in ids {
-                // point_version returns Some for both normal and deferred points,
-                // but None for soft-deleted or non-existent points
-                let Some(point_version) = segment_lock.point_version(point_id) else {
+            let segment_lock = segment.get().read();
+            let segment_points = Self::segment_points(ids, segment_lock.deref());
+            for point_id in segment_points {
+                let Some(version) = segment_lock.point_version(point_id) else {
                     continue;
                 };
                 let is_deferred = segment_lock.point_is_deferred(segment_point);
