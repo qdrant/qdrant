@@ -18,15 +18,15 @@ const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with m
 const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
-pub trait MmapValue: ToOwned {
+pub trait StoredValue: ToOwned {
     fn mmapped_size(value: &Self) -> usize;
 
     fn read_from_mmap(bytes: &[u8]) -> Option<&Self>;
 
-    fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()>;
+    fn write_to(&self, bytes: &mut [u8]) -> Option<()>;
 }
 
-impl<T: bytemuck::Pod> MmapValue for T {
+impl<T: bytemuck::Pod> StoredValue for T {
     fn mmapped_size(_value: &Self) -> usize {
         std::mem::size_of::<Self>()
     }
@@ -35,13 +35,13 @@ impl<T: bytemuck::Pod> MmapValue for T {
         bytemuck::try_cast_slice(bytes).ok()?.first()
     }
 
-    fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()> {
-        let value_bytes = bytemuck::bytes_of(value);
+    fn write_to(&self, bytes: &mut [u8]) -> Option<()> {
+        let value_bytes = bytemuck::bytes_of(self);
         value_bytes.write_to_prefix(bytes).ok()
     }
 }
 
-impl MmapValue for str {
+impl StoredValue for str {
     fn mmapped_size(value: &str) -> usize {
         value.len() + std::mem::size_of::<u32>()
     }
@@ -51,11 +51,11 @@ impl MmapValue for str {
         std::str::from_utf8(rest.get(..len as usize)?).ok()
     }
 
-    fn write_to_mmap(value: &str, bytes: &mut [u8]) -> Option<()> {
-        u32::write_to_prefix(&(value.len() as u32), bytes).ok()?;
+    fn write_to(&self, bytes: &mut [u8]) -> Option<()> {
+        u32::write_to_prefix(&(self.len() as u32), bytes).ok()?;
         bytes
-            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
-            .copy_from_slice(value.as_bytes());
+            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())?
+            .copy_from_slice(self.as_bytes());
         Some(())
     }
 }
@@ -65,7 +65,7 @@ impl MmapValue for str {
 /// This structure is immutable.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
-pub struct MmapPointToValues<T: MmapValue + ?Sized, S: UniversalRead<u8>> {
+pub struct MmapPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
     file_name: PathBuf,
     store: S,
     header: Header,
@@ -91,7 +91,7 @@ struct Header {
 
 impl<T, S> MmapPointToValues<T, S>
 where
-    T: MmapValue + ?Sized,
+    T: StoredValue + ?Sized,
     S: UniversalRead<u8>,
 {
     pub fn from_iter<'a>(
@@ -106,7 +106,7 @@ where
         let mut values_size = 0;
         for (point_id, values) in iter.clone() {
             points_count = max(points_count, (point_id + 1) as usize);
-            values_size += values.map(|v| T::mmapped_size(v)).sum::<usize>();
+            values_size += values.map(|v| T::stored_size(v)).sum::<usize>();
         }
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
@@ -135,9 +135,9 @@ where
                 let bytes = mmap
                     .get_mut(point_values_offset..)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
-                T::write_to_mmap(value, bytes)
+                value.write_to(bytes)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
-                point_values_offset += T::mmapped_size(value);
+                point_values_offset += T::stored_size(value);
             }
 
             let range = MmapRange {
@@ -327,7 +327,7 @@ struct ValuesIter<'a, T: ?Sized> {
     _type: std::marker::PhantomData<T>,
 }
 
-impl<'a, T: MmapValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
+impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
     type Item = Cow<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -28,7 +28,7 @@ use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
 use super::FieldIndexBuilderTrait;
 use super::facet_index::FacetIndex;
-use super::mmap_point_to_values::MmapValue;
+use super::mmap_point_to_values::StoredValue;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
@@ -58,7 +58,7 @@ pub(super) const BLOCK_SIZE_KEYWORD: usize = 16;
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
-pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
+pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default + 'static;
 
     fn to_owned(&self) -> <Self as MapIndexKey>::Owned;
@@ -642,7 +642,7 @@ where
             let entry = self.values_to_points.entry(value);
 
             if let Entry::Vacant(e) = &entry {
-                let size = N::mmapped_size(e.key().borrow());
+                let size = N::stored_size(e.key().borrow());
                 hw_cell_wb.incr_delta(size);
             }
 
