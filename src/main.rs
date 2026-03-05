@@ -396,7 +396,7 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
-    );
+    )?;
 
     toc.clear_all_tmp_directories()?;
 

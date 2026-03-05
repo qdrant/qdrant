@@ -94,16 +94,19 @@ async fn drop_service(service: StorageReadService<MmapFile>, storage_dir: TempDi
 fn create_service() -> (StorageReadService<MmapFile>, TempDir, PathBuf) {
     let storage_dir = tempfile::tempdir().unwrap();
     let config = test_storage_config(storage_dir.path());
-    let toc = Arc::new(TableOfContent::new(
-        &config,
-        create_search_runtime(1).unwrap(),
-        create_update_runtime(1).unwrap(),
-        create_general_purpose_runtime().unwrap(),
-        ResourceBudget::default(),
-        ChannelService::new(6333, false, None, None),
-        0,
-        None,
-    ));
+    let toc = Arc::new(
+        TableOfContent::new(
+            &config,
+            create_search_runtime(1).unwrap(),
+            create_update_runtime(1).unwrap(),
+            create_general_purpose_runtime().unwrap(),
+            ResourceBudget::default(),
+            ChannelService::new(6333, false, None, None),
+            0,
+            None,
+        )
+        .unwrap(),
+    );
     let collection_dir = storage_dir
         .path()
         .join(COLLECTIONS_DIR)
