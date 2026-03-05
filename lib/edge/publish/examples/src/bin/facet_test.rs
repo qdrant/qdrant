@@ -8,6 +8,12 @@ const SNAPSHOT_PATH: &str = "./data/facet_test/shard.snapshot";
 const DATA_DIR: &str = "./data/facet_test/shard_data";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    if !Path::new(SNAPSHOT_PATH).exists() {
+        eprintln!("Snapshot not found at {SNAPSHOT_PATH}");
+        eprintln!("Run examples/prepare_facet_snapshot.sh first to create it.");
+        std::process::exit(1);
+    }
+
     println!("---- Unpack snapshot ----");
 
     // Clean up existing data directory
