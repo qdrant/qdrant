@@ -39,9 +39,6 @@ jobs:
           - target: aarch64
             manylinux: manylinux_2_17
 
-    env:
-      PROTOC_VERSION: '33.1'
-
     steps:
       - name: Checkout Qdrant
         uses: actions/checkout@v6
@@ -54,21 +51,6 @@ jobs:
           working-directory: lib/edge/python
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          before-script-linux: |
-            if command -v unzip; then
-                :
-            elif command -v apt-get; then
-                apt-get update -y && apt-get install -y unzip
-            elif command -v yum; then
-                yum install -y unzip
-            elif command -v dnf; then
-                dnf install -y unzip
-            elif command -v apk; then
-                apk add --no-cache unzip
-            fi
-
-            curl -f -L https://github.com/protocolbuffers/protobuf/releases/download/v${{ env.PROTOC_VERSION }}/protoc-${{ env.PROTOC_VERSION }}-linux-x86_64.zip -o protoc.zip
-            unzip protoc.zip -d /usr
 
       - name: Upload Python wheel
         uses: actions/upload-artifact@v7
@@ -93,11 +75,6 @@ jobs:
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Python
         id: setup-python
@@ -139,11 +116,6 @@ jobs:
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Python
         id: setup-python

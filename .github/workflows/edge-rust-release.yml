@@ -34,11 +34,6 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         uses: rui314/setup-mold@v1
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
@@ -71,11 +66,6 @@ jobs:
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
