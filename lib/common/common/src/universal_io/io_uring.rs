@@ -60,10 +60,8 @@ impl UniversalRead<u8> for IoUringFile {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
-            rt.enqueue(|buffers| {
-                let entry = buffers.read(0, self.fd(), range).expect("ID is unique");
-                Some(entry)
-            });
+            let entry = rt.buffers.read(0, self.fd(), range).expect("ID is unique");
+            rt.enqueue_single(entry)?;
 
             rt.submit_and_wait(1).expect("read operation submitted");
 
@@ -124,16 +122,13 @@ impl UniversalWrite<u8> for IoUringFile {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
-            rt.enqueue(|_| {
-                let length = u32::try_from(data.len()).expect("data length is within u32");
+            let length = u32::try_from(data.len()).expect("data length is within u32");
+            let entry = opcode::Write::new(self.fd(), data.as_ptr(), length)
+                .offset(offset)
+                .build()
+                .user_data(0);
 
-                let entry = opcode::Write::new(self.fd(), data.as_ptr(), length)
-                    .offset(offset)
-                    .build()
-                    .user_data(0);
-
-                Some(entry)
-            });
+            rt.enqueue_single(entry)?;
 
             rt.submit_and_wait(1).expect("write operation submitted");
             rt.completed().next().expect("write operation completed")?;
@@ -154,7 +149,6 @@ impl UniversalWrite<u8> for IoUringFile {
                     let (id, (offset, data)) = offset_data.next()?;
 
                     let length = u32::try_from(data.len()).expect("data length is within u32");
-
                     let entry = opcode::Write::new(self.fd(), data.as_ptr(), length)
                         .offset(offset)
                         .build()
@@ -195,17 +189,28 @@ impl<'a> IoUringRuntime<'a> {
         }
     }
 
+    pub fn enqueue_single(&mut self, entry: squeue::Entry) -> io::Result<()> {
+        unsafe {
+            self.io_uring
+                .submission()
+                .push(&entry)
+                .expect("SQE is not full");
+        }
+
+        Ok(())
+    }
+
     pub fn enqueue(&mut self, mut entries: impl FnMut(&mut BufferStore) -> Option<squeue::Entry>) {
         let mut sqe = self.io_uring.submission();
 
-        if sqe.is_full() {
+        if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
             return;
         }
 
         while let Some(entry) = entries(&mut self.buffers) {
             unsafe { sqe.push(&entry).expect("SQE is not full") };
 
-            if sqe.is_full() {
+            if self.in_progress + sqe.len() >= IO_URING_QUEUE_LENGTH as _ {
                 break;
             }
         }
