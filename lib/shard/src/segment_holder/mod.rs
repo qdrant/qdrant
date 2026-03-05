@@ -6,6 +6,7 @@ mod snapshot;
 mod tests;
 
 use std::cmp::Reverse;
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
