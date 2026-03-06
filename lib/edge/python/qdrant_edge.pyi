@@ -74,6 +74,15 @@ class EdgeShard:
         """Close the shard and release all resources."""
         ...
 
+    def optimize(self) -> bool:
+        """
+        Run segment optimizers in-process, blocking until no more optimizations are planned.
+
+        Returns:
+            True if any segments were optimized, False if already optimal.
+        """
+        ...
+
     def update(self, operation: "UpdateOperation") -> None:
         """
         Apply an update operation to the shard.

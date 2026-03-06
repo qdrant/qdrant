@@ -111,6 +111,11 @@ impl PyEdgeShard {
         Ok(())
     }
 
+    pub fn optimize(&self) -> Result<bool> {
+        let optimized = self.get_shard()?.optimize()?;
+        Ok(optimized)
+    }
+
     pub fn close(&mut self) {
         self.0.take(); // `edge::Shard` is automatically flushed on drop
     }

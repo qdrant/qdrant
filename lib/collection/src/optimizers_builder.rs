@@ -7,11 +7,14 @@ use schemars::JsonSchema;
 use segment::common::BYTES_IN_KB;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig};
+use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
+use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput, OptimizerSourceConfig,
+    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH, default_segment_number,
 };
 use validator::Validate;
 
@@ -23,18 +26,15 @@ use crate::config::CollectionParams;
 use crate::operations::config_diff::DiffConfig;
 use crate::update_handler::Optimizer;
 
-const DEFAULT_MAX_SEGMENT_PER_CPU_KB: usize = 256_000;
-pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
-const SEGMENTS_PATH: &str = "segments";
-const TEMP_SEGMENTS_PATH: &str = "temp_segments";
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
 #[anonymize(false)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_deleted_threshold")]
     #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: f64,
     /// The minimal number of vectors in a segment, required to perform segment optimization
+    #[serde(default = "default_vacuum_min_vector_number")]
     #[validate(range(min = 100))]
     pub vacuum_min_vector_number: usize,
     /// Target amount of segments optimizer will try to keep.
@@ -98,6 +98,14 @@ pub struct OptimizersConfig {
     pub prevent_unoptimized: Option<bool>,
 }
 
+fn default_deleted_threshold() -> f64 {
+    DEFAULT_DELETED_THRESHOLD
+}
+
+fn default_vacuum_min_vector_number() -> usize {
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER
+}
+
 impl OptimizersConfig {
     #[cfg(test)]
     pub fn fixture() -> Self {
@@ -117,13 +125,7 @@ impl OptimizersConfig {
 
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
-            let num_cpus = common::cpu::get_num_cpus();
-            // Configure 1 segment per 2 CPUs, as a middle ground between
-            // latency and RPS.
-            let expected_segments = num_cpus / 2;
-            // Do not configure less than 2 and more than 8 segments
-            // until it is not explicitly requested
-            expected_segments.clamp(2, 8)
+            default_segment_number()
         } else {
             self.default_segment_number
         }
@@ -186,13 +188,15 @@ pub fn build_segment_optimizer_config(
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> SegmentOptimizerConfig {
-    let dense_vector = collection_params
+    let dense_vectors = collection_params
         .vectors
         .params_iter()
         .map(|(name, params)| {
             (
                 name.into(),
-                DenseVectorOptimizerConfig {
+                DenseVectorOptimizerInput {
+                    size: params.size.get() as usize,
+                    distance: params.distance,
                     on_disk: params.on_disk,
                     hnsw_config: hnsw_config.update_opt(params.hnsw_config.as_ref()),
                     quantization_config: params
@@ -200,12 +204,14 @@ pub fn build_segment_optimizer_config(
                         .as_ref()
                         .or(quantization_config.as_ref())
                         .cloned(),
+                    multivector_config: params.multivector_config,
+                    datatype: params.datatype.map(VectorStorageDatatype::from),
                 },
             )
         })
         .collect();
 
-    let sparse_vector = collection_params
+    let sparse_vectors = collection_params
         .sparse_vectors
         .as_ref()
         .map(|config| {
@@ -214,8 +220,17 @@ pub fn build_segment_optimizer_config(
                 .map(|(name, params)| {
                     (
                         name.clone(),
-                        SparseVectorOptimizerConfig {
+                        SparseVectorOptimizerInput {
                             on_disk: params.index.and_then(|index| index.on_disk),
+                            full_scan_threshold: params
+                                .index
+                                .and_then(|index| index.full_scan_threshold),
+                            index_datatype: params
+                                .index
+                                .and_then(|index| index.datatype)
+                                .map(VectorStorageDatatype::from),
+                            storage_type: params.storage_type(),
+                            modifier: params.modifier,
                         },
                     )
                 })
@@ -223,13 +238,13 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    SegmentOptimizerConfig {
+    let source = OptimizerSourceConfig {
         payload_storage_type: collection_params.payload_storage_type(),
-        base_vector_data: collection_params.to_base_vector_data(quantization_config.as_ref()),
-        base_sparse_vector_data: collection_params.to_sparse_vector_data(),
-        dense_vector,
-        sparse_vector,
-    }
+        dense_vectors,
+        sparse_vectors,
+    };
+
+    source.build()
 }
 
 pub fn build_optimizers(

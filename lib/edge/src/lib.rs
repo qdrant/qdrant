@@ -1,12 +1,13 @@
-mod count;
-mod facet;
-mod info;
-mod query;
-mod retrieve;
-mod scroll;
-mod search;
-mod snapshots;
-mod update;
+pub mod count;
+pub mod facet;
+pub mod info;
+pub mod optimize;
+pub mod query;
+pub mod retrieve;
+pub mod scroll;
+pub mod search;
+pub mod snapshots;
+pub mod update;
 
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use segment::types::SegmentConfig;
+use shard::files::SEGMENTS_PATH;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -37,8 +39,6 @@ pub struct EdgeShard {
 }
 
 const WAL_PATH: &str = "wal";
-const SEGMENTS_PATH: &str = "segments";
-
 impl EdgeShard {
     pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
