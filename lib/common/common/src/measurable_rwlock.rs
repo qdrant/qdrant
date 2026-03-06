@@ -272,6 +272,7 @@ pub struct MeasurableRwLockUpgradableReadGuard<'rwlock, T: ?Sized> {
 
 #[derive(Debug)]
 pub struct MeasurableRwLockWriteGuard<'rwlock, T: ?Sized> {
+    tag: &'static str,
     _lock_measurer: Measurer,
     inner: ::parking_lot::RwLockWriteGuard<'rwlock, T>,
 }
@@ -388,6 +389,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
             .fetch_add(1, atomic::Ordering::Relaxed);
         MeasurableRwLockWriteGuard {
             _lock_measurer: lock_measurer,
+            tag: self.tag,
             inner,
         }
     }
@@ -400,6 +402,7 @@ impl<T: ?Sized> MeasurableRwLock<T> {
                     .write_lock_time,
             );
             MeasurableRwLockWriteGuard {
+                tag: self.tag,
                 _lock_measurer: lock_measurer,
                 inner,
             }
@@ -426,6 +429,7 @@ impl<'rwlock, T: ?Sized + 'rwlock> MeasurableRwLockUpgradableReadGuard<'rwlock, 
             .fetch_add(1, atomic::Ordering::Relaxed);
 
         MeasurableRwLockWriteGuard {
+            tag: s.tag,
             _lock_measurer: lock_measurer,
             inner,
         }
@@ -482,6 +486,20 @@ impl<'rwlock, T: ?Sized> Deref for MeasurableRwLockUpgradableReadGuard<'rwlock, 
 impl<'rwlock, T: ?Sized> MeasurableRwLockWriteGuard<'rwlock, T> {
     pub fn unlock_fair(s: Self) {
         ::parking_lot::RwLockWriteGuard::unlock_fair(s.inner);
+    }
+
+    pub fn downgrade_to_upgradable(s: Self) -> MeasurableRwLockUpgradableReadGuard<'rwlock, T> {
+        let metrics = get_current_measurable_rwlock_metrics(s.tag).expect("Measurer unitialized");
+        let lock_measurer = Measurer::start(&metrics.upgrade_lock_time);
+
+        let inner = ::parking_lot::RwLockWriteGuard::downgrade_to_upgradable(s.inner);
+        MeasurableRwLockUpgradableReadGuard {
+            tag: s.tag,
+            upgrade_wait_us_counter: &metrics.upgrade_wait_time_us_counter,
+            upgrade_counter: &metrics.upgrade_counter,
+            _lock_measurer: lock_measurer,
+            inner,
+        }
     }
 }
 
