@@ -4,8 +4,7 @@ use ahash::HashMap;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::ShardKey;
-use serde;
-use serde::{Deserialize, Serialize};
+use serde::{self, Deserialize, Serialize};
 
 pub fn get_git_commit_id() -> Option<String> {
     option_env!("GIT_COMMIT_ID")
