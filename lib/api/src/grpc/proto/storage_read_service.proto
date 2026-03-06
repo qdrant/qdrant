@@ -32,6 +32,7 @@ message ListFilesRequest {
 message FileExistsRequest {
   string collection_name = 1;
   string path = 2;
+  bool sequential = 3;
 }
 
 message FileExistsResponse {
