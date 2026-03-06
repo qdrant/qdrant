@@ -9,9 +9,7 @@ use qdrant_edge::EdgeShard;
 use qdrant_edge::config::shard::EdgeShardConfig;
 use qdrant_edge::config::vectors::EdgeVectorParams;
 use qdrant_edge::segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
-use qdrant_edge::segment::types::{
-    Distance, ExtendedPointId, Payload, PayloadStorageType, VectorDataConfig, VectorStorageType,
-};
+use qdrant_edge::segment::types::{Distance, ExtendedPointId, Payload};
 use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
 use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
