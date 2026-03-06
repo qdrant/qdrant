@@ -16074,6 +16074,8 @@ pub struct FileExistsRequest {
     #[prost(string, tag = "3")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub sequential: bool,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
