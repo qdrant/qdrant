@@ -350,6 +350,16 @@ fn main() -> anyhow::Result<()> {
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
 
+    general_runtime.spawn(async {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut usr1_signals =
+            signal(SignalKind::user_defined1()).expect("Failed to set up signal handler for USR1");
+        loop {
+            usr1_signals.recv().await;
+            ::common::measurable_rwlock::log_all_metrics();
+        }
+    });
+
     let propose_operation_sender = if settings.cluster.enabled {
         // High-level channel which could be used to send User-space consensus operations
         Some(OperationSender::new(propose_sender))
