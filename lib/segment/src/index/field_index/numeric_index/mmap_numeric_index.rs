@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
@@ -8,6 +9,8 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
+use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
@@ -26,18 +29,21 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + 'static> {
     path: PathBuf,
-    pub(super) storage: Storage<T>,
+    pub(super) storage: Storage<T, MmapUniversal<u8>>,
     histogram: Histogram<T>,
     deleted_count: usize,
     max_values_per_point: usize,
     is_on_disk: bool,
 }
 
-pub(super) struct Storage<T: Encodable + Numericable + Default + MmapValue + 'static> {
+pub(super) struct Storage<
+    T: Encodable + Numericable + Default + MmapValue + 'static,
+    S: UniversalRead<u8>,
+> {
     deleted: MmapBitSliceBufferedUpdateWrapper,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: MmapSlice<Point<T>>,
-    pub(super) point_to_values: MmapPointToValues<T>,
+    pub(super) point_to_values: MmapPointToValues<T, S>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,18 +111,13 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         in_memory_index.histogram.save(path)?;
 
-        MmapPointToValues::<T>::from_iter(
+        MmapPointToValues::<T, MmapUniversal<u8>>::from_iter(
             path,
             in_memory_index
                 .point_to_values
                 .iter()
                 .enumerate()
-                .map(|(idx, values)| {
-                    (
-                        idx as PointOffsetType,
-                        values.iter().map(|v| T::as_referenced(v)),
-                    )
-                }),
+                .map(|(idx, values)| (idx as PointOffsetType, values.iter().map(|v| v.borrow()))),
         )?;
 
         {
@@ -234,17 +235,15 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    ) -> OperationResult<bool> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
 
         if self.storage.deleted.get(idx as usize) == Some(false) {
-            self.storage.point_to_values.check_values_any(
-                idx,
-                |v| check_fn(T::from_referenced(&v)),
-                &hw_counter,
-            )
+            self.storage
+                .point_to_values
+                .check_values_any(idx, |v| check_fn(v), &hw_counter)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -253,8 +252,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             Some(Box::new(
                 self.storage
                     .point_to_values
-                    .get_values(idx)?
-                    .map(|v| *T::from_referenced(&v)),
+                    // TODO: Propagate counter upwards
+                    .values_iter(idx, ConditionedCounter::never())
+                    .ok()??
+                    .map(|v| *v),
             ))
         } else {
             None
@@ -263,7 +264,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
         if self.storage.deleted.get(idx as usize) == Some(false) {
-            self.storage.point_to_values.get_values_count(idx)
+            self.storage.point_to_values.get_values_count(idx).ok()?
         } else {
             None
         }
@@ -392,7 +393,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         self.storage.pairs.populate()?;
-        self.storage.point_to_values.populate();
+        self.storage.point_to_values.populate()?;
         Ok(())
     }
 

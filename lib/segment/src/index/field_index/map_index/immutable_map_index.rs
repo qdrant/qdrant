@@ -1,4 +1,4 @@
-use std::borrow::Borrow as _;
+use std::borrow::{Borrow as _, Cow};
 use std::collections::HashMap;
 use std::iter;
 use std::ops::Range;
@@ -26,16 +26,15 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 #[cfg(feature = "rocksdb")]
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
-use crate::index::field_index::mmap_point_to_values::MmapValue;
 use crate::index::payload_config::StorageType;
 
 pub struct ImmutableMapIndex<N: MapIndexKey + Key + ?Sized> {
-    value_to_points: HashMap<N::Owned, ContainerSegment>,
+    value_to_points: HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
     /// Container holding a slice of point IDs per value. `value_to_point` holds the range per value.
     /// Each slice MUST be sorted so that we can binary search over it.
     value_to_points_container: Vec<PointOffsetType>,
     deleted_value_to_points_container: BitVec,
-    point_to_values: ImmutablePointToValues<N::Owned>,
+    point_to_values: ImmutablePointToValues<<N as MapIndexKey>::Owned>,
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
     values_count: usize,
@@ -58,7 +57,7 @@ pub(super) struct ContainerSegment {
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N>
 where
-    Vec<N::Owned>: Blob + Send + Sync,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open and load immutable numeric index from RocksDB storage
     #[cfg(feature = "rocksdb")]
@@ -157,7 +156,7 @@ where
         let mut value_to_points = HashMap::new();
 
         // Create points to values mapping
-        let mut point_to_values: Vec<Vec<N::Owned>> = vec![];
+        let mut point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>> = vec![];
         for (value, ids) in mapping() {
             for idx in ids {
                 if point_to_values.len() <= idx as usize {
@@ -170,7 +169,7 @@ where
                 }
                 values_count += 1;
 
-                point_values.push(value.to_owned());
+                point_values.push(MapIndexKey::to_owned(value));
             }
         }
         let point_to_values = ImmutablePointToValues::new(point_to_values);
@@ -182,7 +181,7 @@ where
             let container_len = value_to_points_container.len() as u32;
             let range = container_len..container_len + points.len() as u32;
             value_to_points.insert(
-                value.to_owned(),
+                MapIndexKey::to_owned(value),
                 ContainerSegment {
                     count: range.len() as u32,
                     range,
@@ -195,18 +194,15 @@ where
         // Sort IDs in each slice of points
         // This is very important because we binary search
         for value in value_to_points.keys() {
+            let value: &N = value.borrow();
             if let Some((slice, _offset)) = Self::get_mut_point_ids_slice(
                 &value_to_points,
                 &mut value_to_points_container,
-                value.borrow(),
+                value,
             ) {
                 slice.sort_unstable();
             } else {
-                debug_assert!(
-                    false,
-                    "value {} not found in value_to_points",
-                    value.borrow(),
-                );
+                debug_assert!(false, "value {value} not found in value_to_points");
             }
         }
 
@@ -233,7 +229,7 @@ where
     /// The returned slice is sorted and does contain deleted values.
     /// The returned offset is the start of the range in the container.
     fn get_mut_point_ids_slice<'a>(
-        value_to_points: &HashMap<N::Owned, ContainerSegment>,
+        value_to_points: &HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
         value_to_points_container: &'a mut [PointOffsetType],
         value: &N,
     ) -> Option<(&'a mut [PointOffsetType], usize)> {
@@ -251,7 +247,7 @@ where
     ///
     /// Returns true if the last element was removed.
     fn shrink_value_range(
-        value_to_points: &mut HashMap<N::Owned, ContainerSegment>,
+        value_to_points: &mut HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
         value: &N,
     ) -> bool {
         if let Some(entry) = value_to_points.get_mut(value) {
@@ -289,7 +285,7 @@ where
     ///
     /// value_to_points_container -> [0, 1, 2, 4, (3), 5, 6, 7, 8, 9]
     fn remove_idx_from_value_list(
-        value_to_points: &mut HashMap<N::Owned, ContainerSegment>,
+        value_to_points: &mut HashMap<<N as MapIndexKey>::Owned, ContainerSegment>,
         value_to_points_container: &mut [PointOffsetType],
         deleted_value_to_points_container: &mut BitVec,
         value: &N,
@@ -414,21 +410,23 @@ where
     }
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
-        let mut hw_count_val = 0;
-
-        self.point_to_values.check_values_any(idx, |v| {
-            let v = v.borrow();
-            hw_count_val += <N as MmapValue>::mmapped_size(v.as_referenced());
-            check_fn(v)
-        })
+        self.point_to_values
+            .check_values_any(idx, |v| check_fn(v.borrow()))
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
-        Some(self.point_to_values.get_values(idx)?.map(|v| v.borrow()))
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<impl Iterator<Item = Cow<'_, N>> + '_> {
+        Some(
+            self.point_to_values
+                .get_values(idx)?
+                .map(|v| Cow::Borrowed(v.borrow())),
+        )
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        self.point_to_values.get_values_count(idx)
+        Some(self.point_to_values.get_values(idx)?.count())
     }
 
     pub fn get_indexed_points(&self) -> usize {
