@@ -215,11 +215,11 @@ where
         Ok(false)
     }
 
-    pub fn values_iter<'a>(
-        &'a self,
+    pub fn values_iter(
+        &self,
         point_id: PointOffsetType,
         hw_counter: ConditionedCounter, // TODO: make it by reference
-    ) -> OperationResult<Option<impl Iterator<Item = Cow<'a, T>>>> {
+    ) -> OperationResult<Option<impl Iterator<Item = Cow<'_, T>>>> {
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
