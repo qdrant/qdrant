@@ -5,9 +5,11 @@ use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, MmapSlice};
+use common::mmap::{AdviceSetting, MmapSlice};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use common::universal_io::OpenOptions;
+use common::universal_io::bitslice::MmapBitSliceStorage;
 use itertools::Either;
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
@@ -88,7 +90,22 @@ impl MmapInvertedIndex {
             .iter()
             .map(|count| *count == 0)
             .collect();
-        MmapBitSlice::create(&deleted_points_path, &deleted_bitslice)?;
+        {
+            let mut deleted_storage = MmapBitSliceStorage::create(
+                &deleted_points_path,
+                deleted_bitslice.len(),
+                OpenOptions::default(),
+            )?;
+            deleted_storage.set_bits_batch(
+                deleted_bitslice
+                    .iter()
+                    .by_vals()
+                    .enumerate()
+                    .filter(|(_, bit)| *bit)
+                    .map(|(idx, _)| (idx as u64, true)),
+            )?;
+            deleted_storage.flusher()()?;
+        }
 
         // The actual values go in the slice
         let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
@@ -130,10 +147,14 @@ impl MmapInvertedIndex {
             )?)?
         };
 
-        let deleted = mmap::open_write_mmap(&deleted_points_path, AdviceSetting::Global, populate)?;
-        let deleted = MmapBitSlice::from(deleted, 0);
-
-        let num_deleted_points = deleted.count_ones();
+        let deleted = MmapBitSliceStorage::open(
+            &deleted_points_path,
+            OpenOptions {
+                populate: Some(populate),
+                ..OpenOptions::default()
+            },
+        )?;
+        let num_deleted_points = deleted.count_ones()?;
         let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
         let points_count = point_to_tokens_count.len() - num_deleted_points;
 

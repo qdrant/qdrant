@@ -8,14 +8,13 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
-use common::mmap;
-use common::mmap::{AdviceSetting, MmapBitSlice, create_and_ensure_length};
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
+use common::universal_io::OpenOptions;
+use common::universal_io::bitslice::MmapBitSliceStorage;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use itertools::Itertools;
-use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::{IdIter, MapIndexKey};
@@ -66,9 +65,14 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path, do_populate)?;
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
-        let deleted = mmap::open_write_mmap(&deleted_path, AdviceSetting::Global, do_populate)?;
-        let deleted = MmapBitSlice::from(deleted, 0);
-        let deleted_count = deleted.count_ones();
+        let deleted = MmapBitSliceStorage::open(
+            &deleted_path,
+            OpenOptions {
+                populate: Some(do_populate),
+                ..OpenOptions::default()
+            },
+        )?;
+        let deleted_count = deleted.count_ones()?;
 
         Ok(Some(Self {
             path: path.to_path_buf(),
@@ -120,21 +124,16 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         )?;
 
         {
-            let deleted_flags_count = point_to_values.len();
-            let deleted_file = create_and_ensure_length(
-                &deleted_path,
-                deleted_flags_count
-                    .div_ceil(u8::BITS as usize)
-                    .next_multiple_of(size_of::<usize>()),
+            let mut deleted =
+                MmapBitSliceStorage::create(&deleted_path, point_to_values.len(), OpenOptions::default())?;
+            deleted.set_bits_batch(
+                point_to_values
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, values)| values.is_empty())
+                    .map(|(idx, _)| (idx as u64, true)),
             )?;
-            let mut deleted_mmap = unsafe { MmapMut::map_mut(&deleted_file)? };
-            deleted_mmap.fill(0);
-            let mut deleted_bitflags = MmapBitSlice::from(deleted_mmap, 0);
-            for (idx, values) in point_to_values.iter().enumerate() {
-                if values.is_empty() {
-                    deleted_bitflags.set(idx, true);
-                }
-            }
+            deleted.flusher()()?;
         }
 
         Self::open(path, is_on_disk)?.ok_or_else(|| {
