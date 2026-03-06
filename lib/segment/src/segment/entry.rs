@@ -179,6 +179,19 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let mut records = AHashMap::with_capacity(point_ids.len());
 
+        // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
+        // but still satisfy rusts ownership constraints.
+        let filtered_point_ids = self.has_deferred_points().then(|| {
+            point_ids
+                .iter()
+                .filter(|&&point_id| !self.point_is_deferred(point_id))
+                .copied()
+                .collect::<Vec<_>>()
+        });
+
+        // Stage two: Select the correct slice and shadow `point_ids`.
+        let point_ids = filtered_point_ids.as_deref().unwrap_or(point_ids);
+
         let mut update_record_vector =
             |vector_name: &VectorNameBuf,
              point_id: PointIdType,
