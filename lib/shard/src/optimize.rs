@@ -12,7 +12,7 @@ use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
-use common::measurable_rwlock::parking_lot::Mutex;
+use common::measurable_rwlock::parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use fs_err as fs;
@@ -460,8 +460,7 @@ fn finish_optimization(
 
     // Replace proxy segments with new optimized segment
     let point_count = optimized_segment.available_point_count();
-    let mut writable_segment_holder =
-        ::parking_lot::RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
+    let mut writable_segment_holder = RwLockUpgradableReadGuard::upgrade(upgradable_segment_holder);
 
     let (_, proxies) = writable_segment_holder.swap_new(optimized_segment, proxy_ids);
     debug_assert_eq!(
@@ -668,8 +667,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     let (proxy_ids, cow_segment_id_opt, counter_handler): (Vec<_>, _, _) = {
         // Exclusive lock for the segments operations.
-        let mut segment_holder_write =
-            ::parking_lot::RwLockUpgradableReadGuard::upgrade(segment_holder_read);
+        let mut segment_holder_write = RwLockUpgradableReadGuard::upgrade(segment_holder_read);
         let mut proxy_ids = Vec::new();
         for (proxy, idx) in proxies.into_iter().zip(input_segment_ids.iter().cloned()) {
             // During optimization, we expect that logical point data in the wrapped segment is

@@ -3,9 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ::parking_lot::RwLock;
 use common::budget::{ResourceBudget, ResourcePermit};
-use common::measurable_rwlock::parking_lot::Mutex;
+use common::measurable_rwlock::parking_lot::{Mutex, RwLock};
 use common::progress_tracker::ProgressTracker;
 #[cfg(any(test, feature = "testing"))]
 use itertools::Itertools;

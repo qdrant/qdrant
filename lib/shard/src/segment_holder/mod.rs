@@ -17,10 +17,12 @@ use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::measurable_rwlock::parking_lot::{
+    Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
@@ -54,7 +56,7 @@ impl PartialOrd for DedupPoint {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SegmentHolder {
     /// Keep segments sorted by their ID for deterministic iteration order
     appendable_segments: BTreeMap<SegmentId, LockedSegment>,
@@ -87,6 +89,22 @@ pub struct SegmentHolder {
 
     /// The amount of currently running optimizations.
     pub running_optimizations: ProcessCounter,
+}
+
+impl Default for SegmentHolder {
+    fn default() -> Self {
+        Self {
+            appendable_segments: Default::default(),
+            non_appendable_segments: Default::default(),
+            id_source: Default::default(),
+            failed_operation: Default::default(),
+            optimizer_errors: Default::default(),
+            max_persisted_segment_version_overwrite: Default::default(),
+            flush_dependency: Arc::new(Mutex::new("flush_dependency", Default::default())),
+            flush_thread: Mutex::new("flush_thread", Default::default()),
+            running_optimizations: Default::default(),
+        }
+    }
 }
 
 impl Drop for SegmentHolder {

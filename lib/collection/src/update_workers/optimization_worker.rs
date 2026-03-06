@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::measurable_rwlock::parking_lot::RwLockUpgradableReadGuard;
 use common::panic;
 use common::save_on_disk::SaveOnDisk;
 use itertools::Itertools;
@@ -473,7 +474,7 @@ impl UpdateWorkers {
                 payload_index_schema,
                 true,
             )?;
-            let mut write_guard = parking_lot::RwLockUpgradableReadGuard::upgrade(segments_guard);
+            let mut write_guard = RwLockUpgradableReadGuard::upgrade(segments_guard);
             write_guard.add_new_locked(new_segment);
         }
 

@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::measurable_rwlock::parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
-use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationResult;
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment::SegmentVersion;

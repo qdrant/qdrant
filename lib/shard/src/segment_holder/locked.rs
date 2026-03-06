@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use common::measurable_rwlock::parking_lot::{
+    Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
 
 use crate::segment_holder::SegmentHolder;
 
@@ -12,7 +14,7 @@ use crate::segment_holder::SegmentHolder;
 /// This is used during critical sections like segment optimization finalization and snapshot
 /// operations to ensure consistency.
 #[allow(dead_code)] // Field is held for its RAII Drop behavior, not for reading
-pub struct UpdatesGuard<'a>(parking_lot::MutexGuard<'a, ()>);
+pub struct UpdatesGuard<'a>(MutexGuard<'a, ()>);
 
 #[derive(Clone, Debug)]
 pub struct LockedSegmentHolder {
@@ -33,8 +35,8 @@ pub struct LockedSegmentHolder {
 impl LockedSegmentHolder {
     pub fn new(segment_holder: SegmentHolder) -> Self {
         Self {
-            holder: Arc::new(RwLock::new(segment_holder)),
-            updates_mutex: Arc::new(Mutex::new(())),
+            holder: Arc::new(RwLock::new("segment_holder", segment_holder)),
+            updates_mutex: Arc::new(Mutex::new("updates_mutex", ())),
         }
     }
 

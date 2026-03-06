@@ -2,9 +2,9 @@ use std::cmp::{max, min};
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
 
+use common::measurable_rwlock::parking_lot::{MutexGuard, RwLock, RwLockReadGuard};
 use common::sort_utils::sort_permutation;
 use log::trace;
-use parking_lot::{RwLock, RwLockReadGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry;
 use segment::types::SeqNumberType;
@@ -151,7 +151,7 @@ impl SegmentHolder {
     // Returns lock to guarantee that there will be no other flush in a different thread
     pub(super) fn lock_flushing(
         &self,
-    ) -> OperationResult<parking_lot::MutexGuard<'_, Option<JoinHandle<OperationResult<()>>>>> {
+    ) -> OperationResult<MutexGuard<'_, Option<JoinHandle<OperationResult<()>>>>> {
         let mut lock = self.flush_thread.lock();
         let mut join_handle: Option<JoinHandle<OperationResult<()>>> = None;
         std::mem::swap(&mut join_handle, &mut lock);

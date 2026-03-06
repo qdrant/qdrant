@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use parking_lot::RwLock;
+use common::measurable_rwlock::parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::segment::Segment;
@@ -99,12 +99,17 @@ impl LockedSegment {
 
 impl From<Segment> for LockedSegment {
     fn from(s: Segment) -> Self {
-        LockedSegment::Original(Arc::new(RwLock::new(s)))
+        let tag = if s.appendable_flag {
+            "appendable"
+        } else {
+            "non-appendable"
+        };
+        LockedSegment::Original(Arc::new(RwLock::new(tag, s)))
     }
 }
 
 impl From<ProxySegment> for LockedSegment {
     fn from(s: ProxySegment) -> Self {
-        LockedSegment::Proxy(Arc::new(RwLock::new(s)))
+        LockedSegment::Proxy(Arc::new(RwLock::new("proxy", s)))
     }
 }

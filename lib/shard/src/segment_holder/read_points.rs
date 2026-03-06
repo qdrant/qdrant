@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use parking_lot::RwLockReadGuard;
+use common::measurable_rwlock::parking_lot::RwLockReadGuard;
 use segment::common::check_stopped;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry;

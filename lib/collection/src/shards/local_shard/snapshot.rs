@@ -3,10 +3,10 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::measurable_rwlock::parking_lot::RwLock;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err as fs;
-use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::manifest::SegmentManifest;
 use segment::entry::NonAppendableSegmentEntry;
