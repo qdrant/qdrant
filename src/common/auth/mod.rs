@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -50,6 +51,16 @@ pub enum AuthError {
     Unauthorized(String),
     Forbidden(String),
     StorageError(StorageError),
+}
+
+impl Display for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthError::Unauthorized(msg) => write!(f, "Unauthorized: {msg}"),
+            AuthError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
+            AuthError::StorageError(e) => write!(f, "Storage error: {e}"),
+        }
+    }
 }
 
 impl AuthKeys {

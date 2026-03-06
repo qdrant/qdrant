@@ -5,8 +5,9 @@ use std::sync::Arc;
 use actix_web::body::EitherBody;
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
+use chrono::Utc;
 use futures_util::future::LocalBoxFuture;
-use storage::audit::audit_trust_forwarded_headers;
+use storage::audit::{AuditEvent, audit_log, audit_trust_forwarded_headers, is_audit_enabled};
 use storage::rbac::Access;
 
 use super::forwarded;
@@ -121,17 +122,18 @@ where
         let auth_keys = self.auth_keys.clone();
         let service = self.service.clone();
         Box::pin(async move {
+            let remote = if audit_trust_forwarded_headers() {
+                forwarded::forwarded_for(&req)
+            } else {
+                None
+            }
+            .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
+
             match auth_keys
                 .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
                 .await
             {
                 Ok((access, inference_token, auth_type, subject)) => {
-                    let remote = if audit_trust_forwarded_headers() {
-                        forwarded::forwarded_for(&req)
-                    } else {
-                        None
-                    }
-                    .or_else(|| req.peer_addr().map(|a| a.ip().to_string()));
                     let auth = Auth::new(access, subject, remote, auth_type);
                     let previous = req.extensions_mut().insert(auth);
                     req.extensions_mut().insert(inference_token);
@@ -142,6 +144,20 @@ where
                     service.call(req).await
                 }
                 Err(e) => {
+                    if is_audit_enabled() {
+                        let auth_type = AuthType::None;
+                        let error_msg = e.to_string();
+                        audit_log(AuditEvent {
+                            timestamp: Utc::now(),
+                            method: req.path().to_string(),
+                            auth_type,
+                            subject: None,
+                            remote: remote.clone(),
+                            collection: None,
+                            result: "denied",
+                            error: Some(error_msg),
+                        });
+                    }
                     let resp = match e {
                         AuthError::Unauthorized(e) => HttpResponse::Unauthorized().body(e),
                         AuthError::Forbidden(e) => HttpResponse::Forbidden().body(e),

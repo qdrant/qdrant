@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use chrono::Utc;
 use futures::future::BoxFuture;
-use storage::audit::audit_trust_forwarded_headers;
+use storage::audit::{AuditEvent, audit_log, audit_trust_forwarded_headers, is_audit_enabled};
 use storage::rbac::Access;
 use tonic::Status;
 use tonic::body::BoxBody;
@@ -58,10 +59,26 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
     let (access, inference_token, auth_type, subject) = auth_keys
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
-        .map_err(|e| match e {
-            AuthError::Unauthorized(e) => Status::unauthenticated(e),
-            AuthError::Forbidden(e) => Status::permission_denied(e),
-            AuthError::StorageError(e) => Status::from(e),
+        .map_err(|e| {
+            if is_audit_enabled() {
+                let auth_type = AuthType::None;
+                let error_msg = e.to_string();
+                audit_log(AuditEvent {
+                    timestamp: Utc::now(),
+                    method: path.to_string(),
+                    auth_type,
+                    subject: None,
+                    remote: remote.clone(),
+                    collection: None,
+                    result: "denied",
+                    error: Some(error_msg),
+                });
+            }
+            match e {
+                AuthError::Unauthorized(e) => Status::unauthenticated(e),
+                AuthError::Forbidden(e) => Status::permission_denied(e),
+                AuthError::StorageError(e) => Status::from(e),
+            }
         })?;
 
     let auth = Auth::new(access, subject, remote, auth_type);
