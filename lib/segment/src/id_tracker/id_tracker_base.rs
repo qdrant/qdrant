@@ -130,6 +130,21 @@ pub trait IdTracker: fmt::Debug {
         }
     }
 
+    fn iter_random_visible(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        match deferred_internal_id {
+            None => self.iter_random(),
+            Some(deferred_internal_id) => Box::new(
+                self.iter_random()
+                    // We _can_ prevent iterating over all points by going down into `iter_random()` and set
+                    // the `max_internal_id` to `deferred_internal_id`.
+                    .filter(move |&(_, iid)| iid < deferred_internal_id),
+            ),
+        }
+    }
+
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
 

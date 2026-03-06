@@ -1021,6 +1021,15 @@ fn test_deferred_point_read_operations() {
         },
         |i| i.1,
     );
+
+    // Read random filtered (random scroll)
+    assert_deferred_points_excluded(
+        "Read random filtered",
+        |segment, filter| {
+            segment.read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter)
+        },
+        |i| *i,
+    );
 }
 
 /// Extensively tests whether deferred points are excluded from the result of the given `operation`.
