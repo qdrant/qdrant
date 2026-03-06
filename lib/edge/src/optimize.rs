@@ -26,7 +26,7 @@ impl EdgeShard {
     ///
     /// This is synchronous and does not spawn background optimization workers.
     pub fn optimize(&self) -> OperationResult<bool> {
-        let optimizers = self.build_blocking_optimizers()?;
+        let optimizers = self.build_blocking_optimizers();
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
 
@@ -77,7 +77,7 @@ impl EdgeShard {
         }
     }
 
-    fn build_blocking_optimizers(&self) -> OperationResult<Vec<Arc<Optimizer>>> {
+    fn build_blocking_optimizers(&self) -> Vec<Arc<Optimizer>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
@@ -88,7 +88,7 @@ impl EdgeShard {
         let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
         let default_segments_number = default_segment_number();
 
-        Ok(vec![
+        vec![
             Arc::new(MergeOptimizer::new(
                 default_segments_number,
                 threshold_config,
@@ -125,7 +125,7 @@ impl EdgeShard {
                 hnsw_config,
                 hnsw_global_config,
             )),
-        ])
+        ]
     }
 
     fn default_optimizer_thresholds(hnsw_config: HnswConfig) -> OptimizerThresholds {
