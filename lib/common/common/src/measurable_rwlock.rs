@@ -408,6 +408,29 @@ impl<T: ?Sized> MeasurableRwLock<T> {
 }
 
 impl<'rwlock, T: ?Sized + 'rwlock> MeasurableRwLockUpgradableReadGuard<'rwlock, T> {
+    pub fn upgrade(s: Self) -> MeasurableRwLockWriteGuard<'rwlock, T> {
+        let mut upgrade_wait_time = 0u64;
+        let metrics = get_current_measurable_rwlock_metrics(s.tag).expect("Metrics uninitialized");
+
+        let start = Instant::now();
+        let inner = ::parking_lot::RwLockUpgradableReadGuard::upgrade(s.inner);
+        upgrade_wait_time += start.elapsed().as_micros() as u64;
+
+        let lock_measurer = Measurer::start(&metrics.upgrade_lock_time);
+
+        metrics
+            .upgrade_wait_time_us_counter
+            .fetch_add(upgrade_wait_time, atomic::Ordering::Relaxed);
+        metrics
+            .upgrade_counter
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        MeasurableRwLockWriteGuard {
+            _lock_measurer: lock_measurer,
+            inner,
+        }
+    }
+
     pub fn with_upgraded<Ret, F>(&mut self, f: F) -> Ret
     where
         F: FnOnce(&mut T) -> Ret,
