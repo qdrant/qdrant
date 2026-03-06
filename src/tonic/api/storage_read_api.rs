@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -19,14 +19,13 @@ use futures::Stream;
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
 use tokio::sync::mpsc;
-use tokio_util::io::simplex::new;
 use tonic::{Request, Response, Status, async_trait};
 
 use crate::tonic::api::validate;
 use crate::tonic::auth::extract_auth;
 
 /// Chunk size for streaming reads (~1 MB).
-const STREAM_CHUNK_SIZE: usize = 1024 * 1024;
+const STREAM_CHUNK_SIZE: u64 = 1024 * 1024;
 
 pub struct StorageReadService<S: UniversalRead<u8> + Send + Sync + 'static = MmapUniversal<u8>> {
     dispatcher: Arc<Dispatcher>,
@@ -54,7 +53,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
 }
 
 /// Convert UniversalIoError to tonic Status.
-fn universal_io_error_to_status(e: UniversalIoError) -> Status {
+fn io_error_to_status(e: UniversalIoError) -> Status {
     match e {
         UniversalIoError::Io(e) => Status::internal(format!("I/O error: {e}")),
         UniversalIoError::Mmap(e) => Status::internal(format!("Mmap error: {e}")),
@@ -113,6 +112,17 @@ fn dispatch_read<S: UniversalRead<u8>>(
     }
 }
 
+/// A wrapper around `mpsc::Receiver` that implements `Stream`.
+struct MpscStream<T>(mpsc::Receiver<T>);
+
+impl<T> Stream for MpscStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.0.poll_recv(cx)
+    }
+}
+
 #[async_trait]
 impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadService<S> {
     // Check if a file exists via UniversalRead::open(), catch NotFound → false.
@@ -160,7 +170,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
             .await
             .map_err(|e| Status::internal(format!("Task join error: {e}")))?
-            .map_err(universal_io_error_to_status)?;
+            .map_err(io_error_to_status)?;
 
         let relative_paths = paths
             .into_iter()
@@ -189,8 +199,8 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let open_options = convert_open_options(inner.open_options);
         let length = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(universal_io_error_to_status)?;
-            storage.len().map_err(universal_io_error_to_status)
+            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            storage.len().map_err(io_error_to_status)
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -213,7 +223,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let open_options = convert_open_options(inner.open_options);
 
         let data = tokio::task::spawn_blocking(move || {
-            let storage = S::open(&path, open_options).map_err(universal_io_error_to_status)?;
+            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let cow = dispatch_read(
                 &storage,
                 ElementsRange {
@@ -222,7 +232,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 },
                 open_options.need_sequential,
             )
-            .map_err(universal_io_error_to_status)?;
+            .map_err(io_error_to_status)?;
             Ok::<Vec<u8>, Status>(cow.into_owned())
         })
         .await
@@ -240,7 +250,63 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<ReadBytesStreamRequest>,
     ) -> Result<Response<Self::ReadBytesStreamStream>, Status> {
-        todo!()
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let inner = request.into_inner();
+
+        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
+        let offset = inner.offset;
+        let total_length = inner.length;
+        let open_options = convert_open_options(inner.open_options);
+
+        let (tx, rx) = mpsc::channel(4);
+
+        tokio::task::spawn_blocking(move || {
+            let storage = match S::open(&path, open_options) {
+                Ok(storage) => storage,
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(io_error_to_status(e)));
+                    return;
+                }
+            };
+
+            let mut remaining = total_length;
+            let mut current_offset = offset;
+
+            while remaining > 0 {
+                let chunk_size = remaining.min(STREAM_CHUNK_SIZE);
+                let result = dispatch_read(
+                    &storage,
+                    ElementsRange {
+                        start: current_offset,
+                        length: chunk_size,
+                    },
+                    open_options.need_sequential,
+                );
+
+                match result {
+                    Ok(cow) => {
+                        let data = cow.into_owned();
+                        if tx
+                            .blocking_send(Ok(ReadBytesStreamResponse { data }))
+                            .is_err()
+                        {
+                            return; // Client disconnected
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.blocking_send(Err(io_error_to_status(e)));
+                        return;
+                    }
+                }
+
+                current_offset += chunk_size;
+                remaining -= chunk_size;
+            }
+        });
+
+        let stream = MpscStream(rx);
+        Ok(Response::new(Box::pin(stream)))
     }
 
     // Maps to UniversalRead::read_whole() — read an entire file.
