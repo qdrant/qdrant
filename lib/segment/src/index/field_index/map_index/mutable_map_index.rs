@@ -390,8 +390,19 @@ where
         self.map.get(value).map(|p| p.len() as usize)
     }
 
-    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.map.iter().map(|(k, v)| (k.borrow(), v.len() as usize))
+    pub fn iter_counts_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> impl Iterator<Item = (&N, usize)> + '_ {
+        self.map
+            .iter()
+            .map(move |(k, v)| match deferred_internal_id {
+                Some(deferred_internal_id) => {
+                    let count = v.range_cardinality(..deferred_internal_id) as usize;
+                    (k.borrow(), count)
+                }
+                None => (k.borrow(), v.len() as usize),
+            })
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> {

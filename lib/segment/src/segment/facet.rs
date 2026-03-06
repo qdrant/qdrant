@@ -86,7 +86,12 @@ impl Segment {
                     .filter_map(|(value, iter)| {
                         let count = iter
                             .unique()
-                            .filter(|&point_id| context.check(point_id))
+                            .filter(|&point_id| {
+                                // TODO(deferred): We can maybe improve on this filter and exit early if `point_id` reaches `deferred_internal_id`.
+                                // But we need to make sure that every index type returns an ordered `iter`.
+                                !self.is_point_deferred_internal(point_id)
+                                    && context.check(point_id)
+                            })
                             .count();
 
                         (count > 0).then_some(FacetHit { value, count })
@@ -98,7 +103,7 @@ impl Segment {
         } else {
             // just count how many points each value has
             let iter = facet_index
-                .iter_counts_per_value()
+                .iter_counts_per_value(self.deferred_internal_id)
                 .stop_if(is_stopped)
                 .filter(|hit| hit.count > 0);
 

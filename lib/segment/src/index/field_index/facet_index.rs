@@ -23,7 +23,10 @@ pub trait FacetIndex {
     ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a;
 
     /// Get all value->count mappings
-    fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_;
+    fn iter_counts_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_;
 }
 
 pub enum FacetIndexEnum<'a> {
@@ -77,12 +80,25 @@ impl<'a> FacetIndexEnum<'a> {
 
     pub fn iter_counts_per_value(
         &'a self,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'a> {
         match self {
-            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_counts_per_value(*index)),
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_counts_per_value(*index)),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_counts_per_value(*index)),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_counts_per_value(*index)),
+            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_counts_per_value(
+                *index,
+                deferred_internal_id,
+            )),
+            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_counts_per_value(
+                *index,
+                deferred_internal_id,
+            )),
+            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_counts_per_value(
+                *index,
+                deferred_internal_id,
+            )),
+            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_counts_per_value(
+                *index,
+                deferred_internal_id,
+            )),
         }
     }
 }

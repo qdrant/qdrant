@@ -256,11 +256,20 @@ where
         }
     }
 
-    pub fn iter_counts_per_value(&self) -> Box<dyn Iterator<Item = (&N, usize)> + '_> {
+    pub fn iter_counts_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = (&N, usize)> + '_> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value()),
+            MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
+
+            // Two reasons we don't implement deferred filtering here:
+            //  - We don't have both deferred points and an immutable index.
+            //  - It is not trivial (nor performant) to implement correct filtering for this index variant as
+            //    it doesn't work well in combination with the way it handles deletions.
             MapIndex::Immutable(index) => Box::new(index.iter_counts_per_value()),
-            MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value()),
+
+            MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
         }
     }
 
@@ -1239,11 +1248,15 @@ where
             .map(|(k, iter)| (k.into(), iter))
     }
 
-    fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
-        self.iter_counts_per_value().map(|(value, count)| FacetHit {
-            value: value.into(),
-            count,
-        })
+    fn iter_counts_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
+        self.iter_counts_per_value(deferred_internal_id)
+            .map(|(value, count)| FacetHit {
+                value: value.into(),
+                count,
+            })
     }
 }
 
