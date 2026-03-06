@@ -303,7 +303,7 @@ impl IndexSelector<'_> {
         create_if_missing: bool,
     ) -> OperationResult<Option<MapIndex<N>>>
     where
-        Vec<N::Owned>: Blob + Send + Sync,
+        Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
             #[cfg(feature = "rocksdb")]
@@ -335,7 +335,7 @@ impl IndexSelector<'_> {
         make_gridstore: fn(MapIndexGridstoreBuilder<N>) -> FieldIndexBuilder,
     ) -> OperationResult<FieldIndexBuilder>
     where
-        Vec<N::Owned>: Blob + Send + Sync,
+        Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
     {
         Ok(match self {
             #[cfg(feature = "rocksdb")]

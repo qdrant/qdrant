@@ -9,7 +9,6 @@
 //! | [`SimpleCow<'a, T>`] | `&'a T`  | `T`                     |
 //!
 //! [`Cow<'a, T>`]: std::borrow::Cow
-
 use std::ops::Deref;
 
 pub enum BoxCow<'a, T: ?Sized> {

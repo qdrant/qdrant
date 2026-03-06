@@ -286,7 +286,10 @@ where
         match self {
             NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
-            NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
+            // FIXME: don't silently ignore error, change output of this function and propagate
+            NumericIndexInner::Mmap(index) => index
+                .check_values_any(idx, check_fn, hw_counter)
+                .unwrap_or(false),
         }
     }
 

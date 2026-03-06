@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
@@ -40,14 +40,14 @@ const fn default_gridstore_options(block_size: usize) -> StorageOptions {
 
 pub struct MutableMapIndex<N: MapIndexKey + ?Sized>
 where
-    Vec<N::Owned>: Blob + Send + Sync,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(super) map: HashMap<N::Owned, RoaringBitmap>,
-    pub(super) point_to_values: Vec<Vec<N::Owned>>,
+    pub(super) map: HashMap<<N as MapIndexKey>::Owned, RoaringBitmap>,
+    pub(super) point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,
-    storage: Storage<N::Owned>,
+    storage: Storage<<N as MapIndexKey>::Owned>,
 }
 
 enum Storage<T>
@@ -61,7 +61,7 @@ where
 
 impl<N: MapIndexKey + ?Sized> MutableMapIndex<N>
 where
-    Vec<N::Owned>: Blob + Send + Sync,
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
     /// Open mutable map index from RocksDB storage
     #[cfg(feature = "rocksdb")]
@@ -199,7 +199,7 @@ where
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
-        Q: Into<N::Owned> + Clone,
+        Q: Into<<N as MapIndexKey>::Owned> + Clone,
     {
         if values.is_empty() {
             return Ok(());
@@ -358,12 +358,15 @@ where
             .unwrap_or(false)
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<impl Iterator<Item = Cow<'_, N>> + '_> {
         Some(
             self.point_to_values
                 .get(idx as usize)?
                 .iter()
-                .map(|v| v.borrow()),
+                .map(|v| Cow::Borrowed(v.borrow())),
         )
     }
 

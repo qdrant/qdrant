@@ -78,7 +78,7 @@ impl GeoMapIndex {
         let index = if is_on_disk {
             GeoMapIndex::Mmap(Box::new(mmap_index))
         } else {
-            GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(mmap_index))
+            GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(mmap_index)?)
         };
 
         Ok(Some(index))
@@ -892,7 +892,8 @@ mod tests {
                     };
 
                     // Load index from mmap
-                    let index = GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(*index));
+                    let index =
+                        GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(*index).unwrap());
                     Ok(index)
                 }
             }
@@ -1437,11 +1438,14 @@ mod tests {
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
                 .unwrap()
                 .unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::open(temp_dir.path(), false)
-                    .unwrap()
-                    .unwrap(),
-            )),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                        .unwrap()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
         };
 
         let berlin_geo_radius = GeoRadius {
@@ -1527,11 +1531,14 @@ mod tests {
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false)
                 .unwrap()
                 .unwrap(),
-            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                MmapGeoMapIndex::open(temp_dir.path(), false)
-                    .unwrap()
-                    .unwrap(),
-            )),
+            IndexType::RamMmap => GeoMapIndex::Immutable(
+                ImmutableGeoMapIndex::open_mmap(
+                    MmapGeoMapIndex::open(temp_dir.path(), false)
+                        .unwrap()
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
         };
         assert_eq!(new_index.points_count(), 1);
         if index_type != IndexType::Mmap {

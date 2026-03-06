@@ -57,7 +57,10 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         b.iter(|| {
             let random_index = rng.random_range(0..NUM_POINTS) as PointOffsetType;
 
-            if mmap_index.check_values_any(random_index, |value| *value > 0.5, &hw_counter) {
+            if mmap_index
+                .check_values_any(random_index, |value| *value > 0.5, &hw_counter)
+                .unwrap()
+            {
                 count += 1;
             }
         })
