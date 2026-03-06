@@ -90,7 +90,17 @@ impl OptimizerSourceConfig {
             .vector_data
             .iter()
             .map(|(name, config)| {
-                let hnsw_config = match &config.index {
+                let VectorDataConfig {
+                    size,
+                    distance,
+                    storage_type,
+                    index,
+                    quantization_config,
+                    multivector_config,
+                    datatype,
+                } = config;
+
+                let hnsw_config = match index {
                     Indexes::Plain {} => fallback_hnsw,
                     Indexes::Hnsw(hnsw) => *hnsw,
                 };
@@ -98,13 +108,13 @@ impl OptimizerSourceConfig {
                 (
                     name.clone(),
                     DenseVectorOptimizerInput {
-                        size: config.size,
-                        distance: config.distance,
-                        on_disk: Some(config.storage_type.is_on_disk()),
+                        size: *size,
+                        distance: *distance,
+                        on_disk: Some(storage_type.is_on_disk()),
                         hnsw_config,
-                        quantization_config: config.quantization_config.clone(),
-                        multivector_config: config.multivector_config,
-                        datatype: config.datatype,
+                        quantization_config: quantization_config.clone(),
+                        multivector_config: *multivector_config,
+                        datatype: *datatype,
                     },
                 )
             })
@@ -114,14 +124,20 @@ impl OptimizerSourceConfig {
             .sparse_vector_data
             .iter()
             .map(|(name, config)| {
+                let SparseVectorDataConfig {
+                    index,
+                    storage_type,
+                    modifier,
+                } = config;
+
                 (
                     name.clone(),
                     SparseVectorOptimizerInput {
-                        on_disk: Some(config.index.index_type.is_on_disk()),
-                        full_scan_threshold: config.index.full_scan_threshold,
-                        index_datatype: config.index.datatype,
-                        storage_type: config.storage_type,
-                        modifier: config.modifier,
+                        on_disk: Some(index.index_type.is_on_disk()),
+                        full_scan_threshold: index.full_scan_threshold,
+                        index_datatype: index.datatype,
+                        storage_type: *storage_type,
+                        modifier: *modifier,
                     },
                 )
             })
