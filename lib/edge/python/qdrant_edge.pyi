@@ -74,9 +74,13 @@ class EdgeShard:
         """Close the shard and release all resources."""
         ...
 
-    def optimize(self) -> bool:
+    def optimize(self, hnsw_config: Optional["HnswIndexConfig"] = None) -> bool:
         """
         Run segment optimizers in-process, blocking until no more optimizations are planned.
+
+        Args:
+            hnsw_config: Optional HNSW index configuration to use for vectors that don't
+                already have one. If not provided, falls back to default settings.
 
         Returns:
             True if any segments were optimized, False if already optimal.

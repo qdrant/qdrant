@@ -77,11 +77,14 @@ impl EdgeShard {
         }
     }
 
-    fn build_blocking_optimizers(&self) -> Vec<Arc<Optimizer>> {
+    fn build_blocking_optimizers(
+        &self,
+        hnsw_config: Option<HnswConfig>,
+    ) -> OperationResult<Vec<Arc<Optimizer>>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
-        let hnsw_config = HnswConfig::default();
+        let hnsw_config = hnsw_config.unwrap_or_default();
         let hnsw_global_config = HnswGlobalConfig::default();
         let segment_optimizer_config =
             OptimizerSourceConfig::from_segment_config(&self.config, hnsw_config).build();
