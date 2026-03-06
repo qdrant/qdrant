@@ -281,7 +281,8 @@ impl MmapGeoMapIndex {
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
         self.storage
             .point_to_values
-            .values_iter(idx)
+            // TODO: propagate counter upwards
+            .values_iter(idx, ConditionedCounter::never())
             .ok()?
             .map(|iter| iter.map(Cow::into_owned))
     }

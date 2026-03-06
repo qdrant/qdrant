@@ -252,7 +252,8 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             Some(Box::new(
                 self.storage
                     .point_to_values
-                    .values_iter(idx)
+                    // TODO: Propagate counter upwards
+                    .values_iter(idx, ConditionedCounter::never())
                     .ok()??
                     .map(|v| *v),
             ))

@@ -217,7 +217,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .and_then(|_| {
                 self.storage
                     .point_to_values
-                    .values_iter(idx)
+                    // TODO: Propagate counter upwards
+                    .values_iter(idx, ConditionedCounter::never())
                     .ok()?
                     .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = Cow<'_, N>>>)
             })

@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::counter::conditioned_counter::ConditionedCounter;
-use common::cow::CowSlice;
 use common::ext::ResultOptionExt;
 use common::fs::clear_disk_cache;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
@@ -20,32 +19,20 @@ const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
 pub trait MmapValue: ToOwned {
-    /// A collection of all values for a single point, returned by `read_from_mmap`.
-    /// Must be iterable so callers can process individual values.
-    type CowValues<'a>: IntoIterator<Item = Cow<'a, Self>>
-    where
-        Self: 'a;
-
     fn mmapped_size(value: &Self) -> usize;
 
-    fn read_from_mmap(bytes: Cow<'_, [u8]>, count: usize) -> Option<Self::CowValues<'_>>;
+    fn read_from_mmap(bytes: &[u8]) -> Option<&Self>;
 
     fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()>;
 }
 
 impl<T: bytemuck::Pod> MmapValue for T {
-    type CowValues<'a> = CowSlice<'a, Self>;
-
     fn mmapped_size(_value: &Self) -> usize {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: Cow<'_, [u8]>, _count: usize) -> Option<Self::CowValues<'_>> {
-        let cow = match bytes {
-            Cow::Borrowed(slice) => Cow::Borrowed(bytemuck::try_cast_slice(slice).ok()?),
-            Cow::Owned(vec) => Cow::Owned(bytemuck::try_cast_vec(vec).ok()?),
-        };
-        Some(CowSlice(cow))
+    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
+        bytemuck::try_cast_slice(bytes).ok()?.first()
     }
 
     fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()> {
@@ -55,41 +42,13 @@ impl<T: bytemuck::Pod> MmapValue for T {
 }
 
 impl MmapValue for str {
-    type CowValues<'a> = Vec<Cow<'a, str>>;
-
     fn mmapped_size(value: &str) -> usize {
         value.len() + std::mem::size_of::<u32>()
     }
 
-    fn read_from_mmap(bytes: Cow<'_, [u8]>, count: usize) -> Option<Self::CowValues<'_>> {
-        fn parse_str(slice: &[u8], start: usize) -> Option<&str> {
-            let (len, rest) = u32::read_from_prefix(slice.get(start..)?).ok()?;
-            std::str::from_utf8(rest.get(..len as usize)?).ok()
-        }
-
-        let cow = match bytes {
-            Cow::Borrowed(slice) => {
-                let mut holder = Vec::with_capacity(count);
-                let mut start = 0;
-                for _ in 0..count {
-                    let string = parse_str(slice, start)?;
-                    start += Self::mmapped_size(string);
-                    holder.push(Cow::Borrowed(string));
-                }
-                holder
-            }
-            Cow::Owned(vec) => {
-                let mut holder = Vec::with_capacity(count);
-                let mut start = 0;
-                for _ in 0..count {
-                    let string = parse_str(&vec, start)?;
-                    start += Self::mmapped_size(string);
-                    holder.push(Cow::Owned(string.to_owned()));
-                }
-                holder
-            }
-        };
-        Some(cow)
+    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
+        let (len, rest) = u32::read_from_prefix(bytes).ok()?;
+        std::str::from_utf8(rest.get(..len as usize)?).ok()
     }
 
     fn write_to_mmap(value: &str, bytes: &mut [u8]) -> Option<()> {
@@ -245,10 +204,10 @@ where
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &ConditionedCounter,
     ) -> OperationResult<bool> {
-        let Some(values) = self.values(point_id, hw_counter)? else {
+        let Some(values_iter) = self.values_iter(point_id, *hw_counter)? else {
             return Ok(false);
         };
-        for value in values {
+        for value in values_iter {
             if check_fn(&value) {
                 return Ok(true);
             }
@@ -256,11 +215,11 @@ where
         Ok(false)
     }
 
-    pub fn values<'a>(
+    pub fn values_iter<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hw_counter: &ConditionedCounter,
-    ) -> OperationResult<Option<T::CowValues<'a>>> {
+        hw_counter: ConditionedCounter, // TODO: make it by reference
+    ) -> OperationResult<Option<impl Iterator<Item = Cow<'a, T>>>> {
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
@@ -280,19 +239,14 @@ where
         let bytes = self.store.read::<false>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
-        let cow_values = T::read_from_mmap(bytes, count)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
+        let iter = ValuesIter {
+            bytes,
+            start: 0,
+            count,
+            _type: std::marker::PhantomData,
+        };
 
-        Ok(Some(cow_values))
-    }
-
-    pub fn values_iter<'a>(
-        &'a self,
-        point_id: PointOffsetType,
-    ) -> OperationResult<Option<impl Iterator<Item = Cow<'a, T>>>> {
-        // TODO: propagate counter upwards
-        self.values(point_id, &ConditionedCounter::never())
-            .map_some(|values| values.into_iter())
+        Ok(Some(iter))
     }
 
     pub fn get_values_count(&self, point_id: PointOffsetType) -> OperationResult<Option<usize>> {
@@ -360,7 +314,36 @@ where
     ) -> impl Iterator<
         Item = OperationResult<(PointOffsetType, Option<impl Iterator<Item = Cow<'_, T>>>)>,
     > + Clone {
-        (0..self.len() as PointOffsetType).map(|idx| Ok((idx, self.values_iter(idx)?)))
+        // TODO: Propagate counter upwards
+        (0..self.len() as PointOffsetType)
+            .map(|idx| Ok((idx, self.values_iter(idx, ConditionedCounter::never())?)))
+    }
+}
+
+struct ValuesIter<'a, T: ?Sized> {
+    bytes: Cow<'a, [u8]>,
+    start: usize,
+    count: usize,
+    _type: std::marker::PhantomData<T>,
+}
+
+impl<'a, T: MmapValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
+    type Item = Cow<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.count == 0 {
+            return None;
+        }
+
+        let cow = match &self.bytes {
+            Cow::Borrowed(slice) => Cow::Borrowed(T::read_from_mmap(slice.get(self.start..)?)?),
+            Cow::Owned(vec) => Cow::Owned(T::read_from_mmap(vec.get(self.start..)?)?.to_owned()),
+        };
+
+        self.start += T::mmapped_size(cow.as_ref());
+        self.count = self.count.saturating_sub(1);
+
+        Some(cow)
     }
 }
 
@@ -431,10 +414,9 @@ mod tests {
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
-                .values(idx as PointOffsetType, &ConditionedCounter::never())
+                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
                 .unwrap()
                 .unwrap()
-                .into_iter()
                 .map(|s| s.into_owned())
                 .collect_vec();
             assert_eq!(&v, values);
@@ -491,7 +473,9 @@ mod tests {
             MmapPointToValues::<GeoPoint, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
-            let iter = point_to_values.values_iter(idx as PointOffsetType).unwrap();
+            let iter = point_to_values
+                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
+                .unwrap();
             let v: Vec<GeoPoint> = iter
                 .map(|iter| iter.map(Cow::into_owned).collect_vec())
                 .unwrap_or_default();
