@@ -7,12 +7,12 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::atomic_bitvec::prelude::BitVec;
 use common::ext::BitSliceExt as _;
 use common::guards::NestedGuard;
+use common::measurable_rwlock::parking_lot::RwLock;
 use common::mmap::{
     AdviceSetting, MmapBitSlice, MmapSlice, create_and_ensure_length, open_write_mmap,
 };
 use common::types::PointOffsetType;
 use fs_err::File;
-use parking_lot::RwLock;
 use uuid::Uuid;
 
 use crate::common::Flusher;
@@ -301,11 +301,14 @@ impl ImmutableIdTracker {
         Ok(Self {
             path: segment_path.to_path_buf(),
             mappings,
-            inner: RwLock::new(ImmutableIdTrackerInner {
-                deleted_wrapper,
-                internal_to_version_wrapper,
-                internal_to_version,
-            }),
+            inner: RwLock::new(
+                "immutable_id_tracker_inner_rwlock",
+                ImmutableIdTrackerInner {
+                    deleted_wrapper,
+                    internal_to_version_wrapper,
+                    internal_to_version,
+                },
+            ),
         })
     }
 
@@ -391,7 +394,7 @@ impl ImmutableIdTracker {
         Ok(Self {
             path: path.to_path_buf(),
             mappings,
-            inner: RwLock::new(inner),
+            inner: RwLock::new("immutable_id_tracker_inner_rwlock", inner),
         })
     }
 

@@ -10,10 +10,10 @@ use common::atomic_bitvec::BitSlice;
 use common::atomic_bitvec::prelude::BitVec;
 use common::fs::OneshotFile;
 use common::is_alive_lock::IsAliveLock;
+use common::measurable_rwlock::parking_lot::Mutex;
 use common::types::PointOffsetType;
 use fs_err::File;
 use itertools::Itertools;
-use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::point_mappings::{FileEndianess, PointMappingsReadHolder};
@@ -185,8 +185,8 @@ impl MutableIdTracker {
             segment_path,
             internal_to_version,
             mappings,
-            pending_versions: Default::default(),
-            pending_mappings: Default::default(),
+            pending_versions: Arc::new(Mutex::new("mutable_pending_versions", Default::default())),
+            pending_mappings: Arc::new(Mutex::new("mutable_pending_mappings", Default::default())),
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
         })

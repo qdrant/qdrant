@@ -7,9 +7,9 @@ use byteorder::LittleEndian;
 use common::atomic_bitvec::prelude::{BitSlice, BitVec};
 #[cfg(test)]
 use common::bitpacking::make_bitmask;
+use common::measurable_rwlock::parking_lot::{RwLock, RwLockReadGuard};
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use parking_lot::{RwLock, RwLockReadGuard};
 #[cfg(test)]
 use rand::RngExt;
 use rand::distr::Distribution;
@@ -21,10 +21,12 @@ use uuid::Uuid;
 
 use crate::types::PointIdType;
 
+const POINT_MAPPINGS_MAPPING_STATE: &'static str = "point_mappings_mapping_state";
+
 /// Used endianness for storing PointMapping-files.
 pub type FileEndianess = LittleEndian;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct PointMappings {
     /// `deleted` specifies which points of internal_to_external was deleted.
     /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
@@ -32,6 +34,15 @@ pub struct PointMappings {
     /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
     pub(crate) deleted: BitVec,
     mappings_state: RwLock<PointMappingsState>,
+}
+
+impl Default for PointMappings {
+    fn default() -> Self {
+        Self {
+            deleted: Default::default(),
+            mappings_state: RwLock::new(POINT_MAPPINGS_MAPPING_STATE, Default::default()),
+        }
+    }
 }
 
 #[derive(Clone, Default, PartialEq, Debug)]
@@ -70,7 +81,7 @@ impl PointMappings {
         };
         Self {
             deleted,
-            mappings_state: mappings_state.into(),
+            mappings_state: RwLock::new(POINT_MAPPINGS_MAPPING_STATE, mappings_state),
         }
     }
 

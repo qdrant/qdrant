@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bincode;
 use common::atomic_bitvec::prelude::BitVec;
 use common::types::PointOffsetType;
-use parking_lot::RwLock;
+use common::measurable_rwlock::parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -124,7 +124,7 @@ impl SimpleIdTracker {
             internal_to_version,
             mapping_db_wrapper,
             versions_db_wrapper,
-            mappings: mappings.into(),
+            mappings: RwLock::new("simple_id_tracker_mappings", mappings)
         })
     }
 
