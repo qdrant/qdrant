@@ -14,45 +14,48 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
-const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
+const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with slice in file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
 
-/// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
+/// Trait for values that can be stored in a file. It's used in `StoredPointToValues` to store values.
 pub trait StoredValue: ToOwned {
-    fn mmapped_size(value: &Self) -> usize;
+    /// Get the size in bytes that the value will take when stored in a slice.
+    fn stored_size(value: &Self) -> usize;
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self>;
+    /// Read one value from the beginning of the bytes slice.
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self>;
 
-    fn write_to(&self, bytes: &mut [u8]) -> Option<()>;
+    /// Write the value into the beginning of the bytes slice. The slice must have enough capacity for the value.
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()>;
 }
 
 impl<T: bytemuck::Pod> StoredValue for T {
-    fn mmapped_size(_value: &Self) -> usize {
+    fn stored_size(_value: &Self) -> usize {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self> {
         bytemuck::try_cast_slice(bytes).ok()?.first()
     }
 
-    fn write_to(&self, bytes: &mut [u8]) -> Option<()> {
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()> {
         let value_bytes = bytemuck::bytes_of(self);
-        value_bytes.write_to_prefix(bytes).ok()
+        <[u8] as zerocopy::IntoBytes>::write_to_prefix(value_bytes, bytes).ok()
     }
 }
 
 impl StoredValue for str {
-    fn mmapped_size(value: &str) -> usize {
+    fn stored_size(value: &str) -> usize {
         value.len() + std::mem::size_of::<u32>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
-        let (len, rest) = u32::read_from_prefix(bytes).ok()?;
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self> {
+        let (len, rest) = <u32 as zerocopy::FromBytes>::read_from_prefix(bytes).ok()?;
         std::str::from_utf8(rest.get(..len as usize)?).ok()
     }
 
-    fn write_to(&self, bytes: &mut [u8]) -> Option<()> {
-        u32::write_to_prefix(&(self.len() as u32), bytes).ok()?;
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()> {
+        <u32 as zerocopy::IntoBytes>::write_to_prefix(&(self.len() as u32), bytes).ok()?;
         bytes
             .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())?
             .copy_from_slice(self.as_bytes());
@@ -136,7 +139,7 @@ where
                     .get_mut(point_values_offset..)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
                 value
-                    .write_to(bytes)
+                    .write_to_prefix(bytes)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
                 point_values_offset += T::stored_size(value);
             }
@@ -337,11 +340,11 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
         }
 
         let cow = match &self.bytes {
-            Cow::Borrowed(slice) => Cow::Borrowed(T::read_from_mmap(slice.get(self.start..)?)?),
-            Cow::Owned(vec) => Cow::Owned(T::read_from_mmap(vec.get(self.start..)?)?.to_owned()),
+            Cow::Borrowed(slice) => Cow::Borrowed(T::read_from_prefix(slice.get(self.start..)?)?),
+            Cow::Owned(vec) => Cow::Owned(T::read_from_prefix(vec.get(self.start..)?)?.to_owned()),
         };
 
-        self.start += T::mmapped_size(cow.as_ref());
+        self.start += T::stored_size(cow.as_ref());
         self.count = self.count.saturating_sub(1);
 
         Some(cow)
