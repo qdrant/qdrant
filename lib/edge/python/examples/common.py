@@ -1,3 +1,6 @@
+# Common helper items for the examples.
+# See lib/edge/publish/examples/src/lib.rs for the equivalent Rust helpers.
+
 import os
 import shutil
 import uuid

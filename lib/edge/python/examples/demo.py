@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+# See lib/edge/publish/examples/src/bin/demo.rs for the equivalent Rust example.
 
-from common import *
 from qdrant_edge import *
 
+from common import *
 
 print("---- Point conversions ----")
 
@@ -187,6 +188,4 @@ print("---- Close and reopen shard ----")
 shard.close()
 
 reopened_shard = EdgeShard(DATA_DIRECTORY)
-
-info = reopened_shard.info()
-print(info)
+print(f"Edge shard reopened. Approx Points: {reopened_shard.info().points_count}")

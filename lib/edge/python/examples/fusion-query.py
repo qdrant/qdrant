@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# See lib/edge/publish/examples/src/bin/fusion-query.rs for the equivalent Rust example.
+
 from qdrant_edge import *
 from common import *
 
