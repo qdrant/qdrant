@@ -149,6 +149,7 @@ impl EdgeShard {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
+                    false,
                 )
             })
             .collect();
@@ -201,6 +202,7 @@ impl EdgeShard {
                     order_by,
                     &AtomicBool::new(false),
                     &hw_counter,
+                    false,
                 )
             })
             .collect::<Result<_, _>>()?;

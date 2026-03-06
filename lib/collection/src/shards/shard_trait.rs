@@ -47,6 +47,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

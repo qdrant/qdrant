@@ -1028,7 +1028,14 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read Filtered",
         |segment, filter| {
-            segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
+            segment.read_filtered(
+                None,
+                None,
+                filter,
+                &AtomicBool::new(false),
+                &hw_counter,
+                false,
+            )
         },
         |i| *i,
         true,
@@ -1049,6 +1056,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
+                    false,
                 )
                 .unwrap()
         },

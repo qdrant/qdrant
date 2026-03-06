@@ -82,10 +82,14 @@ fn test_update_proxy_segments() {
         .read()
         .iter()
         .flat_map(|(_id, segment)| {
-            segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), None, &is_stopped, &hw_counter)
+            segment.get().read().read_filtered(
+                None,
+                Some(100),
+                None,
+                &is_stopped,
+                &hw_counter,
+                false,
+            )
         })
         .sorted()
         .collect_vec();

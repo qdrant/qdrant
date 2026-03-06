@@ -245,12 +245,17 @@ impl NonAppendableSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        ignore_deferred: bool,
     ) -> Vec<PointIdType> {
         if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_filtered(offset, limit, filter, is_stopped, hw_counter)
+            self.wrapped_segment.get().read().read_filtered(
+                offset,
+                limit,
+                filter,
+                is_stopped,
+                hw_counter,
+                ignore_deferred,
+            )
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -262,6 +267,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 is_stopped,
                 hw_counter,
+                ignore_deferred,
             )
         }
     }
@@ -273,12 +279,17 @@ impl NonAppendableSegmentEntry for ProxySegment {
         order_by: &'a segment::data_types::order_by::OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        ignore_deferred: bool,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let read_points = if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_ordered_filtered(limit, filter, order_by, is_stopped, hw_counter)?
+            self.wrapped_segment.get().read().read_ordered_filtered(
+                limit,
+                filter,
+                order_by,
+                is_stopped,
+                hw_counter,
+                ignore_deferred,
+            )?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -290,6 +301,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 order_by,
                 is_stopped,
                 hw_counter,
+                ignore_deferred,
             )?
         };
         Ok(read_points)

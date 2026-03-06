@@ -439,6 +439,9 @@ impl SegmentsSearcher {
                         filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
+                        // No need to ignore deferred points here since this function is
+                        // always used in user-facing read-APIs.
+                        false,
                     )
                 })
                 .collect();

@@ -243,6 +243,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                true, // We must transfer deferred points too so we ignore them in this scroll op.
             )
             .await?;
 
@@ -311,6 +312,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                true, // We must transfer deferred points too so we ignore them in this scroll op.
             )
             .await?;
 
@@ -476,6 +478,7 @@ impl ShardOperation for ForwardProxyShard {
                         &Handle::current(),
                         None,                           // No timeout
                         HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                        true,
                     )
                     .await?
                     .into_iter()
@@ -584,6 +587,7 @@ impl ShardOperation for ForwardProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -596,6 +600,7 @@ impl ShardOperation for ForwardProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                ignore_deferred,
             )
             .await
     }

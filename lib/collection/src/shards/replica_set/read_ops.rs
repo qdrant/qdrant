@@ -81,6 +81,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
+                            false, // TODO(jonas): Maybe use `true` here?
                         )
                         .await
                 }

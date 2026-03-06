@@ -329,6 +329,7 @@ impl ShardOperation for QueueProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
             .local_scroll_by_id(
@@ -340,6 +341,7 @@ impl ShardOperation for QueueProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                ignore_deferred,
             )
             .await
     }
@@ -677,6 +679,7 @@ impl ShardOperation for Inner {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -689,6 +692,7 @@ impl ShardOperation for Inner {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                ignore_deferred,
             )
             .await
     }

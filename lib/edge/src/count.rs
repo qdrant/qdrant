@@ -23,6 +23,7 @@ impl EdgeShard {
                         filter.as_ref(),
                         &AtomicBool::new(false),
                         &HardwareCounterCell::disposable(),
+                        false,
                     )
                 })
                 .count()

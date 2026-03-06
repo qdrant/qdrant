@@ -278,15 +278,28 @@ impl NonAppendableSegmentEntry for Segment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        ignore_deferred: bool,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self.read_by_id_stream(offset, limit),
+            None => self.read_by_id_stream(offset, limit, ignore_deferred),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit, hw_counter) {
-                    self.filtered_read_by_index(offset, limit, condition, is_stopped, hw_counter)
+                    self.filtered_read_by_index(
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        ignore_deferred,
+                    )
                 } else {
                     self.filtered_read_by_id_stream(
-                        offset, limit, condition, is_stopped, hw_counter,
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        ignore_deferred,
                     )
                 }
             }
@@ -300,15 +313,26 @@ impl NonAppendableSegmentEntry for Segment {
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        ignore_deferred: bool,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
-            None => {
-                self.filtered_read_by_value_stream(order_by, limit, None, is_stopped, hw_counter)
-            }
+            None => self.filtered_read_by_value_stream(
+                order_by,
+                limit,
+                None,
+                is_stopped,
+                hw_counter,
+                ignore_deferred,
+            ),
             Some(filter) => {
                 if self.should_pre_filter(filter, limit, hw_counter) {
                     self.filtered_read_by_index_ordered(
-                        order_by, limit, filter, is_stopped, hw_counter,
+                        order_by,
+                        limit,
+                        filter,
+                        is_stopped,
+                        hw_counter,
+                        ignore_deferred,
                     )
                 } else {
                     self.filtered_read_by_value_stream(
@@ -317,6 +341,7 @@ impl NonAppendableSegmentEntry for Segment {
                         Some(filter),
                         is_stopped,
                         hw_counter,
+                        ignore_deferred,
                     )
                 }
             }

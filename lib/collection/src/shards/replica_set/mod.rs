@@ -1071,6 +1071,7 @@ impl ShardReplicaSet {
                     &self.search_runtime,
                     None,
                     hw_measurement_acc.clone(),
+                    true,
                 )
                 .await?;
 

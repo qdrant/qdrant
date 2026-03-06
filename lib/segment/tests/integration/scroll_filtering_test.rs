@@ -33,6 +33,7 @@ fn test_filtering_context_consistency() {
             &filter,
             &is_stopped,
             &hw_counter,
+            false,
         );
         let read_by_stream_res = segment.filtered_read_by_id_stream(
             Some(random_offset.into()),
@@ -40,6 +41,7 @@ fn test_filtering_context_consistency() {
             &filter,
             &is_stopped,
             &hw_counter,
+            false,
         );
 
         assert_eq!(read_by_index_res, read_by_stream_res, "filter: {filter:#?}");

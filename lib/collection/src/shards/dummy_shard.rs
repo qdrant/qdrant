@@ -141,6 +141,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
+        _: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }

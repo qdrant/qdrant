@@ -88,6 +88,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
+                    false,
                 )
                 .await?
             }
@@ -101,6 +102,7 @@ impl LocalShard {
                     order_by,
                     timeout,
                     hw_measurement_acc,
+                    false,
                 )
                 .await?
             }
@@ -145,6 +147,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -166,6 +169,7 @@ impl LocalShard {
                     filter.as_ref(),
                     &is_stopped,
                     &hw_counter,
+                    ignore_deferred,
                 )
             });
             AbortOnDropHandle::new(task)
@@ -232,6 +236,7 @@ impl LocalShard {
         order_by: &OrderBy,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -261,6 +266,7 @@ impl LocalShard {
                     &order_by,
                     &is_stopped,
                     &hw_counter,
+                    ignore_deferred,
                 )
             });
             AbortOnDropHandle::new(task)

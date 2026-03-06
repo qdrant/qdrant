@@ -194,6 +194,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
+                    false,
                 )
                 .await?
             }
@@ -207,6 +208,7 @@ impl ShardOperation for LocalShard {
                     &order_by,
                     timeout,
                     hw_measurement_acc,
+                    false,
                 )
                 .await?
             }
@@ -227,6 +229,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        ignore_deferred: bool,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
         self.internal_scroll_by_id(
@@ -238,6 +241,7 @@ impl ShardOperation for LocalShard {
             search_runtime_handle,
             timeout,
             hw_measurement_acc,
+            ignore_deferred,
         )
         .await
     }

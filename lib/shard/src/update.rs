@@ -391,6 +391,8 @@ pub fn delete_points_by_filter(
                     Some(filter),
                     &is_stopped,
                     hw_counter,
+                    // Delete also deferred points.
+                    true,
                 ),
             )
         })
@@ -902,7 +904,7 @@ fn points_by_filter(
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter), &is_stopped, hw_counter);
+        let points = s.read_filtered(None, None, Some(filter), &is_stopped, hw_counter, true);
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;
