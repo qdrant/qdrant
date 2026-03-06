@@ -1,0 +1,275 @@
+name: Integration tests
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+env:
+  CARGO_TERM_COLOR: always
+  UV_VERSION: 0.9.17
+
+jobs:
+  integration-tests:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          sudo apt-get install clang
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
+      - name: Build
+        run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
+      - name: Run integration tests
+        run: uv --project tests run bash ./tests/integration-tests.sh
+        shell: bash
+
+  integration-tests-consensus:
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install uv and Python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
+      - name: Build
+        run: cargo build --features "service_debug data-consistency-check rocksdb staging" --locked
+      - name: Run integration tests - 1 peer
+        run: uv --project tests run bash ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: uv --project tests run pytest tests/consensus_tests --durations=10
+        timeout-minutes: 60
+      - name: upload logs
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          path: consensus_test_logs
+          name: consensus-test-logs
+          retention-days: 10
+
+  test-consensus-compose:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install uv and Python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: qdrant_consensus
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+            FEATURES=staging
+      - name: Run integration tests - multiple peers - compose
+        run: uv --project tests run bash ./test_restart.sh
+        working-directory: ./tests/consensus_tests
+
+  test-consistency:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install dependencies
+        run: sudo apt-get install -y clang jq
+      - name: Docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/schema2openapi
+          tags: schema2openapi
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-schema2openapi
+            type=gha,scope=${{ github.base_ref }}-schema2openapi
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-schema2openapi
+          load: true
+          build-args: |
+            PROFILE=ci
+            FEATURES=staging
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: gRPC file consistency check
+        run: ./tests/grpc_consistency_check.sh
+      - name: OpenAPI file consistency check
+        run: ./tests/openapi_consistency_check.sh
+
+  test-shard-snapshot-api-s3-minio:
+    runs-on: ubuntu-latest
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+    steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
+      - uses: actions/checkout@v6
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Build
+        run: cargo build --bin qdrant --features "rocksdb staging" --locked
+      - name: Run Shard Snapshot API Tests (local)
+        shell: bash
+        run: |
+          cargo run --features "rocksdb staging" &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+
+          ./tests/shard-snapshot-api.sh test-all
+      - name: Run Shard Snapshot API Tests (s3)
+        shell: bash
+        run: |
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE=s3
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET=test-bucket
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__REGION=us-east-1
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ACCESS_KEY=minioadmin
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY=minioadmin
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL=http://127.0.0.1:9000
+
+          cargo run --features "rocksdb staging" &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+
+          ./tests/shard-snapshot-api.sh test-all
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+
+    steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+
+      - uses: actions/checkout@v6
+        with:
+          lfs: true  # Fetch LFS files automatically
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Install uv and Python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv --project tests lock --check
+          uv --project tests sync
+      - name: Build Qdrant Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: qdrant/qdrant:e2e-tests
+          cache-from: |
+            type=gha,scope=${{ github.ref }}-e2e
+            type=gha,scope=${{ github.base_ref }}-e2e
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}-e2e
+          load: true
+          build-args: |
+            PROFILE=ci
+            FEATURES=data-consistency-check,rocksdb,staging
+      - name: Verify Docker image
+        run: docker images | grep qdrant
+      - name: Run e2e tests
+        run: uv --project tests run pytest -n 4 --dist=loadgroup tests/e2e_tests -v --tb=short --durations=5 -m "not longrunning"
+        shell: bash
+        timeout-minutes: 20
+      - name: Upload test logs on failure
+        uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: e2e-test-logs
+          path: |
+            tests/e2e_tests/test_*.log
+            tests/e2e_tests/**/logs/
+          retention-days: 7

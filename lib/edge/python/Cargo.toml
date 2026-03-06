@@ -1,0 +1,43 @@
+[package]
+name = "qdrant-edge-py"
+version = "0.5.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+[lib]
+name = "qdrant_edge"
+crate-type = ["cdylib"]
+
+[lints]
+workspace = true
+
+
+[features]
+default = []
+abi3 = ["pyo3/abi3-py310"]
+
+
+[dependencies]
+edge = { path = ".." }
+edge-py-codegen = { path = "./codegen" }
+segment = { path = "../../segment", default-features = false }
+shard = { path = "../../shard" }
+sparse = { path = "../../sparse" }
+
+ahash = { workspace = true }
+bytemuck = { workspace = true }
+fnv = { workspace = true }
+indexmap = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+ordered-float = { workspace = true }
+tempfile = { workspace = true }
+
+[dependencies.derive_more]
+version = "2.1"
+features = ["into"]
+
+[dependencies.pyo3]
+version = "0.28.1"
+features = ["uuid"]

@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  qdrant-node1:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:dev}
+    hostname: node1.qdrant
+    ports:
+      - "6333"
+      - "6334"
+    networks:
+      - qdrant-network
+    command: ./qdrant --uri 'https://node1.qdrant:6335' --config-path /qdrant/config/tls_config.yaml
+    volumes:
+      - ./cert:/qdrant/tls
+      - ./tls_config.yaml:/qdrant/config/tls_config.yaml:ro
+    restart: unless-stopped
+
+  qdrant-node2:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:dev}
+    hostname: node2.qdrant
+    ports:
+      - "6333"
+      - "6334"
+    networks:
+      - qdrant-network
+    command: bash -c "sleep 5 && ./qdrant --bootstrap 'https://node1.qdrant:6335' --uri 'https://node2.qdrant:6335' --config-path /qdrant/config/tls_config.yaml"
+    volumes:
+      - ./cert:/qdrant/tls
+      - ./tls_config.yaml:/qdrant/config/tls_config.yaml:ro
+    depends_on:
+      - qdrant-node1
+    restart: unless-stopped
+
+networks:
+  qdrant-network:
+    driver: bridge

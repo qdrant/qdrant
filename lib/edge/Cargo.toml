@@ -1,0 +1,32 @@
+[package]
+name = "edge"
+version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[features]
+staging = ["shard/staging"]
+
+[dependencies]
+common = { path = "../common/common" }
+segment = { path = "../segment", default-features = false }
+shard = { path = "../shard" }
+
+ahash = { workspace = true }
+fs-err = { workspace = true }
+itertools = { workspace = true }
+log = { workspace = true }
+ordered-float = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+wal = { workspace = true }
+
+
+[dev-dependencies]
+anyhow = { workspace = true }
+fs-err = { workspace = true, features = ["debug"] }
+serde_json = { workspace = true }

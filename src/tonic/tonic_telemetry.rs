@@ -1,0 +1,107 @@
+use std::sync::Arc;
+use std::task::{Context, Poll};
+
+use futures_util::future::BoxFuture;
+use tonic::body::BoxBody;
+use tower::Service;
+use tower_layer::Layer;
+
+use crate::common::telemetry_ops::requests_telemetry::{
+    TonicTelemetryCollector, TonicWorkerTelemetryCollector,
+};
+
+/// Based on https://grpc.io/docs/guides/status-codes/
+/// Default gRPC status code for all responses (0 = OK)
+const DEFAULT_SUCCESS_GRPC_STATUS_CODE: i32 = 0;
+
+/// Based on https://grpc.io/docs/guides/status-codes/
+/// Default gRPC status code for errors (2 = UNKNOWN)
+const DEFAULT_FAILURE_GRPC_STATUS_CODE: i32 = 2;
+
+const GRPC_STATUS_HEADER: &str = "grpc-status";
+
+type Request = tonic::codegen::http::Request<tonic::transport::Body>;
+type Response = tonic::codegen::http::Response<BoxBody>;
+
+#[derive(Clone)]
+pub struct TonicTelemetryService<T> {
+    service: T,
+    telemetry_data: Arc<parking_lot::Mutex<TonicWorkerTelemetryCollector>>,
+}
+
+#[derive(Clone)]
+pub struct TonicTelemetryLayer {
+    telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+}
+
+impl<S> Service<Request> for TonicTelemetryService<S>
+where
+    S: Service<Request, Response = Response>,
+    S::Future: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<S::Response, S::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: Request) -> Self::Future {
+        let method_name = request.uri().path().to_string();
+        let future = self.service.call(request);
+        let telemetry_data = self.telemetry_data.clone();
+        Box::pin(async move {
+            let instant = std::time::Instant::now();
+            let response = future.await?;
+
+            // For gRPC, HTTP status is usually 200, check grpc-status header instead
+            // grpc-status: 0 = OK, non-zero = error
+            let status_code = response
+                .headers()
+                .get(GRPC_STATUS_HEADER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<i32>().ok())
+                .unwrap_or_else(|| {
+                    if response.status().is_success() {
+                        DEFAULT_SUCCESS_GRPC_STATUS_CODE
+                    } else {
+                        DEFAULT_FAILURE_GRPC_STATUS_CODE
+                    }
+                });
+
+            telemetry_data
+                .lock()
+                .add_response(method_name, instant, status_code, None);
+            // Note: Per-collection metrics for gRPC are not yet supported because
+            // the collection name is embedded in the protobuf request body,
+            // which is not accessible in Tower middleware. A future implementation
+            // could extract collection names at the handler level.
+            Ok(response)
+        })
+    }
+}
+
+impl TonicTelemetryLayer {
+    pub fn new(
+        telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
+    ) -> TonicTelemetryLayer {
+        Self {
+            telemetry_collector,
+        }
+    }
+}
+
+impl<S> Layer<S> for TonicTelemetryLayer {
+    type Service = TonicTelemetryService<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        TonicTelemetryService {
+            service,
+            telemetry_data: self
+                .telemetry_collector
+                .lock()
+                .create_grpc_telemetry_collector(),
+        }
+    }
+}

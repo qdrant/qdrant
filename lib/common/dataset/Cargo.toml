@@ -1,0 +1,23 @@
+[package]
+name = "dataset"
+version = "0.0.0"
+authors = [
+    "Andrey Vasnetsov <andrey@qdrant.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+flate2 = { version = "1.1.9" }
+fs-err = { workspace = true }
+indicatif = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+fs-err = { workspace = true, features = ["debug"] }

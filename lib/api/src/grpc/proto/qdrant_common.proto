@@ -1,0 +1,177 @@
+syntax = "proto3";
+package qdrant;
+
+option csharp_namespace = "Qdrant.Client.Grpc";
+option java_outer_classname = "Common";
+
+import "google/protobuf/timestamp.proto";
+
+message PointId {
+  oneof point_id_options {
+    // Numerical ID of the point
+    uint64 num = 1;
+    // UUID
+    string uuid = 2;
+  }
+}
+
+message GeoPoint {
+  double lon = 1;
+  double lat = 2;
+}
+
+message Filter {
+  // At least one of those conditions should match
+  repeated Condition should = 1;
+  // All conditions must match
+  repeated Condition must = 2;
+  // All conditions must NOT match
+  repeated Condition must_not = 3;
+  // At least minimum amount of given conditions should match
+  optional MinShould min_should = 4;
+}
+
+message MinShould {
+  repeated Condition conditions = 1;
+  uint64 min_count = 2;
+}
+
+message Condition {
+  oneof condition_one_of {
+    FieldCondition field = 1;
+    IsEmptyCondition is_empty = 2;
+    HasIdCondition has_id = 3;
+    Filter filter = 4;
+    IsNullCondition is_null = 5;
+    NestedCondition nested = 6;
+    HasVectorCondition has_vector = 7;
+  }
+}
+
+message IsEmptyCondition {
+  string key = 1;
+}
+
+message IsNullCondition {
+  string key = 1;
+}
+
+message HasIdCondition {
+  repeated PointId has_id = 1;
+}
+
+message HasVectorCondition {
+  string has_vector = 1;
+}
+
+message NestedCondition {
+  // Path to nested object
+  string key = 1;
+  // Filter condition
+  Filter filter = 2;
+}
+
+message FieldCondition {
+  string key = 1;
+  // Check if point has field with a given value
+  Match match = 2;
+  // Check if points value lies in a given range
+  Range range = 3;
+  // Check if points geolocation lies in a given area
+  GeoBoundingBox geo_bounding_box = 4;
+  // Check if geo point is within a given radius
+  GeoRadius geo_radius = 5;
+  // Check number of values for a specific field
+  ValuesCount values_count = 6;
+  // Check if geo point is within a given polygon
+  GeoPolygon geo_polygon = 7;
+  // Check if datetime is within a given range
+  DatetimeRange datetime_range = 8;
+  // Check if field is empty
+  optional bool is_empty = 9;
+  // Check if field is null
+  optional bool is_null = 10;
+}
+
+message Match {
+  oneof match_value {
+    // Match string keyword
+    string keyword = 1;
+    // Match integer
+    int64 integer = 2;
+    // Match boolean
+    bool boolean = 3;
+    // Match text
+    string text = 4;
+    // Match multiple keywords
+    RepeatedStrings keywords = 5;
+    // Match multiple integers
+    RepeatedIntegers integers = 6;
+    // Match any other value except those integers
+    RepeatedIntegers except_integers = 7;
+    // Match any other value except those keywords
+    RepeatedStrings except_keywords = 8;
+    // Match phrase text
+    string phrase = 9;
+    // Match any word in the text
+    string text_any = 10;
+  }
+}
+
+message RepeatedStrings {
+  repeated string strings = 1;
+}
+
+message RepeatedIntegers {
+  repeated int64 integers = 1;
+}
+
+message Range {
+  optional double lt = 1;
+  optional double gt = 2;
+  optional double gte = 3;
+  optional double lte = 4;
+}
+
+message DatetimeRange {
+  optional google.protobuf.Timestamp lt = 1;
+  optional google.protobuf.Timestamp gt = 2;
+  optional google.protobuf.Timestamp gte = 3;
+  optional google.protobuf.Timestamp lte = 4;
+}
+
+message GeoBoundingBox {
+  // north-west corner
+  GeoPoint top_left = 1;
+  // south-east corner
+  GeoPoint bottom_right = 2;
+}
+
+message GeoRadius {
+  // Center of the circle
+  GeoPoint center = 1;
+  // In meters
+  float radius = 2;
+}
+
+message GeoLineString {
+  // Ordered sequence of GeoPoints representing the line
+  repeated GeoPoint points = 1;
+}
+
+// For a valid GeoPolygon, both the exterior and interior GeoLineStrings must
+// consist of a minimum of 4 points.
+// Additionally, the first and last points of each GeoLineString must be the same.
+message GeoPolygon {
+  // The exterior line bounds the surface
+  GeoLineString exterior = 1;
+  // Interior lines (if present) bound holes within the surface
+  repeated GeoLineString interiors = 2;
+}
+
+message ValuesCount {
+  optional uint64 lt = 1;
+  optional uint64 gt = 2;
+  optional uint64 gte = 3;
+  optional uint64 lte = 4;
+}

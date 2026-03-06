@@ -1,0 +1,398 @@
+use std::iter::FromIterator;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+
+use ahash::AHashSet;
+use common::counter::hardware_counter::HardwareCounterCell;
+use fs_err as fs;
+use itertools::Itertools;
+use segment::common::operation_error::OperationError;
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{
+    DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal, only_default_vector,
+};
+use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+use segment::fixtures::index_fixtures::random_vector;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::{load_segment, normalize_segment_dir};
+use segment::types::{Condition, Distance, Filter, SearchParams, SegmentType, WithPayload};
+use tempfile::{Builder, TempDir};
+use uuid::Uuid;
+
+use crate::fixtures::segment::{build_segment_1, build_segment_3};
+
+#[test]
+fn test_point_exclusion() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let segment = build_segment_1(dir.path());
+
+    assert!(segment.has_point(3.into()));
+
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+
+    let res = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            1,
+            None,
+        )
+        .unwrap();
+
+    let best_match = res.first().expect("Non-empty result");
+    assert_eq!(best_match.id, 3.into());
+
+    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
+
+    let frt = Filter::new_must_not(Condition::HasId(ids.into()));
+
+    let res = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&frt),
+            1,
+            None,
+        )
+        .unwrap();
+
+    let best_match = res.first().expect("Non-empty result");
+    assert_ne!(best_match.id, 3.into());
+
+    let point_ids1: Vec<_> = segment.iter_points().collect();
+    let point_ids2: Vec<_> = segment.iter_points().collect();
+
+    assert!(!point_ids1.is_empty());
+    assert!(!point_ids2.is_empty());
+
+    assert_eq!(&point_ids1, &point_ids2)
+}
+
+#[test]
+fn test_named_vector_search() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let segment = build_segment_3(dir.path());
+
+    assert!(segment.has_point(3.into()));
+
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+
+    let res = segment
+        .search(
+            "vector1",
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            1,
+            None,
+        )
+        .unwrap();
+
+    let best_match = res.first().expect("Non-empty result");
+    assert_eq!(best_match.id, 3.into());
+
+    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
+
+    let frt = Filter {
+        should: None,
+        min_should: None,
+        must: None,
+        must_not: Some(vec![Condition::HasId(ids.into())]),
+    };
+
+    let res = segment
+        .search(
+            "vector1",
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            Some(&frt),
+            1,
+            None,
+        )
+        .unwrap();
+
+    let best_match = res.first().expect("Non-empty result");
+    assert_ne!(best_match.id, 3.into());
+
+    let point_ids1: Vec<_> = segment.iter_points().collect();
+    let point_ids2: Vec<_> = segment.iter_points().collect();
+
+    assert!(!point_ids1.is_empty());
+    assert!(!point_ids2.is_empty());
+
+    assert_eq!(&point_ids1, &point_ids2)
+}
+
+#[test]
+fn test_missed_vector_name() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment_3(dir.path());
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let exists = segment
+        .upsert_point(
+            7,
+            1.into(),
+            NamedVectors::from_pairs([
+                ("vector2".into(), vec![10.]),
+                ("vector3".into(), vec![5., 6., 7., 8.]),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+    assert!(exists, "this partial vector should overwrite existing");
+
+    let exists = segment
+        .upsert_point(
+            8,
+            6.into(),
+            NamedVectors::from_pairs([
+                ("vector2".into(), vec![10.]),
+                ("vector3".into(), vec![5., 6., 7., 8.]),
+            ]),
+            &hw_counter,
+        )
+        .unwrap();
+    assert!(!exists, "this partial vector should not existing");
+}
+
+#[test]
+fn test_vector_name_not_exists() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment_3(dir.path());
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let result = segment.upsert_point(
+        6,
+        6.into(),
+        NamedVectors::from_pairs([
+            ("vector1".into(), vec![5., 6., 7., 8.]),
+            ("vector2".into(), vec![10.]),
+            ("vector3".into(), vec![5., 6., 7., 8.]),
+            ("vector4".into(), vec![5., 6., 7., 8.]),
+        ]),
+        &hw_counter,
+    );
+
+    if let Err(OperationError::VectorNameNotExists { received_name }) = result {
+        assert_eq!(received_name, "vector4");
+    } else {
+        panic!("wrong upsert result")
+    }
+}
+
+#[test]
+fn ordered_deletion_test() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let path = {
+        let mut segment = build_segment_1(dir.path());
+        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
+        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
+        segment.flush(false).unwrap();
+        segment.segment_path.clone()
+    };
+
+    let segment = load_segment(&path, Uuid::nil(), &AtomicBool::new(false)).unwrap();
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+
+    let res = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            1,
+            None,
+        )
+        .unwrap();
+    let best_match = res.first().expect("Non-empty result");
+    assert_eq!(best_match.id, 3.into());
+}
+
+mod normalize_segment_dir {
+    use super::*;
+
+    fn make_segment() -> (TempDir, PathBuf, Uuid) {
+        let tmpdir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let segment = build_segment_1(tmpdir.path());
+        (tmpdir, segment.segment_path.clone(), segment.uuid)
+    }
+
+    #[test]
+    fn happy_case() {
+        let (_tmpdir, original_path, original_uuid) = make_segment();
+        let result = normalize_segment_dir(&original_path).unwrap();
+        assert_eq!(Some((original_path, original_uuid)), result);
+    }
+
+    #[test]
+    fn deleted_suffix_case() {
+        let (tmpdir, original_path, _original_uuid) = make_segment();
+        let deleted_path = original_path.with_extension("deleted");
+        fs::rename(&original_path, &deleted_path).unwrap();
+        assert!(normalize_segment_dir(&deleted_path).unwrap().is_none());
+        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn missing_version_case() {
+        let (tmpdir, original_path, _original_uuid) = make_segment();
+        fs::remove_file(original_path.join(common::storage_version::VERSION_FILE)).unwrap();
+        assert!(normalize_segment_dir(&original_path).unwrap().is_none());
+        assert!(fs::read_dir(tmpdir.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn non_uuid_case() {
+        let (tmpdir, original_path, original_uuid) = make_segment();
+        let non_uuid_path = original_path.with_file_name("not-an-uuid");
+        fs::rename(&original_path, &non_uuid_path).unwrap();
+        let (normalized_path, normalized_uuid) =
+            normalize_segment_dir(&non_uuid_path).unwrap().unwrap();
+        let expected_path = tmpdir.path().join(normalized_uuid.to_string());
+        assert_ne!(normalized_uuid, original_uuid);
+        assert_eq!(normalized_path, expected_path);
+        assert!(fs::read_dir(&normalized_path).is_ok());
+        assert!(fs::read_dir(&non_uuid_path).is_err());
+
+        // Check idempotency
+        let result = normalize_segment_dir(&normalized_path).unwrap();
+        assert_eq!(Some((normalized_path, normalized_uuid)), result);
+    }
+}
+
+#[test]
+fn test_update_named_vector() {
+    let num_points = 25;
+    let dim = 4;
+    let mut rng = rand::rng();
+    let distance = Distance::Cosine;
+    let vectors = (0..num_points)
+        .map(|_| random_vector(&mut rng, dim))
+        .collect_vec();
+
+    let hw_counter = HardwareCounterCell::new();
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
+
+    for (i, vec) in vectors.iter().enumerate() {
+        let i = i as u64;
+        segment
+            .upsert_point(i, i.into(), only_default_vector(vec), &hw_counter)
+            .unwrap();
+    }
+
+    let query_vector = random_vector(&mut rng, dim).into();
+
+    // do exact search
+    let search_params = SearchParams {
+        exact: true,
+        ..Default::default()
+    };
+    let nearest_upsert = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &false.into(),
+            &true.into(),
+            None,
+            1,
+            Some(&search_params),
+        )
+        .unwrap();
+    let nearest_upsert = nearest_upsert.first().unwrap();
+
+    let sqrt_distance = |v: &[f32]| -> f32 { v.iter().map(|x| x * x).sum::<f32>().sqrt() };
+
+    // check if nearest_upsert is normalized
+    match &nearest_upsert.vector {
+        Some(VectorStructInternal::Single(v)) => {
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        Some(VectorStructInternal::Named(v)) => {
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: &[_] = v.try_into().unwrap();
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        _ => panic!("unexpected vector type"),
+    }
+
+    // update vector using the same values
+    for (i, vec) in vectors.iter().enumerate() {
+        let i = i as u64;
+        segment
+            .update_vectors(
+                i + num_points as u64,
+                i.into(),
+                only_default_vector(vec),
+                &hw_counter,
+            )
+            .unwrap();
+    }
+
+    // do search after update
+    let nearest_update = segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &query_vector,
+            &false.into(),
+            &true.into(),
+            None,
+            1,
+            Some(&search_params),
+        )
+        .unwrap();
+    let nearest_update = nearest_update.first().unwrap();
+
+    // check that nearest_upsert is normalized
+    match &nearest_update.vector {
+        Some(VectorStructInternal::Single(v)) => {
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        Some(VectorStructInternal::Named(v)) => {
+            let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
+            let v: &[_] = v.try_into().unwrap();
+            assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
+        }
+        _ => panic!("unexpected vector type"),
+    }
+
+    // check that nearests are the same
+    assert_eq!(nearest_upsert.id, nearest_update.id);
+}
+
+#[test]
+fn test_plain_search_top_zero() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let segment = build_segment_1(dir.path());
+    assert_eq!(segment.segment_type(), SegmentType::Plain);
+
+    segment
+        .search(
+            DEFAULT_VECTOR_NAME,
+            &[1.0, 1.0, 1.0, 1.0].into(),
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            0,
+            None,
+        )
+        .unwrap();
+}

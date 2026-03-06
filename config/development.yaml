@@ -1,0 +1,36 @@
+# -> Warning! <-
+#
+# This config is only used in development profiles (debug/perf/..)
+# Always make sure implementations relying on configurations here also work on release.
+# Also don't forget to copy temporary configurations into config/config.yaml if they need
+# default values when released.
+
+log_level: DEBUG
+
+feature_flags:
+  all: true
+
+service:
+  host: 127.0.0.1
+  http_port: 6333
+  # Uncomment to enable gRPC:
+  #grpc_port: 6334
+  #api_key: your_secret_api_key_here
+
+cluster:
+  resharding_enabled: true
+
+storage:
+  performance:
+    # Number of parallel threads used for search operations. If 0 - auto selection.
+    max_search_threads: 4
+
+  optimizers:
+    # Minimum interval between forced flushes.
+    flush_interval_sec: 5
+
+    # Do not create too much segments in dev
+    default_segment_number: 2
+
+  handle_collection_load_errors: true
+

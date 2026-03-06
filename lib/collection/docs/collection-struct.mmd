@@ -1,0 +1,24 @@
+flowchart LR
+	collection --o segment1
+	collection --o segment2
+	collection --o segment3-proxy
+	collection --o WAL
+	collection --o Updaters>Updater Process]
+
+	subgraph segments
+		subgraph segment1
+			Vectors1[Vector-store]
+			Payload1[Payload]
+		end
+		subgraph segment2
+			Payload -.- Payload-index
+			Vector-store -.- Vector-index
+			ID-mapping
+			Version-store
+		end
+		subgraph segment3-proxy
+			removed-list
+			old-segment -.->|copy| copy-on-write-segment
+			old-segment -->|rebuild| optimized-segment
+		end
+	end

@@ -1,0 +1,1088 @@
+syntax = "proto3";
+package qdrant;
+
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+import "json_with_int.proto";
+import "qdrant_common.proto";
+
+enum Datatype {
+  Default = 0;
+  Float32 = 1;
+  Uint8 = 2;
+  Float16 = 3;
+}
+
+// ---------------------------------------------
+// ------------- Collection Config -------------
+// ---------------------------------------------
+
+message VectorParams {
+  // Size of the vectors
+  uint64 size = 1;
+  // Distance function used for comparing vectors
+  Distance distance = 2;
+  // Configuration of vector HNSW graph.
+  // If omitted - the collection configuration will be used
+  optional HnswConfigDiff hnsw_config = 3;
+  // Configuration of vector quantization config.
+  // If omitted - the collection configuration will be used
+  optional QuantizationConfig quantization_config = 4;
+  // If true - serve vectors from disk.
+  // If set to false, the vectors will be loaded in RAM.
+  optional bool on_disk = 5;
+  // Data type of the vectors
+  optional Datatype datatype = 6;
+  // Configuration for multi-vector search
+  optional MultiVectorConfig multivector_config = 7;
+}
+
+message VectorParamsDiff {
+  // Update params for HNSW index.
+  // If empty object - it will be unset
+  optional HnswConfigDiff hnsw_config = 1;
+  // Update quantization params. If none - it is left unchanged.
+  optional QuantizationConfigDiff quantization_config = 2;
+  // If true - serve vectors from disk.
+  // If set to false, the vectors will be loaded in RAM.
+  optional bool on_disk = 3;
+}
+
+message VectorParamsMap {
+  map<string, VectorParams> map = 1;
+}
+
+message VectorParamsDiffMap {
+  map<string, VectorParamsDiff> map = 1;
+}
+
+message VectorsConfig {
+  oneof config {
+    VectorParams params = 1;
+    VectorParamsMap params_map = 2;
+  }
+}
+
+message VectorsConfigDiff {
+  oneof config {
+    VectorParamsDiff params = 1;
+    VectorParamsDiffMap params_map = 2;
+  }
+}
+
+enum Modifier {
+  None = 0;
+  // Apply Inverse Document Frequency
+  Idf = 1;
+}
+
+message SparseVectorParams {
+  // Configuration of sparse index
+  optional SparseIndexConfig index = 1;
+  // If set - apply modifier to the vector values
+  optional Modifier modifier = 2;
+}
+
+message SparseVectorConfig {
+  map<string, SparseVectorParams> map = 1;
+}
+
+enum MultiVectorComparator {
+  MaxSim = 0;
+}
+
+message MultiVectorConfig {
+  // Comparator for multi-vector search
+  MultiVectorComparator comparator = 1;
+}
+
+message GetCollectionInfoRequest {
+  // Name of the collection
+  string collection_name = 1;
+}
+
+message CollectionExistsRequest {
+  string collection_name = 1;
+}
+
+message CollectionExists {
+  bool exists = 1;
+}
+
+message CollectionExistsResponse {
+  CollectionExists result = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message ListCollectionsRequest {}
+
+message CollectionDescription {
+  // Name of the collection
+  string name = 1;
+}
+
+message GetCollectionInfoResponse {
+  CollectionInfo result = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message ListCollectionsResponse {
+  repeated CollectionDescription collections = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+enum Distance {
+  UnknownDistance = 0;
+  Cosine = 1;
+  Euclid = 2;
+  Dot = 3;
+  Manhattan = 4;
+}
+
+enum CollectionStatus {
+  UnknownCollectionStatus = 0;
+  // All segments are ready
+  Green = 1;
+  // Optimization in process
+  Yellow = 2;
+  // Something went wrong
+  Red = 3;
+  // Optimization is pending
+  Grey = 4;
+}
+
+enum PayloadSchemaType {
+  UnknownType = 0;
+  Keyword = 1;
+  Integer = 2;
+  Float = 3;
+  Geo = 4;
+  Text = 5;
+  Bool = 6;
+  Datetime = 7;
+  Uuid = 8;
+}
+
+enum QuantizationType {
+  UnknownQuantization = 0;
+  Int8 = 1;
+}
+
+enum CompressionRatio {
+  x4 = 0;
+  x8 = 1;
+  x16 = 2;
+  x32 = 3;
+  x64 = 4;
+}
+
+message MaxOptimizationThreads {
+  enum Setting {
+    Auto = 0;
+  }
+
+  oneof variant {
+    uint64 value = 1;
+    Setting setting = 2;
+  }
+}
+
+message OptimizerStatus {
+  bool ok = 1;
+  string error = 2;
+}
+
+message CollectionWarning {
+  string message = 1;
+}
+
+message HnswConfigDiff {
+  // Number of edges per node in the index graph.
+  // Larger the value - more accurate the search, more space required.
+  optional uint64 m = 1;
+  // Number of neighbours to consider during the index building.
+  // Larger the value - more accurate the search, more time required to build the index.
+  optional uint64 ef_construct = 2;
+  // Minimal size threshold (in KiloBytes) below which full-scan is preferred over HNSW search.
+  // This measures the total size of vectors being queried against.
+  // When the maximum estimated amount of points that a condition satisfies is smaller than
+  // `full_scan_threshold`, the query planner will use full-scan search instead of HNSW index
+  // traversal for better performance.
+  // Note: 1Kb = 1 vector of size 256
+  optional uint64 full_scan_threshold = 3;
+  // Number of parallel threads used for background index building.
+  // If 0 - automatically select from 8 to 16.
+  // Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
+  // On small CPUs, less threads are used.
+  optional uint64 max_indexing_threads = 4;
+  // Store HNSW index on disk. If set to false, the index will be stored in RAM.
+  optional bool on_disk = 5;
+  // Number of additional payload-aware links per node in the index graph.
+  // If not set - regular M parameter will be used.
+  optional uint64 payload_m = 6;
+  // Store copies of original and quantized vectors within the HNSW index file. Default: false.
+  // Enabling this option will trade the search speed for disk usage by reducing amount of
+  // random seeks during the search.
+  // Requires quantized vectors to be enabled. Multi-vectors are not supported.
+  optional bool inline_storage = 7;
+}
+
+message SparseIndexConfig {
+  // Prefer a full scan search upto (excluding) this number of vectors.
+  // Note: this is number of vectors, not KiloBytes.
+  optional uint64 full_scan_threshold = 1;
+  // Store inverted index on disk. If set to false, the index will be stored in RAM.
+  optional bool on_disk = 2;
+  // Datatype used to store weights in the index.
+  optional Datatype datatype = 3;
+}
+
+message WalConfigDiff {
+  // Size of a single WAL block file
+  optional uint64 wal_capacity_mb = 1;
+  // Number of segments to create in advance
+  optional uint64 wal_segments_ahead = 2;
+  // Number of closed segments to retain
+  optional uint64 wal_retain_closed = 3;
+}
+
+message OptimizersConfigDiff {
+  // The minimal fraction of deleted vectors in a segment, required to perform
+  // segment optimization
+  optional double deleted_threshold = 1;
+  // The minimal number of vectors in a segment, required to perform segment
+  // optimization
+  optional uint64 vacuum_min_vector_number = 2;
+  // Target amount of segments the optimizer will try to keep.
+  // Real amount of segments may vary depending on multiple parameters:
+  //
+  // - Amount of stored points.
+  // - Current write RPS.
+  //
+  // It is recommended to select the default number of segments as a factor of the number of search threads,
+  // so that each segment would be handled evenly by one of the threads.
+  optional uint64 default_segment_number = 3;
+  // Deprecated:
+  //
+  // Do not create segments larger this size (in kilobytes).
+  // Large segments might require disproportionately long indexation times,
+  // therefore it makes sense to limit the size of segments.
+  //
+  // If indexing speed is more important - make this parameter lower.
+  // If search speed is more important - make this parameter higher.
+  // Note: 1Kb = 1 vector of size 256
+  // If not set, will be automatically selected considering the number of available CPUs.
+  optional uint64 max_segment_size = 4;
+  // Maximum size (in kilobytes) of vectors to store in-memory per segment.
+  // Segments larger than this threshold will be stored as read-only memmapped file.
+  //
+  // Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
+  //
+  // To disable memmap storage, set this to `0`.
+  //
+  // Note: 1Kb = 1 vector of size 256
+  optional uint64 memmap_threshold = 5;
+  // Maximum size (in kilobytes) of vectors allowed for plain index, exceeding
+  // this threshold will enable vector indexing
+  //
+  // Default value is 20,000, based on
+  // <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+  //
+  // To disable vector indexing, set to `0`.
+  //
+  // Note: 1kB = 1 vector of size 256.
+  optional uint64 indexing_threshold = 6;
+  // Interval between forced flushes.
+  optional uint64 flush_interval_sec = 7;
+
+  // Deprecated in favor of `max_optimization_threads`
+  optional uint64 deprecated_max_optimization_threads = 8;
+
+  // Max number of threads (jobs) for running optimizations per shard.
+  // Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+  // If "auto" - have no limit and choose dynamically to saturate CPU.
+  // If 0 - no optimization threads, optimizations will be disabled.
+  optional MaxOptimizationThreads max_optimization_threads = 9;
+
+  // If this option is set, service will try to prevent creation of large unoptimized segments.
+  // When enabled, updates may be blocked at request level if there are unoptimized segments larger than indexing threshold.
+  // Updates will be resumed when optimization is completed and segments are optimized below the threshold.
+  // Using this option may lead to increased delay between submitting an update and its application.
+  // Default is disabled.
+  optional bool prevent_unoptimized = 10;
+}
+
+message ScalarQuantization {
+  // Type of quantization
+  QuantizationType type = 1;
+  // Number of bits to use for quantization
+  optional float quantile = 2;
+  // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional bool always_ram = 3;
+}
+
+message ProductQuantization {
+  // Compression ratio
+  CompressionRatio compression = 1;
+  // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional bool always_ram = 2;
+}
+
+enum BinaryQuantizationEncoding {
+  OneBit = 0;
+  TwoBits = 1;
+  OneAndHalfBits = 2;
+}
+
+message BinaryQuantizationQueryEncoding {
+  enum Setting {
+    Default = 0;
+    Binary = 1;
+    Scalar4Bits = 2;
+    Scalar8Bits = 3;
+  }
+
+  oneof variant {
+    Setting setting = 4;
+  }
+}
+
+message BinaryQuantization {
+  // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+  optional bool always_ram = 1;
+  // Binary quantization encoding method
+  optional BinaryQuantizationEncoding encoding = 2;
+  // Asymmetric quantization configuration allows a query to have different
+  // quantization than stored vectors.
+  // It can increase the accuracy of search at the cost of performance.
+  optional BinaryQuantizationQueryEncoding query_encoding = 3;
+}
+
+message QuantizationConfig {
+  oneof quantization {
+    ScalarQuantization scalar = 1;
+    ProductQuantization product = 2;
+    BinaryQuantization binary = 3;
+  }
+}
+
+message Disabled {}
+
+message QuantizationConfigDiff {
+  oneof quantization {
+    ScalarQuantization scalar = 1;
+    ProductQuantization product = 2;
+    Disabled disabled = 3;
+    BinaryQuantization binary = 4;
+  }
+}
+
+enum ShardingMethod {
+  // Auto-sharding based on record ids
+  Auto = 0;
+  // Shard by user-defined key
+  Custom = 1;
+}
+
+message StrictModeConfig {
+  // Whether strict mode is enabled for a collection or not.
+  optional bool enabled = 1;
+  // Max allowed `limit` parameter for all APIs that don't have their own max limit.
+  optional uint32 max_query_limit = 2;
+  // Max allowed `timeout` parameter.
+  optional uint32 max_timeout = 3;
+  // Allow usage of unindexed fields in retrieval based (e.g. search) filters.
+  optional bool unindexed_filtering_retrieve = 4;
+  // Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
+  optional bool unindexed_filtering_update = 5;
+  // Max HNSW ef value allowed in search parameters.
+  optional uint32 search_max_hnsw_ef = 6;
+  // Whether exact search is allowed.
+  optional bool search_allow_exact = 7;
+  // Max oversampling value allowed in search
+  optional float search_max_oversampling = 8;
+  // Max batchsize when upserting
+  optional uint64 upsert_max_batchsize = 9;
+  // Max size of a collections vector storage in bytes, ignoring replicas.
+  optional uint64 max_collection_vector_size_bytes = 10;
+  // Max number of read operations per minute per replica
+  optional uint32 read_rate_limit = 11;
+  // Max number of write operations per minute per replica
+  optional uint32 write_rate_limit = 12;
+  // Max size of a collections payload storage in bytes, ignoring replicas.
+  optional uint64 max_collection_payload_size_bytes = 13;
+  // Max conditions a filter can have.
+  optional uint64 filter_max_conditions = 14;
+  // Max size of a condition, eg. items in `MatchAny`.
+  optional uint64 condition_max_size = 15;
+  // Multivector strict mode configuration
+  optional StrictModeMultivectorConfig multivector_config = 16;
+  // Sparse vector strict mode configuration
+  optional StrictModeSparseConfig sparse_config = 17;
+  // Max number of points estimated in a collection
+  optional uint64 max_points_count = 18;
+  // Max number of payload indexes in a collection
+  optional uint64 max_payload_index_count = 19;
+}
+
+message StrictModeSparseConfig {
+  map<string, StrictModeSparse> sparse_config = 1;
+}
+
+message StrictModeSparse {
+  // Max length of sparse vector
+  optional uint64 max_length = 10;
+}
+
+message StrictModeMultivectorConfig {
+  map<string, StrictModeMultivector> multivector_config = 1;
+}
+
+message StrictModeMultivector {
+  // Max number of vectors in a multivector
+  optional uint64 max_vectors = 1;
+}
+
+message CreateCollection {
+  // Name of the collection
+  string collection_name = 1;
+  // Deprecated
+  reserved 2;
+  // Deprecated
+  reserved 3;
+  // Configuration of vector index
+  optional HnswConfigDiff hnsw_config = 4;
+  // Configuration of the Write-Ahead-Log
+  optional WalConfigDiff wal_config = 5;
+  // Configuration of the optimizers
+  optional OptimizersConfigDiff optimizers_config = 6;
+  // Number of shards in the collection, default is 1 for standalone, otherwise
+  // equal to the number of nodes. Minimum is 1
+  optional uint32 shard_number = 7;
+  // If true - point's payload will not be stored in memory
+  optional bool on_disk_payload = 8;
+  // Wait timeout for operation commit in seconds, if not specified - default
+  // value will be supplied
+  optional uint64 timeout = 9;
+  // Configuration for vectors
+  optional VectorsConfig vectors_config = 10;
+  // Number of replicas of each shard that network tries to maintain, default = 1
+  optional uint32 replication_factor = 11;
+  // How many replicas should apply the operation for us to consider it successful, default = 1
+  optional uint32 write_consistency_factor = 12;
+  // Deprecated: init_from
+  reserved 13;
+  // Quantization configuration of vector
+  optional QuantizationConfig quantization_config = 14;
+  // Sharding method
+  optional ShardingMethod sharding_method = 15;
+  // Configuration for sparse vectors
+  optional SparseVectorConfig sparse_vectors_config = 16;
+  // Configuration for strict mode
+  optional StrictModeConfig strict_mode_config = 17;
+  // Arbitrary JSON metadata for the collection
+  map<string, Value> metadata = 18;
+}
+
+message UpdateCollection {
+  // Name of the collection
+  string collection_name = 1;
+  // New configuration parameters for the collection.
+  // This operation is blocking, it will only proceed once all current
+  // optimizations are complete
+  optional OptimizersConfigDiff optimizers_config = 2;
+  // Wait timeout for operation commit in seconds if blocking.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 3;
+  // New configuration parameters for the collection
+  optional CollectionParamsDiff params = 4;
+  // New HNSW parameters for the collection index
+  optional HnswConfigDiff hnsw_config = 5;
+  // New vector parameters
+  optional VectorsConfigDiff vectors_config = 6;
+  // Quantization configuration of vector
+  optional QuantizationConfigDiff quantization_config = 7;
+  // New sparse vector parameters
+  optional SparseVectorConfig sparse_vectors_config = 8;
+  // New strict mode configuration
+  optional StrictModeConfig strict_mode_config = 9;
+  // Arbitrary JSON-like metadata for the collection, will be merged with
+  // already stored metadata
+  map<string, Value> metadata = 10;
+}
+
+message DeleteCollection {
+  // Name of the collection
+  string collection_name = 1;
+  // Wait timeout for operation commit in seconds.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 2;
+}
+
+message CollectionOperationResponse {
+  // if operation made changes
+  bool result = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message CollectionParams {
+  // Deprecated
+  reserved 1;
+  // Deprecated
+  reserved 2;
+  // Number of shards in collection
+  uint32 shard_number = 3;
+  // If true - point's payload will not be stored in memory
+  bool on_disk_payload = 4;
+  // Configuration for vectors
+  optional VectorsConfig vectors_config = 5;
+  // Number of replicas of each shard that network tries to maintain
+  optional uint32 replication_factor = 6;
+  // How many replicas should apply the operation for us to consider it successful
+  optional uint32 write_consistency_factor = 7;
+  // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional uint32 read_fan_out_factor = 8;
+  // Sharding method
+  optional ShardingMethod sharding_method = 9;
+  // Configuration for sparse vectors
+  optional SparseVectorConfig sparse_vectors_config = 10;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 11;
+}
+
+message CollectionParamsDiff {
+  // Number of replicas of each shard that network tries to maintain
+  optional uint32 replication_factor = 1;
+  // How many replicas should apply the operation for us to consider it successful
+  optional uint32 write_consistency_factor = 2;
+  // If true - point's payload will not be stored in memory
+  optional bool on_disk_payload = 3;
+  // Fan-out every read request to these many additional remote nodes (and return first available response)
+  optional uint32 read_fan_out_factor = 4;
+  // Define number of milliseconds to wait before attempting to read from another replica.
+  optional uint64 read_fan_out_delay_ms = 5;
+}
+
+message CollectionConfig {
+  // Collection parameters
+  CollectionParams params = 1;
+  // Configuration of vector index
+  HnswConfigDiff hnsw_config = 2;
+  // Configuration of the optimizers
+  OptimizersConfigDiff optimizer_config = 3;
+  // Configuration of the Write-Ahead-Log
+  WalConfigDiff wal_config = 4;
+  // Configuration of the vector quantization
+  optional QuantizationConfig quantization_config = 5;
+  // Configuration of strict mode.
+  optional StrictModeConfig strict_mode_config = 6;
+  // Arbitrary JSON metadata for the collection
+  map<string, Value> metadata = 7;
+}
+
+enum TokenizerType {
+  Unknown = 0;
+  Prefix = 1;
+  Whitespace = 2;
+  Word = 3;
+  Multilingual = 4;
+}
+
+message KeywordIndexParams {
+  // If true - used for tenant optimization.
+  optional bool is_tenant = 1;
+  // If true - store index on disk.
+  optional bool on_disk = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
+}
+
+message IntegerIndexParams {
+  // If true - support direct lookups. Default is true.
+  optional bool lookup = 1;
+  // If true - support ranges filters. Default is true.
+  optional bool range = 2;
+  // If true - use this key to organize storage of the collection data.
+  // This option assumes that this key will be used in majority of filtered requests.
+  // Default is false.
+  optional bool is_principal = 3;
+  // If true - store index on disk. Default is false.
+  optional bool on_disk = 4;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 5;
+}
+
+message FloatIndexParams {
+  // If true - store index on disk.
+  optional bool on_disk = 1;
+  // If true - use this key to organize storage of the collection data.
+  // This option assumes that this key will be used in majority of filtered requests.
+  optional bool is_principal = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
+}
+
+message GeoIndexParams {
+  // If true - store index on disk.
+  optional bool on_disk = 1;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 2;
+}
+
+message StopwordsSet {
+  // List of languages to use stopwords from
+  repeated string languages = 1;
+  // List of custom stopwords
+  repeated string custom = 2;
+}
+
+message TextIndexParams {
+  // Tokenizer type
+  TokenizerType tokenizer = 1;
+  // If true - all tokens will be lowercase
+  optional bool lowercase = 2;
+  // Minimal token length
+  optional uint64 min_token_len = 3;
+  // Maximal token length
+  optional uint64 max_token_len = 4;
+  // If true - store index on disk.
+  optional bool on_disk = 5;
+  // Stopwords for the text index
+  optional StopwordsSet stopwords = 6;
+  // If true - support phrase matching.
+  optional bool phrase_matching = 7;
+  // Set an algorithm for stemming.
+  optional StemmingAlgorithm stemmer = 8;
+  // If true, normalize tokens by folding accented characters to ASCII (e.g., "ação" -> "acao").
+  // Default: false.
+  optional bool ascii_folding = 9;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 10;
+}
+
+message StemmingAlgorithm {
+  oneof stemming_params {
+    // Parameters for snowball stemming
+    SnowballParams snowball = 1;
+  }
+}
+
+message SnowballParams {
+  // Which language the algorithm should stem.
+  string language = 1;
+}
+
+message BoolIndexParams {
+  // If true - store index on disk.
+  optional bool on_disk = 1;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 2;
+}
+
+message DatetimeIndexParams {
+  // If true - store index on disk.
+  optional bool on_disk = 1;
+  // If true - use this key to organize storage of the collection data.
+  // This option assumes that this key will be used in majority of filtered requests.
+  optional bool is_principal = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
+}
+
+message UuidIndexParams {
+  // If true - used for tenant optimization.
+  optional bool is_tenant = 1;
+  // If true - store index on disk.
+  optional bool on_disk = 2;
+  // Enable HNSW graph building for this payload field.
+  // If true, builds additional HNSW links (Need payload_m > 0).
+  // Default: true.
+  optional bool enable_hnsw = 3;
+}
+
+message PayloadIndexParams {
+  oneof index_params {
+    // Parameters for keyword index
+    KeywordIndexParams keyword_index_params = 3;
+    // Parameters for integer index
+    IntegerIndexParams integer_index_params = 2;
+    // Parameters for float index
+    FloatIndexParams float_index_params = 4;
+    // Parameters for geo index
+    GeoIndexParams geo_index_params = 5;
+    // Parameters for text index
+    TextIndexParams text_index_params = 1;
+    // Parameters for bool index
+    BoolIndexParams bool_index_params = 6;
+    // Parameters for datetime index
+    DatetimeIndexParams datetime_index_params = 7;
+    // Parameters for uuid index
+    UuidIndexParams uuid_index_params = 8;
+  }
+}
+
+message PayloadSchemaInfo {
+  // Field data type
+  PayloadSchemaType data_type = 1;
+  // Field index parameters
+  optional PayloadIndexParams params = 2;
+  // Number of points indexed within this field
+  optional uint64 points = 3;
+}
+
+message UpdateQueueInfo {
+    // Number of elements in the queue
+    uint64 length = 1;
+}
+
+message CollectionInfo {
+  // operating condition of the collection
+  CollectionStatus status = 1;
+  // status of collection optimizers
+  OptimizerStatus optimizer_status = 2;
+  // Deprecated
+  reserved 3;
+  // Number of independent segments
+  uint64 segments_count = 4;
+  // Deprecated
+  reserved 5;
+  // Deprecated
+  reserved 6;
+  // Configuration
+  CollectionConfig config = 7;
+  // Collection data types
+  map<string, PayloadSchemaInfo> payload_schema = 8;
+  // Approximate number of points in the collection
+  optional uint64 points_count = 9;
+  // Approximate number of indexed vectors in the collection.
+  optional uint64 indexed_vectors_count = 10;
+  // Warnings related to the collection
+  repeated CollectionWarning warnings = 11;
+  // Update queue info
+  UpdateQueueInfo update_queue = 12;
+}
+
+message ChangeAliases {
+  // List of actions
+  repeated AliasOperations actions = 1;
+  // Wait timeout for operation commit in seconds.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 2;
+}
+
+message AliasOperations {
+  oneof action {
+    CreateAlias create_alias = 1;
+    RenameAlias rename_alias = 2;
+    DeleteAlias delete_alias = 3;
+  }
+}
+
+message CreateAlias {
+  // Name of the collection
+  string collection_name = 1;
+  // New name of the alias
+  string alias_name = 2;
+}
+
+message RenameAlias {
+  // Name of the alias to rename
+  string old_alias_name = 1;
+  // Name of the alias
+  string new_alias_name = 2;
+}
+
+message DeleteAlias {
+  // Name of the alias
+  string alias_name = 1;
+}
+
+message ListAliasesRequest {}
+
+message ListCollectionAliasesRequest {
+  // Name of the collection
+  string collection_name = 1;
+}
+
+message AliasDescription {
+  // Name of the alias
+  string alias_name = 1;
+  // Name of the collection
+  string collection_name = 2;
+}
+
+message ListAliasesResponse {
+  repeated AliasDescription aliases = 1;
+  // Time spent to process
+  double time = 2;
+}
+
+message CollectionClusterInfoRequest {
+  // Name of the collection
+  string collection_name = 1;
+}
+
+enum ReplicaState {
+  // Active and sound
+  Active = 0;
+  // Failed for some reason
+  Dead = 1;
+  // The shard is partially loaded and is currently receiving data from other shards
+  Partial = 2;
+  // Collection is being created
+  Initializing = 3;
+  // A shard which receives data, but is not used for search.
+  // Useful for backup shards.
+  Listener = 4;
+  // Deprecated: snapshot shard transfer is in progress.
+  // Updates should not be sent to (and are ignored by) the shard.
+  PartialSnapshot = 5;
+  // Shard is undergoing recovery by an external node.
+  // Normally rejects updates, accepts updates if force is true.
+  Recovery = 6;
+  // Points are being migrated to this shard as part of scale-up resharding
+  Resharding = 7;
+  // Points are being migrated to this shard as part of scale-down resharding
+  ReshardingScaleDown = 8;
+  // Active for readers, Partial for writers
+  ActiveRead = 9;
+  // State for manually creation/recovery of a shard.
+  // Usually when snapshot is uploaded.
+  // This state is equivalent to `Partial`, except:
+  // - it can't receive updates
+  // - it is not treated as broken on startup
+  ManualRecovery = 10;
+}
+
+message ShardKey {
+  oneof key {
+    // String key
+    string keyword = 1;
+    // Number key
+    uint64 number = 2;
+  }
+}
+
+message LocalShardInfo {
+  // Local shard id
+  uint32 shard_id = 1;
+  // Number of points in the shard
+  uint64 points_count = 2;
+  // Is replica active
+  ReplicaState state = 3;
+  // User-defined shard key
+  optional ShardKey shard_key = 4;
+}
+
+message RemoteShardInfo {
+  // Local shard id
+  uint32 shard_id = 1;
+  // Remote peer id
+  uint64 peer_id = 2;
+  // Is replica active
+  ReplicaState state = 3;
+  // User-defined shard key
+  optional ShardKey shard_key = 4;
+}
+
+message ShardTransferInfo {
+  // Local shard id
+  uint32 shard_id = 1;
+  optional uint32 to_shard_id = 5;
+  uint64 from = 2;
+  uint64 to = 3;
+  // If `true` transfer is a synchronization of a replicas;
+  // If `false` transfer is a moving of a shard from one peer to another
+  bool sync = 4;
+}
+
+message ReshardingInfo {
+  uint32 shard_id = 1;
+  uint64 peer_id = 2;
+  optional ShardKey shard_key = 3;
+  ReshardingDirection direction = 4;
+}
+
+// Resharding direction, scale up or down in number of shards
+enum ReshardingDirection {
+  // Scale up, add a new shard
+  Up = 0;
+  // Scale down, remove a shard
+  Down = 1;
+}
+
+message CollectionClusterInfoResponse {
+  // ID of this peer
+  uint64 peer_id = 1;
+  // Total number of shards
+  uint64 shard_count = 2;
+  // Local shards
+  repeated LocalShardInfo local_shards = 3;
+  // Remote shards
+  repeated RemoteShardInfo remote_shards = 4;
+  // Shard transfers
+  repeated ShardTransferInfo shard_transfers = 5;
+  // Resharding operations
+  repeated ReshardingInfo resharding_operations = 6;
+}
+
+message MoveShard {
+  // Local shard id
+  uint32 shard_id = 1;
+  optional uint32 to_shard_id = 5;
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
+message ReplicateShard {
+  // Local shard id
+  uint32 shard_id = 1;
+  optional uint32 to_shard_id = 5;
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
+message AbortShardTransfer {
+  // Local shard id
+  uint32 shard_id = 1;
+  optional uint32 to_shard_id = 4;
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+}
+
+message RestartTransfer {
+  // Local shard id
+  uint32 shard_id = 1;
+  optional uint32 to_shard_id = 5;
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  ShardTransferMethod method = 4;
+}
+
+message ReplicatePoints {
+  // Source shard key
+  ShardKey from_shard_key = 1;
+  // Target shard key
+  ShardKey to_shard_key = 2;
+  // If set - only points matching the filter will be replicated
+  optional Filter filter = 3;
+}
+
+enum ShardTransferMethod {
+  // Stream shard records in batches
+  StreamRecords = 0;
+  // Snapshot the shard and recover it on the target peer
+  Snapshot = 1;
+  // Resolve WAL delta between peers and transfer the difference
+  WalDelta = 2;
+  // Stream shard records in batches for resharding
+  ReshardingStreamRecords = 3;
+}
+
+message Replica {
+  uint32 shard_id = 1;
+  uint64 peer_id = 2;
+}
+
+message CreateShardKey {
+  // User-defined shard key
+  ShardKey shard_key = 1;
+  // Number of shards to create per shard key
+  optional uint32 shards_number = 2;
+  // Number of replicas of each shard to create
+  optional uint32 replication_factor = 3;
+  // List of peer ids, allowed to create shards. If empty - all peers are allowed
+  repeated uint64 placement = 4;
+  // Initial state of created replicas. Warning: use with care.
+  optional ReplicaState initial_state = 5;
+}
+
+message DeleteShardKey {
+  // Shard key to delete
+  ShardKey shard_key = 1;
+}
+
+message UpdateCollectionClusterSetupRequest {
+  // Name of the collection
+  string collection_name = 1;
+  oneof operation {
+    MoveShard move_shard = 2;
+    ReplicateShard replicate_shard = 3;
+    AbortShardTransfer abort_transfer = 4;
+    Replica drop_replica = 5;
+    CreateShardKey create_shard_key = 7;
+    DeleteShardKey delete_shard_key = 8;
+    RestartTransfer restart_transfer = 9;
+    ReplicatePoints replicate_points = 10;
+  }
+  // Wait timeout for operation commit in seconds.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 6;
+}
+
+message UpdateCollectionClusterSetupResponse {
+  bool result = 1;
+}
+
+message CreateShardKeyRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Request to create shard key
+  CreateShardKey request = 2;
+  // Wait timeout for operation commit in seconds.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 3;
+}
+
+message DeleteShardKeyRequest {
+  // Name of the collection
+  string collection_name = 1;
+  // Request to delete shard key
+  DeleteShardKey request = 2;
+  // Wait timeout for operation commit in seconds.
+  // If not specified - default value will be supplied.
+  optional uint64 timeout = 3;
+}
+
+message ListShardKeysRequest {
+  // Name of the collection
+  string collection_name = 1;
+}
+
+message CreateShardKeyResponse {
+  bool result = 1;
+}
+
+message DeleteShardKeyResponse {
+  bool result = 1;
+}
+
+message ShardKeyDescription {
+  ShardKey key = 1;
+}
+
+message ListShardKeysResponse {
+  repeated ShardKeyDescription shard_keys = 1;
+  // Time spent to process
+  double time = 2;
+}

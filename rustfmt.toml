@@ -1,0 +1,5 @@
+# Check https://rust-lang.github.io/rustfmt for more options
+
+reorder_imports = true
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"

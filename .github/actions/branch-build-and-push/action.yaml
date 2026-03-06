@@ -1,0 +1,120 @@
+name: Build the Docker image
+description: "Build and push a branch image to container registries"
+
+inputs:
+  ghcr-password:
+    description: 'Password for GitHub Container Registry'
+    required: false
+  dockerhub-password:
+    description: 'Password for Docker Hub'
+    required: false
+  push-to-ghcr:
+    description: 'Push to GitHub Container Registry'
+    required: true
+    default: 'false'
+  push-to-dockerhub:
+    description: 'Push to Docker Hub'
+    required: true
+    default: 'false'
+  build-gpu:
+    description: 'Build GPU images instead of regular images'
+    required: false
+    default: 'false'
+  staging-build:
+    description: 'Enable staging feature flag'
+    required: false
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Execution
+      shell: bash
+      run: |
+        buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr '\n' ' ')
+        buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr '\n' ' ')
+
+        if [ -n "$buildx_containers" ]; then
+          echo "Buildx containers to delete: $buildx_containers"
+          docker container rm -f $buildx_containers
+        fi
+
+        if [ -n "$buildx_volumes" ]; then
+          echo "Buildx volumes to delete: $buildx_volumes"
+          docker volume rm -f $buildx_volumes
+        fi
+
+        branch_tmp=$(git rev-parse --abbrev-ref HEAD)
+        branch=${branch_tmp//\//-} # replace all / with -
+        echo "Building branch ${branch}"
+
+        # Create build container
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        docker buildx create --use
+
+        # Authenticate on registries
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          echo "${{ inputs.dockerhub-password }}" | docker login -u generall --password-stdin
+        fi
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          echo "${{ inputs.ghcr-password }}" | docker login ghcr.io -u qdrant --password-stdin
+        fi
+
+        GIT_COMMIT_ID="$(git rev-parse HEAD)"
+
+        # Build base tags array
+        tags=()
+        if [ "${{ inputs.push-to-ghcr }}" = "true" ]; then
+          tags+=("ghcr.io/qdrant/qdrant:${branch}-${GIT_COMMIT_ID}")
+          tags+=("ghcr.io/qdrant/qdrant:${branch}")
+        fi
+        if [ "${{ inputs.push-to-dockerhub }}" = "true" ]; then
+          # Don't push commit tag to Docker Hub to avoid excessive image creation
+          tags+=("qdrant/qdrant:${branch}")
+        fi
+
+        # Exit if no tags to build
+        if [ ${#tags[@]} -eq 0 ]; then
+          echo "No registry enabled for push"
+          exit 1
+        fi
+
+        # Prepare feature flags
+        FEATURES="rocksdb"
+        if [ "${{ inputs.staging-build }}" = "true" ]; then
+          echo "Staging feature enabled"
+          FEATURES="${FEATURES},staging"
+        fi
+        FEATURES_ARG="--build-arg FEATURES=${FEATURES}"
+
+        # Function to build and push with given suffix and build args
+        build_image() {
+          local suffix="$1"
+          local platform="$2"
+          local build_args="$3"
+
+          # Create modified tags with suffix
+          local build_tags=()
+          local tag
+          for tag in "${tags[@]}"; do
+            build_tags+=("-t" "${tag}${suffix}")
+          done
+
+          echo "Building with tags: ${build_tags[*]}"
+          docker buildx build --platform="$platform" \
+            --build-arg GIT_COMMIT_ID="${GIT_COMMIT_ID}" \
+            $FEATURES_ARG \
+            $build_args \
+            "${build_tags[@]}" \
+            --push --label "org.opencontainers.image.revision"="${GIT_COMMIT_ID}" .
+        }
+
+        # Build images based on type
+        if [ "${{ inputs.build-gpu }}" = "true" ]; then
+          echo "Building GPU images"
+          build_image "-gpu-nvidia" "linux/amd64" "--build-arg GPU=nvidia"
+          build_image "-gpu-amd" "linux/amd64" "--build-arg GPU=amd"
+        else
+          echo "Building regular image"
+          build_image "" "linux/amd64,linux/arm64" ""
+        fi
