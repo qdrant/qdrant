@@ -184,7 +184,7 @@ async fn test_cancel_optimization() {
         None,
     );
 
-    sleep(Duration::from_millis(100)).await;
+    sleep(Duration::from_millis(10)).await;
 
     let join_handles = handles.into_iter().filter_map(|h| h.stop()).collect_vec();
 
