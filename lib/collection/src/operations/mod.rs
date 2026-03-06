@@ -1,5 +1,6 @@
 pub mod cluster_ops;
 pub mod config_diff;
+pub mod health_check;
 pub mod consistency_params;
 pub mod conversions;
 pub mod generalizer;

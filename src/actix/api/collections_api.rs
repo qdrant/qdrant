@@ -296,6 +296,22 @@ fn get_optimizations(
     })
 }
 
+#[get("/collections/{name}/health")]
+async fn get_collection_health(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    ActixAuth(auth): ActixAuth,
+) -> HttpResponse {
+    let pass = new_unchecked_verification_pass();
+
+    helpers::time(do_get_collection_health(
+        dispatcher.toc(&auth, &pass),
+        &auth,
+        &collection.name,
+    ))
+    .await
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -310,6 +326,7 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_aliases)
         .service(get_collection_aliases)
         .service(get_cluster_info)
+        .service(get_collection_health)
         .service(get_optimizations)
         .service(update_collection_cluster);
 }
