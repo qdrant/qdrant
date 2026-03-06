@@ -6,7 +6,7 @@ use common::progress_tracker::new_progress_tracker;
 use fs_err as fs;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, HnswGlobalConfig, Indexes};
+use segment::types::{HnswConfig, HnswGlobalConfig};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
@@ -27,9 +27,10 @@ impl EdgeShard {
     ///
     /// This is synchronous and does not spawn background optimization workers.
     ///
-    /// NOTE: This method is not safe to call concurrently — it is only
-    /// intended to be called once during [`EdgeShard::load()`].
-    pub fn optimize_all_segments_blocking(&self) -> OperationResult<bool> {
+    /// Takes `&mut self` because concurrent calls would race on the shared
+    /// temp directory ([`TEMP_SEGMENTS_PATH`]) — cleanup at the end could
+    /// remove files still in use by another invocation.
+    pub fn optimize_all_segments_blocking(&mut self) -> OperationResult<bool> {
         let optimizers = self.build_blocking_optimizers()?;
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
@@ -97,7 +98,7 @@ impl EdgeShard {
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
         Self::reset_temp_segments_dir(&temp_segments_path)?;
 
-        let hnsw_config = self.infer_hnsw_config();
+        let hnsw_config = HnswConfig::default();
         let hnsw_global_config = HnswGlobalConfig::default();
         let segment_optimizer_config =
             OptimizerSourceConfig::from_segment_config(&self.config, hnsw_config).build();
@@ -154,19 +155,6 @@ impl EdgeShard {
         }
     }
 
-    /// Infer HNSW config from the first indexed vector in the segment config.
-    /// Falls back to default if no HNSW-indexed vector exists (e.g. all Plain).
-    fn infer_hnsw_config(&self) -> HnswConfig {
-        self.config
-            .vector_data
-            .values()
-            .find_map(|vdc| match &vdc.index {
-                Indexes::Hnsw(hnsw) => Some(*hnsw),
-                Indexes::Plain {} => None,
-            })
-            .unwrap_or_default()
-    }
-
     fn reset_temp_segments_dir(temp_segments_path: &std::path::Path) -> OperationResult<()> {
         if temp_segments_path.exists() {
             fs::remove_dir_all(temp_segments_path).map_err(|err| {
@@ -196,8 +184,8 @@ mod tests {
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::types::{
-        Distance, ExtendedPointId, HnswConfig, Indexes, PayloadStorageType, SegmentConfig,
-        VectorDataConfig, VectorStorageType, WithPayloadInterface, WithVector,
+        Distance, ExtendedPointId, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig,
+        VectorStorageType, WithPayloadInterface, WithVector,
     };
     use shard::count::CountRequestInternal;
     use shard::operations::CollectionUpdateOperations::PointOperation;
@@ -226,7 +214,7 @@ mod tests {
 
         duplicate_single_segment(dir.path());
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
         assert_eq!(reopened.info().segments_count, 2);
 
         let optimized = reopened.optimize_all_segments_blocking().unwrap();
@@ -243,7 +231,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -278,7 +266,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=100).map(point).collect::<Vec<_>>();
         shard
@@ -301,7 +289,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
@@ -327,7 +315,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize_all_segments_blocking().unwrap();
         let info = reopened.info();
         assert!(
@@ -372,7 +360,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
         // First explicit optimization triggers merge.
         reopened.optimize_all_segments_blocking().unwrap();
         let segments_after_first = reopened.info().segments_count;
@@ -397,7 +385,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -429,7 +417,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         // Only 100 points total (below DEFAULT_VACUUM_MIN_VECTOR_NUMBER=1000)
         let points = (1..=100).map(point).collect::<Vec<_>>();
@@ -462,7 +450,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -518,7 +506,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -568,7 +556,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -598,7 +586,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -649,7 +637,7 @@ mod tests {
         multiply_segments(dir.path(), target_count);
 
         // Explicit optimization (both merge and vacuum should run)
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize_all_segments_blocking().unwrap();
 
         let info = reopened.info();
@@ -691,7 +679,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -740,7 +728,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -886,54 +874,5 @@ mod tests {
                 fs::copy(&from_path, &to_path).unwrap();
             }
         }
-    }
-
-    /// Case 3: All vectors have Plain index → infer_hnsw_config falls back to default.
-    #[test]
-    fn infer_hnsw_config_falls_back_to_default_when_all_plain() {
-        let dir = tempfile::Builder::new()
-            .prefix("edge-hnsw-plain")
-            .tempdir()
-            .unwrap();
-
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
-        let inferred = shard.infer_hnsw_config();
-        assert_eq!(inferred, HnswConfig::default());
-    }
-
-    /// Case 1+2: After optimization builds HNSW segments, reloading infers
-    /// the HNSW config from the optimized segment (not the default).
-    #[test]
-    fn infer_hnsw_config_from_optimized_segment() {
-        let dir = tempfile::Builder::new()
-            .prefix("edge-hnsw-optimized")
-            .tempdir()
-            .unwrap();
-
-        // Create shard with Plain config, insert enough data to trigger indexing.
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
-        let points = (1..=1000).map(point).collect::<Vec<_>>();
-        shard
-            .update(PointOperation(UpsertPoints(PointsList(points))))
-            .unwrap();
-
-        // Before optimize: config has Plain index → infer returns default.
-        let inferred_before = shard.infer_hnsw_config();
-        assert_eq!(inferred_before, HnswConfig::default());
-
-        // Run optimize (may build HNSW index if threshold is met).
-        let _ = shard.optimize_all_segments_blocking();
-        drop(shard);
-
-        // Reload: if optimization built an HNSW segment, the config will
-        // have Indexes::Hnsw and infer_hnsw_config returns it.
-        // If not (data too small), it stays Plain and returns default.
-        // Either way, infer_hnsw_config must not panic.
-        let reloaded = EdgeShard::load(dir.path(), None).unwrap();
-        let inferred_after = reloaded.infer_hnsw_config();
-
-        // The inferred config should be valid (non-zero m and ef_construct).
-        assert!(inferred_after.m > 0);
-        assert!(inferred_after.ef_construct > 0);
     }
 }

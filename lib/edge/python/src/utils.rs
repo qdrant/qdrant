@@ -13,4 +13,14 @@ impl PyEdgeShard {
             )))
         }
     }
+
+    pub fn get_shard_mut(&mut self) -> Result<&mut EdgeShard, PyError> {
+        if let Some(shard) = &mut self.0 {
+            Ok(shard)
+        } else {
+            Err(PyError::from(OperationError::service_error(
+                "Shard is not initialized",
+            )))
+        }
+    }
 }

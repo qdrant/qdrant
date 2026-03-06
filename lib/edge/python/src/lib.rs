@@ -111,8 +111,8 @@ impl PyEdgeShard {
         Ok(())
     }
 
-    pub fn optimize(&self) -> Result<bool> {
-        let optimized = self.get_shard()?.optimize_all_segments_blocking()?;
+    pub fn optimize(&mut self) -> Result<bool> {
+        let optimized = self.get_shard_mut()?.optimize_all_segments_blocking()?;
         Ok(optimized)
     }
 
