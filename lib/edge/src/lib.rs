@@ -1,13 +1,13 @@
-pub mod count;
-pub mod facet;
-pub mod info;
-pub mod optimize;
-pub mod query;
-pub mod retrieve;
-pub mod scroll;
-pub mod search;
-pub mod snapshots;
-pub mod update;
+mod count;
+mod facet;
+mod info;
+mod optimize;
+mod query;
+mod retrieve;
+mod scroll;
+mod search;
+mod snapshots;
+mod update;
 
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
