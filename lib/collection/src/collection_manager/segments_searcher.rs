@@ -18,6 +18,7 @@ use segment::types::{
     WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
+use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::query::query_context::{fill_query_context, init_query_context};
 use shard::query::query_enum::QueryEnum;
 use shard::retrieve::record_internal::RecordInternal;
@@ -32,7 +33,6 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -744,13 +744,13 @@ mod tests {
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
     use segment::types::{Condition, HasIdCondition};
+    use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
     use tempfile::Builder;
 
     use super::*;
     use crate::collection_manager::fixtures::{TEST_TIMEOUT, build_test_holder, random_segment};
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::types::CoreSearchRequest;
-    use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
     #[test]
     fn test_is_indexed_enough_condition() {

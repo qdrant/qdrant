@@ -24,8 +24,10 @@ log = { workspace = true }
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
 fs-err = { workspace = true, features = ["debug"] }
 serde_json = { workspace = true }
+tempfile = { workspace = true }

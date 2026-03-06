@@ -2177,6 +2177,8 @@ dependencies = [
  "segment",
  "serde_json",
  "shard",
+ "tempfile",
+ "uuid",
  "wal",
 ]
 
