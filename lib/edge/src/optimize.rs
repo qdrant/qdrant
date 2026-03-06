@@ -1,22 +1,21 @@
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
-use fs_err as fs;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, OptimizerSourceConfig, TEMP_SEGMENTS_PATH,
-    default_segment_number,
+    default_segment_number, OptimizerSourceConfig, DEFAULT_DELETED_THRESHOLD,
+    DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
-use shard::optimizers::segment_optimizer::{Optimizer, plan_optimizations};
+use shard::optimizers::segment_optimizer::{plan_optimizations, Optimizer};
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
@@ -26,77 +25,61 @@ impl EdgeShard {
     /// Run shard optimizers in-process and blocking until no more optimization plans are produced.
     ///
     /// This is synchronous and does not spawn background optimization workers.
-    ///
-    /// Takes `&mut self` because concurrent calls would race on the shared
-    /// temp directory ([`TEMP_SEGMENTS_PATH`]) — cleanup at the end could
-    /// remove files still in use by another invocation.
-    pub fn optimize_all_segments_blocking(&mut self) -> OperationResult<bool> {
+    pub fn optimize_all_segments_blocking(&self) -> OperationResult<bool> {
         let optimizers = self.build_blocking_optimizers()?;
         let stopped = AtomicBool::new(false);
         let mut optimized_any = false;
 
-        let result = (|| {
-            loop {
-                let planned = {
-                    let segments = self.segments.read();
-                    plan_optimizations(&segments, &optimizers)
-                };
+        loop {
+            let planned = {
+                let segments = self.segments.read();
+                plan_optimizations(&segments, &optimizers)
+            };
 
-                if planned.is_empty() {
-                    return Ok(optimized_any);
-                }
+            if planned.is_empty() {
+                return Ok(optimized_any);
+            }
 
-                let mut optimized_in_iteration = false;
+            let mut optimized_in_iteration = false;
 
-                for (optimizer, segment_ids) in planned {
-                    let desired_io =
-                        num_rayon_threads(optimizer.hnsw_config().max_indexing_threads);
-                    let budget = ResourceBudget::new(desired_io, desired_io);
-                    let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
-                        OperationError::service_error(format!(
-                            "failed to acquire resource permit for {} optimizer",
-                            optimizer.name(),
-                        ))
-                    })?;
+            for (optimizer, segment_ids) in planned {
+                let desired_io = num_rayon_threads(optimizer.hnsw_config().max_indexing_threads);
+                let budget = ResourceBudget::new(desired_io, desired_io);
+                let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "failed to acquire resource permit for {} optimizer",
+                        optimizer.name(),
+                    ))
+                })?;
 
-                    let (_, progress) = new_progress_tracker();
-                    let points_optimized = optimizer.as_ref().optimize(
-                        self.segments.clone(),
-                        segment_ids,
-                        Uuid::new_v4(),
-                        permit,
-                        budget,
-                        &stopped,
-                        progress,
-                        Box::new(|| ()),
-                    )?;
+                let (_, progress) = new_progress_tracker();
+                let points_optimized = optimizer.as_ref().optimize(
+                    self.segments.clone(),
+                    segment_ids,
+                    Uuid::new_v4(),
+                    permit,
+                    budget,
+                    &stopped,
+                    progress,
+                    Box::new(|| ()),
+                )?;
 
-                    if points_optimized > 0 {
-                        optimized_in_iteration = true;
-                        optimized_any = true;
-                    }
-                }
-
-                // Avoid repeating the same plan forever if no optimizer made effective progress.
-                if !optimized_in_iteration {
-                    return Ok(optimized_any);
+                if points_optimized > 0 {
+                    optimized_in_iteration = true;
+                    optimized_any = true;
                 }
             }
-        })();
 
-        // Clean up the temporary directory used by optimizers, regardless of success or failure.
-        let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
-        if temp_segments_path.exists() {
-            let _ = fs::remove_dir_all(&temp_segments_path);
+            // Avoid repeating the same plan forever if no optimizer made effective progress.
+            if !optimized_in_iteration {
+                return Ok(optimized_any);
+            }
         }
-
-        result
     }
 
     fn build_blocking_optimizers(&self) -> OperationResult<Vec<Arc<Optimizer>>> {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
-        Self::reset_temp_segments_dir(&temp_segments_path)?;
 
         let hnsw_config = HnswConfig::default();
         let hnsw_global_config = HnswGlobalConfig::default();
@@ -154,26 +137,6 @@ impl EdgeShard {
             deferred_points_threshold_bytes: None,
         }
     }
-
-    fn reset_temp_segments_dir(temp_segments_path: &std::path::Path) -> OperationResult<()> {
-        if temp_segments_path.exists() {
-            fs::remove_dir_all(temp_segments_path).map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to clear edge optimizer temp directory {}: {err}",
-                    temp_segments_path.display(),
-                ))
-            })?;
-        }
-
-        fs::create_dir_all(temp_segments_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to create edge optimizer temp directory {}: {err}",
-                temp_segments_path.display(),
-            ))
-        })?;
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -188,11 +151,11 @@ mod tests {
         VectorStorageType, WithPayloadInterface, WithVector,
     };
     use shard::count::CountRequestInternal;
-    use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-    use shard::optimizers::config::{TEMP_SEGMENTS_PATH, default_segment_number};
+    use shard::operations::CollectionUpdateOperations::PointOperation;
+    use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
     use crate::EdgeShard;
@@ -214,7 +177,7 @@ mod tests {
 
         duplicate_single_segment(dir.path());
 
-        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         assert_eq!(reopened.info().segments_count, 2);
 
         let optimized = reopened.optimize_all_segments_blocking().unwrap();
@@ -231,7 +194,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -266,7 +229,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=100).map(point).collect::<Vec<_>>();
         shard
@@ -289,7 +252,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let optimized = shard.optimize_all_segments_blocking().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
@@ -315,7 +278,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize_all_segments_blocking().unwrap();
         let info = reopened.info();
         assert!(
@@ -360,7 +323,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         // First explicit optimization triggers merge.
         reopened.optimize_all_segments_blocking().unwrap();
         let segments_after_first = reopened.info().segments_count;
@@ -385,7 +348,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -417,7 +380,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         // Only 100 points total (below DEFAULT_VACUUM_MIN_VECTOR_NUMBER=1000)
         let points = (1..=100).map(point).collect::<Vec<_>>();
@@ -450,7 +413,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -506,7 +469,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -556,7 +519,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -586,7 +549,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -637,7 +600,7 @@ mod tests {
         multiply_segments(dir.path(), target_count);
 
         // Explicit optimization (both merge and vacuum should run)
-        let mut reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize_all_segments_blocking().unwrap();
 
         let info = reopened.info();
@@ -670,56 +633,6 @@ mod tests {
         assert!(!optimized, "second run should be idle after merge+vacuum");
     }
 
-    /// The optimizer temp directory should be cleaned up after optimization,
-    /// regardless of whether optimization actually occurred.
-    #[test]
-    fn temp_directory_cleaned_up_after_optimization() {
-        let dir = tempfile::Builder::new()
-            .prefix("edge-opt-temp-cleanup")
-            .tempdir()
-            .unwrap();
-
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
-
-        let points = (1..=1000).map(point).collect::<Vec<_>>();
-        shard
-            .update(PointOperation(UpsertPoints(PointsList(points))))
-            .unwrap();
-
-        // Delete 250/1000 = 25%, above DEFAULT_DELETED_THRESHOLD (20%)
-        let deleted_ids = (1..=250).map(ExtendedPointId::NumId).collect();
-        shard
-            .update(PointOperation(DeletePoints { ids: deleted_ids }))
-            .unwrap();
-
-        let optimized = shard.optimize_all_segments_blocking().unwrap();
-        assert!(optimized);
-
-        let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
-        assert!(
-            !temp_path.exists(),
-            "temp directory should be cleaned up after optimization"
-        );
-    }
-
-    /// Temp directory should not exist even when optimization is a no-op.
-    #[test]
-    fn temp_directory_cleaned_up_on_noop() {
-        let dir = tempfile::Builder::new()
-            .prefix("edge-opt-temp-noop")
-            .tempdir()
-            .unwrap();
-
-        let _shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
-        // Load already ran optimize (no-op for empty shard).
-
-        let temp_path = dir.path().join(TEMP_SEGMENTS_PATH);
-        assert!(
-            !temp_path.exists(),
-            "temp directory should be cleaned up even on no-op optimization"
-        );
-    }
-
     /// Optimized shard should survive a reload and still serve correct data.
     #[test]
     fn data_survives_optimize_and_reload() {
@@ -728,7 +641,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let mut shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
