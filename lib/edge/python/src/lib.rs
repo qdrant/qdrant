@@ -111,8 +111,11 @@ impl PyEdgeShard {
         Ok(())
     }
 
-    pub fn optimize(&self) -> Result<bool> {
-        let optimized = self.get_shard()?.optimize(None)?;
+    #[pyo3(signature = (hnsw_config = None))]
+    pub fn optimize(&self, hnsw_config: Option<PyHnswIndexConfig>) -> Result<bool> {
+        let optimized = self
+            .get_shard()?
+            .optimize(hnsw_config.map(HnswConfig::from))?;
         Ok(optimized)
     }
 
