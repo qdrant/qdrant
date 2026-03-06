@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use common::measurable_rwlock::parking_lot::Mutex;
 use common::types::TelemetryDetail;
-use parking_lot::Mutex;
 
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::telemetry::VectorIndexSearchesTelemetry;

@@ -12,13 +12,13 @@ use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
+use common::measurable_rwlock::parking_lot::RwLock;
 use common::progress_tracker::ProgressTracker;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -597,7 +597,7 @@ impl SegmentBuilder {
             drop(progress_payload_index);
 
             payload_index.flusher()()?;
-            let payload_index_arc = Arc::new(RwLock::new(payload_index));
+            let payload_index_arc = Arc::new(RwLock::new("playload_index", payload_index));
 
             // Try to lock GPU device.
             #[cfg(feature = "gpu")]

@@ -3,11 +3,12 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ::parking_lot::RwLock;
 use common::budget::{ResourceBudget, ResourcePermit};
+use common::measurable_rwlock::parking_lot::Mutex;
 use common::progress_tracker::ProgressTracker;
 #[cfg(any(test, feature = "testing"))]
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry;

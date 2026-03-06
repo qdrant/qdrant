@@ -14,12 +14,12 @@ use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::flags::FeatureFlags;
 use common::fs::clear_disk_cache;
+use common::measurable_rwlock::parking_lot::{Mutex, RwLock};
 use common::progress_tracker::ProgressTracker;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
 use itertools::EitherOrBoth;
 use log::{debug, trace};
-use parking_lot::Mutex;
 use rand::Rng;
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -90,7 +90,7 @@ pub struct HNSWIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    payload_index: Arc<parking_lot::RwLock<StructPayloadIndex>>,
+    payload_index: Arc<RwLock<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
     graph: GraphLayers,
@@ -128,7 +128,7 @@ pub struct HnswIndexOpenArgs<'a> {
     pub id_tracker: Arc<AtomicRefCell<IdTrackerEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    pub payload_index: Arc<parking_lot::RwLock<StructPayloadIndex>>,
+    pub payload_index: Arc<RwLock<StructPayloadIndex>>,
     pub hnsw_config: HnswConfig,
 }
 

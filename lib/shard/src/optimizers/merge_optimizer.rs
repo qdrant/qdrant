@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::measurable_rwlock::parking_lot::Mutex;
 use itertools::Itertools;
-use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::types::{HnswConfig, HnswGlobalConfig};

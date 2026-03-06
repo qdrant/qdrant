@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::measurable_rwlock::parking_lot::{Mutex, RwLock};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use parking_lot::{Mutex, RwLock};
 
 use super::hnsw_index::point_scorer::BatchFilteredSearcher;
 use crate::common::BYTES_IN_KB;

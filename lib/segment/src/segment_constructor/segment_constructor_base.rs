@@ -9,13 +9,13 @@ use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
+use common::measurable_rwlock::parking_lot::{Mutex, RwLock};
 use common::mmap::{Advice, AdviceSetting};
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
 use fs_err as fs;
 use fs_err::File;
 use log::info;
-use parking_lot::{Mutex, RwLock};
 use rand::Rng;
 #[cfg(feature = "rocksdb")]
 use rocksdb::DB;
@@ -519,15 +519,17 @@ fn create_segment(
     }
 
     let payload_index_path = get_payload_index_path(segment_path);
-    let payload_index: Arc<RwLock<StructPayloadIndex>> =
-        Arc::new(RwLock::new(StructPayloadIndex::open(
+    let payload_index: Arc<RwLock<StructPayloadIndex>> = Arc::new(RwLock::new(
+        "payload_index",
+        StructPayloadIndex::open(
             payload_storage.clone(),
             id_tracker.clone(),
             vector_storages.clone(),
             &payload_index_path,
             appendable_flag,
             create,
-        )?));
+        )?,
+    ));
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
@@ -625,13 +627,13 @@ fn create_segment(
         SegmentType::Plain
     };
 
-    let version_tracker = Arc::new(RwLock::new(VersionTracker::default()));
+    let version_tracker = Arc::new(RwLock::new("version_tracker", VersionTracker::default()));
 
     Ok(Segment {
         uuid,
         initial_version,
-        version: Arc::new(Mutex::new(version)),
-        persisted_version: Arc::new(Mutex::new(version)),
+        version: Arc::new(Mutex::new("version", version)),
+        persisted_version: Arc::new(Mutex::new("persisted_version", version)),
         is_alive_flush_lock: IsAliveLock::new(),
         segment_path: segment_path.to_owned(),
         version_tracker,
@@ -642,7 +644,7 @@ fn create_segment(
         payload_index,
         payload_storage,
         segment_config: config.clone(),
-        error_status: RwLock::new(None),
+        error_status: RwLock::new("error_status", None),
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
     })

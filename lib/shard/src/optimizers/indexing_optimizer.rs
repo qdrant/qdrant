@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use common::measurable_rwlock::parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment::Segment;

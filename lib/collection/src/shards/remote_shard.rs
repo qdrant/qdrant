@@ -22,9 +22,9 @@ use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::measurable_rwlock::parking_lot::Mutex;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
-use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };

@@ -6,11 +6,11 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::measurable_rwlock::parking_lot::RwLock;
 use common::storage_version::{StorageVersion as _, VERSION_FILE};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use fs_err as fs;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;

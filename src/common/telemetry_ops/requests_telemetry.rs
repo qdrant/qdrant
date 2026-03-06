@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::measurable_rwlock::parking_lot::Mutex as OpDurationMutex;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
@@ -31,7 +32,10 @@ pub struct ActixTelemetryCollector {
 
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
-    methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    methods: HashMap<
+        String,
+        HashMap<HttpStatusCode, Arc<OpDurationMutex<OperationDurationsAggregator>>>,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -40,7 +44,10 @@ pub struct TonicTelemetryCollector {
 
 #[derive(Default)]
 pub struct TonicWorkerTelemetryCollector {
-    methods: HashMap<String, HashMap<GrpcStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    methods: HashMap<
+        String,
+        HashMap<GrpcStatusCode, Arc<OpDurationMutex<OperationDurationsAggregator>>>,
+    >,
 }
 
 impl ActixTelemetryCollector {

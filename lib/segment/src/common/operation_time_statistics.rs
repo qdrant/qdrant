@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
+use common::measurable_rwlock::parking_lot::Mutex;
 use common::types::DetailsLevel::Level1;
 use common::types::TelemetryDetail;
 use is_sorted::IsSorted;
 use itertools::Itertools as _;
-use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::Serialize;
 use smallvec::SmallVec;
@@ -226,18 +226,21 @@ impl Drop for ScopeDurationMeasurer<'_> {
 
 impl OperationDurationsAggregator {
     pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
-            ok_count: 0,
-            fail_count: 0,
-            timings: [0.; AVG_DATASET_LEN],
-            timing_index: 0,
-            timing_loops: 0,
-            min_value: None,
-            max_value: None,
-            total_value: 0,
-            last_response_date: Some(Utc::now().round_subsecs(2)),
-            buckets: smallvec::smallvec![0; DEFAULT_BUCKET_BOUNDARIES_MICROS.len()],
-        }))
+        Arc::new(Mutex::new(
+            "operation_durations_agg",
+            Self {
+                ok_count: 0,
+                fail_count: 0,
+                timings: [0.; AVG_DATASET_LEN],
+                timing_index: 0,
+                timing_loops: 0,
+                min_value: None,
+                max_value: None,
+                total_value: 0,
+                last_response_date: Some(Utc::now().round_subsecs(2)),
+                buckets: smallvec::smallvec![0; DEFAULT_BUCKET_BOUNDARIES_MICROS.len()],
+            },
+        ))
     }
 
     pub fn add_operation_result(&mut self, success: bool, duration: Duration) {
