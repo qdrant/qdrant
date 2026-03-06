@@ -19,5 +19,5 @@ maturin develop --no-default-features
 Run example
 
 ```bash
-python examples/qdrant-edge.py
+python examples/demo.py
 ```

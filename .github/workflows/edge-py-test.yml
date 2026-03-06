@@ -58,6 +58,6 @@ jobs:
 
           source .venv/bin/activate
 
-          python examples/qdrant-edge.py
+          python examples/demo.py
           python examples/fusion-query.py
           python examples/mmr-query.py

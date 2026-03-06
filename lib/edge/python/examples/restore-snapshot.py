@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# See lib/edge/publish/examples/src/bin/restore-snapshot.rs for the equivalent Rust example.
+
 import os
 import requests
 import shutil

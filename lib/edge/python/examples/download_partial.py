@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # This script downloads a partial snapshot using a predefined manifest.
+
 import requests
 
 manifest = {
