@@ -7,11 +7,12 @@ use std::task::{Context, Poll};
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
-    ListFilesResponse, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest, ReadBytesResponse,
-    ReadBytesStreamRequest, ReadBytesStreamResponse, ReadMultiRequest, ReadMultiResponse,
-    ReadWholeRequest, ReadWholeResponse,
+    ListFilesResponse, MmapAdvice, ReadBatchRequest, ReadBatchResponse, ReadBytesRequest,
+    ReadBytesResponse, ReadBytesStreamRequest, ReadBytesStreamResponse, ReadMultiRequest,
+    ReadMultiResponse, ReadWholeRequest, ReadWholeResponse, StorageOpenOptions,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::mmap::AdviceSetting;
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{ElementsRange, OpenOptions, UniversalIoError, UniversalRead};
 use futures::Stream;
@@ -77,6 +78,27 @@ fn universal_io_error_to_status(e: UniversalIoError) -> Status {
     }
 }
 
+/// Convert proto `StorageOpenOptions` to Rust `OpenOptions`.
+fn convert_open_options(proto: Option<StorageOpenOptions>) -> OpenOptions {
+    let Some(opts) = proto else {
+        return OpenOptions::default();
+    };
+    OpenOptions {
+        need_sequential: opts.need_sequential,
+        disk_parallel: opts.disk_parallel.map(|v| v as usize),
+        populate: opts.populate,
+        advice: opts.advice.and_then(|v| {
+            MmapAdvice::try_from(v).ok().map(|a| {
+                AdviceSetting::Advice(match a {
+                    MmapAdvice::Normal => common::mmap::Advice::Normal,
+                    MmapAdvice::Random => common::mmap::Advice::Random,
+                    MmapAdvice::Sequential => common::mmap::Advice::Sequential,
+                })
+            })
+        }),
+    }
+}
+
 /// Dispatch a read call on `MmapU8` based on a runtime `sequential` flag.
 /// Needed because `UniversalRead::read` uses a const generic parameter.
 fn dispatch_read<S: UniversalRead<u8>>(
@@ -103,18 +125,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let inner = request.into_inner();
         let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
 
-        let exists = tokio::task::spawn_blocking(move || {
-            match S::open(
-                &path,
-                OpenOptions {
-                    need_sequential: inner.sequential,
-                    ..Default::default()
-                },
-            ) {
-                Ok(_) => true,
-                Err(UniversalIoError::NotFound { .. }) => false,
-                _ => false,
-            }
+        let open_options = convert_open_options(inner.open_options);
+
+        let exists = tokio::task::spawn_blocking(move || match S::open(&path, open_options) {
+            Ok(_) => true,
+            Err(UniversalIoError::NotFound { .. }) => false,
+            _ => false,
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
@@ -166,7 +182,20 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<FileLengthRequest>,
     ) -> Result<Response<FileLengthResponse>, Status> {
-        todo!()
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let inner = request.into_inner();
+        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
+
+        let open_options = convert_open_options(inner.open_options);
+        let length = tokio::task::spawn_blocking(move || {
+            let storage = S::open(&path, open_options).map_err(universal_io_error_to_status)?;
+            storage.len().map_err(universal_io_error_to_status)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
+
+        Ok(Response::new(FileLengthResponse { length }))
     }
 
     // Maps to UniversalRead::read() — single range from a single file.
@@ -174,7 +203,32 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<ReadBytesRequest>,
     ) -> Result<Response<ReadBytesResponse>, Status> {
-        todo!()
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let inner = request.into_inner();
+
+        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
+        let offset = inner.offset;
+        let length = inner.length;
+        let open_options = convert_open_options(inner.open_options);
+
+        let data = tokio::task::spawn_blocking(move || {
+            let storage = S::open(&path, open_options).map_err(universal_io_error_to_status)?;
+            let cow = dispatch_read(
+                &storage,
+                ElementsRange {
+                    start: offset,
+                    length,
+                },
+                open_options.need_sequential,
+            )
+            .map_err(universal_io_error_to_status)?;
+            Ok::<Vec<u8>, Status>(cow.into_owned())
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
+
+        Ok(Response::new(ReadBytesResponse { data }))
     }
 
     type ReadBytesStreamStream =

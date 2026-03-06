@@ -23,6 +23,26 @@ service StorageRead {
   rpc ReadMulti(ReadMultiRequest) returns (ReadMultiResponse) {}
 }
 
+// Maps to common::mmap::Advice — controls mmap access pattern hint.
+// If not set in StorageOpenOptions, the global default is used.
+enum MmapAdvice {
+  MmapAdviceNormal = 0;
+  MmapAdviceRandom = 1;
+  MmapAdviceSequential = 2;
+}
+
+// Maps to common::universal_io::OpenOptions — controls how a file is opened.
+message StorageOpenOptions {
+  // Prefer sequential access pattern (maps to need_sequential).
+  bool need_sequential = 1;
+  // Max parallel disk I/O requests. If not set, uses backend default.
+  optional uint32 disk_parallel = 2;
+  // Populate RAM cache on open, if supported by the backend.
+  optional bool populate = 3;
+  // Mmap advice setting. If not set, uses the global default.
+  optional MmapAdvice advice = 4;
+}
+
 message ListFilesRequest {
   // Separated from `path` so that existing collection name validation can be applied at the proto level.
   string collection_name = 1;
@@ -32,7 +52,7 @@ message ListFilesRequest {
 message FileExistsRequest {
   string collection_name = 1;
   string path = 2;
-  bool sequential = 3;
+  optional StorageOpenOptions open_options = 3;
 }
 
 message FileExistsResponse {
@@ -46,6 +66,7 @@ message ListFilesResponse {
 message FileLengthRequest {
   string collection_name = 1;
   string path = 2;
+  optional StorageOpenOptions open_options = 3;
 }
 
 message FileLengthResponse {
@@ -57,8 +78,7 @@ message ReadBytesRequest {
   string path = 2;
   uint64 offset = 3;
   uint64 length = 4;
-  // Use sequential mmap advice (MADV_SEQUENTIAL) for prefetch-friendly reads.
-  bool sequential = 5;
+  optional StorageOpenOptions open_options = 5;
 }
 
 message ReadBytesResponse {
@@ -70,8 +90,7 @@ message ReadBytesStreamRequest {
   string path = 2;
   uint64 offset = 3;
   uint64 length = 4;
-  // Use sequential mmap advice (MADV_SEQUENTIAL) for prefetch-friendly reads.
-  bool sequential = 5;
+  optional StorageOpenOptions open_options = 5;
 }
 
 message ReadBytesStreamResponse {
@@ -81,6 +100,7 @@ message ReadBytesStreamResponse {
 message ReadWholeRequest {
   string collection_name = 1;
   string path = 2;
+  optional StorageOpenOptions open_options = 3;
 }
 
 message ReadWholeResponse {
@@ -97,8 +117,7 @@ message ReadBatchRequest {
   string collection_name = 1;
   string path = 2;
   repeated ReadBatchRange ranges = 3;
-  // Use sequential mmap advice (MADV_SEQUENTIAL) for prefetch-friendly reads.
-  bool sequential = 4;
+  optional StorageOpenOptions open_options = 4;
 }
 
 message ReadBatchResponse {
@@ -115,8 +134,7 @@ message ReadMultiEntry {
 message ReadMultiRequest {
   string collection_name = 1;
   repeated ReadMultiEntry reads = 2;
-  // Use sequential mmap advice (MADV_SEQUENTIAL) for prefetch-friendly reads.
-  bool sequential = 3;
+  optional StorageOpenOptions open_options = 3;
 }
 
 message ReadMultiResponse {
