@@ -191,7 +191,7 @@ pub struct MmrInternal {
     pub using: VectorNameBuf,
     /// Lambda parameter controlling diversity vs relevance trade-off (0.0 = full diversity, 1.0 = full relevance)
     pub lambda: OrderedFloat<f32>,
-    /// Maximum number of candidates to pre-select using nearest neighbors.
+    /// Maximum number of candidates to preselect using nearest neighbors.
     pub candidates_limit: usize,
 }
 

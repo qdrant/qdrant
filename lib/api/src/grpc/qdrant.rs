@@ -5533,11 +5533,11 @@ pub struct QuantizationSearchParams {
     pub rescore: ::core::option::Option<bool>,
     /// Oversampling factor for quantization.
     ///
-    /// Defines how many extra vectors should be pre-selected using quantized index,
+    /// Defines how many extra vectors should be preselected using quantized index,
     /// and then re-scored using original vectors.
     ///
     /// For example, if `oversampling` is 2.4 and `limit` is 100,
-    /// then 240 vectors will be pre-selected using quantized index,
+    /// then 240 vectors will be preselected using quantized index,
     /// and then top-100 will be returned after re-scoring.
     #[prost(double, optional, tag = "3")]
     #[validate(range(min = 1.0))]
