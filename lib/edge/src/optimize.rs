@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
@@ -8,14 +8,14 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    default_segment_number, OptimizerSourceConfig, DEFAULT_DELETED_THRESHOLD,
-    DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
+    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, OptimizerSourceConfig, TEMP_SEGMENTS_PATH,
+    default_segment_number,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
-use shard::optimizers::segment_optimizer::{plan_optimizations, Optimizer};
+use shard::optimizers::segment_optimizer::{Optimizer, plan_optimizations};
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
@@ -151,10 +151,10 @@ mod tests {
         VectorStorageType, WithPayloadInterface, WithVector,
     };
     use shard::count::CountRequestInternal;
+    use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
     use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-    use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
