@@ -1,16 +1,15 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use chrono::Utc;
 use futures::future::BoxFuture;
-use storage::audit::{AuditEvent, audit_log, audit_trust_forwarded_headers, is_audit_enabled};
+use storage::audit::audit_trust_forwarded_headers;
 use storage::rbac::Access;
 use tonic::Status;
 use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
 use super::forwarded;
-use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType};
+use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType, log_denied_auth};
 use crate::common::inference::api_keys::InferenceToken;
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
@@ -60,20 +59,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| {
-            if is_audit_enabled() {
-                let auth_type = AuthType::None;
-                let error_msg = e.to_string();
-                audit_log(AuditEvent {
-                    timestamp: Utc::now(),
-                    method: path.to_string(),
-                    auth_type,
-                    subject: None,
-                    remote: remote.clone(),
-                    collection: None,
-                    result: "denied",
-                    error: Some(error_msg),
-                });
-            }
+            log_denied_auth(path, remote.clone(), &e);
             match e {
                 AuthError::Unauthorized(e) => Status::unauthenticated(e),
                 AuthError::Forbidden(e) => Status::permission_denied(e),
