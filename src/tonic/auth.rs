@@ -9,7 +9,7 @@ use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
 use super::forwarded;
-use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType};
+use crate::common::auth::{Auth, AuthError, AuthKeys, AuthType, log_denied_auth};
 use crate::common::inference::api_keys::InferenceToken;
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
@@ -58,10 +58,13 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
     let (access, inference_token, auth_type, subject) = auth_keys
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
-        .map_err(|e| match e {
-            AuthError::Unauthorized(e) => Status::unauthenticated(e),
-            AuthError::Forbidden(e) => Status::permission_denied(e),
-            AuthError::StorageError(e) => Status::from(e),
+        .map_err(|e| {
+            log_denied_auth(path, remote.clone(), &e);
+            match e {
+                AuthError::Unauthorized(e) => Status::unauthenticated(e),
+                AuthError::Forbidden(e) => Status::permission_denied(e),
+                AuthError::StorageError(e) => Status::from(e),
+            }
         })?;
 
     let auth = Auth::new(access, subject, remote, auth_type);
