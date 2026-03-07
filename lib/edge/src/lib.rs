@@ -138,12 +138,12 @@ impl EdgeShard {
                         "segment {} is incompatible with provided config or previously loaded segments: \
                          expected {:?}, but received {:?}",
                         segment_path.display(),
-                        cfg.segment_config(),
+                        cfg.to_segment_config(),
                         segment_cfg,
                     )));
                 }
             } else {
-                config = Some(EdgeShardConfig::from_segment_config(segment_cfg.clone()));
+                config = Some(EdgeShardConfig::from_segment_config(segment_cfg));
             }
 
             segment.check_consistency_and_repair().map_err(|err| {
@@ -205,14 +205,16 @@ impl EdgeShard {
     }
 
     /// Load with optional segment config only (backward compatibility).
-    /// Builds an [`EdgeShardConfig`] with default HNSW and optimizer params.
+    /// Builds an [`EdgeShardConfig`] from the segment config (fills all parameters that can be inferred).
     pub fn load_with_segment_config(
         path: &Path,
         segment_config: Option<SegmentConfig>,
     ) -> OperationResult<Self> {
         Self::load(
             path,
-            segment_config.map(EdgeShardConfig::from_segment_config),
+            segment_config
+                .as_ref()
+                .map(EdgeShardConfig::from_segment_config),
         )
     }
 
@@ -222,7 +224,7 @@ impl EdgeShard {
 
     /// Segment config for compatibility and appendable segment creation.
     pub fn segment_config(&self) -> segment::types::SegmentConfig {
-        self.config.read().segment_config().clone()
+        self.config.read().segment_config()
     }
 
     pub fn path(&self) -> &Path {

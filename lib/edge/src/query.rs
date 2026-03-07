@@ -374,7 +374,7 @@ impl EdgeShard {
         let vector_data_config = self
             .config
             .read()
-            .segment
+            .segment_config()
             .vector_data
             .get(&mmr.using)
             .cloned()

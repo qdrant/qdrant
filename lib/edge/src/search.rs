@@ -25,7 +25,7 @@ impl EdgeShard {
             |vector_name| {
                 self.config
                     .read()
-                    .segment
+                    .segment_config()
                     .sparse_vector_data
                     .get(vector_name)
                     .is_some_and(|v| v.modifier == Some(Modifier::Idf))
@@ -103,7 +103,7 @@ impl EdgeShard {
         let distance = self
             .config
             .read()
-            .segment
+            .segment_config()
             .vector_data
             .get(&vector_name)
             .expect("vector config exist")
