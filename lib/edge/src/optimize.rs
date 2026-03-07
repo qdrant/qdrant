@@ -1,15 +1,15 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
-use segment::common::BYTES_IN_KB;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::HnswGlobalConfig;
 use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::{OptimizerSourceConfig, TEMP_SEGMENTS_PATH};
+use shard::optimizers::config::{
+    OptimizerSourceConfig, TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes,
+};
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
@@ -133,11 +133,12 @@ impl EdgeShard {
         let indexing_threshold_kb = cfg.optimizers.get_indexing_threshold_kb();
         OptimizerThresholds {
             memmap_threshold_kb: usize::MAX,
-            indexing_threshold_kb: cfg.optimizers.get_indexing_threshold_kb(),
+            indexing_threshold_kb,
             max_segment_size_kb: cfg.optimizers.get_max_segment_size_kb(num_indexing_threads),
-            deferred_points_threshold_bytes: (cfg.optimizers.prevent_unoptimized == Some(true))
-                .then(|| indexing_threshold_kb.saturating_mul(BYTES_IN_KB))
-                .and_then(NonZeroUsize::new),
+            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
+                cfg.optimizers.prevent_unoptimized,
+                indexing_threshold_kb,
+            ),
         }
     }
 }

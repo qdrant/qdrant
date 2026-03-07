@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, default_segment_number,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, get_indexing_threshold_kb,
+    get_max_segment_size_kb, get_number_segments,
 };
 
 /// Optimizer-related parameters for the edge shard.
@@ -56,26 +56,14 @@ impl Default for EdgeOptimizersConfig {
 
 impl EdgeOptimizersConfig {
     pub fn get_number_segments(&self) -> usize {
-        if self.default_segment_number == 0 {
-            default_segment_number()
-        } else {
-            self.default_segment_number
-        }
+        get_number_segments(self.default_segment_number)
     }
 
     pub fn get_indexing_threshold_kb(&self) -> usize {
-        match self.indexing_threshold {
-            None => DEFAULT_INDEXING_THRESHOLD_KB,
-            Some(0) => usize::MAX,
-            Some(custom) => custom,
-        }
+        get_indexing_threshold_kb(self.indexing_threshold)
     }
 
     pub fn get_max_segment_size_kb(&self, num_indexing_threads: usize) -> usize {
-        if let Some(max_segment_size) = self.max_segment_size {
-            max_segment_size
-        } else {
-            num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
-        }
+        get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
     }
 }

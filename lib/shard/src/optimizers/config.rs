@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 
+use segment::common::BYTES_IN_KB;
 use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
@@ -246,4 +248,46 @@ pub fn default_segment_number() -> usize {
     // Do not configure less than 2 and more than 8 segments
     // until it is not explicitly requested
     expected_segments.clamp(2, 8)
+}
+
+// --- Shared optimizer threshold helpers (used by collection and edge) ---
+
+/// Resolve number of segments: if `default_segment_number` is 0, use CPU-based default.
+pub fn get_number_segments(requested_segment_number: usize) -> usize {
+    if requested_segment_number == 0 {
+        default_segment_number()
+    } else {
+        requested_segment_number
+    }
+}
+
+/// Resolve indexing threshold in KB: `None` => default, `Some(0)` => disable (usize::MAX).
+pub fn get_indexing_threshold_kb(indexing_threshold: Option<usize>) -> usize {
+    match indexing_threshold {
+        None => DEFAULT_INDEXING_THRESHOLD_KB,
+        Some(0) => usize::MAX,
+        Some(custom) => custom,
+    }
+}
+
+/// Resolve max segment size in KB: custom value or per-thread default.
+pub fn get_max_segment_size_kb(
+    max_segment_size: Option<usize>,
+    num_indexing_threads: usize,
+) -> usize {
+    if let Some(max) = max_segment_size {
+        max
+    } else {
+        num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
+    }
+}
+
+/// Build deferred points threshold in bytes when `prevent_unoptimized` is true.
+pub fn get_deferred_points_threshold_bytes(
+    prevent_unoptimized: Option<bool>,
+    indexing_threshold_kb: usize,
+) -> Option<NonZeroUsize> {
+    (prevent_unoptimized == Some(true))
+        .then(|| indexing_threshold_kb.saturating_mul(BYTES_IN_KB))
+        .and_then(NonZeroUsize::new)
 }

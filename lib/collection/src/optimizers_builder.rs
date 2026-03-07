@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use fs_err as fs;
 use schemars::JsonSchema;
-use segment::common::BYTES_IN_KB;
 use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
@@ -12,9 +11,10 @@ use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput, OptimizerSourceConfig,
-    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH, default_segment_number,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput,
+    OptimizerSourceConfig, SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
+    get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
+    get_number_segments,
 };
 use validator::Validate;
 
@@ -124,19 +124,11 @@ impl OptimizersConfig {
     }
 
     pub fn get_number_segments(&self) -> usize {
-        if self.default_segment_number == 0 {
-            default_segment_number()
-        } else {
-            self.default_segment_number
-        }
+        get_number_segments(self.default_segment_number)
     }
 
     pub fn get_indexing_threshold_kb(&self) -> usize {
-        match self.indexing_threshold {
-            None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
-            Some(0) => usize::MAX,                 // disable vector index
-            Some(custom) => custom,
-        }
+        get_indexing_threshold_kb(self.indexing_threshold)
     }
 
     pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
@@ -151,23 +143,26 @@ impl OptimizersConfig {
         OptimizerThresholds {
             memmap_threshold_kb,
             indexing_threshold_kb,
-            max_segment_size_kb: self.get_max_segment_size_in_kilobytes(num_indexing_threads),
-            deferred_points_threshold_bytes: self.get_deferred_points_threshold_bytes(),
+            max_segment_size_kb: get_max_segment_size_kb(
+                self.max_segment_size,
+                num_indexing_threads,
+            ),
+            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
+                self.prevent_unoptimized,
+                indexing_threshold_kb,
+            ),
         }
     }
 
     pub fn get_max_segment_size_in_kilobytes(&self, num_indexing_threads: usize) -> usize {
-        if let Some(max_segment_size) = self.max_segment_size {
-            max_segment_size
-        } else {
-            num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
-        }
+        get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
     }
 
     pub fn get_deferred_points_threshold_bytes(&self) -> Option<NonZeroUsize> {
-        (self.prevent_unoptimized == Some(true))
-            .then(|| self.get_indexing_threshold_kb().saturating_mul(BYTES_IN_KB))
-            .and_then(NonZeroUsize::new)
+        get_deferred_points_threshold_bytes(
+            self.prevent_unoptimized,
+            self.get_indexing_threshold_kb(),
+        )
     }
 }
 
