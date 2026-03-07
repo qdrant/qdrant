@@ -62,14 +62,17 @@ impl Default for EdgeShardConfig {
 impl EdgeShardConfig {
     /// Build from existing segment config. Fills all parameters that can be inferred.
     pub fn from_segment_config(segment: &SegmentConfig) -> Self {
-        let on_disk_payload = segment.payload_storage_type.is_on_disk();
-        let vectors = segment
-            .vector_data
+        let SegmentConfig {
+            vector_data,
+            sparse_vector_data,
+            payload_storage_type,
+        } = segment;
+        let on_disk_payload = payload_storage_type.is_on_disk();
+        let vectors = vector_data
             .iter()
             .map(|(name, v)| (name.clone(), EdgeVectorParams::from_vector_data_config(v)))
             .collect();
-        let sparse_vectors = segment
-            .sparse_vector_data
+        let sparse_vectors = sparse_vector_data
             .iter()
             .map(|(name, s)| {
                 (
@@ -78,16 +81,14 @@ impl EdgeShardConfig {
                 )
             })
             .collect();
-        let hnsw_config = segment
-            .vector_data
+        let hnsw_config = vector_data
             .values()
             .find_map(|v| match &v.index {
                 Indexes::Hnsw(h) => Some(*h),
                 Indexes::Plain { .. } => None,
             })
             .unwrap_or_default();
-        let quantization_config = segment
-            .vector_data
+        let quantization_config = vector_data
             .values()
             .find_map(|v| v.quantization_config.as_ref())
             .cloned();
@@ -103,23 +104,29 @@ impl EdgeShardConfig {
 
     /// Build `SegmentConfig` for creating/checking segments and for optimizers.
     pub fn to_segment_config(&self) -> SegmentConfig {
-        let payload_storage_type = if self.on_disk_payload {
+        let EdgeShardConfig {
+            on_disk_payload,
+            vectors,
+            sparse_vectors,
+            quantization_config,
+            hnsw_config: _,
+            optimizers: _,
+        } = self;
+        let payload_storage_type = if *on_disk_payload {
             PayloadStorageType::Mmap
         } else {
             PayloadStorageType::InRamMmap
         };
-        let vector_data = self
-            .vectors
+        let vector_data = vectors
             .iter()
             .map(|(name, p)| {
                 (
                     name.clone(),
-                    p.to_vector_data_config(self.quantization_config.as_ref()),
+                    p.to_vector_data_config(quantization_config.as_ref()),
                 )
             })
             .collect();
-        let sparse_vector_data = self
-            .sparse_vectors
+        let sparse_vector_data = sparse_vectors
             .iter()
             .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
             .collect();

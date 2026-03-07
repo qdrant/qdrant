@@ -38,33 +38,50 @@ impl EdgeVectorParams {
         &self,
         global_quantization: Option<&segment::types::QuantizationConfig>,
     ) -> VectorDataConfig {
+        let EdgeVectorParams {
+            size,
+            distance,
+            on_disk,
+            index,
+            multivector_config,
+            datatype,
+        } = self;
         let appendable_quantization = common::flags::feature_flags().appendable_quantization;
         let quantization_config = global_quantization
             .filter(|q| appendable_quantization && q.supports_appendable())
             .cloned();
         VectorDataConfig {
-            size: self.size,
-            distance: self.distance,
-            storage_type: if self.on_disk {
+            size: *size,
+            distance: *distance,
+            storage_type: if *on_disk {
                 VectorStorageType::ChunkedMmap
             } else {
                 VectorStorageType::InRamChunkedMmap
             },
-            index: self.index.clone(),
+            index: index.clone(),
             quantization_config,
-            multivector_config: self.multivector_config,
-            datatype: self.datatype,
+            multivector_config: *multivector_config,
+            datatype: *datatype,
         }
     }
 
     pub fn from_vector_data_config(v: &VectorDataConfig) -> Self {
+        let VectorDataConfig {
+            size,
+            distance,
+            storage_type,
+            index,
+            quantization_config: _, // edge uses global only
+            multivector_config,
+            datatype,
+        } = v;
         Self {
-            size: v.size,
-            distance: v.distance,
-            on_disk: v.storage_type.is_on_disk(),
-            index: v.index.clone(),
-            multivector_config: v.multivector_config,
-            datatype: v.datatype,
+            size: *size,
+            distance: *distance,
+            on_disk: storage_type.is_on_disk(),
+            index: index.clone(),
+            multivector_config: *multivector_config,
+            datatype: *datatype,
         }
     }
 }
@@ -88,27 +105,43 @@ pub struct EdgeSparseVectorParams {
 
 impl EdgeSparseVectorParams {
     pub fn to_sparse_vector_data_config(&self) -> SparseVectorDataConfig {
+        let EdgeSparseVectorParams {
+            full_scan_threshold,
+            on_disk,
+            modifier,
+            datatype,
+        } = self;
         SparseVectorDataConfig {
             index: SparseIndexConfig {
-                full_scan_threshold: self.full_scan_threshold,
-                index_type: if self.on_disk {
+                full_scan_threshold: *full_scan_threshold,
+                index_type: if *on_disk {
                     SparseIndexType::Mmap
                 } else {
                     SparseIndexType::MutableRam
                 },
-                datatype: self.datatype,
+                datatype: *datatype,
             },
             storage_type: SparseVectorStorageType::Mmap,
-            modifier: self.modifier,
+            modifier: *modifier,
         }
     }
 
     pub fn from_sparse_vector_data_config(s: &SparseVectorDataConfig) -> Self {
+        let SparseVectorDataConfig {
+            index,
+            storage_type: _, // edge uses on_disk from index_type
+            modifier,
+        } = s;
+        let SparseIndexConfig {
+            full_scan_threshold,
+            index_type,
+            datatype,
+        } = index;
         Self {
-            full_scan_threshold: s.index.full_scan_threshold,
-            on_disk: s.index.index_type.is_on_disk(),
-            modifier: s.modifier,
-            datatype: s.index.datatype,
+            full_scan_threshold: *full_scan_threshold,
+            on_disk: index_type.is_on_disk(),
+            modifier: *modifier,
+            datatype: *datatype,
         }
     }
 }
