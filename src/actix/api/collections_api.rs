@@ -296,6 +296,7 @@ fn get_optimizations(
     })
 }
 
+/// Get health recommendations for a collection.
 #[get("/collections/{name}/health")]
 async fn get_collection_health(
     dispatcher: web::Data<Dispatcher>,

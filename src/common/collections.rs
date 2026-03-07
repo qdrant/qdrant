@@ -85,6 +85,7 @@ pub async fn do_get_collection(
     Ok(collection.info(&shard_selection).await?)
 }
 
+/// Retrieve collection info and analyze it for health recommendations.
 pub async fn do_get_collection_health(
     toc: &TableOfContent,
     auth: &Auth,

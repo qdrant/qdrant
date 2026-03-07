@@ -173,8 +173,11 @@ pub struct HealthRecommendation {
 /// Summary counts by severity
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct HealthSummary {
+    /// Number of critical recommendations
     pub critical: usize,
+    /// Number of warning recommendations
     pub warning: usize,
+    /// Number of informational recommendations
     pub info: usize,
 }
 

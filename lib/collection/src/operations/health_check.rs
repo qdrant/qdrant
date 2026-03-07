@@ -227,14 +227,15 @@ fn check_payload_indexes(info: &CollectionInfo, recs: &mut Vec<HealthRecommendat
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU64};
 
-    use segment::types::HnswConfig;
+    use segment::types::{Distance, HnswConfig};
 
     use super::*;
     use crate::config::{CollectionParams, WalConfig, default_on_disk_payload};
     use crate::operations::types::{
-        CollectionConfig, CollectionInfo, CollectionStatus, OptimizersStatus, VectorsConfig,
+        CollectionConfig, CollectionInfo, CollectionStatus, OptimizersStatus, VectorParams,
+        VectorsConfig,
     };
 
     fn default_optimizers_config() -> crate::optimizers_builder::OptimizersConfig {
@@ -243,7 +244,15 @@ mod tests {
 
     fn make_collection_params() -> CollectionParams {
         CollectionParams {
-            vectors: VectorsConfig::default(),
+            vectors: VectorsConfig::Single(VectorParams {
+                size: NonZeroU64::new(4).unwrap(),
+                distance: Distance::Cosine,
+                hnsw_config: None,
+                quantization_config: None,
+                on_disk: None,
+                datatype: None,
+                multivector_config: None,
+            }),
             shard_number: NonZeroU32::new(1).unwrap(),
             sharding_method: None,
             replication_factor: NonZeroU32::new(1).unwrap(),
