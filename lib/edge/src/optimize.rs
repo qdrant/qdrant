@@ -1,17 +1,15 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
+use segment::common::BYTES_IN_KB;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, HnswGlobalConfig};
+use segment::types::HnswGlobalConfig;
 use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, OptimizerSourceConfig, TEMP_SEGMENTS_PATH,
-    default_segment_number,
-};
+use shard::optimizers::config::{OptimizerSourceConfig, TEMP_SEGMENTS_PATH};
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
@@ -81,12 +79,13 @@ impl EdgeShard {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
-        let hnsw_config = HnswConfig::default();
+        let cfg = self.config();
+        let hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
         let segment_optimizer_config =
-            OptimizerSourceConfig::from_segment_config(&self.config, hnsw_config).build();
-        let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
-        let default_segments_number = default_segment_number();
+            OptimizerSourceConfig::from_segment_config(cfg.segment_config(), hnsw_config).build();
+        let threshold_config = Self::optimizer_thresholds_from_config(&*cfg);
+        let default_segments_number = cfg.optimizers.get_number_segments();
 
         vec![
             Arc::new(MergeOptimizer::new(
@@ -108,8 +107,8 @@ impl EdgeShard {
                 hnsw_global_config.clone(),
             )),
             Arc::new(VacuumOptimizer::new(
-                DEFAULT_DELETED_THRESHOLD,
-                DEFAULT_VACUUM_MIN_VECTOR_NUMBER,
+                cfg.optimizers.deleted_threshold,
+                cfg.optimizers.vacuum_min_vector_number,
                 threshold_config,
                 segments_path.clone(),
                 temp_segments_path.clone(),
@@ -128,13 +127,16 @@ impl EdgeShard {
         ]
     }
 
-    fn default_optimizer_thresholds(hnsw_config: HnswConfig) -> OptimizerThresholds {
-        let indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
+    fn optimizer_thresholds_from_config(cfg: &crate::EdgeShardConfig) -> OptimizerThresholds {
+        let num_indexing_threads = num_rayon_threads(cfg.hnsw_config.max_indexing_threads);
+        let indexing_threshold_kb = cfg.optimizers.get_indexing_threshold_kb();
         OptimizerThresholds {
             memmap_threshold_kb: usize::MAX,
-            indexing_threshold_kb: DEFAULT_INDEXING_THRESHOLD_KB,
-            max_segment_size_kb: indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB),
-            deferred_points_threshold_bytes: None,
+            indexing_threshold_kb: cfg.optimizers.get_indexing_threshold_kb(),
+            max_segment_size_kb: cfg.optimizers.get_max_segment_size_kb(num_indexing_threads),
+            deferred_points_threshold_bytes: (cfg.optimizers.prevent_unoptimized == Some(true))
+                .then(|| indexing_threshold_kb.saturating_mul(BYTES_IN_KB))
+                .and_then(NonZeroUsize::new),
         }
     }
 }
@@ -169,7 +171,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -177,7 +179,7 @@ mod tests {
 
         duplicate_single_segment(dir.path());
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
         assert_eq!(reopened.info().segments_count, 2);
 
         let optimized = reopened.optimize().unwrap();
@@ -194,7 +196,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -229,7 +231,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=100).map(point).collect::<Vec<_>>();
         shard
@@ -252,7 +254,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let optimized = shard.optimize().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
@@ -270,7 +272,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -278,7 +280,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
         let info = reopened.info();
         assert!(
@@ -315,7 +317,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -323,7 +325,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
         // First explicit optimization triggers merge.
         reopened.optimize().unwrap();
         let segments_after_first = reopened.info().segments_count;
@@ -348,7 +350,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -380,7 +382,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         // Only 100 points total (below DEFAULT_VACUUM_MIN_VECTOR_NUMBER=1000)
         let points = (1..=100).map(point).collect::<Vec<_>>();
@@ -413,7 +415,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -469,7 +471,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -519,7 +521,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -549,7 +551,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -583,7 +585,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         // Insert 1000 points, then delete 250 (25% — above DEFAULT_DELETED_THRESHOLD=20%)
         let points = (1..=1000).map(point).collect::<Vec<_>>();
@@ -600,7 +602,7 @@ mod tests {
         multiply_segments(dir.path(), target_count);
 
         // Explicit optimization (both merge and vacuum should run)
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
 
         let info = reopened.info();
@@ -641,7 +643,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -659,7 +661,7 @@ mod tests {
         drop(shard);
 
         // Reload the shard
-        let reopened = EdgeShard::load(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
 
         let count = reopened
             .count(CountRequestInternal {

@@ -102,7 +102,8 @@ impl PyEdgeShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
-        let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
+        let shard =
+            edge::EdgeShard::load_with_segment_config(&path, config.map(SegmentConfig::from))?;
         Ok(Self(Some(shard)))
     }
 

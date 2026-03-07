@@ -47,7 +47,7 @@ pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
         payload_storage_type: PayloadStorageType::Mmap,
     };
 
-    Ok(EdgeShard::load(Path::new(data_dir), Some(config))?)
+    Ok(EdgeShard::load_with_segment_config(Path::new(data_dir), Some(config))?)
 }
 
 pub fn fill_dummy_data(shard: &EdgeShard) -> Result<(), Box<dyn Error>> {

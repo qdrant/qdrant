@@ -371,12 +371,19 @@ impl EdgeShard {
             .into_iter()
             .flatten();
 
-        let vector_data_config = self.config.vector_data.get(&mmr.using).ok_or_else(|| {
-            OperationError::service_error(format!(
-                "vector data config for vector {} not found",
-                mmr.using,
-            ))
-        })?;
+        let vector_data_config = self
+            .config
+            .read()
+            .segment
+            .vector_data
+            .get(&mmr.using)
+            .cloned()
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "vector data config for vector {} not found",
+                    mmr.using,
+                ))
+            })?;
 
         // Even if we have fewer points than requested, still calculate MMR.
         let mut top_mmr = mmr_from_points_with_vector(
