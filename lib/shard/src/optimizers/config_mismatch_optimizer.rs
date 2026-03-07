@@ -22,8 +22,8 @@ pub struct ConfigMismatchOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     temp_path: PathBuf,
-    segment_config: SegmentOptimizerConfig,
-    hnsw_config: HnswConfig,
+    segment_optimizer_config: SegmentOptimizerConfig,
+    global_hnsw_config: HnswConfig,
     hnsw_global_config: HnswGlobalConfig,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -35,15 +35,15 @@ impl ConfigMismatchOptimizer {
         segments_path: PathBuf,
         temp_path: PathBuf,
         segment_config: SegmentOptimizerConfig,
-        hnsw_config: HnswConfig,
+        global_hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
     ) -> Self {
         ConfigMismatchOptimizer {
             thresholds_config,
             segments_path,
             temp_path,
-            segment_config,
-            hnsw_config,
+            segment_optimizer_config: segment_config,
+            global_hnsw_config,
             hnsw_global_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -51,7 +51,7 @@ impl ConfigMismatchOptimizer {
 
     /// Check if current configuration requires vectors to be stored on disk
     fn check_if_vectors_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
-        self.segment_config
+        self.segment_optimizer_config
             .dense_vector
             .get(vector_name)
             .and_then(|cfg| cfg.on_disk)
@@ -59,7 +59,7 @@ impl ConfigMismatchOptimizer {
 
     /// Check if current configuration requires sparse vectors index to be stored on disk
     fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
-        self.segment_config
+        self.segment_optimizer_config
             .sparse_vector
             .get(vector_name)
             .and_then(|cfg| cfg.on_disk)
@@ -68,7 +68,10 @@ impl ConfigMismatchOptimizer {
     fn has_config_mismatch(&self, segment: &dyn NonAppendableSegmentEntry) -> bool {
         let segment_config = segment.config();
 
-        if self.segment_config.payload_storage_type.is_on_disk()
+        if self
+            .segment_optimizer_config
+            .payload_storage_type
+            .is_on_disk()
             != segment_config.payload_storage_type.is_on_disk()
         {
             return true; // Optimize segment due to payload storage mismatch
@@ -86,11 +89,11 @@ impl ConfigMismatchOptimizer {
                         Indexes::Hnsw(effective_hnsw) => {
                             // Select segment if we have an HNSW mismatch that requires rebuild
                             let target_hnsw = self
-                                .segment_config
+                                .segment_optimizer_config
                                 .dense_vector
                                 .get(vector_name)
                                 .map(|cfg| cfg.hnsw_config)
-                                .unwrap_or(self.hnsw_config);
+                                .unwrap_or(self.global_hnsw_config);
                             if effective_hnsw.mismatch_requires_rebuild(&target_hnsw) {
                                 return true;
                             }
@@ -105,7 +108,7 @@ impl ConfigMismatchOptimizer {
 
                     // Check quantization mismatch
                     let target_quantization = self
-                        .segment_config
+                        .segment_optimizer_config
                         .dense_vector
                         .get(vector_name)
                         .and_then(|cfg| cfg.quantization_config.as_ref());
@@ -174,12 +177,16 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         self.temp_path.as_path()
     }
 
-    fn segment_config(&self) -> &SegmentOptimizerConfig {
-        &self.segment_config
+    fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig {
+        &self.segment_optimizer_config
     }
 
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
+    fn max_indexing_threads(&self) -> Option<usize> {
+        self.segment_optimizer_config
+            .dense_vector
+            .values()
+            .map(|cfg| cfg.hnsw_config.max_indexing_threads)
+            .max()
     }
 
     fn hnsw_global_config(&self) -> &HnswGlobalConfig {

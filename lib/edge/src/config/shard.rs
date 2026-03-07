@@ -4,10 +4,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use fs_err as fs;
+use segment::common::operation_error::{OperationError, OperationResult};
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{
-    HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorNameBuf,
+    HnswConfig, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorNameBuf,
 };
 use serde::{Deserialize, Serialize};
+use shard::operations::optimization::OptimizerThresholds;
+use shard::optimizers::config::get_deferred_points_threshold_bytes;
 
 use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
@@ -67,11 +71,12 @@ impl EdgeShardConfig {
             sparse_vector_data,
             payload_storage_type,
         } = segment;
-        let on_disk_payload = payload_storage_type.is_on_disk();
+
         let vectors = vector_data
             .iter()
             .map(|(name, v)| (name.clone(), EdgeVectorParams::from_vector_data_config(v)))
             .collect();
+
         let sparse_vectors = sparse_vector_data
             .iter()
             .map(|(name, s)| {
@@ -81,61 +86,27 @@ impl EdgeShardConfig {
                 )
             })
             .collect();
-        let hnsw_config = vector_data
-            .values()
-            .find_map(|v| match &v.index {
-                Indexes::Hnsw(h) => Some(*h),
-                Indexes::Plain { .. } => None,
-            })
-            .unwrap_or_default();
-        let quantization_config = vector_data
-            .values()
-            .find_map(|v| v.quantization_config.as_ref())
-            .cloned();
+
+        let on_disk_payload = payload_storage_type.is_on_disk();
+
+        // When inferencing from segment config
+        // assume each named vector have already resolved config
         Self {
             on_disk_payload,
             vectors,
             sparse_vectors,
-            hnsw_config,
-            quantization_config,
+            hnsw_config: HnswConfig::default(),
+            quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
         }
     }
 
-    /// Build `SegmentConfig` for creating/checking segments and for optimizers.
-    pub fn to_segment_config(&self) -> SegmentConfig {
-        let EdgeShardConfig {
-            on_disk_payload,
-            vectors,
-            sparse_vectors,
-            quantization_config,
-            hnsw_config: _,
-            optimizers: _,
-        } = self;
-        let payload_storage_type = PayloadStorageType::from_on_disk_payload(*on_disk_payload);
-        let vector_data = vectors
-            .iter()
-            .map(|(name, p)| {
-                (
-                    name.clone(),
-                    p.to_vector_data_config(quantization_config.as_ref()),
-                )
-            })
-            .collect();
-        let sparse_vector_data = sparse_vectors
-            .iter()
-            .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
-            .collect();
-        SegmentConfig {
-            vector_data,
-            sparse_vector_data,
-            payload_storage_type,
-        }
-    }
-
     /// Check compatibility with a segment config (e.g. loaded segment).
-    pub fn is_compatible_with_segment_config(&self, other: &SegmentConfig) -> bool {
-        self.to_segment_config().is_compatible(other)
+    pub fn check_compatible_with_segment_config(
+        &self,
+        other: &SegmentConfig,
+    ) -> Result<(), String> {
+        self.plain_segment_config().check_compatible(other)
     }
 
     /// Segment config for creating appendable segments only.
@@ -152,11 +123,13 @@ impl EdgeShardConfig {
                 )
             })
             .collect();
+
         let sparse_vector_data = self
             .sparse_vectors
             .iter()
-            .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
+            .map(|(name, p)| (name.clone(), p.to_plain_sparse_vector_data_config()))
             .collect();
+
         SegmentConfig {
             vector_data,
             sparse_vector_data,
@@ -167,64 +140,38 @@ impl EdgeShardConfig {
     /// Build segment optimizer config from this config (for blocking optimizers).
     /// Use this instead of converting to SegmentConfig first.
     pub fn segment_optimizer_config(&self) -> shard::optimizers::config::SegmentOptimizerConfig {
-        use shard::optimizers::config::{
-            DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
-        };
+        use shard::optimizers::config::SegmentOptimizerConfig;
 
-        let payload_storage_type = PayloadStorageType::from_on_disk_payload(self.on_disk_payload);
-        let base_vector_data = self
-            .vectors
-            .iter()
-            .map(|(name, p)| {
-                (
-                    name.clone(),
-                    p.to_plain_vector_data_config(self.quantization_config.as_ref()),
-                )
-            })
-            .collect();
-        let base_sparse_vector_data = self
-            .sparse_vectors
-            .iter()
-            .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
-            .collect();
+        let SegmentConfig {
+            vector_data: plain_dense_vector_config,
+            sparse_vector_data: plain_sparse_vector_config,
+            payload_storage_type,
+        } = self.plain_segment_config();
+
         let dense_vector = self
             .vectors
             .iter()
             .map(|(name, p)| {
-                let hnsw_config = match &p.index {
-                    Indexes::Plain { .. } => self.hnsw_config,
-                    Indexes::Hnsw(h) => *h,
-                };
                 (
                     name.clone(),
-                    DenseVectorOptimizerConfig {
-                        on_disk: Some(p.on_disk),
-                        hnsw_config,
-                        quantization_config:
-                            segment::types::QuantizationConfig::for_appendable_segment(
-                                self.quantization_config.as_ref(),
-                            ),
-                    },
-                )
-            })
-            .collect();
-        let sparse_vector = self
-            .sparse_vectors
-            .iter()
-            .map(|(name, p)| {
-                (
-                    name.clone(),
-                    SparseVectorOptimizerConfig {
-                        on_disk: Some(p.on_disk),
-                    },
+                    p.to_dense_vector_optimizer_config(
+                        &self.hnsw_config,
+                        self.quantization_config.as_ref(),
+                    ),
                 )
             })
             .collect();
 
+        let sparse_vector = self
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| (name.clone(), p.to_sparse_vector_optimizer_config()))
+            .collect();
+
         SegmentOptimizerConfig {
             payload_storage_type,
-            base_vector_data,
-            base_sparse_vector_data,
+            plain_dense_vector_config,
+            plain_sparse_vector_config,
             dense_vector,
             sparse_vector,
         }
@@ -241,13 +188,28 @@ impl EdgeShardConfig {
             .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
     }
 
-    pub fn save(&self, path: &Path) -> segment::common::operation_error::OperationResult<()> {
+    pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
+        let num_indexing_threads = num_rayon_threads(self.hnsw_config.max_indexing_threads);
+        let indexing_threshold_kb = self.optimizers.get_indexing_threshold_kb();
+        OptimizerThresholds {
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb,
+            max_segment_size_kb: self
+                .optimizers
+                .get_max_segment_size_kb(num_indexing_threads),
+            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
+                self.optimizers.prevent_unoptimized,
+                indexing_threshold_kb,
+            ),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> OperationResult<()> {
         let config_path = path.join(EDGE_CONFIG_FILE);
-        let contents = serde_json::to_string_pretty(self).map_err(|e| {
-            segment::common::operation_error::OperationError::service_error(e.to_string())
-        })?;
+        let contents = serde_json::to_string_pretty(self)
+            .map_err(|e| OperationError::service_error(e.to_string()))?;
         fs::write(&config_path, contents).map_err(|e| {
-            segment::common::operation_error::OperationError::service_error(format!(
+            OperationError::service_error(format!(
                 "failed to write {}: {}",
                 config_path.display(),
                 e
@@ -256,7 +218,7 @@ impl EdgeShardConfig {
         Ok(())
     }
 
-    pub fn load(path: &Path) -> Option<segment::common::operation_error::OperationResult<Self>> {
+    pub fn load(path: &Path) -> Option<OperationResult<Self>> {
         let config_path = path.join(EDGE_CONFIG_FILE);
         if !config_path.exists() {
             return None;
@@ -264,17 +226,15 @@ impl EdgeShardConfig {
         let contents = match fs::read_to_string(&config_path) {
             Ok(c) => c,
             Err(e) => {
-                return Some(Err(
-                    segment::common::operation_error::OperationError::service_error(format!(
-                        "failed to read {}: {}",
-                        config_path.display(),
-                        e
-                    )),
-                ));
+                return Some(Err(OperationError::service_error(format!(
+                    "failed to read {}: {}",
+                    config_path.display(),
+                    e
+                ))));
             }
         };
         Some(serde_json::from_str(&contents).map_err(|e| {
-            segment::common::operation_error::OperationError::service_error(format!(
+            OperationError::service_error(format!(
                 "failed to parse {}: {}",
                 config_path.display(),
                 e
@@ -290,14 +250,13 @@ impl EdgeShardConfig {
         &mut self,
         vector_name: &str,
         hnsw_config: HnswConfig,
-    ) -> segment::common::operation_error::OperationResult<()> {
+    ) -> OperationResult<()> {
         let name = VectorNameBuf::from(vector_name);
-        let params = self.vectors.get_mut(&name).ok_or_else(|| {
-            segment::common::operation_error::OperationError::service_error(format!(
-                "vector '{vector_name}' not found in config"
-            ))
-        })?;
-        params.index = Indexes::Hnsw(hnsw_config);
+        let params = self
+            .vectors
+            .get_mut(&name)
+            .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
+        params.hnsw_config = Some(hnsw_config);
         Ok(())
     }
 

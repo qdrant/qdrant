@@ -12,7 +12,7 @@ use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput,
-    OptimizerSourceConfig, SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
+    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
     get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
     get_number_segments,
 };
@@ -233,13 +233,11 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    let source = OptimizerSourceConfig {
-        payload_storage_type: collection_params.payload_storage_type(),
+    SegmentOptimizerConfig::new(
+        collection_params.payload_storage_type(),
         dense_vectors,
         sparse_vectors,
-    };
-
-    source.build()
+    )
 }
 
 pub fn build_optimizers(
@@ -264,7 +262,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
@@ -273,7 +270,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
@@ -283,7 +279,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(

@@ -15,7 +15,7 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{HnswConfig, HnswGlobalConfig, Indexes, VectorStorageType};
+use segment::types::{HnswGlobalConfig, Indexes, VectorStorageType};
 use uuid::Uuid;
 
 use super::config::SegmentOptimizerConfig;
@@ -64,11 +64,11 @@ pub trait SegmentOptimizer: Sync {
     /// Get temp path, where optimized segments could be temporary stored
     fn temp_path(&self) -> &Path;
 
-    /// Get basic segment config
-    fn segment_config(&self) -> &SegmentOptimizerConfig;
+    /// Get configuration for desired segment after optimization.
+    fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig;
 
-    /// Get HNSW config
-    fn hnsw_config(&self) -> &HnswConfig;
+    /// How many max indexing threads is configured
+    fn max_indexing_threads(&self) -> Option<usize>;
 
     /// Get HNSW global config
     fn hnsw_global_config(&self) -> &HnswGlobalConfig;
@@ -119,7 +119,7 @@ pub trait SegmentOptimizer: Sync {
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> OperationResult<LockedSegment> {
-        let config = self.segment_config().base_segment_config();
+        let config = self.segment_optimizer_config().plain_segment_config();
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
             &config,
@@ -176,7 +176,7 @@ pub trait SegmentOptimizer: Sync {
             .unwrap_or(0);
 
         let thresholds = self.threshold_config();
-        let segment_config = self.segment_config();
+        let segment_optimizer_config = self.segment_optimizer_config();
 
         let threshold_is_indexed = maximal_vector_store_size_bytes
             >= thresholds.indexing_threshold_kb.saturating_mul(BYTES_IN_KB);
@@ -184,13 +184,13 @@ pub trait SegmentOptimizer: Sync {
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = segment_config.base_vector_data.clone();
-        let mut sparse_vector_data = segment_config.base_sparse_vector_data.clone();
+        let mut vector_data = segment_optimizer_config.plain_dense_vector_config.clone();
+        let mut sparse_vector_data = segment_optimizer_config.plain_sparse_vector_config.clone();
 
         // If indexing, change to HNSW index and quantization
         if threshold_is_indexed {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
-                if let Some(vector_cfg) = segment_config.dense_vector.get(vector_name) {
+                if let Some(vector_cfg) = segment_optimizer_config.dense_vector.get(vector_name) {
                     // Assign HNSW index
                     config.index = Indexes::Hnsw(vector_cfg.hnsw_config);
                     // Assign quantization config
@@ -205,7 +205,7 @@ pub trait SegmentOptimizer: Sync {
         if threshold_is_on_disk || threshold_is_indexed {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Check whether on_disk is explicitly configured, if not, set it to true
-                let config_on_disk = segment_config
+                let config_on_disk = segment_optimizer_config
                     .dense_vector
                     .get(vector_name)
                     .and_then(|cfg| cfg.on_disk);
@@ -242,7 +242,7 @@ pub trait SegmentOptimizer: Sync {
             .iter_mut()
             .for_each(|(vector_name, config)| {
                 // Assign sparse index on disk
-                let config_on_disk = segment_config
+                let config_on_disk = segment_optimizer_config
                     .sparse_vector
                     .get(vector_name)
                     .and_then(|cfg| cfg.on_disk)
@@ -263,7 +263,7 @@ pub trait SegmentOptimizer: Sync {
         let optimized_config = segment::types::SegmentConfig {
             vector_data,
             sparse_vector_data,
-            payload_storage_type: segment_config.payload_storage_type,
+            payload_storage_type: segment_optimizer_config.payload_storage_type,
         };
 
         SegmentBuilder::new(

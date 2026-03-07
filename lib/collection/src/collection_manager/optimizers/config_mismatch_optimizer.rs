@@ -72,8 +72,8 @@ mod tests {
 
         SegmentOptimizerConfig {
             payload_storage_type: segment_config.payload_storage_type,
-            base_vector_data,
-            base_sparse_vector_data: segment_config.sparse_vector_data.clone(),
+            plain_dense_vector_config: base_vector_data,
+            plain_sparse_vector_config: segment_config.sparse_vector_data.clone(),
             dense_vector,
             sparse_vector: segment_config
                 .sparse_vector_data
@@ -147,7 +147,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            hnsw_config,
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -309,7 +308,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            hnsw_config_collection,
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -475,7 +473,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            Default::default(),
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(

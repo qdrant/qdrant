@@ -40,6 +40,14 @@ impl SparseIndexType {
     pub fn is_persisted(self) -> bool {
         self == Self::Mmap || self == Self::ImmutableRam
     }
+
+    pub fn from_on_disk(on_disk: bool) -> Self {
+        if on_disk {
+            Self::Mmap
+        } else {
+            Self::MutableRam
+        }
+    }
 }
 
 /// Configuration for sparse inverted index.

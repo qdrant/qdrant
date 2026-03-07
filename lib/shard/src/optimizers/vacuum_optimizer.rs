@@ -8,7 +8,7 @@ use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::entry_point::NonAppendableSegmentEntry;
 use segment::index::VectorIndex;
 use segment::segment::Segment;
-use segment::types::{HnswConfig, HnswGlobalConfig};
+use segment::types::HnswGlobalConfig;
 use segment::vector_storage::VectorStorage;
 
 use super::config::SegmentOptimizerConfig;
@@ -27,8 +27,7 @@ pub struct VacuumOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     temp_path: PathBuf,
-    segment_config: SegmentOptimizerConfig,
-    hnsw_config: HnswConfig,
+    segment_optimizer_config: SegmentOptimizerConfig,
     hnsw_global_config: HnswGlobalConfig,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -41,8 +40,7 @@ impl VacuumOptimizer {
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         temp_path: PathBuf,
-        segment_config: SegmentOptimizerConfig,
-        hnsw_config: HnswConfig,
+        segment_optimizer_config: SegmentOptimizerConfig,
         hnsw_global_config: HnswGlobalConfig,
     ) -> Self {
         VacuumOptimizer {
@@ -51,8 +49,7 @@ impl VacuumOptimizer {
             thresholds_config,
             segments_path,
             temp_path,
-            segment_config,
-            hnsw_config,
+            segment_optimizer_config,
             hnsw_global_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -127,12 +124,16 @@ impl SegmentOptimizer for VacuumOptimizer {
         self.temp_path.as_path()
     }
 
-    fn segment_config(&self) -> &SegmentOptimizerConfig {
-        &self.segment_config
+    fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig {
+        &self.segment_optimizer_config
     }
 
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
+    fn max_indexing_threads(&self) -> Option<usize> {
+        self.segment_optimizer_config
+            .dense_vector
+            .values()
+            .map(|cfg| cfg.hnsw_config.max_indexing_threads)
+            .max()
     }
 
     fn hnsw_global_config(&self) -> &HnswGlobalConfig {

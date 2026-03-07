@@ -1453,7 +1453,7 @@ impl SegmentConfig {
             .all(|v| v)
     }
 
-    pub fn is_compatible(&self, other: &Self) -> bool {
+    pub fn check_compatible(&self, other: &Self) -> Result<(), String> {
         // Vector data have to be compatible between two segments.
         // Sparse vector data can be different, but a placeholder check is implemented to catch
         // and enforce compatibility check for future changes.
@@ -1466,42 +1466,49 @@ impl SegmentConfig {
             payload_storage_type: _,
         } = self;
 
-        let is_vector_config_compatible = is_map_compatible(
+        check_vectors_map_compatible(
             &self.vector_data,
             &other.vector_data,
-            VectorDataConfig::is_compatible,
-        );
+            VectorDataConfig::check_compatible,
+        )?;
 
-        let is_sparse_vector_config_compatible = is_map_compatible(
+        check_vectors_map_compatible(
             &self.sparse_vector_data,
             &other.sparse_vector_data,
-            SparseVectorDataConfig::is_compatible,
-        );
+            SparseVectorDataConfig::check_compatible,
+        )?;
 
-        is_vector_config_compatible && is_sparse_vector_config_compatible
+        Ok(())
     }
 }
 
-fn is_map_compatible<V, C, F>(this: &HashMap<V, C>, other: &HashMap<V, C>, check: F) -> bool
+fn check_vectors_map_compatible<C, F>(
+    this: &HashMap<String, C>,
+    other: &HashMap<String, C>,
+    check: F,
+) -> Result<(), String>
 where
-    V: Eq + Hash,
-    F: Fn(&C, &C) -> bool,
+    F: Fn(&C, &C) -> Result<(), String>,
 {
     if this.len() != other.len() {
-        return false;
+        let expected_keys: Vec<String> = this.keys().map(|k| format!("{k:?}")).collect();
+        let actual_keys: Vec<String> = other.keys().map(|k| format!("{k:?}")).collect();
+        return Err(format!(
+            "Incompatible configs: expected vector storages with keys {expected_keys:?}, but got {actual_keys:?}"
+        ));
     }
 
     for (vector_name, config) in this {
         let Some(other_config) = other.get(vector_name) else {
-            return false;
+            return Err(format!(
+                "Incompatible configs: expected vector storage with key {vector_name:?} not found in other config"
+            ));
         };
 
-        if !check(config, other_config) {
-            return false;
-        }
+        check(config, other_config)?;
     }
 
-    true
+    Ok(())
 }
 
 /// Storage types for vectors
@@ -1562,13 +1569,18 @@ pub struct MultiVectorConfig {
 }
 
 impl MultiVectorConfig {
-    fn is_compatible(&self, other: &Self) -> bool {
-        // TODO: Does comparator have to be same for two segments to be compatible? 🤔
-
+    fn check_compatible(&self, other: &Self) -> Result<(), String> {
         // Assert multi-vector config fields
-        let Self { comparator: _ } = self;
+        let Self { comparator } = self;
 
-        self.comparator == other.comparator // TODO: 🤔
+        if *comparator != other.comparator {
+            return Err(format!(
+                "Incompatible configs: expected multi-vector comparator {comparator:?}, but got {other_comparator:?}",
+                other_comparator = other.comparator
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -1642,39 +1654,56 @@ impl VectorDataConfig {
         is_index_appendable && is_storage_appendable
     }
 
-    pub fn is_compatible(&self, other: &Self) -> bool {
+    pub fn check_compatible(&self, other: &Self) -> Result<(), String> {
         // Size and distance have to be the same for both segments.
         // Storage type, index and quantization config can be different.
         //
-        // TODO: Can multivector config and datatype be different?
-
         // Assert vector data config fields
         let Self {
-            size: _,
-            distance: _,
+            size,
+            distance,
             storage_type: _,
             index: _,
             quantization_config: _,
-            multivector_config: _,
-            datatype: _,
+            multivector_config,
+            datatype,
         } = self;
 
-        self.size == other.size
-            && self.distance == other.distance
-            && self.datatype == other.datatype // TODO: 🤔
-            && is_opt_compatible(
-                self.multivector_config.as_ref(),
-                other.multivector_config.as_ref(),
-                MultiVectorConfig::is_compatible,
-            )
-    }
-}
+        if *size != other.size {
+            return Err(format!(
+                "Incompatible configs: expected vector size {size}, but got {other_size}",
+                other_size = other.size
+            ));
+        }
 
-fn is_opt_compatible<T, F: Fn(T, T) -> bool>(this: Option<T>, other: Option<T>, check: F) -> bool {
-    match (this, other) {
-        (Some(this), Some(other)) => check(this, other),
-        (None, None) => true,
-        _ => false,
+        if *distance != other.distance {
+            return Err(format!(
+                "Incompatible configs: expected distance {distance:?}, but got {other_distance:?}",
+                other_distance = other.distance
+            ));
+        }
+
+        if *datatype != other.datatype {
+            return Err(format!(
+                "Incompatible configs: expected vector storage datatype {datatype:?}, but got {other_datatype:?}",
+                other_datatype = other.datatype
+            ));
+        }
+
+        match (multivector_config, &other.multivector_config) {
+            (None, None) => {}
+            (Some(this), Some(other)) => {
+                MultiVectorConfig::check_compatible(this, other)?;
+            }
+            _ => {
+                return Err(format!(
+                    "Incompatible configs: expected multivector config {this_multivector_config:?}, but got {other_multivector_config:?}",
+                    this_multivector_config = multivector_config,
+                    other_multivector_config = other.multivector_config
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1740,7 +1769,7 @@ impl SparseVectorDataConfig {
         true
     }
 
-    pub fn is_compatible(&self, other: &Self) -> bool {
+    pub fn check_compatible(&self, other: &Self) -> Result<(), String> {
         // Both index and storage type can be different for two segments to be compatible
 
         // Assert sparse vector config fields
@@ -1750,7 +1779,14 @@ impl SparseVectorDataConfig {
             modifier,
         } = self;
 
-        modifier == &other.modifier
+        if modifier != &other.modifier {
+            return Err(format!(
+                "Incompatible configs: expected sparse vector modifier {modifier:?}, but got {other_modifier:?}",
+                other_modifier = other.modifier
+            ));
+        }
+
+        Ok(())
     }
 }
 

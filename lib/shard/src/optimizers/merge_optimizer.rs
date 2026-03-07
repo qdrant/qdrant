@@ -5,7 +5,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry as _;
-use segment::types::{HnswConfig, HnswGlobalConfig};
+use segment::types::HnswGlobalConfig;
 
 use super::config::SegmentOptimizerConfig;
 use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};
@@ -46,8 +46,7 @@ pub struct MergeOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     temp_path: PathBuf,
-    segment_config: SegmentOptimizerConfig,
-    hnsw_config: HnswConfig,
+    segment_optimizer_config: SegmentOptimizerConfig,
     hnsw_global_config: HnswGlobalConfig,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -60,7 +59,6 @@ impl MergeOptimizer {
         segments_path: PathBuf,
         temp_path: PathBuf,
         segment_config: SegmentOptimizerConfig,
-        hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
     ) -> Self {
         Self {
@@ -68,8 +66,7 @@ impl MergeOptimizer {
             thresholds_config,
             segments_path,
             temp_path,
-            segment_config,
-            hnsw_config,
+            segment_optimizer_config: segment_config,
             hnsw_global_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -99,12 +96,16 @@ impl SegmentOptimizer for MergeOptimizer {
         self.temp_path.as_path()
     }
 
-    fn segment_config(&self) -> &SegmentOptimizerConfig {
-        &self.segment_config
+    fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig {
+        &self.segment_optimizer_config
     }
 
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
+    fn max_indexing_threads(&self) -> Option<usize> {
+        self.segment_optimizer_config
+            .dense_vector
+            .values()
+            .map(|cfg| cfg.hnsw_config.max_indexing_threads)
+            .max()
     }
 
     fn hnsw_global_config(&self) -> &HnswGlobalConfig {

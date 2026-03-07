@@ -63,7 +63,7 @@ impl UpdateWorkers {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
             .first()
-            .map(|optimizer| optimizer.hnsw_config().max_indexing_threads)
+            .and_then(|optimizer| optimizer.max_indexing_threads())
             .unwrap_or_default();
 
         // Asynchronous task to trigger optimizers once CPU budget is available again
@@ -112,7 +112,7 @@ impl UpdateWorkers {
                 let result = Self::ensure_appendable_segment_with_capacity(
                     &segments,
                     optimizer.segments_path(),
-                    optimizer.segment_config(),
+                    optimizer.segment_optimizer_config(),
                     optimizer.threshold_config(),
                     payload_index_schema.clone(),
                 );
@@ -317,7 +317,7 @@ impl UpdateWorkers {
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
             // And use same amount of IO threads as CPUs
-            let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
+            let max_indexing_threads = optimizer.max_indexing_threads().unwrap_or_default();
             let desired_io = num_rayon_threads(max_indexing_threads);
             let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                 // If there is no Resource budget, break and return early
@@ -469,7 +469,7 @@ impl UpdateWorkers {
             let segments_guard = segments.upgradable_read();
             let new_segment = segments_guard.build_tmp_segment(
                 segments_path,
-                Some(segment_config.base_segment_config()),
+                Some(segment_config.plain_segment_config()),
                 payload_index_schema,
                 thresholds_config.deferred_points_threshold_bytes,
                 true,

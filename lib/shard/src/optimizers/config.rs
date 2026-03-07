@@ -16,6 +16,7 @@ pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 10_000;
 pub const DEFAULT_DELETED_THRESHOLD: f64 = 0.2;
 pub const DEFAULT_VACUUM_MIN_VECTOR_NUMBER: usize = 1000;
 
+/// Extra configuration for dense vectors, applied on top of the plain config during optimization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DenseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
@@ -23,26 +24,114 @@ pub struct DenseVectorOptimizerConfig {
     pub quantization_config: Option<QuantizationConfig>,
 }
 
+/// Extra configuration for sparse vectors, applied on top of the plain config during optimization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SparseVectorOptimizerConfig {
     pub on_disk: Option<bool>,
 }
 
+/// This configuration contains all necessary information to build an optimized segment.
 #[derive(Debug, Clone)]
 pub struct SegmentOptimizerConfig {
     pub payload_storage_type: PayloadStorageType,
-    pub base_vector_data: HashMap<VectorNameBuf, VectorDataConfig>,
-    pub base_sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
+    /// Configuration of dense vectors, as it should be for a plain segment (without any optimization).
+    pub plain_dense_vector_config: HashMap<VectorNameBuf, VectorDataConfig>,
+    /// Configuration of sparse vectors, as it should be for a plain segment (without any optimization).
+    pub plain_sparse_vector_config: HashMap<VectorNameBuf, SparseVectorDataConfig>,
+    /// Extra configuration for dense vectors, which _might_ be applied during optimization,
+    /// depending on the segment state.
     pub dense_vector: HashMap<VectorNameBuf, DenseVectorOptimizerConfig>,
+    /// Extra configuration for sparse vectors, which _might_ be applied during optimization,
+    /// depending on the segment state.
     pub sparse_vector: HashMap<VectorNameBuf, SparseVectorOptimizerConfig>,
 }
 
 impl SegmentOptimizerConfig {
-    pub fn base_segment_config(&self) -> SegmentConfig {
+    pub fn plain_segment_config(&self) -> SegmentConfig {
         SegmentConfig {
-            vector_data: self.base_vector_data.clone(),
-            sparse_vector_data: self.base_sparse_vector_data.clone(),
+            vector_data: self.plain_dense_vector_config.clone(),
+            sparse_vector_data: self.plain_sparse_vector_config.clone(),
             payload_storage_type: self.payload_storage_type,
+        }
+    }
+
+    pub fn new(
+        payload_storage_type: PayloadStorageType,
+        dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerInput>,
+        sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerInput>,
+    ) -> SegmentOptimizerConfig {
+        let base_vector_data = dense_vectors
+            .iter()
+            .map(|(name, input)| {
+                (
+                    name.clone(),
+                    VectorDataConfig {
+                        size: input.size,
+                        distance: input.distance,
+                        index: Indexes::Plain {},
+                        storage_type: VectorStorageType::from_on_disk(
+                            input.on_disk.unwrap_or_default(),
+                        ),
+                        quantization_config: QuantizationConfig::for_appendable_segment(
+                            input.quantization_config.as_ref(),
+                        ),
+                        multivector_config: input.multivector_config,
+                        datatype: input.datatype,
+                    },
+                )
+            })
+            .collect();
+
+        let base_sparse_vector_data = sparse_vectors
+            .iter()
+            .map(|(name, input)| {
+                (
+                    name.clone(),
+                    SparseVectorDataConfig {
+                        index: SparseIndexConfig {
+                            full_scan_threshold: input.full_scan_threshold,
+                            index_type: SparseIndexType::MutableRam,
+                            datatype: input.index_datatype,
+                        },
+                        storage_type: input.storage_type,
+                        modifier: input.modifier,
+                    },
+                )
+            })
+            .collect();
+
+        let dense_vector = dense_vectors
+            .into_iter()
+            .map(|(name, input)| {
+                (
+                    name,
+                    DenseVectorOptimizerConfig {
+                        on_disk: input.on_disk,
+                        hnsw_config: input.hnsw_config,
+                        quantization_config: input.quantization_config,
+                    },
+                )
+            })
+            .collect();
+
+        let sparse_vector = sparse_vectors
+            .into_iter()
+            .map(|(name, input)| {
+                (
+                    name,
+                    SparseVectorOptimizerConfig {
+                        on_disk: input.on_disk,
+                    },
+                )
+            })
+            .collect();
+
+        SegmentOptimizerConfig {
+            payload_storage_type,
+            plain_dense_vector_config: base_vector_data,
+            plain_sparse_vector_config: base_sparse_vector_data,
+            dense_vector,
+            sparse_vector,
         }
     }
 }
@@ -67,171 +156,6 @@ pub struct SparseVectorOptimizerInput {
     pub index_datatype: Option<VectorStorageDatatype>,
     pub storage_type: SparseVectorStorageType,
     pub modifier: Option<Modifier>,
-}
-
-/// Minimal input for building [`SegmentOptimizerConfig`].
-///
-/// Both the collection and edge/embedded paths construct this struct from their
-/// own config types, then call [`OptimizerSourceConfig::build`] to produce
-/// the unified [`SegmentOptimizerConfig`].
-#[derive(Debug, Clone)]
-pub struct OptimizerSourceConfig {
-    pub payload_storage_type: PayloadStorageType,
-    pub dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerInput>,
-    pub sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerInput>,
-}
-
-impl OptimizerSourceConfig {
-    /// Construct from a [`SegmentConfig`] (edge/embedded path).
-    ///
-    /// `fallback_hnsw` is used for vectors that have `Indexes::Plain` (no HNSW
-    /// config stored yet). Typically this is inferred from the first HNSW-indexed
-    /// vector in the shard, or `HnswConfig::default()`.
-    pub fn from_segment_config(segment_config: &SegmentConfig, fallback_hnsw: HnswConfig) -> Self {
-        let dense_vectors = segment_config
-            .vector_data
-            .iter()
-            .map(|(name, config)| {
-                let VectorDataConfig {
-                    size,
-                    distance,
-                    storage_type,
-                    index,
-                    quantization_config,
-                    multivector_config,
-                    datatype,
-                } = config;
-
-                let hnsw_config = match index {
-                    Indexes::Plain {} => fallback_hnsw,
-                    Indexes::Hnsw(hnsw) => *hnsw,
-                };
-
-                (
-                    name.clone(),
-                    DenseVectorOptimizerInput {
-                        size: *size,
-                        distance: *distance,
-                        on_disk: Some(storage_type.is_on_disk()),
-                        hnsw_config,
-                        quantization_config: quantization_config.clone(),
-                        multivector_config: *multivector_config,
-                        datatype: *datatype,
-                    },
-                )
-            })
-            .collect();
-
-        let sparse_vectors = segment_config
-            .sparse_vector_data
-            .iter()
-            .map(|(name, config)| {
-                let SparseVectorDataConfig {
-                    index,
-                    storage_type,
-                    modifier,
-                } = config;
-
-                (
-                    name.clone(),
-                    SparseVectorOptimizerInput {
-                        on_disk: Some(index.index_type.is_on_disk()),
-                        full_scan_threshold: index.full_scan_threshold,
-                        index_datatype: index.datatype,
-                        storage_type: *storage_type,
-                        modifier: *modifier,
-                    },
-                )
-            })
-            .collect();
-
-        Self {
-            payload_storage_type: segment_config.payload_storage_type,
-            dense_vectors,
-            sparse_vectors,
-        }
-    }
-
-    /// Build the unified [`SegmentOptimizerConfig`].
-    pub fn build(self) -> SegmentOptimizerConfig {
-        let base_vector_data = self
-            .dense_vectors
-            .iter()
-            .map(|(name, input)| {
-                (
-                    name.clone(),
-                    VectorDataConfig {
-                        size: input.size,
-                        distance: input.distance,
-                        index: Indexes::Plain {},
-                        storage_type: VectorStorageType::from_on_disk(
-                            input.on_disk.unwrap_or_default(),
-                        ),
-                        quantization_config: QuantizationConfig::for_appendable_segment(
-                            input.quantization_config.as_ref(),
-                        ),
-                        multivector_config: input.multivector_config,
-                        datatype: input.datatype,
-                    },
-                )
-            })
-            .collect();
-
-        let base_sparse_vector_data = self
-            .sparse_vectors
-            .iter()
-            .map(|(name, input)| {
-                (
-                    name.clone(),
-                    SparseVectorDataConfig {
-                        index: SparseIndexConfig {
-                            full_scan_threshold: input.full_scan_threshold,
-                            index_type: SparseIndexType::MutableRam,
-                            datatype: input.index_datatype,
-                        },
-                        storage_type: input.storage_type,
-                        modifier: input.modifier,
-                    },
-                )
-            })
-            .collect();
-
-        let dense_vector = self
-            .dense_vectors
-            .into_iter()
-            .map(|(name, input)| {
-                (
-                    name,
-                    DenseVectorOptimizerConfig {
-                        on_disk: input.on_disk,
-                        hnsw_config: input.hnsw_config,
-                        quantization_config: input.quantization_config,
-                    },
-                )
-            })
-            .collect();
-
-        let sparse_vector = self
-            .sparse_vectors
-            .into_iter()
-            .map(|(name, input)| {
-                (
-                    name,
-                    SparseVectorOptimizerConfig {
-                        on_disk: input.on_disk,
-                    },
-                )
-            })
-            .collect();
-
-        SegmentOptimizerConfig {
-            payload_storage_type: self.payload_storage_type,
-            base_vector_data,
-            base_sparse_vector_data,
-            dense_vector,
-            sparse_vector,
-        }
-    }
 }
 
 /// Target segment count for the merge optimizer.

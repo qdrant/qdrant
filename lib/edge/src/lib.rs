@@ -133,15 +133,12 @@ impl EdgeShard {
 
             let segment_cfg = segment.config();
             if let Some(ref cfg) = config {
-                if !cfg.is_compatible_with_segment_config(segment_cfg) {
-                    return Err(OperationError::service_error(format!(
-                        "segment {} is incompatible with provided config or previously loaded segments: \
-                         expected {:?}, but received {:?}",
+                cfg.check_compatible_with_segment_config(segment_cfg).map_err(
+                    |err| OperationError::service_error(format!(
+                        "segment {} is incompatible with provided config or previously loaded segments: {err}",
                         segment_path.display(),
-                        cfg.to_segment_config(),
-                        segment_cfg,
-                    )));
-                }
+                    ))
+                )?;
             } else {
                 config = Some(EdgeShardConfig::from_segment_config(segment_cfg));
             }

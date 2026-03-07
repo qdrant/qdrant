@@ -63,7 +63,6 @@ mod tests {
             segments_path,
             collection_temp_dir,
             segment_config,
-            hnsw_config,
             hnsw_global_config,
         )
     }

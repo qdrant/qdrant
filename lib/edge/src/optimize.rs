@@ -6,8 +6,7 @@ use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::HnswGlobalConfig;
-use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::{TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes};
+use shard::optimizers::config::TEMP_SEGMENTS_PATH;
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
@@ -39,7 +38,8 @@ impl EdgeShard {
             let mut optimized_in_iteration = false;
 
             for (optimizer, segment_ids) in planned {
-                let desired_io = num_rayon_threads(optimizer.hnsw_config().max_indexing_threads);
+                let desired_io =
+                    num_rayon_threads(optimizer.max_indexing_threads().unwrap_or_default());
                 let budget = ResourceBudget::new(desired_io, desired_io);
                 let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
                     OperationError::service_error(format!(
@@ -79,9 +79,9 @@ impl EdgeShard {
 
         let cfg = self.config();
         let segment_optimizer_config = cfg.segment_optimizer_config();
-        let hnsw_config = cfg.hnsw_config;
+        let global_hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
-        let threshold_config = Self::optimizer_thresholds_from_config(&*cfg);
+        let threshold_config = cfg.optimizer_thresholds();
         let default_segments_number = cfg.optimizers.get_number_segments();
 
         vec![
@@ -91,7 +91,6 @@ impl EdgeShard {
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(IndexingOptimizer::new(
@@ -100,7 +99,6 @@ impl EdgeShard {
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(VacuumOptimizer::new(
@@ -110,7 +108,6 @@ impl EdgeShard {
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(ConfigMismatchOptimizer::new(
@@ -118,24 +115,10 @@ impl EdgeShard {
                 segments_path,
                 temp_segments_path,
                 segment_optimizer_config,
-                hnsw_config,
+                global_hnsw_config,
                 hnsw_global_config,
             )),
         ]
-    }
-
-    fn optimizer_thresholds_from_config(cfg: &crate::EdgeShardConfig) -> OptimizerThresholds {
-        let num_indexing_threads = num_rayon_threads(cfg.hnsw_config.max_indexing_threads);
-        let indexing_threshold_kb = cfg.optimizers.get_indexing_threshold_kb();
-        OptimizerThresholds {
-            memmap_threshold_kb: usize::MAX,
-            indexing_threshold_kb,
-            max_segment_size_kb: cfg.optimizers.get_max_segment_size_kb(num_indexing_threads),
-            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
-                cfg.optimizers.prevent_unoptimized,
-                indexing_threshold_kb,
-            ),
-        }
     }
 }
 
