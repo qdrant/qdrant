@@ -101,6 +101,7 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
+        blacklist_matches: bool,
     ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
@@ -146,6 +147,12 @@ impl AuthKeys {
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
+            }
+
+            if blacklist_matches {
+                return Err(AuthError::Forbidden(
+                    "This path is blacklisted by config".to_string(),
+                ));
             }
 
             return Ok((access, InferenceToken(sub), AuthType::Jwt, subject));

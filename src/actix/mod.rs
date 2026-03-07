@@ -41,7 +41,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::auth::{AuthTransform, WhitelistItem};
+use crate::actix::auth::{AuthTransform, Blacklist, WhitelistItem};
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
@@ -94,6 +94,8 @@ pub fn init(
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }
 
+        let api_key_blacklist = Blacklist::try_from(settings.service.jwt_blacklist.as_ref())?;
+
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()
                 .allow_any_origin()
@@ -112,7 +114,13 @@ pub fn init(
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
-                    |auth_keys| AuthTransform::new(auth_keys.clone(), api_key_whitelist.clone()),
+                    |auth_keys| {
+                        AuthTransform::new(
+                            auth_keys.clone(),
+                            api_key_whitelist.clone(),
+                            api_key_blacklist.clone(),
+                        )
+                    },
                 )))
                 // Normalize path
                 .wrap(NormalizePath::trim())
