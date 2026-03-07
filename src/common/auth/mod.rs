@@ -1,10 +1,13 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
+use chrono::Utc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
+use storage::audit::{AuditEvent, audit_log, is_audit_enabled};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -50,6 +53,33 @@ pub enum AuthError {
     Unauthorized(String),
     Forbidden(String),
     StorageError(StorageError),
+}
+
+impl Display for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthError::Unauthorized(msg) => write!(f, "Unauthorized: {msg}"),
+            AuthError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
+            AuthError::StorageError(e) => write!(f, "Storage error: {e}"),
+        }
+    }
+}
+
+/// Log a denied authentication attempt to the audit log when audit is enabled.
+/// Used by both REST (actix) and gRPC (tonic) auth middlewares.
+pub fn log_denied_auth(method: &str, remote: Option<String>, error: &AuthError) {
+    if is_audit_enabled() {
+        audit_log(AuditEvent {
+            timestamp: Utc::now(),
+            method: method.to_string(),
+            auth_type: AuthType::None,
+            subject: None,
+            remote,
+            collection: None,
+            result: "denied",
+            error: Some(error.to_string()),
+        });
+    }
 }
 
 impl AuthKeys {
