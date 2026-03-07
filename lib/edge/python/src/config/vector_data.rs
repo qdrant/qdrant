@@ -297,7 +297,7 @@ impl PyPlainIndexConfig {
 #[pyclass(name = "HnswIndexConfig", from_py_object)]
 #[derive(Copy, Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyHnswIndexConfig(HnswConfig);
+pub struct PyHnswIndexConfig(pub HnswConfig);
 
 #[pyclass_repr]
 #[pymethods]
@@ -488,5 +488,102 @@ impl From<PyVectorStorageDatatype> for VectorStorageDatatype {
             PyVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             PyVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
         }
+    }
+}
+
+// --- EdgeVectorParams (user-facing config for EdgeShardConfig) ---
+
+use edge::config::EdgeVectorParams;
+
+#[pyclass(name = "EdgeVectorParams", from_py_object)]
+#[derive(Clone, Debug)]
+pub struct PyEdgeVectorParams(pub EdgeVectorParams);
+
+impl PyEdgeVectorParams {
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, EdgeVectorParams> {
+        map.into_iter().map(|(k, v)| (k, v.0)).collect()
+    }
+
+    pub fn wrap_map(
+        map: &HashMap<String, EdgeVectorParams>,
+    ) -> HashMap<String, PyEdgeVectorParams> {
+        map.iter()
+            .map(|(k, v)| (k.clone(), PyEdgeVectorParams(v.clone())))
+            .collect()
+    }
+}
+
+#[pyclass_repr]
+#[pymethods]
+impl PyEdgeVectorParams {
+    #[new]
+    #[pyo3(signature = (size, distance, on_disk=None, multivector_config=None, datatype=None, quantization_config=None, hnsw_config=None))]
+    pub fn new(
+        size: usize,
+        distance: PyDistance,
+        on_disk: Option<bool>,
+        multivector_config: Option<PyMultiVectorConfig>,
+        datatype: Option<PyVectorStorageDatatype>,
+        quantization_config: Option<PyQuantizationConfig>,
+        hnsw_config: Option<PyHnswIndexConfig>,
+    ) -> Self {
+        Self(EdgeVectorParams {
+            size,
+            distance: Distance::from(distance),
+            on_disk,
+            multivector_config: multivector_config.map(MultiVectorConfig::from),
+            datatype: datatype.map(VectorStorageDatatype::from),
+            quantization_config: quantization_config.map(QuantizationConfig::from),
+            hnsw_config: hnsw_config.map(|h| h.0),
+        })
+    }
+
+    #[getter]
+    pub fn size(&self) -> usize {
+        self.0.size
+    }
+
+    #[getter]
+    pub fn distance(&self) -> PyDistance {
+        PyDistance::from(self.0.distance)
+    }
+
+    #[getter]
+    pub fn on_disk(&self) -> Option<bool> {
+        self.0.on_disk
+    }
+
+    #[getter]
+    pub fn multivector_config(&self) -> Option<PyMultiVectorConfig> {
+        self.0.multivector_config.map(PyMultiVectorConfig)
+    }
+
+    #[getter]
+    pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
+        self.0.datatype.map(PyVectorStorageDatatype::from)
+    }
+
+    #[getter]
+    pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
+        self.0.quantization_config.clone().map(PyQuantizationConfig)
+    }
+
+    #[getter]
+    pub fn hnsw_config(&self) -> Option<PyHnswIndexConfig> {
+        self.0.hnsw_config.map(PyHnswIndexConfig)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyEdgeVectorParams {
+    type Target = PyEdgeVectorParams;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
     }
 }

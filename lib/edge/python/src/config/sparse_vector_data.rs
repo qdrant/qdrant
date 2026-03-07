@@ -227,6 +227,82 @@ impl From<PySparseVectorStorageType> for SparseVectorStorageType {
     }
 }
 
+// --- EdgeSparseVectorParams (user-facing config for EdgeShardConfig) ---
+
+use edge::config::EdgeSparseVectorParams;
+
+#[pyclass(name = "EdgeSparseVectorParams", from_py_object)]
+#[derive(Clone, Debug)]
+pub struct PyEdgeSparseVectorParams(pub EdgeSparseVectorParams);
+
+impl PyEdgeSparseVectorParams {
+    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, EdgeSparseVectorParams> {
+        map.into_iter().map(|(k, v)| (k, v.0)).collect()
+    }
+
+    pub fn wrap_map(
+        map: &HashMap<String, EdgeSparseVectorParams>,
+    ) -> HashMap<String, PyEdgeSparseVectorParams> {
+        map.iter()
+            .map(|(k, v)| (k.clone(), PyEdgeSparseVectorParams(v.clone())))
+            .collect()
+    }
+}
+
+#[pyclass_repr]
+#[pymethods]
+impl PyEdgeSparseVectorParams {
+    #[new]
+    #[pyo3(signature = (full_scan_threshold=None, on_disk=None, modifier=None, datatype=None))]
+    pub fn new(
+        full_scan_threshold: Option<usize>,
+        on_disk: Option<bool>,
+        modifier: Option<PyModifier>,
+        datatype: Option<PyVectorStorageDatatype>,
+    ) -> Self {
+        Self(EdgeSparseVectorParams {
+            full_scan_threshold,
+            on_disk,
+            modifier: modifier.map(Modifier::from),
+            datatype: datatype.map(VectorStorageDatatype::from),
+        })
+    }
+
+    #[getter]
+    pub fn full_scan_threshold(&self) -> Option<usize> {
+        self.0.full_scan_threshold
+    }
+
+    #[getter]
+    pub fn on_disk(&self) -> Option<bool> {
+        self.0.on_disk
+    }
+
+    #[getter]
+    pub fn modifier(&self) -> Option<PyModifier> {
+        self.0.modifier.map(PyModifier::from)
+    }
+
+    #[getter]
+    pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
+        self.0.datatype.map(PyVectorStorageDatatype::from)
+    }
+
+    pub fn __repr__(&self) -> String {
+        self.repr()
+    }
+}
+
+impl<'py> IntoPyObject<'py> for &PyEdgeSparseVectorParams {
+    type Target = PyEdgeSparseVectorParams;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        IntoPyObject::into_pyobject(self.clone(), py)
+    }
+}
+
 #[pyclass(name = "Modifier", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyModifier {
