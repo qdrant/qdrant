@@ -340,6 +340,20 @@ cluster:
 # Read more: https://qdrant.tech/documentation/guides/telemetry
 telemetry_disabled: false
 
+# Telemetry configuration
+telemetry:
+  # Enable per-collection metrics for REST and gRPC endpoints.
+  # When enabled, metrics will be tracked separately for each collection.
+  # This can increase memory usage and Prometheus cardinality.
+  # Default: true
+  enable_per_collection_metrics: true
+
+  # Maximum number of collections to track metrics for.
+  # When exceeded, per-collection tracking will be disabled for new collections.
+  # This prevents unbounded memory growth in deployments with many collections.
+  # Default: 1000
+  max_collections_for_metrics: 1000
+
 # TLS configuration.
 # Required if either service.enable_tls or cluster.p2p.enable_tls is true.
 tls:

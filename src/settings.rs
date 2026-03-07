@@ -178,6 +178,30 @@ pub struct TlsConfig {
     pub cert_ttl: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, Clone, Validate)]
+pub struct TelemetryConfig {
+    /// Enable per-collection metrics for REST and gRPC endpoints.
+    /// When enabled, metrics will be tracked separately for each collection.
+    /// This can increase memory usage and Prometheus cardinality.
+    #[serde(default = "default_per_collection_metrics_enabled")]
+    pub enable_per_collection_metrics: bool,
+    /// Maximum number of collections to track metrics for.
+    /// When exceeded, per-collection tracking will be disabled for new collections.
+    /// This prevents unbounded memory growth in deployments with many collections.
+    #[serde(default = "default_max_collection_metrics")]
+    #[validate(range(min = 1))]
+    pub max_collections_for_metrics: usize,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        TelemetryConfig {
+            enable_per_collection_metrics: default_per_collection_metrics_enabled(),
+            max_collections_for_metrics: default_max_collection_metrics(),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Validate)]
 pub struct GpuConfig {
@@ -238,6 +262,9 @@ pub struct Settings {
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
+    #[serde(default)]
+    #[validate(nested)]
+    pub telemetry: TelemetryConfig,
     #[validate(nested)]
     pub tls: Option<TlsConfig>,
     #[serde(default)]
@@ -465,6 +492,14 @@ const fn default_compact_wal_entries() -> u64 {
 const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
     Some(3600)
+}
+
+const fn default_per_collection_metrics_enabled() -> bool {
+    true // Enable by default for backwards compatibility
+}
+
+const fn default_max_collection_metrics() -> usize {
+    1000 // Reasonable default limit to prevent unbounded growth
 }
 
 /// Custom validation function for metrics prefixes.

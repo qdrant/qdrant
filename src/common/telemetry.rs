@@ -82,6 +82,11 @@ impl TelemetryCollector {
         }
     }
 
+    /// Get the telemetry configuration settings
+    pub fn telemetry_config(&self) -> &crate::settings::TelemetryConfig {
+        &self.settings.telemetry
+    }
+
     pub async fn prepare_data(
         &self,
         auth: &Auth,

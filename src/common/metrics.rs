@@ -666,6 +666,36 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
         builder.build(prefix, "rest", metrics);
+
+        // Add per-collection metrics
+        let mut collection_builder = OperationDurationMetricsBuilder::default();
+        for (endpoint, collections) in &self.responses_per_collection {
+            let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                continue;
+            };
+            // Endpoint must be whitelisted
+            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                continue;
+            }
+            for (collection, responses) in collections {
+                for (status, stats) in responses {
+                    collection_builder.add(
+                        stats,
+                        &[
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                            ("collection", collection),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
+            }
+        }
+        // Only add per-collection metrics if there are any
+        if !collection_builder.is_empty() {
+            collection_builder.build(prefix, "rest_per_collection", metrics);
+        }
     }
 }
 
@@ -692,6 +722,35 @@ impl MetricsProvider for GrpcTelemetry {
             }
         }
         builder.build(prefix, "grpc", metrics);
+
+        // Add per-collection metrics
+        let mut collection_builder = OperationDurationMetricsBuilder::default();
+        for (endpoint, collections) in &self.responses_per_collection {
+            // Endpoint must be whitelisted
+            if GRPC_ENDPOINT_WHITELIST
+                .binary_search(&endpoint.as_str())
+                .is_err()
+            {
+                continue;
+            }
+            for (collection, responses) in collections {
+                for (status, stats) in responses {
+                    collection_builder.add(
+                        stats,
+                        &[
+                            ("endpoint", endpoint.as_str()),
+                            ("status", &status.to_string()),
+                            ("collection", collection),
+                        ],
+                        true,
+                    );
+                }
+            }
+        }
+        // Only add per-collection metrics if there are any
+        if !collection_builder.is_empty() {
+            collection_builder.build(prefix, "grpc_per_collection", metrics);
+        }
     }
 }
 
@@ -870,6 +929,11 @@ impl OperationDurationMetricsBuilder {
                 .collect::<Vec<_>>(),
             labels,
         ));
+    }
+
+    /// Check if any metrics have been added
+    pub fn is_empty(&self) -> bool {
+        self.total.is_empty()
     }
 
     /// Build metrics and add them to the provided vector.
