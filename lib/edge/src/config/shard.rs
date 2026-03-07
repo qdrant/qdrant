@@ -112,11 +112,7 @@ impl EdgeShardConfig {
             hnsw_config: _,
             optimizers: _,
         } = self;
-        let payload_storage_type = if *on_disk_payload {
-            PayloadStorageType::Mmap
-        } else {
-            PayloadStorageType::InRamMmap
-        };
+        let payload_storage_type = PayloadStorageType::from_on_disk_payload(*on_disk_payload);
         let vector_data = vectors
             .iter()
             .map(|(name, p)| {

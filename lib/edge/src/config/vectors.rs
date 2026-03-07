@@ -46,18 +46,12 @@ impl EdgeVectorParams {
             multivector_config,
             datatype,
         } = self;
-        let appendable_quantization = common::flags::feature_flags().appendable_quantization;
-        let quantization_config = global_quantization
-            .filter(|q| appendable_quantization && q.supports_appendable())
-            .cloned();
+        let quantization_config =
+            segment::types::QuantizationConfig::for_appendable_segment(global_quantization);
         VectorDataConfig {
             size: *size,
             distance: *distance,
-            storage_type: if *on_disk {
-                VectorStorageType::ChunkedMmap
-            } else {
-                VectorStorageType::InRamChunkedMmap
-            },
+            storage_type: VectorStorageType::from_on_disk(*on_disk),
             index: index.clone(),
             quantization_config,
             multivector_config: *multivector_config,

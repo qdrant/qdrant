@@ -154,8 +154,6 @@ impl OptimizerSourceConfig {
 
     /// Build the unified [`SegmentOptimizerConfig`].
     pub fn build(self) -> SegmentOptimizerConfig {
-        let appendable_quantization = common::flags::feature_flags().appendable_quantization;
-
         let base_vector_data = self
             .dense_vectors
             .iter()
@@ -166,16 +164,12 @@ impl OptimizerSourceConfig {
                         size: input.size,
                         distance: input.distance,
                         index: Indexes::Plain {},
-                        storage_type: if input.on_disk.unwrap_or_default() {
-                            VectorStorageType::ChunkedMmap
-                        } else {
-                            VectorStorageType::InRamChunkedMmap
-                        },
-                        quantization_config: input
-                            .quantization_config
-                            .as_ref()
-                            .filter(|q| appendable_quantization && q.supports_appendable())
-                            .cloned(),
+                        storage_type: VectorStorageType::from_on_disk(
+                            input.on_disk.unwrap_or_default(),
+                        ),
+                        quantization_config: QuantizationConfig::for_appendable_segment(
+                            input.quantization_config.as_ref(),
+                        ),
                         multivector_config: input.multivector_config,
                         datatype: input.datatype,
                     },

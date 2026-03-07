@@ -871,6 +871,14 @@ pub enum QuantizationConfig {
 }
 
 impl QuantizationConfig {
+    /// If appendable_quantization feature is enabled and config supports appendable segments,
+    /// returns the config for use in appendable segment; otherwise `None`.
+    pub fn for_appendable_segment(opt: Option<&Self>) -> Option<Self> {
+        let appendable = common::flags::feature_flags().appendable_quantization;
+        opt.filter(|q| appendable && q.supports_appendable())
+            .cloned()
+    }
+
     /// Detect configuration mismatch against `other` that requires rebuilding
     ///
     /// Returns true only if both conditions are met:
@@ -1356,6 +1364,12 @@ impl Default for PayloadStorageType {
 }
 
 impl PayloadStorageType {
+    /// Convert user-facing `on_disk_payload` (true = store on disk) to storage type.
+    /// Returns `Mmap` or `InRamMmap`; for RocksDB-backed variants use collection config.
+    pub fn from_on_disk_payload(on_disk: bool) -> Self {
+        if on_disk { Self::Mmap } else { Self::InRamMmap }
+    }
+
     pub fn is_on_disk(&self) -> bool {
         match self {
             #[cfg(feature = "rocksdb")]
@@ -1568,6 +1582,16 @@ pub enum MultiVectorComparator {
 }
 
 impl VectorStorageType {
+    /// Convert user-facing `on_disk` (true = store on disk) to appendable vector storage type.
+    /// Returns `ChunkedMmap` or `InRamChunkedMmap`.
+    pub fn from_on_disk(on_disk: bool) -> Self {
+        if on_disk {
+            Self::ChunkedMmap
+        } else {
+            Self::InRamChunkedMmap
+        }
+    }
+
     /// Whether this storage type is a mmap on disk
     pub fn is_on_disk(&self) -> bool {
         match self {
