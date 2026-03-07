@@ -174,7 +174,7 @@ impl EdgeShard {
 
             segments.create_appendable_segment(
                 &segments_path,
-                cfg.segment_config().clone(),
+                cfg.plain_segment_config(),
                 Arc::new(payload_index_schema),
                 None,
             )?;
@@ -220,11 +220,6 @@ impl EdgeShard {
 
     pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeShardConfig> {
         self.config.read()
-    }
-
-    /// Segment config for compatibility and appendable segment creation.
-    pub fn segment_config(&self) -> segment::types::SegmentConfig {
-        self.config.read().segment_config()
     }
 
     pub fn path(&self) -> &Path {

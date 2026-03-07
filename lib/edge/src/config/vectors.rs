@@ -59,6 +59,17 @@ impl EdgeVectorParams {
         }
     }
 
+    /// Like `to_vector_data_config` but always uses plain index (no HNSW).
+    /// Use for appendable segment creation and when only base config is needed.
+    pub fn to_plain_vector_data_config(
+        &self,
+        global_quantization: Option<&segment::types::QuantizationConfig>,
+    ) -> VectorDataConfig {
+        let mut cfg = self.to_vector_data_config(global_quantization);
+        cfg.index = Indexes::Plain {};
+        cfg
+    }
+
     pub fn from_vector_data_config(v: &VectorDataConfig) -> Self {
         let VectorDataConfig {
             size,

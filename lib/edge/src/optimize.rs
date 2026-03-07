@@ -7,9 +7,7 @@ use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::HnswGlobalConfig;
 use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::{
-    OptimizerSourceConfig, TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes,
-};
+use shard::optimizers::config::{TEMP_SEGMENTS_PATH, get_deferred_points_threshold_bytes};
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
@@ -80,11 +78,9 @@ impl EdgeShard {
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
         let cfg = self.config();
-        let segment_config = cfg.segment_config();
+        let segment_optimizer_config = cfg.segment_optimizer_config();
         let hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
-        let segment_optimizer_config =
-            OptimizerSourceConfig::from_segment_config(&segment_config, hnsw_config).build();
         let threshold_config = Self::optimizer_thresholds_from_config(&*cfg);
         let default_segments_number = cfg.optimizers.get_number_segments();
 

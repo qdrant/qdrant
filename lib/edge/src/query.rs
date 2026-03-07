@@ -374,10 +374,7 @@ impl EdgeShard {
         let vector_data_config = self
             .config
             .read()
-            .segment_config()
-            .vector_data
-            .get(&mmr.using)
-            .cloned()
+            .vector_data_config(&mmr.using)
             .ok_or_else(|| {
                 OperationError::service_error(format!(
                     "vector data config for vector {} not found",

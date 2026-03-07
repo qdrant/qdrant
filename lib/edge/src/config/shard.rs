@@ -138,9 +138,107 @@ impl EdgeShardConfig {
         self.to_segment_config().is_compatible(other)
     }
 
-    /// Segment config for internal use (creating appendable segment, optimizer source).
-    pub fn segment_config(&self) -> SegmentConfig {
-        self.to_segment_config()
+    /// Segment config for creating appendable segments only.
+    /// Does not contain any HNSW configuration (plain index only).
+    pub fn plain_segment_config(&self) -> SegmentConfig {
+        let payload_storage_type = PayloadStorageType::from_on_disk_payload(self.on_disk_payload);
+        let vector_data = self
+            .vectors
+            .iter()
+            .map(|(name, p)| {
+                (
+                    name.clone(),
+                    p.to_plain_vector_data_config(self.quantization_config.as_ref()),
+                )
+            })
+            .collect();
+        let sparse_vector_data = self
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
+            .collect();
+        SegmentConfig {
+            vector_data,
+            sparse_vector_data,
+            payload_storage_type,
+        }
+    }
+
+    /// Build segment optimizer config from this config (for blocking optimizers).
+    /// Use this instead of converting to SegmentConfig first.
+    pub fn segment_optimizer_config(&self) -> shard::optimizers::config::SegmentOptimizerConfig {
+        use shard::optimizers::config::{
+            DenseVectorOptimizerConfig, SegmentOptimizerConfig, SparseVectorOptimizerConfig,
+        };
+
+        let payload_storage_type = PayloadStorageType::from_on_disk_payload(self.on_disk_payload);
+        let base_vector_data = self
+            .vectors
+            .iter()
+            .map(|(name, p)| {
+                (
+                    name.clone(),
+                    p.to_plain_vector_data_config(self.quantization_config.as_ref()),
+                )
+            })
+            .collect();
+        let base_sparse_vector_data = self
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| (name.clone(), p.to_sparse_vector_data_config()))
+            .collect();
+        let dense_vector = self
+            .vectors
+            .iter()
+            .map(|(name, p)| {
+                let hnsw_config = match &p.index {
+                    Indexes::Plain { .. } => self.hnsw_config,
+                    Indexes::Hnsw(h) => *h,
+                };
+                (
+                    name.clone(),
+                    DenseVectorOptimizerConfig {
+                        on_disk: Some(p.on_disk),
+                        hnsw_config,
+                        quantization_config:
+                            segment::types::QuantizationConfig::for_appendable_segment(
+                                self.quantization_config.as_ref(),
+                            ),
+                    },
+                )
+            })
+            .collect();
+        let sparse_vector = self
+            .sparse_vectors
+            .iter()
+            .map(|(name, p)| {
+                (
+                    name.clone(),
+                    SparseVectorOptimizerConfig {
+                        on_disk: Some(p.on_disk),
+                    },
+                )
+            })
+            .collect();
+
+        SegmentOptimizerConfig {
+            payload_storage_type,
+            base_vector_data,
+            base_sparse_vector_data,
+            dense_vector,
+            sparse_vector,
+        }
+    }
+
+    /// Return vector data config for a named vector (for read-only use, e.g. query).
+    /// Uses plain index; for optimizer/segment creation use segment_optimizer_config or plain_segment_config.
+    pub fn vector_data_config(
+        &self,
+        name: &VectorNameBuf,
+    ) -> Option<segment::types::VectorDataConfig> {
+        self.vectors
+            .get(name)
+            .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
     }
 
     pub fn save(&self, path: &Path) -> segment::common::operation_error::OperationResult<()> {
