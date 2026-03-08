@@ -4,7 +4,6 @@
 //! The collection layer provides the strategy via `OptimizationStrategy`.
 
 use std::collections::HashSet;
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -15,6 +14,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_disk_size;
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
+use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
@@ -154,7 +154,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     factory: &F,
     input_segments: &[LockedSegment], // Segments to optimize/merge into one
     output_segment_uuid: Uuid,        // The UUID of the resulting optimized segment
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     proxies: &[LockedSegment],
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
@@ -285,7 +285,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let mut optimized_segment = segment_builder.build(
         segments_path,
         output_segment_uuid,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         indexing_permit,
         stopped,
         &mut rng,
@@ -351,7 +351,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
     factory: &F,
     optimizing_segments: Vec<LockedSegment>,
     output_segment_uuid: Uuid,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     proxies: &[LockedSegment],
     permit: ResourcePermit, // IO resources for copying data
     resource_budget: ResourceBudget,
@@ -368,7 +368,7 @@ fn optimize_segment_propagate_changes<F: ?Sized + OptimizationStrategy>(
         factory,
         &optimizing_segments,
         output_segment_uuid,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         proxies,
         permit,
         resource_budget,
@@ -595,7 +595,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
     segment_holder: LockedSegmentHolder,
     input_segment_ids: Vec<SegmentId>,
     output_segment_uuid: Uuid,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     paths: &OptimizationPaths,
     permit: ResourcePermit,
     resource_budget: ResourceBudget,
@@ -718,7 +718,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
         factory,
         input_segments,
         output_segment_uuid,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         &locked_proxies,
         permit,
         resource_budget,

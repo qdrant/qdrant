@@ -5,6 +5,7 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -200,6 +201,17 @@ impl CollectionParams {
         }
 
         Ok(())
+    }
+
+    pub fn get_deferred_point_id(
+        &self,
+        hnsw_config: &HnswConfig,
+        deferred_point_threshold_bytes: Option<NonZeroUsize>,
+    ) -> Option<PointOffsetType> {
+        // Because we cannot predict multivector size,
+        // define here a constant-size inner vectors count for multivector.
+        const MULTIVECTOR_SIZE: usize = 16;
+        None
     }
 }
 

@@ -740,11 +740,7 @@ fn test_dense_deferred_points() {
     let hw_counter = HardwareCounterCell::new();
 
     // Create a segment with a deferred_points_threshold_bytes set
-    // Vector size: 4 f32 = 16 bytes per vector
-    // We set threshold to 200 bytes, so deferred threshold should be at internal_id 13
-    // (200 / 16 = 12.5, rounded up = 13 via div_ceil)
-    let deferred_threshold_bytes = std::num::NonZeroUsize::new(200).unwrap();
-
+    const DEFERRED_POINTS_ID: PointOffsetType = 13;
     let mut segment = build_segment(
         dir.path(),
         &SegmentConfig {
@@ -763,7 +759,7 @@ fn test_dense_deferred_points() {
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
-        Some(deferred_threshold_bytes),
+        Some(DEFERRED_POINTS_ID),
         true,
     )
     .unwrap();
@@ -832,7 +828,7 @@ fn test_dense_deferred_points() {
     let segment = load_segment(
         &path,
         Uuid::nil(),
-        Some(deferred_threshold_bytes),
+        Some(DEFERRED_POINTS_ID),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -844,7 +840,7 @@ fn test_dense_deferred_points() {
     );
     assert_eq!(
         segment.deferred_internal_id,
-        Some(13),
-        "Deferred internal ID should still be 13 after reopening"
+        Some(DEFERRED_POINTS_ID),
+        "Deferred internal ID should still be `DEFERRED_POINTS_ID` after reopening"
     );
 }

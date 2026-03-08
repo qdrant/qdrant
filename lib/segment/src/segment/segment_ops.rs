@@ -1,6 +1,5 @@
 use std::cmp::max;
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
 use std::path::Path;
 
 use bitvec::prelude::BitVec;
@@ -56,7 +55,6 @@ impl Segment {
             vector_index.update_vector(internal_id, vector, hw_counter)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
-        self.update_deferred_internal_id();
         Ok(())
     }
 
@@ -89,7 +87,6 @@ impl Segment {
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
             self.version_tracker.set_vector(&vector_name, Some(op_num));
         }
-        self.update_deferred_internal_id();
         Ok(())
     }
 
@@ -115,7 +112,6 @@ impl Segment {
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
-        self.update_deferred_internal_id();
         Ok(new_index)
     }
 
@@ -658,8 +654,10 @@ impl Segment {
     }
 
     pub fn has_deferred_points(&self) -> bool {
-        // Point is deferred if his internal ID >= deferred_internal_id
-        self.deferred_internal_id.is_some()
+        if let Some(deferred_from) = self.deferred_internal_id {
+            return self.is_appendable() && self.total_point_count() > deferred_from as usize;
+        };
+        false
     }
 
     pub(crate) fn update_deferred_internal_id(&mut self) {

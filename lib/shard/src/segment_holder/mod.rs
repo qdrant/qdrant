@@ -7,7 +7,6 @@ mod tests;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,6 +19,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
@@ -753,13 +753,13 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: SegmentConfig,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        deferred_points_threshold_bytes: Option<NonZeroUsize>,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(
             segments_path,
             Some(segment_config),
             payload_index_schema,
-            deferred_points_threshold_bytes,
+            deferred_internal_id,
             true,
         )?;
         self.add_new_locked(segment.clone());
@@ -788,7 +788,7 @@ impl SegmentHolder {
         segments_path: &Path,
         segment_config: Option<SegmentConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-        deferred_points_threshold_bytes: Option<NonZeroUsize>,
+        deferred_internal_id: Option<PointOffsetType>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
         let config = match segment_config {
@@ -812,7 +812,7 @@ impl SegmentHolder {
         let mut segment = build_segment(
             segments_path,
             &config,
-            deferred_points_threshold_bytes,
+            deferred_internal_id,
             save_version,
         )?;
 

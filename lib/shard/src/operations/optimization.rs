@@ -1,6 +1,4 @@
-use std::num::NonZeroUsize;
-
-use common::progress_tracker::ProgressTree;
+use common::{progress_tracker::ProgressTree, types::PointOffsetType};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -128,5 +126,5 @@ pub struct OptimizerThresholds {
     pub max_segment_size_kb: usize,
     pub memmap_threshold_kb: usize,
     pub indexing_threshold_kb: usize,
-    pub deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    pub deferred_internal_id: Option<PointOffsetType>,
 }

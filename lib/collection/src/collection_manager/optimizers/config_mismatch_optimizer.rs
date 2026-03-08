@@ -105,7 +105,7 @@ mod tests {
             max_segment_size_kb: usize::MAX,
             memmap_threshold_kb: usize::MAX,
             indexing_threshold_kb: 10,
-            deferred_points_threshold_bytes: None,
+            deferred_internal_id: None,
         };
 
         // Base segment
@@ -245,7 +245,7 @@ mod tests {
             max_segment_size_kb: usize::MAX,
             memmap_threshold_kb: usize::MAX,
             indexing_threshold_kb: 10,
-            deferred_points_threshold_bytes: None,
+            deferred_internal_id: None,
         };
 
         // Base segment
@@ -410,7 +410,7 @@ mod tests {
             max_segment_size_kb: usize::MAX,
             memmap_threshold_kb: usize::MAX,
             indexing_threshold_kb: 10,
-            deferred_points_threshold_bytes: None,
+            deferred_internal_id: None,
         };
         let quantization_config_vector1 =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {
