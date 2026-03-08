@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::{fmt, mem};
+use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
@@ -9,115 +9,6 @@ use segment::types::*;
 
 use super::quantization::*;
 use crate::repr::*;
-
-#[pyclass(name = "VectorDataConfig", from_py_object)]
-#[derive(Clone, Debug, Into, TransparentWrapper)]
-#[repr(transparent)]
-pub struct PyVectorDataConfig(pub VectorDataConfig);
-
-impl PyVectorDataConfig {
-    pub fn peel_map(map: HashMap<String, Self>) -> HashMap<String, VectorDataConfig>
-    where
-        Self: TransparentWrapper<VectorDataConfig>,
-    {
-        unsafe { mem::transmute(map) }
-    }
-
-    pub fn wrap_map_ref(map: &HashMap<String, VectorDataConfig>) -> &HashMap<String, Self>
-    where
-        Self: TransparentWrapper<VectorDataConfig>,
-    {
-        unsafe { mem::transmute(map) }
-    }
-}
-
-#[pyclass_repr]
-#[pymethods]
-impl PyVectorDataConfig {
-    #[new]
-    #[pyo3(signature = (size, distance, quantization_config=None, multivector_config=None, datatype=None))]
-    pub fn new(
-        size: usize,
-        distance: PyDistance,
-        quantization_config: Option<PyQuantizationConfig>,
-        multivector_config: Option<PyMultiVectorConfig>,
-        datatype: Option<PyVectorStorageDatatype>,
-    ) -> Self {
-        Self(VectorDataConfig {
-            size,
-            distance: Distance::from(distance),
-            storage_type: VectorStorageType::InRamChunkedMmap,
-            index: Indexes::Plain {},
-            quantization_config: quantization_config.map(QuantizationConfig::from),
-            multivector_config: multivector_config.map(MultiVectorConfig::from),
-            datatype: datatype.map(VectorStorageDatatype::from),
-        })
-    }
-
-    #[getter]
-    pub fn size(&self) -> usize {
-        self.0.size
-    }
-
-    #[getter]
-    pub fn distance(&self) -> PyDistance {
-        PyDistance::from(self.0.distance)
-    }
-
-    #[getter]
-    pub fn storage_type(&self) -> PyVectorStorageType {
-        PyVectorStorageType::from(self.0.storage_type)
-    }
-
-    #[getter]
-    pub fn index(&self) -> PyIndexes {
-        PyIndexes(self.0.index.clone())
-    }
-
-    #[getter]
-    pub fn quantization_config(&self) -> Option<PyQuantizationConfig> {
-        self.0.quantization_config.clone().map(PyQuantizationConfig)
-    }
-
-    #[getter]
-    pub fn multivector_config(&self) -> Option<PyMultiVectorConfig> {
-        self.0.multivector_config.map(PyMultiVectorConfig)
-    }
-
-    #[getter]
-    pub fn datatype(&self) -> Option<PyVectorStorageDatatype> {
-        self.0.datatype.map(PyVectorStorageDatatype::from)
-    }
-
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
-impl PyVectorDataConfig {
-    fn _getters(self) {
-        // Every field should have a getter method
-        let VectorDataConfig {
-            size: _,
-            distance: _,
-            storage_type: _,
-            index: _,
-            quantization_config: _,
-            multivector_config: _,
-            datatype: _,
-        } = self.0;
-    }
-}
-
-impl<'py> IntoPyObject<'py> for &PyVectorDataConfig {
-    type Target = PyVectorDataConfig;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr; // Infallible
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        IntoPyObject::into_pyobject(self.clone(), py)
-    }
-}
 
 #[pyclass(name = "Distance", from_py_object)]
 #[derive(Copy, Clone, Debug)]
@@ -166,61 +57,6 @@ impl From<PyDistance> for Distance {
             PyDistance::Euclid => Distance::Euclid,
             PyDistance::Dot => Distance::Dot,
             PyDistance::Manhattan => Distance::Manhattan,
-        }
-    }
-}
-
-#[pyclass(name = "VectorStorageType", from_py_object)]
-#[derive(Copy, Clone, Debug)]
-pub enum PyVectorStorageType {
-    Memory,
-    Mmap,
-    ChunkedMmap,
-    InRamChunkedMmap,
-    InRamMmap,
-}
-
-#[pymethods]
-impl PyVectorStorageType {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
-impl Repr for PyVectorStorageType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let repr = match self {
-            Self::Memory => "Memory",
-            Self::Mmap => "Mmap",
-            Self::ChunkedMmap => "ChunkedMmap",
-            Self::InRamChunkedMmap => "InRamChunkedMmap",
-            Self::InRamMmap => "InRamMmap",
-        };
-
-        f.simple_enum::<Self>(repr)
-    }
-}
-
-impl From<VectorStorageType> for PyVectorStorageType {
-    fn from(storage_type: VectorStorageType) -> Self {
-        match storage_type {
-            VectorStorageType::Memory => PyVectorStorageType::Memory,
-            VectorStorageType::Mmap => PyVectorStorageType::Mmap,
-            VectorStorageType::ChunkedMmap => PyVectorStorageType::ChunkedMmap,
-            VectorStorageType::InRamChunkedMmap => PyVectorStorageType::InRamChunkedMmap,
-            VectorStorageType::InRamMmap => PyVectorStorageType::InRamMmap,
-        }
-    }
-}
-
-impl From<PyVectorStorageType> for VectorStorageType {
-    fn from(storage_type: PyVectorStorageType) -> Self {
-        match storage_type {
-            PyVectorStorageType::Memory => VectorStorageType::Memory,
-            PyVectorStorageType::Mmap => VectorStorageType::Mmap,
-            PyVectorStorageType::ChunkedMmap => VectorStorageType::ChunkedMmap,
-            PyVectorStorageType::InRamChunkedMmap => VectorStorageType::InRamChunkedMmap,
-            PyVectorStorageType::InRamMmap => VectorStorageType::InRamMmap,
         }
     }
 }

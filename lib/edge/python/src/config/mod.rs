@@ -1,15 +1,16 @@
+pub mod optimizers;
 pub mod quantization;
 pub mod sparse_vector_data;
 pub mod vector_data;
 
 use std::collections::HashMap;
-use std::fmt;
 
 use derive_more::Into;
-use edge::config::{EdgeOptimizersConfig, EdgeShardConfig};
+use edge::config::EdgeShardConfig;
 use pyo3::prelude::*;
-use segment::types::{PayloadStorageType, QuantizationConfig, VectorNameBuf};
+use segment::types::{QuantizationConfig, VectorNameBuf};
 
+pub use self::optimizers::*;
 pub use self::quantization::*;
 pub use self::sparse_vector_data::*;
 pub use self::vector_data::*;
@@ -94,114 +95,6 @@ impl PyEdgeConfig {
             quantization_config: _,
             optimizers: _,
         } = self.0;
-    }
-}
-
-/// Python wrapper for optimizer-related config (optional in EdgeConfig).
-#[pyclass(name = "EdgeOptimizersConfig", from_py_object)]
-#[derive(Clone, Debug)]
-pub struct PyEdgeOptimizersConfig(pub EdgeOptimizersConfig);
-
-#[pyclass_repr]
-#[pymethods]
-impl PyEdgeOptimizersConfig {
-    #[new]
-    #[pyo3(signature = (deleted_threshold=None, vacuum_min_vector_number=None, default_segment_number=0, max_segment_size=None, indexing_threshold=None, prevent_unoptimized=None))]
-    pub fn new(
-        deleted_threshold: Option<f64>,
-        vacuum_min_vector_number: Option<usize>,
-        default_segment_number: usize,
-        max_segment_size: Option<usize>,
-        indexing_threshold: Option<usize>,
-        prevent_unoptimized: Option<bool>,
-    ) -> Self {
-        Self(EdgeOptimizersConfig {
-            deleted_threshold: deleted_threshold.unwrap_or(0.2),
-            vacuum_min_vector_number: vacuum_min_vector_number.unwrap_or(1000),
-            default_segment_number,
-            max_segment_size,
-            indexing_threshold,
-            prevent_unoptimized,
-        })
-    }
-
-    #[getter]
-    pub fn deleted_threshold(&self) -> f64 {
-        self.0.deleted_threshold
-    }
-
-    #[getter]
-    pub fn vacuum_min_vector_number(&self) -> usize {
-        self.0.vacuum_min_vector_number
-    }
-
-    #[getter]
-    pub fn default_segment_number(&self) -> usize {
-        self.0.default_segment_number
-    }
-
-    #[getter]
-    pub fn max_segment_size(&self) -> Option<usize> {
-        self.0.max_segment_size
-    }
-
-    #[getter]
-    pub fn indexing_threshold(&self) -> Option<usize> {
-        self.0.indexing_threshold
-    }
-
-    #[getter]
-    pub fn prevent_unoptimized(&self) -> Option<bool> {
-        self.0.prevent_unoptimized
-    }
-
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
-#[pyclass(name = "PayloadStorageType", from_py_object)]
-#[derive(Copy, Clone, Debug)]
-pub enum PyPayloadStorageType {
-    Mmap,
-    InRamMmap,
-}
-
-#[pymethods]
-impl PyPayloadStorageType {
-    pub fn __repr__(&self) -> String {
-        self.repr()
-    }
-}
-
-impl Repr for PyPayloadStorageType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let repr = match self {
-            PyPayloadStorageType::Mmap => "Mmap",
-            PyPayloadStorageType::InRamMmap => "InRamMmap",
-        };
-
-        f.simple_enum::<Self>(repr)
-    }
-}
-
-impl From<PayloadStorageType> for PyPayloadStorageType {
-    fn from(storage_type: PayloadStorageType) -> Self {
-        #[allow(unreachable_patterns)]
-        match storage_type {
-            PayloadStorageType::Mmap => PyPayloadStorageType::Mmap,
-            PayloadStorageType::InRamMmap => PyPayloadStorageType::InRamMmap,
-            _ => unimplemented!("RocksDB-backed storage types are not supported by Qdrant Edge"),
-        }
-    }
-}
-
-impl From<PyPayloadStorageType> for PayloadStorageType {
-    fn from(storage_type: PyPayloadStorageType) -> Self {
-        match storage_type {
-            PyPayloadStorageType::Mmap => PayloadStorageType::Mmap,
-            PyPayloadStorageType::InRamMmap => PayloadStorageType::InRamMmap,
-        }
     }
 }
 

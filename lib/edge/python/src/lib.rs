@@ -41,18 +41,14 @@ mod qdrant_edge {
         PyScalarQuantizationConfig, PyScalarType,
     };
     #[pymodule_export]
-    use super::config::sparse_vector_data::{
-        PyEdgeSparseVectorParams, PyModifier, PySparseIndexConfig, PySparseIndexType,
-        PySparseVectorDataConfig, PySparseVectorStorageType,
-    };
+    use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
     #[pymodule_export]
     use super::config::vector_data::{
         PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMultiVectorComparator,
-        PyMultiVectorConfig, PyPlainIndexConfig, PyVectorDataConfig, PyVectorStorageDatatype,
-        PyVectorStorageType,
+        PyMultiVectorConfig, PyPlainIndexConfig, PyVectorStorageDatatype,
     };
     #[pymodule_export]
-    use super::config::{PyEdgeConfig, PyEdgeOptimizersConfig, PyPayloadStorageType};
+    use super::config::{PyEdgeConfig, PyEdgeOptimizersConfig};
     #[pymodule_export]
     use super::count::PyCountRequest;
     #[pymodule_export]
