@@ -6,7 +6,9 @@ use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::HnswGlobalConfig;
-use shard::optimizers::config::TEMP_SEGMENTS_PATH;
+use shard::optimizers::config::{
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
+};
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
@@ -102,8 +104,12 @@ impl EdgeShard {
                 hnsw_global_config.clone(),
             )),
             Arc::new(VacuumOptimizer::new(
-                cfg.optimizers.deleted_threshold,
-                cfg.optimizers.vacuum_min_vector_number,
+                cfg.optimizers
+                    .deleted_threshold
+                    .unwrap_or(DEFAULT_DELETED_THRESHOLD),
+                cfg.optimizers
+                    .vacuum_min_vector_number
+                    .unwrap_or(DEFAULT_VACUUM_MIN_VECTOR_NUMBER),
                 threshold_config,
                 segments_path.clone(),
                 temp_segments_path.clone(),
@@ -129,10 +135,7 @@ mod tests {
 
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-    use segment::types::{
-        Distance, ExtendedPointId, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig,
-        VectorStorageType, WithPayloadInterface, WithVector,
-    };
+    use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
     use shard::count::CountRequestInternal;
     use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
@@ -141,7 +144,8 @@ mod tests {
     use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
-    use crate::EdgeShard;
+    use crate::config::vectors::EdgeVectorParams;
+    use crate::{EdgeShard, EdgeShardConfig};
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -152,7 +156,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -160,7 +164,7 @@ mod tests {
 
         duplicate_single_segment(dir.path());
 
-        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         assert_eq!(reopened.info().segments_count, 2);
 
         let optimized = reopened.optimize().unwrap();
@@ -177,7 +181,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -212,7 +216,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=100).map(point).collect::<Vec<_>>();
         shard
@@ -235,7 +239,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let optimized = shard.optimize().unwrap();
         assert!(!optimized, "empty shard should not trigger optimization");
@@ -253,7 +257,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -261,7 +265,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
         let info = reopened.info();
         assert!(
@@ -298,7 +302,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
         shard
             .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
             .unwrap();
@@ -306,7 +310,7 @@ mod tests {
 
         multiply_segments(dir.path(), target_count);
 
-        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         // First explicit optimization triggers merge.
         reopened.optimize().unwrap();
         let segments_after_first = reopened.info().segments_count;
@@ -331,7 +335,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -363,7 +367,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         // Only 100 points total (below DEFAULT_VACUUM_MIN_VECTOR_NUMBER=1000)
         let points = (1..=100).map(point).collect::<Vec<_>>();
@@ -396,7 +400,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -452,7 +456,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -502,7 +506,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -532,7 +536,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -566,7 +570,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         // Insert 1000 points, then delete 250 (25% — above DEFAULT_DELETED_THRESHOLD=20%)
         let points = (1..=1000).map(point).collect::<Vec<_>>();
@@ -583,7 +587,7 @@ mod tests {
         multiply_segments(dir.path(), target_count);
 
         // Explicit optimization (both merge and vacuum should run)
-        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
         reopened.optimize().unwrap();
 
         let info = reopened.info();
@@ -624,7 +628,7 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let shard = EdgeShard::load_with_segment_config(dir.path(), Some(test_config())).unwrap();
+        let shard = EdgeShard::load(dir.path(), Some(test_config())).unwrap();
 
         let points = (1..=1000).map(point).collect::<Vec<_>>();
         shard
@@ -642,7 +646,7 @@ mod tests {
         drop(shard);
 
         // Reload the shard
-        let reopened = EdgeShard::load_with_segment_config(dir.path(), None).unwrap();
+        let reopened = EdgeShard::load(dir.path(), None).unwrap();
 
         let count = reopened
             .count(CountRequestInternal {
@@ -695,22 +699,25 @@ mod tests {
         }
     }
 
-    fn test_config() -> SegmentConfig {
-        SegmentConfig {
-            vector_data: HashMap::from([(
+    fn test_config() -> EdgeShardConfig {
+        EdgeShardConfig {
+            on_disk_payload: false,
+            vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),
-                VectorDataConfig {
+                EdgeVectorParams {
                     size: 1,
                     distance: Distance::Dot,
-                    storage_type: VectorStorageType::ChunkedMmap,
-                    index: Indexes::Plain {},
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    on_disk: None,
+                    hnsw_config: None,
                 },
             )]),
-            sparse_vector_data: HashMap::new(),
-            payload_storage_type: PayloadStorageType::Mmap,
+            sparse_vectors: HashMap::new(),
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            optimizers: Default::default(),
         }
     }
 

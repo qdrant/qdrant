@@ -14,7 +14,7 @@ pub mod utils;
 use std::path::PathBuf;
 
 use bytemuck::TransparentWrapperAlloc as _;
-use edge::config::EdgeShardConfig;
+use edge::config::shard::EdgeShardConfig;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;

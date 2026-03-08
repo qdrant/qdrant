@@ -17,7 +17,6 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
-pub use config::{EDGE_CONFIG_FILE, EdgeOptimizersConfig, EdgeShardConfig};
 use fs_err as fs;
 pub use info::ShardInfo;
 use parking_lot::Mutex;
@@ -31,6 +30,9 @@ use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
+
+use crate::config::optimizers::EdgeOptimizersConfig;
+use crate::config::shard::{EDGE_CONFIG_FILE, EdgeShardConfig};
 
 #[derive(Debug)]
 pub struct EdgeShard {

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use fs_err as fs;
+use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{
@@ -206,16 +206,13 @@ impl EdgeShardConfig {
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         let config_path = path.join(EDGE_CONFIG_FILE);
-        let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| OperationError::service_error(e.to_string()))?;
-        fs::write(&config_path, contents).map_err(|e| {
+        atomic_save_json(&config_path, self).map_err(|e| {
             OperationError::service_error(format!(
                 "failed to write {}: {}",
                 config_path.display(),
                 e
             ))
-        })?;
-        Ok(())
+        })
     }
 
     pub fn load(path: &Path) -> Option<OperationResult<Self>> {
@@ -223,23 +220,7 @@ impl EdgeShardConfig {
         if !config_path.exists() {
             return None;
         }
-        let contents = match fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(e) => {
-                return Some(Err(OperationError::service_error(format!(
-                    "failed to read {}: {}",
-                    config_path.display(),
-                    e
-                ))));
-            }
-        };
-        Some(serde_json::from_str(&contents).map_err(|e| {
-            OperationError::service_error(format!(
-                "failed to parse {}: {}",
-                config_path.display(),
-                e
-            ))
-        }))
+        Some(read_json(&config_path).map_err(OperationError::from))
     }
 
     pub fn set_hnsw_config(&mut self, hnsw_config: HnswConfig) {

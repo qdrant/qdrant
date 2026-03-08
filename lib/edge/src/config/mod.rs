@@ -4,11 +4,6 @@
 //! per-vector quantization. Use `on_disk_payload`, `on_disk` per vector, and
 //! global `quantization_config` / `hnsw_config`.
 
-mod optimizers;
-mod shard;
-mod vectors;
-
-pub use optimizers::EdgeOptimizersConfig;
-pub use shard::{EDGE_CONFIG_FILE, EdgeShardConfig};
-#[allow(unused_imports)]
-pub use vectors::{EdgeSparseVectorParams, EdgeVectorParams};
+pub mod optimizers;
+pub mod shard;
+pub mod vectors;

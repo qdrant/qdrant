@@ -391,7 +391,7 @@ class EdgeOptimizersConfig:
             self,
             deleted_threshold: Optional[float] = None,
             vacuum_min_vector_number: Optional[int] = None,
-            default_segment_number: int = 0,
+            default_segment_number: Optional[int] = None,
             max_segment_size: Optional[int] = None,
             indexing_threshold: Optional[int] = None,
             prevent_unoptimized: Optional[bool] = None,

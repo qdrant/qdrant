@@ -2,8 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, get_indexing_threshold_kb,
-    get_max_segment_size_kb, get_number_segments,
+    get_indexing_threshold_kb, get_max_segment_size_kb, get_number_segments,
 };
 
 /// Optimizer-related parameters for the edge shard.
@@ -11,17 +10,17 @@ use shard::optimizers::config::{
 /// Subset of collection-level `OptimizersConfig`: excludes `memmap_threshold`
 /// (deprecated), `flush_interval_sec` (edge does not flush on a timer), and
 /// `max_optimization_threads` (optimizations are manual).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", default)]
 pub struct EdgeOptimizersConfig {
     /// Minimal fraction of deleted vectors in a segment required to run vacuum.
-    #[serde(default = "default_deleted_threshold")]
-    pub deleted_threshold: f64,
+    #[serde(default)]
+    pub deleted_threshold: Option<f64>,
     /// Minimal number of vectors in a segment required to run vacuum.
-    #[serde(default = "default_vacuum_min_vector_number")]
-    pub vacuum_min_vector_number: usize,
+    #[serde(default)]
+    pub vacuum_min_vector_number: Option<usize>,
     /// Target number of segments. If 0, chosen automatically from CPU count.
-    pub default_segment_number: usize,
+    pub default_segment_number: Option<usize>,
     /// Max segment size in KB. If not set, derived from CPU count.
     #[serde(alias = "max_segment_size_kb")]
     pub max_segment_size: Option<usize>,
@@ -33,30 +32,9 @@ pub struct EdgeOptimizersConfig {
     pub prevent_unoptimized: Option<bool>,
 }
 
-fn default_deleted_threshold() -> f64 {
-    DEFAULT_DELETED_THRESHOLD
-}
-
-fn default_vacuum_min_vector_number() -> usize {
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER
-}
-
-impl Default for EdgeOptimizersConfig {
-    fn default() -> Self {
-        Self {
-            deleted_threshold: default_deleted_threshold(),
-            vacuum_min_vector_number: default_vacuum_min_vector_number(),
-            default_segment_number: 0,
-            max_segment_size: None,
-            indexing_threshold: None,
-            prevent_unoptimized: None,
-        }
-    }
-}
-
 impl EdgeOptimizersConfig {
     pub fn get_number_segments(&self) -> usize {
-        get_number_segments(self.default_segment_number)
+        get_number_segments(self.default_segment_number.unwrap_or_default())
     }
 
     pub fn get_indexing_threshold_kb(&self) -> usize {

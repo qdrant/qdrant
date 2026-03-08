@@ -1,6 +1,6 @@
 //! Python wrapper for edge optimizer config (optional in EdgeConfig).
 
-use edge::config::EdgeOptimizersConfig;
+use edge::config::optimizers::EdgeOptimizersConfig;
 use pyo3::prelude::*;
 
 use crate::repr::*;
@@ -13,18 +13,18 @@ pub struct PyEdgeOptimizersConfig(pub EdgeOptimizersConfig);
 #[pymethods]
 impl PyEdgeOptimizersConfig {
     #[new]
-    #[pyo3(signature = (deleted_threshold=None, vacuum_min_vector_number=None, default_segment_number=0, max_segment_size=None, indexing_threshold=None, prevent_unoptimized=None))]
+    #[pyo3(signature = (deleted_threshold=None, vacuum_min_vector_number=None, default_segment_number=None, max_segment_size=None, indexing_threshold=None, prevent_unoptimized=None))]
     pub fn new(
         deleted_threshold: Option<f64>,
         vacuum_min_vector_number: Option<usize>,
-        default_segment_number: usize,
+        default_segment_number: Option<usize>,
         max_segment_size: Option<usize>,
         indexing_threshold: Option<usize>,
         prevent_unoptimized: Option<bool>,
     ) -> Self {
         Self(EdgeOptimizersConfig {
-            deleted_threshold: deleted_threshold.unwrap_or(0.2),
-            vacuum_min_vector_number: vacuum_min_vector_number.unwrap_or(1000),
+            deleted_threshold,
+            vacuum_min_vector_number,
             default_segment_number,
             max_segment_size,
             indexing_threshold,
@@ -33,17 +33,17 @@ impl PyEdgeOptimizersConfig {
     }
 
     #[getter]
-    pub fn deleted_threshold(&self) -> f64 {
+    pub fn deleted_threshold(&self) -> Option<f64> {
         self.0.deleted_threshold
     }
 
     #[getter]
-    pub fn vacuum_min_vector_number(&self) -> usize {
+    pub fn vacuum_min_vector_number(&self) -> Option<usize> {
         self.0.vacuum_min_vector_number
     }
 
     #[getter]
-    pub fn default_segment_number(&self) -> usize {
+    pub fn default_segment_number(&self) -> Option<usize> {
         self.0.default_segment_number
     }
 

@@ -6,7 +6,7 @@ pub mod vector_data;
 use std::collections::HashMap;
 
 use derive_more::Into;
-use edge::config::EdgeShardConfig;
+use edge::config::shard::EdgeShardConfig;
 use pyo3::prelude::*;
 use segment::types::{QuantizationConfig, VectorNameBuf};
 
