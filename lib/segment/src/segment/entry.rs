@@ -873,7 +873,7 @@ impl NonAppendableSegmentEntry for Segment {
         if let Some(deferred_from) = self.deferred_internal_id
             && let Some(internal_id) = self.id_tracker.borrow().internal_id(point_id)
         {
-            return internal_id >= deferred_from;
+            return self.is_appendable() && internal_id >= deferred_from;
         };
         false
     }
