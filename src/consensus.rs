@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use std::{cmp, fmt, thread};
+use std::{cmp, thread};
 
 use anyhow::{Context as _, anyhow};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
@@ -1142,14 +1142,16 @@ impl RaftMessageBroker {
             let failed_to_forward = |message: &RaftMessage, description: &str| {
                 let peer_id = message.to;
 
-                let is_debug = log::max_level() >= log::Level::Debug;
-                let space = if is_debug { " " } else { "" };
-                let message: &dyn fmt::Debug = if is_debug { &message } else { &"" }; // TODO: `fmt::Debug` for `""` prints `""`... 😒
-
-                log::error!(
-                    "Failed to forward message{space}{message:?} to message sender task {peer_id}: \
-                     {description}"
-                );
+                if log::max_level() >= log::Level::Debug {
+                    log::error!(
+                        "Failed to forward message {message:?} to message sender task {peer_id}: \
+                         {description}"
+                    );
+                } else {
+                    log::error!(
+                        "Failed to forward message to message sender task {peer_id}: {description}"
+                    );
+                }
             };
 
             match sender.send(message).map_err(|err| *err) {
