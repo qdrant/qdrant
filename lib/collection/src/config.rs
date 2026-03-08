@@ -238,7 +238,8 @@ impl CollectionParams {
                     element_bytes * dim
                 };
 
-                (threshold_bytes.div_ceil(vector_bytes)) as PointOffsetType
+                let deferred_from = threshold_bytes.div_ceil(vector_bytes);
+                PointOffsetType::try_from(deferred_from).unwrap_or(PointOffsetType::MAX)
             })
             .min()
     }
