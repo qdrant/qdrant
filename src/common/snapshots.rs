@@ -48,8 +48,12 @@ pub async fn create_shard_snapshot(
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
         .await?;
 
+    // Persist all snapshot components.
+    // If this fails midway, some components might remain on disk while others are deleted on drop.
     for temp_path in temp_paths {
+        let path = temp_path.to_path_buf();
         temp_path.keep().map_err(|err| {
+            log::error!("Failed to persist snapshot component at {}: {err}", path.display());
             StorageError::service_error(format!(
                 "Failed to persist shard snapshot component for {}: {err}",
                 snapshot.name,

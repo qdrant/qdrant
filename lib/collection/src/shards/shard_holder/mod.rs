@@ -45,7 +45,6 @@ use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{SnapshotDescription, get_checksum_path};
-// use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{
     CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo,
 };
@@ -1191,7 +1190,6 @@ impl ShardHolder {
                 .store_file(temp_file.path(), &snapshot_path)
                 .await?;
 
-            let _ = temp_file.keep();
 
             let snapshot_temp_path = tempfile::TempPath::from_path(snapshot_path);
             let checksum_temp_path =
