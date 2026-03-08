@@ -10,6 +10,7 @@ use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::ShardId;
 use collection::shards::transfer::RecoveryStage;
+use fs_err as fs;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use storage::content_manager::errors::StorageError;
@@ -48,20 +49,33 @@ pub async fn create_shard_snapshot(
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
         .await?;
 
+    let mut kept_paths: Vec<std::path::PathBuf> = Vec::new();
     // Persist all snapshot components.
-    // If this fails midway, some components might remain on disk while others are deleted on drop.
+    // If this fails midway, roll back already persisted components to avoid leaving partial snapshots on disk.
     for temp_path in temp_paths {
         let path = temp_path.to_path_buf();
-        temp_path.keep().map_err(|err| {
+        if let Err(err) = temp_path.keep() {
             log::error!(
                 "Failed to persist snapshot component at {}: {err}",
                 path.display()
             );
-            StorageError::service_error(format!(
+
+            // Roll back already persisted components
+            for kept_path in kept_paths {
+                if let Err(rollback_err) = fs::remove_file(&kept_path) {
+                    log::warn!(
+                        "Failed to roll back snapshot component at {}: {rollback_err}",
+                        kept_path.display()
+                    );
+                }
+            }
+
+            return Err(StorageError::service_error(format!(
                 "Failed to persist shard snapshot component for {}: {err}",
                 snapshot.name,
-            ))
-        })?;
+            )));
+        }
+        kept_paths.push(path);
     }
 
     Ok(snapshot)

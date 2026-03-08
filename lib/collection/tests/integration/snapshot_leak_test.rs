@@ -104,15 +104,14 @@ async fn test_create_shard_snapshot_cleanup() {
     for path in file_paths {
         assert!(
             !path.exists(),
-            "File {:?} should be deleted on guard drop",
-            path
+            "File {path:?} should be deleted on guard drop"
         );
     }
 
     // Check snapshots directory is also empty
-    let shard_snapshots_path = snapshots_path.path().join(format!("shards/{}", shard_id));
+    let shard_snapshots_path = snapshots_path.path().join(format!("shards/{shard_id}"));
     if shard_snapshots_path.exists() {
-        let entries = std::fs::read_dir(shard_snapshots_path).unwrap();
+        let entries = fs_err::read_dir(shard_snapshots_path).unwrap();
         let count = entries.count();
         assert_eq!(
             count, 0,
