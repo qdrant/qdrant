@@ -44,7 +44,8 @@ use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::snapshot_ops::{SnapshotDescription, get_checksum_path};
+// use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{
     CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo,
 };
@@ -1125,7 +1126,9 @@ impl ShardHolder {
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
-    ) -> CollectionResult<impl Future<Output = CollectionResult<SnapshotDescription>> + use<>> {
+    ) -> CollectionResult<
+        impl Future<Output = CollectionResult<(SnapshotDescription, Vec<tempfile::TempPath>)>> + use<>,
+    > {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is canceled
 
@@ -1186,11 +1189,18 @@ impl ShardHolder {
 
             let snapshot_description = snapshot_manager
                 .store_file(temp_file.path(), &snapshot_path)
-                .await;
-            if snapshot_description.is_ok() {
-                let _ = temp_file.keep();
-            }
-            snapshot_description
+                .await?;
+
+            let _ = temp_file.keep();
+
+            let snapshot_temp_path = tempfile::TempPath::from_path(snapshot_path);
+            let checksum_temp_path =
+                tempfile::TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+
+            Ok((
+                snapshot_description,
+                vec![snapshot_temp_path, checksum_temp_path],
+            ))
         };
 
         Ok(future)

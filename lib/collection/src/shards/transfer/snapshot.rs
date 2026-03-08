@@ -4,11 +4,11 @@ use std::sync::Arc;
 use common::defaults;
 use parking_lot::Mutex;
 use semver::Version;
-use tempfile::TempPath;
 
+// Removed TempPath import
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
-use crate::operations::snapshot_ops::{SnapshotPriority, get_checksum_path};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
@@ -210,25 +210,12 @@ pub(super) async fn transfer_snapshot(
         // Create shard snapshot
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-        let snapshot_description = shard_holder_read
+        let (snapshot_description, snapshot_temp_paths_from_creator) = shard_holder_read
             .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
             .await?
             .await?;
 
-        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
-            .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
-            .await
-            .map(TempPath::from_path)
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
-                ))
-            })?;
-        let snapshot_checksum_temp_path =
-            TempPath::from_path(get_checksum_path(&snapshot_temp_path));
-        snapshot_temp_paths.push(snapshot_temp_path);
-        snapshot_temp_paths.push(snapshot_checksum_temp_path);
+        snapshot_temp_paths.extend(snapshot_temp_paths_from_creator);
 
         let encoded_snapshot_name = urlencoding::encode(&snapshot_description.name);
 

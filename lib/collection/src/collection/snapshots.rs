@@ -10,6 +10,7 @@ use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
+// Removed TempPath
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
@@ -152,7 +153,7 @@ impl Collection {
         })?;
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
-        snapshot_manager
+        let snapshot_description = snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
             .map_err(|err| {
@@ -160,7 +161,10 @@ impl Collection {
                     "failed to store snapshot archive to {}: {err}",
                     snapshot_temp_arc_file.path().display()
                 ))
-            })
+            })?;
+
+        // Archive is stored, persistent. Checksum is also stored.
+        Ok(snapshot_description)
     }
 
     /// Restore collection from snapshot
@@ -287,7 +291,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
         temp_dir: &Path,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotDescription, Vec<tempfile::TempPath>)> {
         let snapshot_creator = self
             .shards_holder
             .read()

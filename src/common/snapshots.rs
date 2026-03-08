@@ -44,9 +44,18 @@ pub async fn create_shard_snapshot(
         .running_snapshots
         .measure_scope();
 
-    let snapshot = collection
+    let (snapshot, temp_paths) = collection
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
         .await?;
+
+    for temp_path in temp_paths {
+        temp_path.keep().map_err(|err| {
+            StorageError::service_error(format!(
+                "Failed to persist shard snapshot component for {}: {err}",
+                snapshot.name,
+            ))
+        })?;
+    }
 
     Ok(snapshot)
 }
