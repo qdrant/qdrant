@@ -53,7 +53,10 @@ pub async fn create_shard_snapshot(
     for temp_path in temp_paths {
         let path = temp_path.to_path_buf();
         temp_path.keep().map_err(|err| {
-            log::error!("Failed to persist snapshot component at {}: {err}", path.display());
+            log::error!(
+                "Failed to persist snapshot component at {}: {err}",
+                path.display()
+            );
             StorageError::service_error(format!(
                 "Failed to persist shard snapshot component for {}: {err}",
                 snapshot.name,

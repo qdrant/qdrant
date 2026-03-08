@@ -1190,7 +1190,6 @@ impl ShardHolder {
                 .store_file(temp_file.path(), &snapshot_path)
                 .await?;
 
-
             let snapshot_temp_path = tempfile::TempPath::from_path(snapshot_path);
             let checksum_temp_path =
                 tempfile::TempPath::from_path(get_checksum_path(&snapshot_temp_path));
