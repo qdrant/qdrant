@@ -165,14 +165,12 @@ pub fn build_segment_2(path: &Path) -> Segment {
 /// This allows testing of deferred point behavior in the segment.
 pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
     use std::collections::HashMap;
-    use std::num::NonZeroUsize;
 
     use segment::segment_constructor::build_segment;
     use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
 
     let dim = 4;
-    // Set threshold so that only points 4 and 5 are deferred (internal_id >= 3)
-    let deferred_threshold_bytes = NonZeroUsize::new(48).unwrap();
+    let deferred_internal_id = 4;
     let hw_counter = HardwareCounterCell::new();
 
     // Build segment with deferred threshold
@@ -194,7 +192,7 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
-        Some(deferred_threshold_bytes),
+        Some(deferred_internal_id),
         true,
     )
     .unwrap();

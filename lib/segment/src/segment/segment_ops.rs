@@ -659,49 +659,6 @@ impl Segment {
         };
         false
     }
-
-    pub(crate) fn update_deferred_internal_id(&mut self) {
-        if self.deferred_internal_id.is_some()
-            || !self.is_appendable()
-            || self.config().vector_data.is_empty()
-        {
-            return;
-        }
-
-        if let Some(deferred_points_threshold_bytes) = self.deferred_points_threshold_bytes {
-            let deferred_internal_id = self
-                .vector_data
-                .iter()
-                .filter(|(vector_name, _)| {
-                    // Only consider vectors without multivector config
-                    self.segment_config
-                        .vector_data
-                        .get(vector_name.as_str())
-                        .is_some_and(|config| config.multivector_config.is_none())
-                })
-                .filter_map(|(_, vector_data)| -> Option<PointOffsetType> {
-                    let storage = vector_data.vector_storage.borrow();
-                    let vector_size: NonZeroUsize = storage
-                        .get_vector_layout()
-                        .ok()
-                        .map(|layout| layout.size())
-                        .and_then(NonZeroUsize::new)?;
-                    let deferred_internal_id = deferred_points_threshold_bytes
-                        .get()
-                        .div_ceil(vector_size.get());
-                    if deferred_internal_id < storage.total_vector_count() {
-                        Some(deferred_internal_id as PointOffsetType)
-                    } else {
-                        None
-                    }
-                })
-                .min();
-            if let Some(deferred_internal_id) = deferred_internal_id {
-                log::debug!("Setting deferred internal ID to {deferred_internal_id}");
-                self.deferred_internal_id = Some(deferred_internal_id);
-            }
-        }
-    }
 }
 
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
