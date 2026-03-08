@@ -71,7 +71,7 @@ impl LocalShard {
                     collection_config
                         .optimizer_config
                         .get_deferred_points_threshold_bytes(),
-            )
+                ),
             )
         };
 

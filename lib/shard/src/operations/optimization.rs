@@ -1,4 +1,5 @@
-use common::{progress_tracker::ProgressTree, types::PointOffsetType};
+use common::progress_tracker::ProgressTree;
+use common::types::PointOffsetType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

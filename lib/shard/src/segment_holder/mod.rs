@@ -809,12 +809,8 @@ impl SegmentHolder {
                 .clone(),
         };
 
-        let mut segment = build_segment(
-            segments_path,
-            &config,
-            deferred_internal_id,
-            save_version,
-        )?;
+        let mut segment =
+            build_segment(segments_path, &config, deferred_internal_id, save_version)?;
 
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();

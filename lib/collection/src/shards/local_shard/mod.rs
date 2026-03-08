@@ -626,12 +626,7 @@ impl LocalShard {
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
                 .spawn(move || {
-                    build_segment(
-                        &path_clone,
-                        &segment_config,
-                        deferred_internal_id,
-                        true,
-                    )
+                    build_segment(&path_clone, &segment_config, deferred_internal_id, true)
                 })
                 .unwrap();
             build_handlers.push(segment);
