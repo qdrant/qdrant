@@ -23,8 +23,7 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use segment::types::SegmentConfig;
-use shard::files::SEGMENTS_PATH;
+use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -162,7 +161,7 @@ impl EdgeShard {
                 ));
             };
 
-            let payload_index_schema_path = path.join("payload_index.json");
+            let payload_index_schema_path = path.join(PAYLOAD_INDEX_CONFIG_FILE);
             let payload_index_schema = SaveOnDisk::load_or_init_default(&payload_index_schema_path)
                 .map_err(|err| {
                     OperationError::service_error(format!(
@@ -201,20 +200,6 @@ impl EdgeShard {
         };
 
         Ok(shard)
-    }
-
-    /// Load with optional segment config only (backward compatibility).
-    /// Builds an [`EdgeShardConfig`] from the segment config (fills all parameters that can be inferred).
-    pub fn load_with_segment_config(
-        path: &Path,
-        segment_config: Option<SegmentConfig>,
-    ) -> OperationResult<Self> {
-        Self::load(
-            path,
-            segment_config
-                .as_ref()
-                .map(EdgeShardConfig::from_segment_config),
-        )
     }
 
     pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeShardConfig> {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use collection::collection::Collection;
-use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
+use collection::collection::payload_index_schema::PayloadIndexSchema;
 use collection::common::sha_256::hashes_equal;
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
@@ -13,6 +13,7 @@ use collection::shards::replica_set::replica_set_state::{
 use collection::shards::shard::{PeerId, ShardId};
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
+use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_manifest::RecoveryType;
 
 use crate::content_manager::collection_meta_ops::{
