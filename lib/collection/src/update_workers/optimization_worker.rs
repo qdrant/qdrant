@@ -11,7 +11,6 @@ use common::save_on_disk::SaveOnDisk;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::index::hnsw_index::num_rayon_threads;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::SegmentOptimizerConfig;
 use shard::payload_index_schema::PayloadIndexSchema;
@@ -60,11 +59,14 @@ impl UpdateWorkers {
         update_tracker: UpdateTracker,
         optimization_finished_sender: watch::Sender<()>,
     ) {
+        let Some(some_optimizer) = optimizers.first() else {
+            debug_assert!(false, "No optimizers configured");
+            log::error!("No optimizers configured, optimization worker will not run");
+            return;
+        };
+
         let max_handles = max_handles.unwrap_or(usize::MAX);
-        let max_indexing_threads = optimizers
-            .first()
-            .and_then(|optimizer| optimizer.max_indexing_threads())
-            .unwrap_or_default();
+        let num_indexing_threads = some_optimizer.num_indexing_threads();
 
         // Asynchronous task to trigger optimizers once CPU budget is available again
         let mut resource_available_trigger: Option<JoinHandle<()>> = None;
@@ -108,20 +110,16 @@ impl UpdateWorkers {
 
             // Ensure we have at least one appendable segment with enough capacity
             // Source required parameters from first optimizer
-            if let Some(optimizer) = optimizers.first() {
-                let result = Self::ensure_appendable_segment_with_capacity(
-                    &segments,
-                    optimizer.segments_path(),
-                    optimizer.segment_optimizer_config(),
-                    optimizer.threshold_config(),
-                    payload_index_schema.clone(),
-                );
-                if let Err(err) = result {
-                    log::error!(
-                        "Failed to ensure there are appendable segments with capacity: {err}"
-                    );
-                    panic!("Failed to ensure there are appendable segments with capacity: {err}");
-                }
+            let result = Self::ensure_appendable_segment_with_capacity(
+                &segments,
+                some_optimizer.segments_path(),
+                some_optimizer.segment_optimizer_config(),
+                some_optimizer.threshold_config(),
+                payload_index_schema.clone(),
+            );
+            if let Err(err) = result {
+                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
+                panic!("Failed to ensure there are appendable segments with capacity: {err}");
             }
 
             // If not forcing, wait on next signal if we have too many handles
@@ -145,7 +143,7 @@ impl UpdateWorkers {
             // Otherwise skip now and start a task to trigger the optimizer again once resource
             // budget becomes available
             let desired_cpus = 0;
-            let desired_io = num_rayon_threads(max_indexing_threads);
+            let desired_io = num_indexing_threads;
             if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
                 let trigger_active = resource_available_trigger
                     .as_ref()
@@ -317,8 +315,8 @@ impl UpdateWorkers {
 
             // Determine how many Resources we prefer for optimization task, acquire permit for it
             // And use same amount of IO threads as CPUs
-            let max_indexing_threads = optimizer.max_indexing_threads().unwrap_or_default();
-            let desired_io = num_rayon_threads(max_indexing_threads);
+            let num_indexing_threads = optimizer.num_indexing_threads();
+            let desired_io = num_indexing_threads;
             let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                 // If there is no Resource budget, break and return early
                 // If we have no handles (no optimizations) trigger callback so that we wake up

@@ -5,7 +5,6 @@ use std::sync::Arc;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
@@ -16,6 +15,7 @@ use shard::optimizers::config::{
     get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
     get_number_segments,
 };
+use shard::optimizers::segment_optimizer::max_num_indexing_threads;
 use validator::Validate;
 
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
@@ -180,8 +180,8 @@ pub fn clear_temp_segments(shard_path: &Path) {
 
 pub fn build_segment_optimizer_config(
     collection_params: &CollectionParams,
-    hnsw_config: &HnswConfig,
-    quantization_config: &Option<QuantizationConfig>,
+    global_hnsw_config: &HnswConfig,
+    global_quantization_config: &Option<QuantizationConfig>,
 ) -> SegmentOptimizerConfig {
     let dense_vectors = collection_params
         .vectors
@@ -193,11 +193,11 @@ pub fn build_segment_optimizer_config(
                     size: params.size.get() as usize,
                     distance: params.distance,
                     on_disk: params.on_disk,
-                    hnsw_config: hnsw_config.update_opt(params.hnsw_config.as_ref()),
+                    hnsw_config: global_hnsw_config.update_opt(params.hnsw_config.as_ref()),
                     quantization_config: params
                         .quantization_config
                         .as_ref()
-                        .or(quantization_config.as_ref())
+                        .or(global_quantization_config.as_ref())
                         .cloned(),
                     multivector_config: params.multivector_config,
                     datatype: params.datatype.map(VectorStorageDatatype::from),
@@ -248,12 +248,12 @@ pub fn build_optimizers(
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
-    let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
-    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
     let segment_config =
         build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
+    let num_indexing_threads = max_num_indexing_threads(&segment_config);
+    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(

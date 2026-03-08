@@ -5,7 +5,6 @@ use std::path::Path;
 
 use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{
     HnswConfig, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorNameBuf,
 };
@@ -205,8 +204,7 @@ impl EdgeShardConfig {
             .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
     }
 
-    pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
-        let num_indexing_threads = num_rayon_threads(self.hnsw_config.max_indexing_threads);
+    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
         let indexing_threshold_kb = self.optimizers.get_indexing_threshold_kb();
         OptimizerThresholds {
             memmap_threshold_kb: usize::MAX,
@@ -234,7 +232,7 @@ impl EdgeShardConfig {
 
     pub fn load(path: &Path) -> Option<OperationResult<Self>> {
         let config_path = path.join(EDGE_CONFIG_FILE);
-        match config_path.try_exists() {
+        match fs_err::exists(&config_path) {
             Ok(false) => return None,
             Err(e) => return Some(Err(OperationError::from(e))),
             Ok(true) => {}
