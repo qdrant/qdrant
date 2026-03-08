@@ -5,17 +5,18 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use qdrant_edge::segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
+use qdrant_edge::EdgeShard;
+use qdrant_edge::config::shard::EdgeShardConfig;
+use qdrant_edge::config::vectors::EdgeVectorParams;
+use qdrant_edge::segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
 use qdrant_edge::segment::types::{
-    Distance, ExtendedPointId, Payload, PayloadStorageType, SegmentConfig, VectorDataConfig,
-    VectorStorageType,
+    Distance, ExtendedPointId, Payload, PayloadStorageType, VectorDataConfig, VectorStorageType,
 };
+use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
 use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
 use qdrant_edge::shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
-use qdrant_edge::EdgeShard;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
     println!("---- Load shard ----");
@@ -28,26 +29,27 @@ pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
     fs_err::create_dir_all(data_dir)?;
 
     // Load Qdrant Edge shard
-    let config = SegmentConfig {
-        vector_data: {
-            HashMap::from_iter([(
-                DEFAULT_VECTOR_NAME.to_string(),
-                VectorDataConfig {
-                    size: 4,
-                    distance: Distance::Dot,
-                    storage_type: VectorStorageType::ChunkedMmap,
-                    index: Default::default(),
-                    quantization_config: None,
-                    multivector_config: None,
-                    datatype: None,
-                },
-            )])
-        },
-        sparse_vector_data: HashMap::new(),
-        payload_storage_type: PayloadStorageType::Mmap,
+    let config = EdgeShardConfig {
+        on_disk_payload: false,
+        vectors: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_string(),
+            EdgeVectorParams {
+                size: 4,
+                distance: Distance::Dot,
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+                on_disk: None,
+                hnsw_config: None,
+            },
+        )]),
+        sparse_vectors: HashMap::new(),
+        hnsw_config: Default::default(),
+        quantization_config: None,
+        optimizers: Default::default(),
     };
 
-    Ok(EdgeShard::load_with_segment_config(Path::new(data_dir), Some(config))?)
+    Ok(EdgeShard::load(Path::new(data_dir), Some(config))?)
 }
 
 pub fn fill_dummy_data(shard: &EdgeShard) -> Result<(), Box<dyn Error>> {
