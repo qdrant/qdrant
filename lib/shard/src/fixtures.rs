@@ -170,7 +170,7 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
     use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
 
     let dim = 4;
-    let deferred_internal_id = 4;
+    let deferred_internal_id = 3;
     let hw_counter = HardwareCounterCell::new();
 
     // Build segment with deferred threshold
