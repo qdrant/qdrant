@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::HnswGlobalConfig;
 use shard::optimizers::config::{
     DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
@@ -12,7 +11,9 @@ use shard::optimizers::config::{
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
-use shard::optimizers::segment_optimizer::{Optimizer, plan_optimizations};
+use shard::optimizers::segment_optimizer::{
+    Optimizer, max_num_indexing_threads, plan_optimizations,
+};
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
@@ -40,9 +41,10 @@ impl EdgeShard {
             let mut optimized_in_iteration = false;
 
             for (optimizer, segment_ids) in planned {
-                let desired_io =
-                    num_rayon_threads(optimizer.max_indexing_threads().unwrap_or_default());
-                let budget = ResourceBudget::new(desired_io, desired_io);
+                let num_indexing_threads = optimizer.num_indexing_threads();
+                let desired_io = num_indexing_threads;
+                // Bypass budget in Edge, always allocate the full desired IO for the optimizer.
+                let budget = ResourceBudget::new(num_indexing_threads, desired_io);
                 let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
                     OperationError::service_error(format!(
                         "failed to acquire resource permit for {} optimizer",
@@ -83,7 +85,8 @@ impl EdgeShard {
         let segment_optimizer_config = cfg.segment_optimizer_config();
         let global_hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
-        let threshold_config = cfg.optimizer_thresholds();
+        let num_indexing_threads = max_num_indexing_threads(&segment_optimizer_config);
+        let threshold_config = cfg.optimizer_thresholds(num_indexing_threads);
         let default_segments_number = cfg.optimizers.get_number_segments();
 
         vec![

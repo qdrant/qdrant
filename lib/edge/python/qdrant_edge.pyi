@@ -227,7 +227,7 @@ class EdgeConfig:
 
     def __init__(
             self,
-            vectors: Union["EdgeVectorParams", Dict[str, "EdgeVectorParams"]],
+            vectors: Optional[Union["EdgeVectorParams", Dict[str, "EdgeVectorParams"]]] = None,
             sparse_vectors: Optional[Dict[str, "EdgeSparseVectorParams"]] = None,
             on_disk_payload: bool = True,
             hnsw_config: Optional["HnswIndexConfig"] = None,
@@ -240,6 +240,7 @@ class EdgeConfig:
         Args:
             vectors: Dense vector configuration. Can be a single EdgeVectorParams for
                      the default vector (name "") or a dict of name -> EdgeVectorParams.
+                     Optional if sparse_vectors is provided (sparse-only config).
             sparse_vectors: Optional sparse vector configurations.
             on_disk_payload: If True, store payload on disk (mmap); otherwise in RAM.
             hnsw_config: Optional global HNSW config (used when building HNSW index).
@@ -456,6 +457,7 @@ class HnswIndexConfig:
             m: int,
             ef_construct: int,
             full_scan_threshold: int,
+            max_indexing_threads: int = 0,
             on_disk: Optional[bool] = None,
             payload_m: Optional[int] = None,
             inline_storage: Optional[bool] = None,
@@ -467,6 +469,7 @@ class HnswIndexConfig:
             m: Number of edges per node.
             ef_construct: Number of candidates during index construction.
             full_scan_threshold: Threshold for full scan.
+            max_indexing_threads: Max threads for HNSW indexing (0 = auto).
             on_disk: Whether to store on disk.
             payload_m: Payload index m value.
             inline_storage: Whether to use inline storage.
@@ -486,6 +489,11 @@ class HnswIndexConfig:
     @property
     def full_scan_threshold(self) -> int:
         """Full scan threshold."""
+        ...
+
+    @property
+    def max_indexing_threads(self) -> int:
+        """Max indexing threads (0 = auto)."""
         ...
 
     @property

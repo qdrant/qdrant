@@ -25,29 +25,36 @@ pub struct PyEdgeConfig(pub EdgeShardConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=true, hnsw_config=None, quantization_config=None, optimizers=None))]
     pub fn new(
-        #[pyo3(from_py_with = edge_vectors_helper)] vectors: HashMap<String, PyEdgeVectorParams>,
+        #[pyo3(from_py_with = option_edge_vectors_helper)] vectors: Option<
+            HashMap<String, PyEdgeVectorParams>,
+        >,
         sparse_vectors: Option<HashMap<String, PyEdgeSparseVectorParams>>,
         on_disk_payload: bool,
         hnsw_config: Option<PyHnswIndexConfig>,
         quantization_config: Option<PyQuantizationConfig>,
         optimizers: Option<PyEdgeOptimizersConfig>,
-    ) -> Self {
+    ) -> PyResult<Self> {
+        let vectors = vectors.unwrap_or_default();
+        let sparse_vectors = sparse_vectors.unwrap_or_default();
+        if vectors.is_empty() && sparse_vectors.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "EdgeConfig requires at least one of vectors or sparse_vectors to be non-empty",
+            ));
+        }
         let vectors = PyEdgeVectorParams::peel_map(vectors);
-        let sparse_vectors = sparse_vectors
-            .map(PyEdgeSparseVectorParams::peel_map)
-            .unwrap_or_default();
+        let sparse_vectors = PyEdgeSparseVectorParams::peel_map(sparse_vectors);
         let vectors: HashMap<VectorNameBuf, _> = vectors.into_iter().collect();
         let sparse_vectors: HashMap<VectorNameBuf, _> = sparse_vectors.into_iter().collect();
-        Self(EdgeShardConfig {
+        Ok(Self(EdgeShardConfig {
             on_disk_payload,
             vectors,
             sparse_vectors,
             hnsw_config: hnsw_config.map(|h| h.0).unwrap_or_default(),
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0).unwrap_or_default(),
-        })
+        }))
     }
 
     #[getter]
@@ -96,6 +103,15 @@ impl PyEdgeConfig {
             optimizers: _,
         } = self.0;
     }
+}
+
+fn option_edge_vectors_helper(
+    config: &Bound<'_, PyAny>,
+) -> PyResult<Option<HashMap<String, PyEdgeVectorParams>>> {
+    if config.is_none() {
+        return Ok(None);
+    }
+    edge_vectors_helper(config).map(Some)
 }
 
 fn edge_vectors_helper(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, PyEdgeVectorParams>> {

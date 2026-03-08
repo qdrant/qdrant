@@ -1505,7 +1505,8 @@ where
             ));
         };
 
-        check(config, other_config)?;
+        check(config, other_config)
+            .map_err(|err| format!("Incompatible config for vector {vector_name:?}: {err}"))?;
     }
 
     Ok(())
@@ -1683,10 +1684,11 @@ impl VectorDataConfig {
             ));
         }
 
-        if *datatype != other.datatype {
+        let left_datatype = datatype.unwrap_or(VectorStorageDatatype::Float32);
+        let right_datatype = other.datatype.unwrap_or(VectorStorageDatatype::Float32);
+        if left_datatype != right_datatype {
             return Err(format!(
-                "Incompatible configs: expected vector storage datatype {datatype:?}, but got {other_datatype:?}",
-                other_datatype = other.datatype
+                "Incompatible configs: expected vector storage datatype {left_datatype:?}, but got {right_datatype:?}",
             ));
         }
 

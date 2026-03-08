@@ -11,6 +11,7 @@ use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry;
+use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -26,6 +27,21 @@ use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
 const BYTES_IN_KB: usize = 1024;
+
+/// Resolves per-vector HNSW max_indexing_threads (0 = auto) and returns the actual thread count.
+pub fn max_num_indexing_threads(segment_optimizer_config: &SegmentOptimizerConfig) -> usize {
+    let segment_resolution = segment_optimizer_config
+        .dense_vector
+        .values()
+        .map(|cfg| get_num_indexing_threads(cfg.hnsw_config.max_indexing_threads))
+        .max();
+    if let Some(segment_resolution) = segment_resolution {
+        segment_resolution
+    } else {
+        // If no vector is configured, default to auto.
+        get_num_indexing_threads(0)
+    }
+}
 
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
@@ -67,8 +83,11 @@ pub trait SegmentOptimizer: Sync {
     /// Get configuration for desired segment after optimization.
     fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig;
 
-    /// How many max indexing threads is configured
-    fn max_indexing_threads(&self) -> Option<usize>;
+    /// Estimates how many indexing threads should be used for the optimization
+    /// based on the configuration and available CPU cores.
+    fn num_indexing_threads(&self) -> usize {
+        max_num_indexing_threads(self.segment_optimizer_config())
+    }
 
     /// Get HNSW global config
     fn hnsw_global_config(&self) -> &HnswGlobalConfig;
@@ -276,7 +295,7 @@ pub trait SegmentOptimizer: Sync {
     /// Test wrapper for [`SegmentOptimizer::optimize`].
     #[cfg(any(test, feature = "testing"))]
     fn optimize_for_test(&self, segments: LockedSegmentHolder, ids: Vec<SegmentId>) -> usize {
-        let permit_cpu_count = segment::index::hnsw_index::num_rayon_threads(0);
+        let permit_cpu_count = self.num_indexing_threads();
         let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
         self.optimize(
             segments,

@@ -36,7 +36,7 @@ use crate::config::shard::{EDGE_CONFIG_FILE, EdgeShardConfig};
 #[derive(Debug)]
 pub struct EdgeShard {
     path: PathBuf,
-    config: parking_lot::RwLock<EdgeShardConfig>,
+    config: SaveOnDisk<EdgeShardConfig>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
 }
@@ -182,19 +182,18 @@ impl EdgeShard {
 
         let config = config.expect("config was provided or at least one segment was loaded");
 
-        // If config was provided by caller, persist it. If we inferred it, try loading from file
-        // first; if we inferred and file is missing, persist so next load has it.
-        if let Err(e) = config.save(path) {
-            log::warn!(
-                "Failed to persist edge config to {}: {}",
-                path.join(EDGE_CONFIG_FILE).display(),
+        let config_path = path.join(EDGE_CONFIG_FILE);
+        let config = SaveOnDisk::new(&config_path, config).map_err(|e| {
+            OperationError::service_error(format!(
+                "failed to persist edge config to {}: {}",
+                config_path.display(),
                 e
-            );
-        }
+            ))
+        })?;
 
         let shard = Self {
             path: path.into(),
-            config: parking_lot::RwLock::new(config),
+            config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
         };
@@ -212,9 +211,9 @@ impl EdgeShard {
 
     /// Update global HNSW config and persist. Does not change per-vector HNSW.
     pub fn set_hnsw_config(&self, hnsw_config: segment::types::HnswConfig) -> OperationResult<()> {
-        let mut cfg = self.config.write();
-        cfg.set_hnsw_config(hnsw_config);
-        cfg.save(&self.path)
+        self.config
+            .write(|cfg| cfg.set_hnsw_config(hnsw_config))
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
     /// Update HNSW config for a named vector and persist.
@@ -224,16 +223,18 @@ impl EdgeShard {
         vector_name: &str,
         hnsw_config: segment::types::HnswConfig,
     ) -> OperationResult<()> {
-        let mut cfg = self.config.write();
+        let mut cfg = self.config.read().clone();
         cfg.set_vector_hnsw_config(vector_name, hnsw_config)?;
-        cfg.save(&self.path)
+        self.config
+            .write(|c| *c = cfg)
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
     /// Update optimizer config and persist.
     pub fn set_optimizers_config(&self, optimizers: EdgeOptimizersConfig) -> OperationResult<()> {
-        let mut cfg = self.config.write();
-        cfg.set_optimizers_config(optimizers);
-        cfg.save(&self.path)
+        self.config
+            .write(|cfg| cfg.set_optimizers_config(optimizers))
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
     pub fn flush(&self) {

@@ -131,7 +131,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            DEFAULT_VECTOR_NAME.into(),
+            VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config,
@@ -178,7 +178,7 @@ mod tests {
         changed_hnsw_config.ef_construct /= 5;
 
         dense_overrides.insert(
-            DEFAULT_VECTOR_NAME.into(),
+            VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: changed_hnsw_config,
@@ -284,7 +284,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            VECTOR1_NAME.into(),
+            VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: Some(true),
                 hnsw_config: hnsw_config_vector1,
@@ -292,7 +292,7 @@ mod tests {
             },
         );
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2,
@@ -338,7 +338,7 @@ mod tests {
         hnsw_config_vector2_changed.on_disk = Some(true);
 
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2_changed,
@@ -449,7 +449,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            VECTOR1_NAME.into(),
+            VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
@@ -457,7 +457,7 @@ mod tests {
             },
         );
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
@@ -506,7 +506,7 @@ mod tests {
             },
         });
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),

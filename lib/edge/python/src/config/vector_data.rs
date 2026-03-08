@@ -139,11 +139,12 @@ pub struct PyHnswIndexConfig(pub HnswConfig);
 #[pymethods]
 impl PyHnswIndexConfig {
     #[new]
-    #[pyo3(signature = (m, ef_construct, full_scan_threshold, on_disk=None, payload_m=None, inline_storage=None))]
+    #[pyo3(signature = (m, ef_construct, full_scan_threshold, max_indexing_threads=0, on_disk=None, payload_m=None, inline_storage=None))]
     pub fn new(
         m: usize,
         ef_construct: usize,
         full_scan_threshold: usize,
+        max_indexing_threads: usize,
         on_disk: Option<bool>,
         payload_m: Option<usize>,
         inline_storage: Option<bool>,
@@ -152,7 +153,7 @@ impl PyHnswIndexConfig {
             m,
             ef_construct,
             full_scan_threshold,
-            max_indexing_threads: 0,
+            max_indexing_threads,
             on_disk,
             payload_m,
             inline_storage,
@@ -172,6 +173,11 @@ impl PyHnswIndexConfig {
     #[getter]
     pub fn full_scan_threshold(&self) -> usize {
         self.0.full_scan_threshold
+    }
+
+    #[getter]
+    pub fn max_indexing_threads(&self) -> usize {
+        self.0.max_indexing_threads
     }
 
     #[getter]

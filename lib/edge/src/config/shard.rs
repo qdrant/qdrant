@@ -5,7 +5,6 @@ use std::path::Path;
 
 use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{
     HnswConfig, PayloadStorageType, QuantizationConfig, SegmentConfig, VectorNameBuf,
 };
@@ -89,13 +88,30 @@ impl EdgeShardConfig {
 
         let on_disk_payload = payload_storage_type.is_on_disk();
 
-        // When inferencing from segment config
-        // assume each named vector have already resolved config
+        // Infer global hnsw_config from per-vector HNSW configs when all agree
+        let hnsw_configs: Vec<HnswConfig> = vector_data
+            .values()
+            .filter_map(|v| match &v.index {
+                segment::types::Indexes::Plain {} => None,
+                segment::types::Indexes::Hnsw(h) => Some(*h),
+            })
+            .collect();
+        let hnsw_config = hnsw_configs
+            .first()
+            .and_then(|first| {
+                if hnsw_configs.iter().all(|h| h == first) {
+                    Some(*first)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
         Self {
             on_disk_payload,
             vectors,
             sparse_vectors,
-            hnsw_config: HnswConfig::default(),
+            hnsw_config,
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
         }
@@ -188,8 +204,7 @@ impl EdgeShardConfig {
             .map(|p| p.to_plain_vector_data_config(self.quantization_config.as_ref()))
     }
 
-    pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
-        let num_indexing_threads = num_rayon_threads(self.hnsw_config.max_indexing_threads);
+    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
         let indexing_threshold_kb = self.optimizers.get_indexing_threshold_kb();
         OptimizerThresholds {
             memmap_threshold_kb: usize::MAX,
@@ -217,8 +232,10 @@ impl EdgeShardConfig {
 
     pub fn load(path: &Path) -> Option<OperationResult<Self>> {
         let config_path = path.join(EDGE_CONFIG_FILE);
-        if !config_path.exists() {
-            return None;
+        match fs_err::exists(&config_path) {
+            Ok(false) => return None,
+            Err(e) => return Some(Err(OperationError::from(e))),
+            Ok(true) => {}
         }
         Some(read_json(&config_path).map_err(OperationError::from))
     }

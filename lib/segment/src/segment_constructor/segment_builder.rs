@@ -463,13 +463,13 @@ impl SegmentBuilder {
     /// Test wrapper for [`SegmentBuilder::build`].
     #[cfg(feature = "testing")]
     pub fn build_for_test(self, segments_path: &Path) -> Segment {
-        use crate::index::hnsw_index::num_rayon_threads;
+        use crate::index::hnsw_index::get_num_indexing_threads;
 
         self.build(
             segments_path,
             Uuid::new_v4(),
             None,
-            ResourcePermit::dummy(num_rayon_threads(0) as u32),
+            ResourcePermit::dummy(get_num_indexing_threads(0) as u32),
             &AtomicBool::new(false),
             &mut rand::rng(),
             &HardwareCounterCell::new(),
