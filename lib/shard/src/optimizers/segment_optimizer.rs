@@ -11,6 +11,7 @@ use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -27,7 +28,7 @@ use crate::segment_holder::{SegmentHolder, SegmentId};
 
 const BYTES_IN_KB: usize = 1024;
 
-/// Preserves 0 (auto) sentinel when aggregating per-vector HNSW max_indexing_threads.
+/// Resolves per-vector HNSW max_indexing_threads (0 = auto) and returns the actual thread count.
 pub fn max_indexing_threads_sentinel_aware(
     segment_optimizer_config: &SegmentOptimizerConfig,
 ) -> Option<usize> {
@@ -38,10 +39,13 @@ pub fn max_indexing_threads_sentinel_aware(
         .collect();
     if threads.is_empty() {
         None
-    } else if threads.iter().any(|&t| t == 0) {
-        Some(0)
     } else {
-        threads.into_iter().max()
+        let raw = if threads.iter().any(|&t| t == 0) {
+            0
+        } else {
+            threads.into_iter().max().unwrap_or(0)
+        };
+        Some(num_rayon_threads(raw))
     }
 }
 
