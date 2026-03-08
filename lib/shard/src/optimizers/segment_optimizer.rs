@@ -27,6 +27,24 @@ use crate::segment_holder::{SegmentHolder, SegmentId};
 
 const BYTES_IN_KB: usize = 1024;
 
+/// Preserves 0 (auto) sentinel when aggregating per-vector HNSW max_indexing_threads.
+pub fn max_indexing_threads_sentinel_aware(
+    segment_optimizer_config: &SegmentOptimizerConfig,
+) -> Option<usize> {
+    let threads: Vec<usize> = segment_optimizer_config
+        .dense_vector
+        .values()
+        .map(|cfg| cfg.hnsw_config.max_indexing_threads)
+        .collect();
+    if threads.is_empty() {
+        None
+    } else if threads.iter().any(|&t| t == 0) {
+        Some(0)
+    } else {
+        threads.into_iter().max()
+    }
+}
+
 pub type Optimizer = dyn SegmentOptimizer + Sync + Send;
 
 struct ShardOptimizationStrategy<'a, O: SegmentOptimizer + ?Sized> {
@@ -68,7 +86,10 @@ pub trait SegmentOptimizer: Sync {
     fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig;
 
     /// How many max indexing threads is configured
-    fn max_indexing_threads(&self) -> Option<usize>;
+    /// 0 means auto-select; when multiple configs exist, if any is 0 the result is Some(0).
+    fn max_indexing_threads(&self) -> Option<usize> {
+        max_indexing_threads_sentinel_aware(self.segment_optimizer_config())
+    }
 
     /// Get HNSW global config
     fn hnsw_global_config(&self) -> &HnswGlobalConfig;

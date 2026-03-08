@@ -89,13 +89,30 @@ impl EdgeShardConfig {
 
         let on_disk_payload = payload_storage_type.is_on_disk();
 
-        // When inferencing from segment config
-        // assume each named vector have already resolved config
+        // Infer global hnsw_config from per-vector HNSW configs when all agree
+        let hnsw_configs: Vec<HnswConfig> = vector_data
+            .values()
+            .filter_map(|v| match &v.index {
+                segment::types::Indexes::Plain {} => None,
+                segment::types::Indexes::Hnsw(h) => Some(*h),
+            })
+            .collect();
+        let hnsw_config = hnsw_configs
+            .first()
+            .and_then(|first| {
+                if hnsw_configs.iter().all(|h| h == first) {
+                    Some(*first)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
         Self {
             on_disk_payload,
             vectors,
             sparse_vectors,
-            hnsw_config: HnswConfig::default(),
+            hnsw_config,
             quantization_config: None,
             optimizers: EdgeOptimizersConfig::default(),
         }
@@ -217,8 +234,10 @@ impl EdgeShardConfig {
 
     pub fn load(path: &Path) -> Option<OperationResult<Self>> {
         let config_path = path.join(EDGE_CONFIG_FILE);
-        if !config_path.exists() {
-            return None;
+        match config_path.try_exists() {
+            Ok(false) => return None,
+            Err(e) => return Some(Err(OperationError::from(e))),
+            Ok(true) => {}
         }
         Some(read_json(&config_path).map_err(OperationError::from))
     }

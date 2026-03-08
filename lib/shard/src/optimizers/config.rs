@@ -60,76 +60,69 @@ impl SegmentOptimizerConfig {
         dense_vectors: HashMap<VectorNameBuf, DenseVectorOptimizerInput>,
         sparse_vectors: HashMap<VectorNameBuf, SparseVectorOptimizerInput>,
     ) -> SegmentOptimizerConfig {
-        let base_vector_data = dense_vectors
-            .iter()
-            .map(|(name, input)| {
-                (
-                    name.clone(),
-                    VectorDataConfig {
-                        size: input.size,
-                        distance: input.distance,
-                        index: Indexes::Plain {},
-                        storage_type: VectorStorageType::from_on_disk(
-                            input.on_disk.unwrap_or_default(),
-                        ),
-                        quantization_config: QuantizationConfig::for_appendable_segment(
-                            input.quantization_config.as_ref(),
-                        ),
-                        multivector_config: input.multivector_config,
-                        datatype: input.datatype,
-                    },
-                )
-            })
-            .collect();
+        let (mut plain_dense_vector_config, mut dense_vector) = (HashMap::new(), HashMap::new());
+        for (name, input) in dense_vectors {
+            let DenseVectorOptimizerInput {
+                size,
+                distance,
+                on_disk,
+                hnsw_config,
+                quantization_config,
+                multivector_config,
+                datatype,
+            } = input;
+            plain_dense_vector_config.insert(
+                name.clone(),
+                VectorDataConfig {
+                    size,
+                    distance,
+                    index: Indexes::Plain {},
+                    storage_type: VectorStorageType::from_on_disk(on_disk.unwrap_or_default()),
+                    quantization_config: QuantizationConfig::for_appendable_segment(
+                        quantization_config.as_ref(),
+                    ),
+                    multivector_config,
+                    datatype,
+                },
+            );
+            dense_vector.insert(
+                name,
+                DenseVectorOptimizerConfig {
+                    on_disk,
+                    hnsw_config,
+                    quantization_config,
+                },
+            );
+        }
 
-        let base_sparse_vector_data = sparse_vectors
-            .iter()
-            .map(|(name, input)| {
-                (
-                    name.clone(),
-                    SparseVectorDataConfig {
-                        index: SparseIndexConfig {
-                            full_scan_threshold: input.full_scan_threshold,
-                            index_type: SparseIndexType::MutableRam,
-                            datatype: input.index_datatype,
-                        },
-                        storage_type: input.storage_type,
-                        modifier: input.modifier,
+        let (mut plain_sparse_vector_config, mut sparse_vector) = (HashMap::new(), HashMap::new());
+        for (name, input) in sparse_vectors {
+            let SparseVectorOptimizerInput {
+                on_disk,
+                full_scan_threshold,
+                index_datatype,
+                storage_type,
+                modifier,
+            } = input;
+            plain_sparse_vector_config.insert(
+                name.clone(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig {
+                        full_scan_threshold,
+                        index_type: SparseIndexType::MutableRam,
+                        datatype: index_datatype,
                     },
-                )
-            })
-            .collect();
-
-        let dense_vector = dense_vectors
-            .into_iter()
-            .map(|(name, input)| {
-                (
-                    name,
-                    DenseVectorOptimizerConfig {
-                        on_disk: input.on_disk,
-                        hnsw_config: input.hnsw_config,
-                        quantization_config: input.quantization_config,
-                    },
-                )
-            })
-            .collect();
-
-        let sparse_vector = sparse_vectors
-            .into_iter()
-            .map(|(name, input)| {
-                (
-                    name,
-                    SparseVectorOptimizerConfig {
-                        on_disk: input.on_disk,
-                    },
-                )
-            })
-            .collect();
+                    storage_type,
+                    modifier,
+                },
+            );
+            sparse_vector.insert(name, SparseVectorOptimizerConfig { on_disk });
+        }
 
         SegmentOptimizerConfig {
             payload_storage_type,
-            plain_dense_vector_config: base_vector_data,
-            plain_sparse_vector_config: base_sparse_vector_data,
+            plain_dense_vector_config,
+            plain_sparse_vector_config,
             dense_vector,
             sparse_vector,
         }

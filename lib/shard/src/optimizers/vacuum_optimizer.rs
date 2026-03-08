@@ -128,14 +128,6 @@ impl SegmentOptimizer for VacuumOptimizer {
         &self.segment_optimizer_config
     }
 
-    fn max_indexing_threads(&self) -> Option<usize> {
-        self.segment_optimizer_config
-            .dense_vector
-            .values()
-            .map(|cfg| cfg.hnsw_config.max_indexing_threads)
-            .max()
-    }
-
     fn hnsw_global_config(&self) -> &HnswGlobalConfig {
         &self.hnsw_global_config
     }

@@ -5,7 +5,14 @@ import os
 import shutil
 import uuid
 
-from qdrant_edge import *
+from qdrant_edge import (
+    Distance,
+    EdgeConfig,
+    EdgeShard,
+    EdgeVectorParams,
+    Point,
+    UpdateOperation,
+)
 
 DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
