@@ -739,7 +739,7 @@ fn test_dense_deferred_points() {
     let dim = 4;
     let hw_counter = HardwareCounterCell::new();
 
-    // Create a segment with a deferred_points_threshold_bytes set
+    // Create a segment with a deferred_internal_id set
     const DEFERRED_POINTS_ID: PointOffsetType = 13;
     let mut segment = build_segment(
         dir.path(),
@@ -818,6 +818,9 @@ fn test_dense_deferred_points() {
         !segment.point_is_deferred(PointIdType::from(100)),
         "Non-existent point should not be deferred"
     );
+
+    // Set version so flush actually persists data (insert_new_vectors doesn't set it)
+    segment.version = Some(20);
 
     // Close segment
     segment.flush(true).unwrap();
