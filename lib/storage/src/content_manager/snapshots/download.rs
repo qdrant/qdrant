@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use collection::common::sha_256::hash_file;
 use common::tempfile_ext::MaybeTempPath;
@@ -51,13 +51,44 @@ async fn _download_snapshot(
     Ok((tempdir, hash))
 }
 
+/// Validate that the given path is within the allowed snapshots directory.
+///
+/// Canonicalizes both paths to resolve symlinks and `..` components,
+/// then checks that `path` is a descendant of `allowed_dir`.
+fn validate_snapshot_path(path: &Path, allowed_dir: &Path) -> Result<PathBuf, StorageError> {
+    let canonical_path = path.canonicalize().map_err(|err| {
+        StorageError::bad_request(format!(
+            "Failed to resolve snapshot path {path:?}: {err}"
+        ))
+    })?;
+
+    let canonical_allowed = allowed_dir.canonicalize().map_err(|err| {
+        StorageError::service_error(format!(
+            "Failed to resolve snapshots directory {allowed_dir:?}: {err}"
+        ))
+    })?;
+
+    if !canonical_path.starts_with(&canonical_allowed) {
+        return Err(StorageError::bad_request(format!(
+            "Snapshot file path must be inside the snapshots directory {canonical_allowed:?}",
+        )));
+    }
+
+    Ok(canonical_path)
+}
+
 /// Download a snapshot from the given URI.
 ///
 /// Returns a `DownloadResult` containing the snapshot data and optional checksum.
+///
+/// For `file://` URLs, `snapshots_path` is used to validate that the referenced file
+/// is within the snapshots directory. For `http`/`https` URLs, `download_dir` is used
+/// as the temporary download location.
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
-    snapshots_dir: &Path,
+    download_dir: &Path,
+    snapshots_path: &Path,
     compute_checksum: bool,
 ) -> Result<DownloadResult, StorageError> {
     match url.scheme() {
@@ -72,6 +103,10 @@ pub async fn download_snapshot(
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
+
+            // Restrict file:// URLs to the snapshots directory
+            let local_path = validate_snapshot_path(&local_path, snapshots_path)?;
+
             let hash = if compute_checksum {
                 Some(hash_file(&local_path).await?)
             } else {
@@ -85,7 +120,7 @@ pub async fn download_snapshot(
         }
         "http" | "https" => {
             let (snapshot_dir, hash) =
-                _download_snapshot(client, &url, snapshots_dir, compute_checksum).await?;
+                _download_snapshot(client, &url, download_dir, compute_checksum).await?;
             Ok(DownloadResult {
                 snapshot: SnapshotData::Unpacked(snapshot_dir),
                 hash,
