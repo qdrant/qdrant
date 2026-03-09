@@ -57,9 +57,7 @@ async fn _download_snapshot(
 /// then checks that `path` is a descendant of `allowed_dir`.
 fn validate_snapshot_path(path: &Path, allowed_dir: &Path) -> Result<PathBuf, StorageError> {
     let canonical_path = path.canonicalize().map_err(|err| {
-        StorageError::bad_request(format!(
-            "Failed to resolve snapshot path {path:?}: {err}"
-        ))
+        StorageError::bad_request(format!("Failed to resolve snapshot path {path:?}: {err}"))
     })?;
 
     let canonical_allowed = allowed_dir.canonicalize().map_err(|err| {
