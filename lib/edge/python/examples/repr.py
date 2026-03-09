@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 
-from qdrant_edge import *
+from qdrant_edge import (
+    Distance,
+    EdgeConfig,
+    EdgeSparseVectorParams,
+    EdgeVectorParams,
+    Modifier,
+    VectorStorageDatatype,
+)
 
 config = EdgeConfig(
-    vector_data = VectorDataConfig(
-        size = 128,
-        distance = Distance.Cosine,
+    vectors=EdgeVectorParams(
+        size=128,
+        distance=Distance.Cosine,
     ),
-    sparse_vector_data = {
-        "sparse": SparseVectorDataConfig(
-            index = SparseIndexConfig(
-                full_scan_threshold = 1024,
-                datatype = VectorStorageDatatype.Float32,
-            ),
-            modifier = Modifier.Idf,
-        )
+    sparse_vectors={
+        "sparse": EdgeSparseVectorParams(
+            full_scan_threshold=1024,
+            datatype=VectorStorageDatatype.Float32,
+            modifier=Modifier.Idf,
+        ),
     },
 )
 

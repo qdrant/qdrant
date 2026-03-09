@@ -66,8 +66,8 @@ mod tests {
         }
         SegmentOptimizerConfig {
             payload_storage_type: segment.segment_config.payload_storage_type,
-            base_vector_data: segment.segment_config.vector_data.clone(),
-            base_sparse_vector_data: segment.segment_config.sparse_vector_data.clone(),
+            plain_dense_vector_config: segment.segment_config.vector_data.clone(),
+            plain_sparse_vector_config: segment.segment_config.sparse_vector_data.clone(),
             dense_vector,
             sparse_vector: Default::default(),
         }
@@ -90,7 +90,6 @@ mod tests {
             segment_path.to_owned(),
             collection_temp_dir.to_owned(),
             test_segment_config(dim),
-            Default::default(),
             HnswGlobalConfig::default(),
         )
     }

@@ -248,7 +248,6 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         segment_config,
-        hnsw_config,
         HnswGlobalConfig::default(),
     )
 }
@@ -277,7 +276,6 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         segment_config,
-        hnsw_config,
         HnswGlobalConfig::default(),
     )
 }

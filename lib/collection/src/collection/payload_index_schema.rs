@@ -4,6 +4,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema};
+use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 pub use shard::payload_index_schema::PayloadIndexSchema;
 
 use crate::collection::Collection;
@@ -11,8 +12,6 @@ use crate::operations::types::{CollectionResult, UpdateResult};
 use crate::operations::universal_query::formula::ExpressionInternal;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::problems::unindexed_field;
-
-pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";
 
 impl Collection {
     pub(crate) fn payload_index_file(collection_path: &Path) -> PathBuf {

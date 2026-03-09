@@ -72,8 +72,8 @@ mod tests {
 
         SegmentOptimizerConfig {
             payload_storage_type: segment_config.payload_storage_type,
-            base_vector_data,
-            base_sparse_vector_data: segment_config.sparse_vector_data.clone(),
+            plain_dense_vector_config: base_vector_data,
+            plain_sparse_vector_config: segment_config.sparse_vector_data.clone(),
             dense_vector,
             sparse_vector: segment_config
                 .sparse_vector_data
@@ -131,7 +131,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            DEFAULT_VECTOR_NAME.into(),
+            VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config,
@@ -147,7 +147,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            hnsw_config,
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -179,7 +178,7 @@ mod tests {
         changed_hnsw_config.ef_construct /= 5;
 
         dense_overrides.insert(
-            DEFAULT_VECTOR_NAME.into(),
+            VectorNameBuf::from(DEFAULT_VECTOR_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: changed_hnsw_config,
@@ -285,7 +284,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            VECTOR1_NAME.into(),
+            VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: Some(true),
                 hnsw_config: hnsw_config_vector1,
@@ -293,7 +292,7 @@ mod tests {
             },
         );
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2,
@@ -309,7 +308,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            hnsw_config_collection,
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -340,7 +338,7 @@ mod tests {
         hnsw_config_vector2_changed.on_disk = Some(true);
 
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: hnsw_config_vector2_changed,
@@ -451,7 +449,7 @@ mod tests {
 
         let mut dense_overrides = HashMap::new();
         dense_overrides.insert(
-            VECTOR1_NAME.into(),
+            VectorNameBuf::from(VECTOR1_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
@@ -459,7 +457,7 @@ mod tests {
             },
         );
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),
@@ -475,7 +473,6 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             optimizer_config.clone(),
-            Default::default(),
             HnswGlobalConfig::default(),
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
@@ -509,7 +506,7 @@ mod tests {
             },
         });
         dense_overrides.insert(
-            VECTOR2_NAME.into(),
+            VectorNameBuf::from(VECTOR2_NAME),
             DenseVectorOptimizerConfig {
                 on_disk: None,
                 hnsw_config: HnswConfig::default(),

@@ -13,8 +13,8 @@ use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::VectorIndex;
+use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment_constructor::VectorIndexBuildArgs;
@@ -146,7 +146,7 @@ fn test_batch_and_single_request_equivalency() {
         inline_storage: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;

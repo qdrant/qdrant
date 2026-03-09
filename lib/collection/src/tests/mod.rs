@@ -23,7 +23,7 @@ use itertools::Itertools;
 use parking_lot::Mutex;
 use rand::RngExt;
 use segment::data_types::vectors::only_default_vector;
-use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::types::{Distance, PointIdType};
 use shard::operations::optimization::OptimizerThresholds;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -93,7 +93,7 @@ async fn test_optimization_process() {
     // We skip optimizations that use less than half of the preferred CPU budget
     let expected_optimization_count = {
         let cpus = common::cpu::get_cpu_budget(0);
-        let hnsw_threads = num_rayon_threads(0);
+        let hnsw_threads = get_num_indexing_threads(0);
         (cpus / hnsw_threads + usize::from((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)))
             .clamp(1, total_optimizations)
     };
@@ -206,7 +206,7 @@ async fn test_cancel_optimization() {
         // We skip optimizations that use less than half of the preferred CPU budget
         let expected_optimization_count = {
             let cpus = common::cpu::get_cpu_budget(0);
-            let hnsw_threads = num_rayon_threads(0);
+            let hnsw_threads = get_num_indexing_threads(0);
             (cpus / hnsw_threads + usize::from((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)))
                 .clamp(1, 3)
         };

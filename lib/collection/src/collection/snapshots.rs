@@ -8,13 +8,13 @@ use common::tar_unpack::tar_unpack_file;
 use fs_err::File;
 use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
+use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
-use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal, ShardingMethod};

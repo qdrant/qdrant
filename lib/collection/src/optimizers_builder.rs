@@ -4,18 +4,18 @@ use std::sync::Arc;
 
 use fs_err as fs;
 use schemars::JsonSchema;
-use segment::common::BYTES_IN_KB;
 use segment::common::anonymize::Anonymize;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::optimization::OptimizerThresholds;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput, OptimizerSourceConfig,
-    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH, default_segment_number,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, DenseVectorOptimizerInput,
+    SegmentOptimizerConfig, SparseVectorOptimizerInput, TEMP_SEGMENTS_PATH,
+    get_deferred_points_threshold_bytes, get_indexing_threshold_kb, get_max_segment_size_kb,
+    get_number_segments,
 };
+use shard::optimizers::segment_optimizer::max_num_indexing_threads;
 use validator::Validate;
 
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
@@ -124,19 +124,11 @@ impl OptimizersConfig {
     }
 
     pub fn get_number_segments(&self) -> usize {
-        if self.default_segment_number == 0 {
-            default_segment_number()
-        } else {
-            self.default_segment_number
-        }
+        get_number_segments(self.default_segment_number)
     }
 
     pub fn get_indexing_threshold_kb(&self) -> usize {
-        match self.indexing_threshold {
-            None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
-            Some(0) => usize::MAX,                 // disable vector index
-            Some(custom) => custom,
-        }
+        get_indexing_threshold_kb(self.indexing_threshold)
     }
 
     pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
@@ -151,23 +143,26 @@ impl OptimizersConfig {
         OptimizerThresholds {
             memmap_threshold_kb,
             indexing_threshold_kb,
-            max_segment_size_kb: self.get_max_segment_size_in_kilobytes(num_indexing_threads),
-            deferred_points_threshold_bytes: self.get_deferred_points_threshold_bytes(),
+            max_segment_size_kb: get_max_segment_size_kb(
+                self.max_segment_size,
+                num_indexing_threads,
+            ),
+            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
+                self.prevent_unoptimized,
+                indexing_threshold_kb,
+            ),
         }
     }
 
     pub fn get_max_segment_size_in_kilobytes(&self, num_indexing_threads: usize) -> usize {
-        if let Some(max_segment_size) = self.max_segment_size {
-            max_segment_size
-        } else {
-            num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
-        }
+        get_max_segment_size_kb(self.max_segment_size, num_indexing_threads)
     }
 
     pub fn get_deferred_points_threshold_bytes(&self) -> Option<NonZeroUsize> {
-        (self.prevent_unoptimized == Some(true))
-            .then(|| self.get_indexing_threshold_kb().saturating_mul(BYTES_IN_KB))
-            .and_then(NonZeroUsize::new)
+        get_deferred_points_threshold_bytes(
+            self.prevent_unoptimized,
+            self.get_indexing_threshold_kb(),
+        )
     }
 }
 
@@ -185,8 +180,8 @@ pub fn clear_temp_segments(shard_path: &Path) {
 
 pub fn build_segment_optimizer_config(
     collection_params: &CollectionParams,
-    hnsw_config: &HnswConfig,
-    quantization_config: &Option<QuantizationConfig>,
+    global_hnsw_config: &HnswConfig,
+    global_quantization_config: &Option<QuantizationConfig>,
 ) -> SegmentOptimizerConfig {
     let dense_vectors = collection_params
         .vectors
@@ -198,11 +193,11 @@ pub fn build_segment_optimizer_config(
                     size: params.size.get() as usize,
                     distance: params.distance,
                     on_disk: params.on_disk,
-                    hnsw_config: hnsw_config.update_opt(params.hnsw_config.as_ref()),
+                    hnsw_config: global_hnsw_config.update_opt(params.hnsw_config.as_ref()),
                     quantization_config: params
                         .quantization_config
                         .as_ref()
-                        .or(quantization_config.as_ref())
+                        .or(global_quantization_config.as_ref())
                         .cloned(),
                     multivector_config: params.multivector_config,
                     datatype: params.datatype.map(VectorStorageDatatype::from),
@@ -238,13 +233,11 @@ pub fn build_segment_optimizer_config(
         })
         .unwrap_or_default();
 
-    let source = OptimizerSourceConfig {
-        payload_storage_type: collection_params.payload_storage_type(),
+    SegmentOptimizerConfig::new(
+        collection_params.payload_storage_type(),
         dense_vectors,
         sparse_vectors,
-    };
-
-    source.build()
+    )
 }
 
 pub fn build_optimizers(
@@ -255,12 +248,12 @@ pub fn build_optimizers(
     hnsw_global_config: &HnswGlobalConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
-    let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
-    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
     let segment_config =
         build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
+    let num_indexing_threads = max_num_indexing_threads(&segment_config);
+    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
@@ -269,7 +262,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
@@ -278,7 +270,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
@@ -288,7 +279,6 @@ pub fn build_optimizers(
             segments_path.clone(),
             temp_segments_path.clone(),
             segment_config.clone(),
-            *hnsw_config,
             hnsw_global_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(

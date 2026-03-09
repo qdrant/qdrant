@@ -227,55 +227,83 @@ class EdgeConfig:
 
     def __init__(
             self,
-            vector_data: Union["VectorDataConfig", Dict[str, "VectorDataConfig"]],
-            sparse_vector_data: Optional[Dict[str, "SparseVectorDataConfig"]] = None,
+            vectors: Optional[Union["EdgeVectorParams", Dict[str, "EdgeVectorParams"]]] = None,
+            sparse_vectors: Optional[Dict[str, "EdgeSparseVectorParams"]] = None,
+            on_disk_payload: bool = True,
+            hnsw_config: Optional["HnswIndexConfig"] = None,
+            quantization_config: Optional[QuantizationConfigType] = None,
+            optimizers: Optional["EdgeOptimizersConfig"] = None,
     ) -> None:
         """
         Create an EdgeConfig.
 
         Args:
-            vector_data: Dense vector configuration. Can be a single config for
-                        the default vector or a dict of named vector configs.
-            sparse_vector_data: Optional sparse vector configurations.
+            vectors: Dense vector configuration. Can be a single EdgeVectorParams for
+                     the default vector (name "") or a dict of name -> EdgeVectorParams.
+                     Optional if sparse_vectors is provided (sparse-only config).
+            sparse_vectors: Optional sparse vector configurations.
+            on_disk_payload: If True, store payload on disk (mmap); otherwise in RAM.
+            hnsw_config: Optional global HNSW config (used when building HNSW index).
+            quantization_config: Optional global quantization config.
+            optimizers: Optional optimizer settings.
         """
         ...
 
     @property
-    def vector_data(self) -> Dict[str, "VectorDataConfig"]:
+    def vectors(self) -> Dict[str, "EdgeVectorParams"]:
         """Dense vector configurations."""
         ...
 
     @property
-    def sparse_vector_data(self) -> Dict[str, "SparseVectorDataConfig"]:
+    def sparse_vectors(self) -> Dict[str, "EdgeSparseVectorParams"]:
         """Sparse vector configurations."""
         ...
 
     @property
-    def payload_storage_type(self) -> "PayloadStorageType":
-        """Payload storage type."""
+    def on_disk_payload(self) -> bool:
+        """Whether payload is stored on disk."""
+        ...
+
+    @property
+    def hnsw_config(self) -> "HnswIndexConfig":
+        """Global HNSW config."""
+        ...
+
+    @property
+    def quantization_config(self) -> Optional[QuantizationConfigType]:
+        """Global quantization config."""
+        ...
+
+    @property
+    def optimizers(self) -> "EdgeOptimizersConfig":
+        """Optimizer settings."""
         ...
 
 
-class VectorDataConfig:
-    """Configuration for dense vector storage."""
+class EdgeVectorParams:
+    """Dense vector parameters for EdgeConfig."""
 
     def __init__(
             self,
             size: int,
             distance: "Distance",
-            quantization_config: Optional[QuantizationConfigType] = None,
+            on_disk: Optional[bool] = None,
             multivector_config: Optional["MultiVectorConfig"] = None,
             datatype: Optional["VectorStorageDatatype"] = None,
+            quantization_config: Optional[QuantizationConfigType] = None,
+            hnsw_config: Optional["HnswIndexConfig"] = None,
     ) -> None:
         """
-        Create a VectorDataConfig.
+        Create EdgeVectorParams.
 
         Args:
             size: Dimension of vectors.
             distance: Distance metric.
-            quantization_config: Optional quantization configuration.
+            on_disk: If True, store vectors on disk (mmap); otherwise in RAM.
             multivector_config: Optional multi-vector configuration.
             datatype: Optional storage datatype.
+            quantization_config: Optional per-vector quantization override.
+            hnsw_config: Optional per-vector HNSW config override.
         """
         ...
 
@@ -290,18 +318,8 @@ class VectorDataConfig:
         ...
 
     @property
-    def storage_type(self) -> "VectorStorageType":
-        """Storage type."""
-        ...
-
-    @property
-    def index(self) -> IndexType:
-        """Index configuration."""
-        ...
-
-    @property
-    def quantization_config(self) -> Optional[QuantizationConfigType]:
-        """Quantization configuration."""
+    def on_disk(self) -> Optional[bool]:
+        """Whether vector storage is on disk."""
         ...
 
     @property
@@ -314,53 +332,34 @@ class VectorDataConfig:
         """Storage datatype."""
         ...
 
-
-class SparseVectorDataConfig:
-    """Configuration for sparse vector storage."""
-
-    def __init__(
-            self,
-            index: "SparseIndexConfig",
-            modifier: Optional["Modifier"] = None,
-    ) -> None:
-        """
-        Create a SparseVectorDataConfig.
-
-        Args:
-            index: Sparse index configuration.
-            modifier: Optional modifier (e.g., IDF).
-        """
+    @property
+    def quantization_config(self) -> Optional[QuantizationConfigType]:
+        """Quantization configuration."""
         ...
 
     @property
-    def index(self) -> "SparseIndexConfig":
-        """Index configuration."""
-        ...
-
-    @property
-    def storage_type(self) -> "SparseVectorStorageType":
-        """Storage type."""
-        ...
-
-    @property
-    def modifier(self) -> Optional["Modifier"]:
-        """Modifier."""
+    def hnsw_config(self) -> Optional["HnswIndexConfig"]:
+        """HNSW config override."""
         ...
 
 
-class SparseIndexConfig:
-    """Configuration for sparse vector index."""
+class EdgeSparseVectorParams:
+    """Sparse vector parameters for EdgeConfig."""
 
     def __init__(
             self,
             full_scan_threshold: Optional[int] = None,
+            on_disk: Optional[bool] = None,
+            modifier: Optional["Modifier"] = None,
             datatype: Optional["VectorStorageDatatype"] = None,
     ) -> None:
         """
-        Create a SparseIndexConfig.
+        Create EdgeSparseVectorParams.
 
         Args:
             full_scan_threshold: Threshold for full scan vs index search.
+            on_disk: If True, sparse index on disk; otherwise in RAM.
+            modifier: Optional modifier (e.g., IDF).
             datatype: Storage datatype.
         """
         ...
@@ -371,13 +370,74 @@ class SparseIndexConfig:
         ...
 
     @property
-    def index_type(self) -> "SparseIndexType":
-        """Index type."""
+    def on_disk(self) -> Optional[bool]:
+        """Whether sparse index is on disk."""
+        ...
+
+    @property
+    def modifier(self) -> Optional["Modifier"]:
+        """Modifier."""
         ...
 
     @property
     def datatype(self) -> Optional["VectorStorageDatatype"]:
         """Storage datatype."""
+        ...
+
+
+class EdgeOptimizersConfig:
+    """Optimizer-related configuration for EdgeConfig."""
+
+    def __init__(
+            self,
+            deleted_threshold: Optional[float] = None,
+            vacuum_min_vector_number: Optional[int] = None,
+            default_segment_number: Optional[int] = None,
+            max_segment_size: Optional[int] = None,
+            indexing_threshold: Optional[int] = None,
+            prevent_unoptimized: Optional[bool] = None,
+    ) -> None:
+        """
+        Create EdgeOptimizersConfig.
+
+        Args:
+            deleted_threshold: Min fraction of deleted vectors to run vacuum (default 0.2).
+            vacuum_min_vector_number: Min vectors in segment to run vacuum (default 1000).
+            default_segment_number: Target number of segments (0 = auto).
+            max_segment_size: Max segment size in KB.
+            indexing_threshold: Indexing threshold in KB.
+            prevent_unoptimized: Block updates when unoptimized segments exceed threshold.
+        """
+        ...
+
+    @property
+    def deleted_threshold(self) -> Optional[float]:
+        """Deleted threshold."""
+        ...
+
+    @property
+    def vacuum_min_vector_number(self) -> Optional[int]:
+        """Vacuum min vector number."""
+        ...
+
+    @property
+    def default_segment_number(self) -> Optional[int]:
+        """Default segment number."""
+        ...
+
+    @property
+    def max_segment_size(self) -> Optional[int]:
+        """Max segment size in KB."""
+        ...
+
+    @property
+    def indexing_threshold(self) -> Optional[int]:
+        """Indexing threshold in KB."""
+        ...
+
+    @property
+    def prevent_unoptimized(self) -> Optional[bool]:
+        """Prevent unoptimized flag."""
         ...
 
 
@@ -397,6 +457,7 @@ class HnswIndexConfig:
             m: int,
             ef_construct: int,
             full_scan_threshold: int,
+            max_indexing_threads: int = 0,
             on_disk: Optional[bool] = None,
             payload_m: Optional[int] = None,
             inline_storage: Optional[bool] = None,
@@ -408,6 +469,7 @@ class HnswIndexConfig:
             m: Number of edges per node.
             ef_construct: Number of candidates during index construction.
             full_scan_threshold: Threshold for full scan.
+            max_indexing_threads: Max threads for HNSW indexing (0 = auto).
             on_disk: Whether to store on disk.
             payload_m: Payload index m value.
             inline_storage: Whether to use inline storage.
@@ -427,6 +489,11 @@ class HnswIndexConfig:
     @property
     def full_scan_threshold(self) -> int:
         """Full scan threshold."""
+        ...
+
+    @property
+    def max_indexing_threads(self) -> int:
+        """Max indexing threads (0 = auto)."""
         ...
 
     @property
@@ -580,29 +647,12 @@ class Distance(Enum):
     Manhattan = ...
 
 
-class VectorStorageType(Enum):
-    """Vector storage types."""
-
-    Memory = ...
-    Mmap = ...
-    ChunkedMmap = ...
-    InRamChunkedMmap = ...
-    InRamMmap = ...
-
-
 class VectorStorageDatatype(Enum):
     """Vector storage data types."""
 
     Float32 = ...
     Float16 = ...
     Uint8 = ...
-
-
-class PayloadStorageType(Enum):
-    """Payload storage types."""
-
-    Mmap = ...
-    InRamMmap = ...
 
 
 class MultiVectorComparator(Enum):
@@ -642,20 +692,6 @@ class BinaryQuantizationQueryEncoding(Enum):
     Binary = ...
     Scalar4Bits = ...
     Scalar8Bits = ...
-
-
-class SparseIndexType(Enum):
-    """Sparse index types."""
-
-    MutableRam = ...
-    ImmutableRam = ...
-    Mmap = ...
-
-
-class SparseVectorStorageType(Enum):
-    """Sparse vector storage types."""
-
-    Mmap = ...
 
 
 class Modifier(Enum):

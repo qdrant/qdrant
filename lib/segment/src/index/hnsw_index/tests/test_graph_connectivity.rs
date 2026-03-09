@@ -12,8 +12,8 @@ use tempfile::Builder;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
+use crate::index::hnsw_index::get_num_indexing_threads;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use crate::index::hnsw_index::num_rayon_threads;
 use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{Distance, HnswConfig, HnswGlobalConfig, SeqNumberType};
@@ -63,7 +63,7 @@ fn test_graph_connectivity() {
         inline_storage: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(

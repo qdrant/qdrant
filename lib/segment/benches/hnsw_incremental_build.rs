@@ -31,8 +31,8 @@ use segment::data_types::vectors::{
 use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use segment::fixtures::index_fixtures::random_vector;
 use segment::id_tracker::{IdTracker, IdTrackerEnum};
+use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex as _, VectorIndexEnum};
 use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
@@ -394,7 +394,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         return HNSWIndex::open(open_args).unwrap();
     }
 
-    let permit_cpu_count = num_rayon_threads(open_args.hnsw_config.max_indexing_threads);
+    let permit_cpu_count = get_num_indexing_threads(open_args.hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     HNSWIndex::build(

@@ -4,18 +4,16 @@ use std::sync::atomic::AtomicBool;
 use common::budget::ResourceBudget;
 use common::progress_tracker::new_progress_tracker;
 use segment::common::operation_error::{OperationError, OperationResult};
-use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{HnswConfig, HnswGlobalConfig};
-use shard::operations::optimization::OptimizerThresholds;
+use segment::types::HnswGlobalConfig;
 use shard::optimizers::config::{
-    DEFAULT_DELETED_THRESHOLD, DEFAULT_INDEXING_THRESHOLD_KB, DEFAULT_MAX_SEGMENT_PER_CPU_KB,
-    DEFAULT_VACUUM_MIN_VECTOR_NUMBER, OptimizerSourceConfig, TEMP_SEGMENTS_PATH,
-    default_segment_number,
+    DEFAULT_DELETED_THRESHOLD, DEFAULT_VACUUM_MIN_VECTOR_NUMBER, TEMP_SEGMENTS_PATH,
 };
 use shard::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use shard::optimizers::indexing_optimizer::IndexingOptimizer;
 use shard::optimizers::merge_optimizer::MergeOptimizer;
-use shard::optimizers::segment_optimizer::{Optimizer, plan_optimizations};
+use shard::optimizers::segment_optimizer::{
+    Optimizer, max_num_indexing_threads, plan_optimizations,
+};
 use shard::optimizers::vacuum_optimizer::VacuumOptimizer;
 use uuid::Uuid;
 
@@ -43,8 +41,10 @@ impl EdgeShard {
             let mut optimized_in_iteration = false;
 
             for (optimizer, segment_ids) in planned {
-                let desired_io = num_rayon_threads(optimizer.hnsw_config().max_indexing_threads);
-                let budget = ResourceBudget::new(desired_io, desired_io);
+                let num_indexing_threads = optimizer.num_indexing_threads();
+                let desired_io = num_indexing_threads;
+                // Bypass budget in Edge, always allocate the full desired IO for the optimizer.
+                let budget = ResourceBudget::new(num_indexing_threads, desired_io);
                 let permit = budget.try_acquire(0, desired_io).ok_or_else(|| {
                     OperationError::service_error(format!(
                         "failed to acquire resource permit for {} optimizer",
@@ -81,12 +81,13 @@ impl EdgeShard {
         let segments_path = self.path.join(SEGMENTS_PATH);
         let temp_segments_path = self.path.join(TEMP_SEGMENTS_PATH);
 
-        let hnsw_config = HnswConfig::default();
+        let cfg = self.config();
+        let segment_optimizer_config = cfg.segment_optimizer_config();
+        let global_hnsw_config = cfg.hnsw_config;
         let hnsw_global_config = HnswGlobalConfig::default();
-        let segment_optimizer_config =
-            OptimizerSourceConfig::from_segment_config(&self.config, hnsw_config).build();
-        let threshold_config = Self::default_optimizer_thresholds(hnsw_config);
-        let default_segments_number = default_segment_number();
+        let num_indexing_threads = max_num_indexing_threads(&segment_optimizer_config);
+        let threshold_config = cfg.optimizer_thresholds(num_indexing_threads);
+        let default_segments_number = cfg.optimizers.get_number_segments();
 
         vec![
             Arc::new(MergeOptimizer::new(
@@ -95,7 +96,6 @@ impl EdgeShard {
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(IndexingOptimizer::new(
@@ -104,17 +104,19 @@ impl EdgeShard {
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(VacuumOptimizer::new(
-                DEFAULT_DELETED_THRESHOLD,
-                DEFAULT_VACUUM_MIN_VECTOR_NUMBER,
+                cfg.optimizers
+                    .deleted_threshold
+                    .unwrap_or(DEFAULT_DELETED_THRESHOLD),
+                cfg.optimizers
+                    .vacuum_min_vector_number
+                    .unwrap_or(DEFAULT_VACUUM_MIN_VECTOR_NUMBER),
                 threshold_config,
                 segments_path.clone(),
                 temp_segments_path.clone(),
                 segment_optimizer_config.clone(),
-                hnsw_config,
                 hnsw_global_config.clone(),
             )),
             Arc::new(ConfigMismatchOptimizer::new(
@@ -122,20 +124,10 @@ impl EdgeShard {
                 segments_path,
                 temp_segments_path,
                 segment_optimizer_config,
-                hnsw_config,
+                global_hnsw_config,
                 hnsw_global_config,
             )),
         ]
-    }
-
-    fn default_optimizer_thresholds(hnsw_config: HnswConfig) -> OptimizerThresholds {
-        let indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
-        OptimizerThresholds {
-            memmap_threshold_kb: usize::MAX,
-            indexing_threshold_kb: DEFAULT_INDEXING_THRESHOLD_KB,
-            max_segment_size_kb: indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB),
-            deferred_points_threshold_bytes: None,
-        }
     }
 }
 
@@ -146,10 +138,7 @@ mod tests {
 
     use fs_err as fs;
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-    use segment::types::{
-        Distance, ExtendedPointId, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig,
-        VectorStorageType, WithPayloadInterface, WithVector,
-    };
+    use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
     use shard::count::CountRequestInternal;
     use shard::operations::CollectionUpdateOperations::PointOperation;
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
@@ -158,7 +147,8 @@ mod tests {
     use shard::optimizers::config::default_segment_number;
     use uuid::Uuid;
 
-    use crate::EdgeShard;
+    use crate::config::vectors::EdgeVectorParams;
+    use crate::{EdgeShard, EdgeShardConfig};
 
     const VECTOR_NAME: &str = "edge-test-vector";
 
@@ -712,22 +702,25 @@ mod tests {
         }
     }
 
-    fn test_config() -> SegmentConfig {
-        SegmentConfig {
-            vector_data: HashMap::from([(
+    fn test_config() -> EdgeShardConfig {
+        EdgeShardConfig {
+            on_disk_payload: false,
+            vectors: HashMap::from([(
                 VECTOR_NAME.to_string(),
-                VectorDataConfig {
+                EdgeVectorParams {
                     size: 1,
                     distance: Distance::Dot,
-                    storage_type: VectorStorageType::ChunkedMmap,
-                    index: Indexes::Plain {},
                     quantization_config: None,
                     multivector_config: None,
                     datatype: None,
+                    on_disk: None,
+                    hnsw_config: None,
                 },
             )]),
-            sparse_vector_data: HashMap::new(),
-            payload_storage_type: PayloadStorageType::Mmap,
+            sparse_vectors: HashMap::new(),
+            hnsw_config: Default::default(),
+            quantization_config: None,
+            optimizers: Default::default(),
         }
     }
 
