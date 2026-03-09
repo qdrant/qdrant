@@ -11,6 +11,7 @@ mod shard_telemetry;
 mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
+mod deferred_points_tests;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
