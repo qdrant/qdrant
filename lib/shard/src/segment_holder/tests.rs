@@ -997,3 +997,115 @@ fn test_double_proxies() {
     assert!(!has_point_2, "Point 2 should be deleted");
     assert!(has_point_3, "Point 3 should be present");
 }
+
+/// Test that CoW skips deleting the source point when the destination copy is deferred.
+///
+/// When a point is moved from a non-appendable segment to an appendable segment with a
+/// deferred threshold, the point may become deferred in the destination (vectors not yet
+/// fully materialized). In that case, the source must NOT be deleted to avoid data loss.
+#[test]
+fn test_cow_skips_delete_when_destination_is_deferred() {
+    use crate::fixtures::build_segment_with_deferred_1;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
+
+    // Appendable segment with deferred threshold: points 1-5, deferred_internal_id = 3
+    // Any new point gets internal_id >= 5, which is >= 3, so it will be deferred.
+    let appendable = build_segment_with_deferred_1(dir.path());
+
+    // Non-appendable segment with point 100 at version 10
+    let mut non_appendable = empty_segment(dir.path());
+    non_appendable
+        .upsert_point(10, 100.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    non_appendable.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("point is in non-appendable, should take CoW path"),
+            |_, _, _| {},
+            &hw_counter,
+        )
+        .unwrap();
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    // Point 100 was upserted into the appendable segment and became deferred
+    assert!(
+        app.point_is_deferred(100.into()),
+        "Point 100 should be deferred in the destination"
+    );
+    assert!(
+        app.point_version(100.into()).is_some(),
+        "Point 100 should exist in the destination"
+    );
+
+    // Source should NOT be deleted because the destination copy is deferred
+    assert!(
+        non_app.point_version(100.into()).is_some(),
+        "Point 100 should still exist in the source (delete skipped for deferred destination)"
+    );
+}
+
+/// Test that CoW deletes the source point when the destination copy is NOT deferred.
+///
+/// This is the standard CoW behavior: after successfully moving a point to the appendable
+/// segment, the old copy in the non-appendable segment is deleted.
+#[test]
+fn test_cow_deletes_source_when_destination_is_not_deferred() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
+
+    // Regular appendable segment (no deferred threshold)
+    let appendable = empty_segment(dir.path());
+
+    // Non-appendable segment with point 100 at version 10
+    let mut non_appendable = empty_segment(dir.path());
+    non_appendable
+        .upsert_point(10, 100.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    non_appendable.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let sid_non_app = holder.add_new(non_appendable);
+    let sid_app = holder.add_new(appendable);
+
+    holder
+        .apply_points_with_conditional_move(
+            20,
+            &[100.into()],
+            |_, _| unreachable!("point is in non-appendable, should take CoW path"),
+            |_, _, _| {},
+            &hw_counter,
+        )
+        .unwrap();
+
+    let non_app = holder.get(sid_non_app).unwrap().get();
+    let non_app = non_app.read();
+    let app = holder.get(sid_app).unwrap().get();
+    let app = app.read();
+
+    // Point 100 should exist in the appendable segment, not deferred
+    assert!(
+        app.has_point(100.into()),
+        "Point 100 should exist in the destination"
+    );
+
+    // Source should be deleted (standard CoW behavior)
+    assert!(
+        non_app.point_version(100.into()).is_none(),
+        "Point 100 should be deleted from the source"
+    );
+}

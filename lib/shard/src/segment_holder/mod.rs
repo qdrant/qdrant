@@ -693,7 +693,10 @@ impl SegmentHolder {
                         appendable_write_segment
                             .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 
-                        write_segment.delete_point(op_num, point_id, hw_counter)?;
+                        // Keep the source of the CoW operation as the deferred point is invisible until indexing.
+                        if !appendable_write_segment.point_is_deferred(point_id) {
+                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                        }
 
                         Ok(true)
                     },
