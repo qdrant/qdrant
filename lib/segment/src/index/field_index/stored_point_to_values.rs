@@ -14,48 +14,51 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
-const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
+const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with slice in file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
 
-/// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
-pub trait MmapValue: ToOwned {
-    fn mmapped_size(value: &Self) -> usize;
+/// Trait for values that can be stored in a file. It's used in `StoredPointToValues` to store values.
+pub trait StoredValue: ToOwned {
+    /// Get the size in bytes that the value will take when stored in a slice.
+    fn stored_size(value: &Self) -> usize;
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self>;
+    /// Read one value from the beginning of the bytes slice.
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self>;
 
-    fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()>;
+    /// Write the value into the beginning of the bytes slice. The slice must have enough capacity for the value.
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()>;
 }
 
-impl<T: bytemuck::Pod> MmapValue for T {
-    fn mmapped_size(_value: &Self) -> usize {
+impl<T: bytemuck::Pod> StoredValue for T {
+    fn stored_size(_value: &Self) -> usize {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self> {
         bytemuck::try_cast_slice(bytes).ok()?.first()
     }
 
-    fn write_to_mmap(value: &Self, bytes: &mut [u8]) -> Option<()> {
-        let value_bytes = bytemuck::bytes_of(value);
-        value_bytes.write_to_prefix(bytes).ok()
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()> {
+        let value_bytes = bytemuck::bytes_of(self);
+        <[u8] as zerocopy::IntoBytes>::write_to_prefix(value_bytes, bytes).ok()
     }
 }
 
-impl MmapValue for str {
-    fn mmapped_size(value: &str) -> usize {
+impl StoredValue for str {
+    fn stored_size(value: &str) -> usize {
         value.len() + std::mem::size_of::<u32>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<&Self> {
-        let (len, rest) = u32::read_from_prefix(bytes).ok()?;
+    fn read_from_prefix(bytes: &[u8]) -> Option<&Self> {
+        let (len, rest) = <u32 as zerocopy::FromBytes>::read_from_prefix(bytes).ok()?;
         std::str::from_utf8(rest.get(..len as usize)?).ok()
     }
 
-    fn write_to_mmap(value: &str, bytes: &mut [u8]) -> Option<()> {
-        u32::write_to_prefix(&(value.len() as u32), bytes).ok()?;
+    fn write_to_prefix(&self, bytes: &mut [u8]) -> Option<()> {
+        <u32 as zerocopy::IntoBytes>::write_to_prefix(&(self.len() as u32), bytes).ok()?;
         bytes
-            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
-            .copy_from_slice(value.as_bytes());
+            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())?
+            .copy_from_slice(self.as_bytes());
         Some(())
     }
 }
@@ -65,7 +68,7 @@ impl MmapValue for str {
 /// This structure is immutable.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
-pub struct MmapPointToValues<T: MmapValue + ?Sized, S: UniversalRead<u8>> {
+pub struct StoredPointToValues<T: StoredValue + ?Sized, S: UniversalRead<u8>> {
     file_name: PathBuf,
     store: S,
     header: Header,
@@ -89,9 +92,9 @@ struct Header {
     points_count: u64,
 }
 
-impl<T, S> MmapPointToValues<T, S>
+impl<T, S> StoredPointToValues<T, S>
 where
-    T: MmapValue + ?Sized,
+    T: StoredValue + ?Sized,
     S: UniversalRead<u8>,
 {
     pub fn from_iter<'a>(
@@ -106,7 +109,7 @@ where
         let mut values_size = 0;
         for (point_id, values) in iter.clone() {
             points_count = max(points_count, (point_id + 1) as usize);
-            values_size += values.map(|v| T::mmapped_size(v)).sum::<usize>();
+            values_size += values.map(|v| T::stored_size(v)).sum::<usize>();
         }
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
@@ -135,9 +138,10 @@ where
                 let bytes = mmap
                     .get_mut(point_values_offset..)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
-                T::write_to_mmap(value, bytes)
+                value
+                    .write_to_prefix(bytes)
                     .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
-                point_values_offset += T::mmapped_size(value);
+                point_values_offset += T::stored_size(value);
             }
 
             let range = MmapRange {
@@ -327,7 +331,7 @@ struct ValuesIter<'a, T: ?Sized> {
     _type: std::marker::PhantomData<T>,
 }
 
-impl<'a, T: MmapValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
+impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
     type Item = Cow<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -336,11 +340,11 @@ impl<'a, T: MmapValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
         }
 
         let cow = match &self.bytes {
-            Cow::Borrowed(slice) => Cow::Borrowed(T::read_from_mmap(slice.get(self.start..)?)?),
-            Cow::Owned(vec) => Cow::Owned(T::read_from_mmap(vec.get(self.start..)?)?.to_owned()),
+            Cow::Borrowed(slice) => Cow::Borrowed(T::read_from_prefix(slice.get(self.start..)?)?),
+            Cow::Owned(vec) => Cow::Owned(T::read_from_prefix(vec.get(self.start..)?)?.to_owned()),
         };
 
-        self.start += T::mmapped_size(cow.as_ref());
+        self.start += T::stored_size(cow.as_ref());
         self.count = self.count.saturating_sub(1);
 
         Some(cow)
@@ -401,7 +405,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        MmapPointToValues::<str, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<str, MmapUniversal<u8>>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -410,7 +414,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            MmapPointToValues::<str, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<str, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let v = point_to_values
@@ -461,7 +465,7 @@ mod tests {
             .prefix("mmap_point_to_values")
             .tempdir()
             .unwrap();
-        MmapPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::from_iter(
             dir.path(),
             values
                 .iter()
@@ -470,7 +474,7 @@ mod tests {
         )
         .unwrap();
         let point_to_values =
-            MmapPointToValues::<GeoPoint, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
+            StoredPointToValues::<GeoPoint, MmapUniversal<u8>>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values

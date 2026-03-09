@@ -21,13 +21,13 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
-use crate::index::field_index::mmap_point_to_values::{MmapPointToValues, MmapValue};
+use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
 
 const PAIRS_PATH: &str = "data.bin";
 const DELETED_PATH: &str = "deleted.bin";
 const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
-pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + 'static> {
+pub struct MmapNumericIndex<T: Encodable + Numericable + Default + StoredValue + 'static> {
     path: PathBuf,
     pub(super) storage: Storage<T, MmapUniversal<u8>>,
     histogram: Histogram<T>,
@@ -37,13 +37,13 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + '
 }
 
 pub(super) struct Storage<
-    T: Encodable + Numericable + Default + MmapValue + 'static,
+    T: Encodable + Numericable + Default + StoredValue + 'static,
     S: UniversalRead<u8>,
 > {
     deleted: MmapBitSliceBufferedUpdateWrapper,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: MmapSlice<Point<T>>,
-    pub(super) point_to_values: MmapPointToValues<T, S>,
+    pub(super) point_to_values: StoredPointToValues<T, S>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +90,7 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIterat
     }
 }
 
-impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
+impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
     pub fn build(
         in_memory_index: InMemoryNumericIndex<T>,
         path: &Path,
@@ -111,7 +111,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         in_memory_index.histogram.save(path)?;
 
-        MmapPointToValues::<T, MmapUniversal<u8>>::from_iter(
+        StoredPointToValues::<T, MmapUniversal<u8>>::from_iter(
             path,
             in_memory_index
                 .point_to_values
@@ -180,7 +180,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
                 do_populate,
             )?)?
         };
-        let point_to_values = MmapPointToValues::open(path, do_populate)?;
+        let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
         Ok(Some(Self {
             path: path.to_path_buf(),
