@@ -22,6 +22,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true, features = ["atomic"] }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+dashmap = { workspace = true }
 delegate = { workspace = true }
 fs-err = { workspace = true }
 fs_extra = { workspace = true }

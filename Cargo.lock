@@ -1318,6 +1318,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "dashmap",
  "delegate",
  "fs-err",
  "fs_extra",

@@ -1,8 +1,10 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic;
+use std::sync::{LazyLock, atomic};
 use std::time::Instant;
+
+use dashmap::DashMap;
 
 pub mod parking_lot {
     pub use super::{
@@ -13,15 +15,14 @@ pub mod parking_lot {
     };
 }
 
-type MeasurableMapMutex = ::parking_lot::Mutex<
-    HashMap<&'static str, &'static MeasurableRwLockMetrics, ahash::RandomState>,
->;
+type MeasurableMapMutex =
+    DashMap<&'static str, &'static MeasurableRwLockMetrics, ahash::RandomState>;
 
 pub struct Measurable {
     /// Total operation time.
     total_time_us_counter: atomic::AtomicU64,
     total_counter: atomic::AtomicU64,
-    locks: MeasurableMapMutex,
+    locks_info: LazyLock<MeasurableMapMutex>,
 }
 
 impl Measurable {
@@ -29,9 +30,9 @@ impl Measurable {
         Self {
             total_time_us_counter: atomic::AtomicU64::new(0),
             total_counter: atomic::AtomicU64::new(0),
-            locks: ::parking_lot::Mutex::new(HashMap::with_hasher(ahash::RandomState::with_seeds(
-                1, 42, 3, 0,
-            ))),
+            locks_info: LazyLock::new(|| {
+                DashMap::with_hasher(ahash::RandomState::with_seeds(1, 42, 3, 0))
+            }),
         }
     }
 }
@@ -132,7 +133,7 @@ pub fn log_operation_metrics(op: &str, m: &Measurable) {
     let total_time = m.total_time_us_counter.load(Relaxed) as f64 / 1e6;
     let total_count = m.total_counter.load(Relaxed);
 
-    let items = m.locks.lock().clone();
+    let items: DashMap<_, _, _> = LazyLock::force(&m.locks_info).clone();
     for (tag, lock_metrics) in items {
         log_lock_metrics(op, tag, lock_metrics);
     }
@@ -217,8 +218,8 @@ fn get_current_measurable_rwlock_metrics(
     CURRENT_MEASURABLE
         .with(|ptr| unsafe { ptr.get().as_ref() })
         .map(|m| {
-            let mut locks = m.locks.lock();
-            *locks
+            let locks_info = LazyLock::force(&m.locks_info);
+            *locks_info
                 .entry(tag)
                 .or_insert(Box::leak(Box::new(MeasurableRwLockMetrics::new())))
         })
