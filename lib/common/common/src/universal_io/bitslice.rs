@@ -11,7 +11,6 @@ use std::path::Path;
 
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
-use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 
 use crate::mmap::create_and_ensure_length;
@@ -21,6 +20,8 @@ use crate::universal_io::{
 
 /// Number of bits per `u64` element.
 const BITS_PER_ELEMENT: u64 = u64::BITS as u64;
+
+type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
 
 /// Convenience alias for a bitslice backed by a memory-mapped file.
 pub type MmapBitSliceStorage = BitSliceStorage<crate::universal_io::mmap::MmapUniversal<u64>>;
@@ -85,7 +86,7 @@ impl<S: UniversalRead<u64>> BitSliceStorage<S> {
     ///
     /// Returns `Cow::Borrowed` when the backend supports zero-copy reads
     /// (e.g., mmap), otherwise returns `Cow::Owned`.
-    pub fn read_all(&self) -> Result<Cow<'_, BitSlice<u64, Lsb0>>> {
+    pub fn read_all(&self) -> Result<Cow<'_, BitSlice>> {
         let elements = self.storage.read_whole()?;
         match elements {
             Cow::Borrowed(slice) => Ok(Cow::Borrowed(BitSlice::from_slice(slice))),
@@ -117,7 +118,7 @@ impl<S: UniversalRead<u64>> BitSliceStorage<S> {
             length: 1,
         })?[0];
 
-        let bitslice = BitSlice::<u64, Lsb0>::from_element(&element);
+        let bitslice = BitSlice::from_element(&element);
 
         Ok(bitslice
             .get(bit_within_element as usize)
@@ -211,8 +212,8 @@ mod tests {
         ///
         /// Only writes to the backend if the element actually changed.
         pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> Result<bool> {
-            let element_index = bit_index / BITS_PER_ELEMENT;
-            let bit_within_element = bit_index % BITS_PER_ELEMENT;
+            let element_index = bit_index >> <u64 as BitRegister>::INDX;
+            let bit_within_element = bit_index as u8 & <u64 as BitRegister>::MASK;
 
             if element_index >= self.element_len {
                 return Err(UniversalIoError::OutOfBounds {
@@ -222,22 +223,19 @@ mod tests {
                 });
             }
 
-            let elements = self.storage.read::<false>(ElementsRange {
+            let mut element = self.storage.read::<false>(ElementsRange {
                 start: element_index,
                 length: 1,
-            })?;
+            })?[0];
 
-            let old_element = elements[0];
-            let old_bit = (old_element >> bit_within_element) & 1 != 0;
+            let element = &mut element;
 
-            let new_element = if value {
-                old_element | (1u64 << bit_within_element)
-            } else {
-                old_element & !(1u64 << bit_within_element)
-            };
+            let bitslice = BitSlice::from_element_mut(element);
 
-            if old_element != new_element {
-                self.storage.write(element_index, &[new_element])?;
+            let old_bit = bitslice.replace(bit_within_element as usize, value);
+
+            if old_bit != value {
+                self.storage.write(element_index, &[*element])?;
             }
 
             Ok(old_bit)
@@ -265,17 +263,24 @@ mod tests {
 
     #[test]
     fn test_read_whole_bitslice() {
-        // 0xB2 = 0b10110010
-        let data = [0xB2u8];
+        // Two u64 elements (16 bytes):
+        let data = [
+            // element 0:
+            0b10110010, 0b01001111, 0x00, 0x00, 0x00, 0x00, 0x00, 0b10000000,
+            // element 1:
+            0b00000001, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0b11111111,
+        ];
         let f = create_temp_file(&data);
 
         let storage: MmapBitSliceStorage =
             BitSliceStorage::open(f.path(), OpenOptions::default()).unwrap();
 
+        assert_eq!(storage.element_len(), 2);
+        assert_eq!(storage.bit_len(), 128);
+
         let bs = storage.read_all().unwrap();
 
-        // Lsb0: bit 0 is LSB of first byte
-        // 0xB2 = 0b10110010
+        // Element 0, byte 0: 0xB2 = 0b10110010
         // Lsb0 bits: [0,1,0,0,1,1,0,1]
         assert!(!bs[0]); // bit 0 = 0
         assert!(bs[1]); // bit 1 = 1
@@ -285,6 +290,35 @@ mod tests {
         assert!(bs[5]); // bit 5 = 1
         assert!(!bs[6]); // bit 6 = 0
         assert!(bs[7]); // bit 7 = 1
+
+        // Element 0, byte 1: 0x4F = 0b01001111
+        // Lsb0 bits: [1,1,1,1,0,0,1,0]
+        assert!(bs[8]); // bit 8 = 1
+        assert!(bs[9]); // bit 9 = 1
+        assert!(bs[10]); // bit 10 = 1
+        assert!(bs[11]); // bit 11 = 1
+        assert!(!bs[12]); // bit 12 = 0
+        assert!(!bs[13]); // bit 13 = 0
+        assert!(bs[14]); // bit 14 = 1
+        assert!(!bs[15]); // bit 15 = 0
+
+        // Element 0, byte 7: 0x80 = 0b10000000 -> bit 63 is set
+        assert!(!bs[56]); // bit 56 = 0
+        assert!(bs[63]); // bit 63 = 1 (MSB of element 0)
+
+        // Element 1, byte 0: 0x01 -> bit 64 (LSB of element 1) is set
+        assert!(bs[64]); // bit 64 = 1
+        assert!(!bs[65]); // bit 65 = 0
+
+        // Element 1, byte 7: 0xFF → bits 120..=127 are all set
+        for i in 120..=127 {
+            assert!(bs[i], "bit {i} should be set");
+        }
+
+        // Spot-check some zeros in the middle of element 1
+        for i in 72..120 {
+            assert!(!bs[i], "bit {i} should be clear");
+        }
     }
 
     #[test]

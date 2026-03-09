@@ -247,7 +247,7 @@ impl ImmutableIdTracker {
 
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
         let deleted_storage = MmapBitSliceStorage::open(
-            &Self::deleted_file_path(segment_path),
+            Self::deleted_file_path(segment_path),
             OpenOptions {
                 populate: Some(true),
                 ..OpenOptions::default()
