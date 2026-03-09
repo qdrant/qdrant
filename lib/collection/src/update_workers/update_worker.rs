@@ -271,14 +271,12 @@ impl UpdateWorkers {
         });
 
         let duration = start_time.elapsed();
-        let (_, _, cpu_ratio) = cpu_utilization.read();
+        let cpu_ratio = cpu_utilization.ratio();
+        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
 
-        log_request_to_collector(
-            &collection_name,
-            duration,
-            Some(cpu_ratio as f32),
-            move || loggable_operation,
-        );
+        log_request_to_collector(&collection_name, duration, cpu_usage_ratio, move || {
+            loggable_operation
+        });
 
         result
     }

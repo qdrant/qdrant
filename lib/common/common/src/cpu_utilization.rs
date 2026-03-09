@@ -49,24 +49,18 @@ impl CpuUtilization {
         result
     }
 
-    /// Returns (total_wall_time_us, total_cpu_time_us, ratio).
+    /// Returns CPU utilization ratio: `cpu_time / wall_time`, clamped to `[0.0, 1.0]`.
     ///
-    /// Ratio is `cpu_time / wall_time`, clamped to `[0.0, 1.0]`.
-    /// Returns `(0.0, 0.0, 0.0)` if no measurements were recorded.
-    pub fn read(&self) -> (f64, f64, f64) {
+    /// 1.0 means pure CPU-bound, 0.0 means pure IO-bound (or no measurements).
+    pub fn ratio(&self) -> f32 {
         let wall_ns = self.inner.wall_time_ns.load(Ordering::Relaxed) as f64;
         let cpu_ns = self.inner.cpu_time_ns.load(Ordering::Relaxed) as f64;
 
-        let wall_us = wall_ns / 1_000.0;
-        let cpu_us = cpu_ns / 1_000.0;
-
-        let ratio = if wall_ns > 0.0 {
-            (cpu_ns / wall_ns).clamp(0.0, 1.0)
+        if wall_ns > 0.0 {
+            (cpu_ns / wall_ns).clamp(0.0, 1.0) as f32
         } else {
             0.0
-        };
-
-        (wall_us, cpu_us, ratio)
+        }
     }
 }
 
@@ -117,10 +111,7 @@ mod tests {
 
         #[cfg(target_os = "linux")]
         {
-            let (wall_us, cpu_us, ratio) = cu.read();
-            assert!(wall_us > 0.0, "wall time should be positive");
-
-            assert!(cpu_us > 0.0, "cpu time should be positive on linux");
+            let ratio = cu.ratio();
             assert!(ratio > 0.0, "ratio should be positive for cpu-bound work");
         }
     }
@@ -133,17 +124,12 @@ mod tests {
         cu1.measure(|| std::hint::black_box(42));
         cu2.measure(|| std::hint::black_box(42));
 
-        let (wall1, _, _) = cu1.read();
-        let (wall2, _, _) = cu2.read();
-        assert_eq!(wall1, wall2, "clones should share the same counters");
+        assert_eq!(cu1.ratio(), cu2.ratio(), "clones should share the same counters");
     }
 
     #[test]
-    fn test_empty_read() {
+    fn test_empty_ratio() {
         let cu = CpuUtilization::new();
-        let (wall, cpu, ratio) = cu.read();
-        assert_eq!(wall, 0.0);
-        assert_eq!(cpu, 0.0);
-        assert_eq!(ratio, 0.0);
+        assert_eq!(cu.ratio(), 0.0);
     }
 }
