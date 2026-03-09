@@ -877,6 +877,18 @@ impl NonAppendableSegmentEntry for Segment {
         };
         false
     }
+
+    fn deferred_point_ids(&self) -> Vec<PointIdType> {
+        let Some(deferred_from) = self.deferred_internal_id else {
+            return vec![];
+        };
+        let id_tracker = self.id_tracker.borrow();
+        id_tracker
+            .iter_internal()
+            .filter(move |&internal_id| internal_id >= deferred_from)
+            .filter_map(|internal_id| id_tracker.external_id(internal_id))
+            .collect()
+    }
 }
 
 impl SegmentEntry for Segment {

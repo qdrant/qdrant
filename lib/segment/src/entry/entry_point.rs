@@ -340,6 +340,9 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
 
     /// Check whether the point is marked as deferred in the segment
     fn point_is_deferred(&self, point_id: PointIdType) -> bool;
+
+    /// Returns external IDs of all deferred points in the segment
+    fn deferred_point_ids(&self) -> Vec<PointIdType>;
 }
 
 /// Define mutable operations which can be performed with Segment or Segment-like entity.

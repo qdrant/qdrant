@@ -9,6 +9,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -485,10 +486,15 @@ fn finish_optimization(
     let read_segment_holder = RwLockWriteGuard::downgrade(writable_segment_holder);
     // Can read, but can't yet write updates.
 
-    // ToDo: collect deferred points from proxies.
-    let deferred_points: Vec<PointIdType> = vec![];
+    let mut deferred_points_set = AHashSet::new();
+    for proxy in &proxies {
+        deferred_points_set.extend(proxy.get().read().deferred_point_ids());
+    }
+    let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
 
-    read_segment_holder.deduplicate_points(&deferred_points, hw_counter)?;
+    if !deferred_points.is_empty() {
+        read_segment_holder.deduplicate_points(&deferred_points, hw_counter)?;
+    }
 
     drop(read_segment_holder);
     // Allow updates again

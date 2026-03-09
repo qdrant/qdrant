@@ -711,6 +711,12 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 .read()
                 .point_is_deferred(point_id)
     }
+
+    fn deferred_point_ids(&self) -> Vec<PointIdType> {
+        let mut ids = self.wrapped_segment.get().read().deferred_point_ids();
+        ids.retain(|point_id| !self.deleted_points.contains_key(point_id));
+        ids
+    }
 }
 
 impl SegmentEntry for ProxySegment {
