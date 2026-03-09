@@ -1,10 +1,10 @@
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use api::grpc::ReadBatchRange;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
@@ -439,8 +439,59 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<ReadMultiResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
+        let ReadMultiRequest {
+            collection_name,
+            reads,
+            open_options,
+        } = request.into_inner();
+        let open_options = convert_open_options(open_options);
 
-        todo!()
+        // Resolve all paths and deduplicate into a file index.
+        let mut path_to_index = HashMap::<PathBuf, FileIndex>::new();
+        let mut unique_paths = Vec::<PathBuf>::new();
+        let mut reads_ = Vec::<(FileIndex, _)>::with_capacity(reads.len());
+
+        for entry in &reads {
+            let resolved = self.resolve_path(&auth, &collection_name, &entry.path)?;
+            let file_index = *path_to_index.entry(resolved.clone()).or_insert_with(|| {
+                let idx = unique_paths.len();
+                unique_paths.push(resolved);
+                idx
+            });
+            reads_.push((
+                file_index,
+                ElementsRange {
+                    start: entry.offset,
+                    length: entry.length,
+                },
+            ));
+        }
+
+        let num_reads = reads.len();
+
+        let data = tokio::task::spawn_blocking(move || {
+            let files = unique_paths
+                .iter()
+                .map(|p| S::open(p, open_options))
+                .collect::<common::universal_io::Result<Vec<_>>>()
+                .map_err(io_error_to_status)?;
+
+            let mut results = vec![Vec::new(); num_reads];
+            dispatch_read_multi(
+                &files,
+                reads_,
+                open_options.need_sequential,
+                |op_idx, _, chunk| {
+                    results[op_idx].extend_from_slice(chunk);
+                    Ok(())
+                },
+            )
+            .map_err(io_error_to_status)?;
+            Ok::<Vec<Vec<u8>>, Status>(results)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
+
+        Ok(Response::new(ReadMultiResponse { data }))
     }
 }
