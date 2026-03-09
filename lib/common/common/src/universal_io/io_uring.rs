@@ -56,7 +56,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: Sized,
     {
-        // Check that `io_uring` was succesfully initialized and basic read/write operations are supported
+        // Check that `io_uring` was successfully initialized and basic read/write operations are supported
         with_uring(|io_uring| {
             let mut probe = Probe::new();
             io_uring.submitter().register_probe(&mut probe)?;
