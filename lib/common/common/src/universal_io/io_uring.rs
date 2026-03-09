@@ -13,7 +13,7 @@ use fs_err as fs;
 use super::*;
 
 thread_local! {
-    static IO_URING: RefCell<IoUring> = RefCell::new(IoUring::new(IO_URING_QUEUE_LENGTH).expect("io_uring initialized"));
+    static IO_URING: io::Result<RefCell<IoUring>> = IoUring::new(IO_URING_QUEUE_LENGTH).map(RefCell::new);
 }
 
 const IO_URING_QUEUE_LENGTH: u32 = 16;
@@ -70,7 +70,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
             let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
@@ -82,7 +82,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             let bytes = resp.expect_read();
             let items: Vec<T> = bytemuck::cast_vec(bytes);
             Ok(Cow::from(items))
-        })
+        })?
     }
 
     fn read_batch<const SEQUENTIAL: bool>(
@@ -90,7 +90,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
             let mut ranges = ranges.into_iter().enumerate().peekable();
 
@@ -116,7 +116,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             }
 
             Ok(())
-        })
+        })?
     }
 
     fn read_multi<const SEQUENTIAL: bool>(
@@ -127,7 +127,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: Sized,
     {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_indices = Vec::new();
@@ -167,7 +167,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
             }
 
             Ok(())
-        })
+        })?
     }
 
     fn len(&self) -> Result<u64> {
@@ -192,7 +192,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn write(&mut self, offset: ElementOffset, items: &[T]) -> Result<()> {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
             let byte_offset = Self::element_to_byte_offset::<T>(offset);
@@ -204,14 +204,14 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
             let (_, resp) = rt.completed().next().expect("write operation completed")?;
             resp.expect_write();
             Ok(())
-        })
+        })?
     }
 
     fn write_batch<'a>(
         &mut self,
         items: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()> {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
             let mut items = items.into_iter().enumerate().peekable();
 
@@ -236,7 +236,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
             }
 
             Ok(())
-        })
+        })?
     }
 
     fn write_multi<'a>(
@@ -246,7 +246,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     where
         Self: Sized,
     {
-        IO_URING.with_borrow_mut(|io_uring| {
+        with_uring(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
             let mut writes = writes.into_iter().enumerate().peekable();
 
@@ -275,13 +275,33 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
             }
 
             Ok(())
-        })
+        })?
     }
 
     fn flusher(&self) -> Flusher {
         let file = self.file.clone();
         Box::new(move || Ok(file.sync_all()?))
     }
+}
+
+fn with_uring<T, F>(with_uring: F) -> io::Result<T>
+where
+    F: FnOnce(&mut IoUring) -> T,
+{
+    IO_URING.with(|io_uring| {
+        let io_uring = match io_uring {
+            Ok(io_uring) => io_uring,
+            Err(err) => {
+                return Err(io::Error::other(format!(
+                    "failed to initialize io_uring: {err}"
+                )));
+            }
+        };
+
+        let mut io_uring = io_uring.borrow_mut();
+        let output = with_uring(&mut io_uring);
+        Ok(output)
+    })
 }
 
 struct IoUringRuntime<'a> {
