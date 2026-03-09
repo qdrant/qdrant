@@ -384,7 +384,7 @@ fn build_hnsw_index<R: Rng + ?Sized>(
         quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
             .quantized_vectors
             .clone(),
-        payload_index: Arc::clone(&segment.payload_index),
+        payload_index: segment.payload_index.clone(),
         hnsw_config,
     };
 

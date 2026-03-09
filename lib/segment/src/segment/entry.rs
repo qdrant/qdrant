@@ -41,7 +41,7 @@ use crate::vector_storage::VectorStorage;
 /// any kind of proxy or wrapping.
 impl NonAppendableSegmentEntry for Segment {
     fn version(&self) -> SeqNumberType {
-        self.version.unwrap_or(0)
+        self.version.lock().unwrap_or(0)
     }
 
     fn persistent_version(&self) -> SeqNumberType {
@@ -381,7 +381,8 @@ impl NonAppendableSegmentEntry for Segment {
                 }
             }
             Some(filter) => {
-                let payload_index = self.payload_index.borrow();
+                let payload_index = self.payload_index.read();
+
                 payload_index.estimate_cardinality(filter, hw_counter)
             }
         }
@@ -489,17 +490,18 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn info(&self) -> SegmentInfo {
-        let payload_index = self.payload_index.borrow();
-        let schema = payload_index
-            .indexed_fields()
-            .into_iter()
-            .map(|(key, index_schema)| {
-                let points_count = payload_index.indexed_points(&key);
-                let index_info = PayloadIndexInfo::new(index_schema, points_count);
-                (key, index_info)
-            })
-            .collect();
-
+        let schema = {
+            let payload_index = self.payload_index.read();
+            payload_index
+                .indexed_fields()
+                .into_iter()
+                .map(|(key, index_schema)| {
+                    let points_count = payload_index.indexed_points(&key);
+                    let index_info = PayloadIndexInfo::new(index_schema, points_count);
+                    (key, index_info)
+                })
+                .collect()
+        };
         let mut info = self.size_info();
         info.index_schema = schema;
 
@@ -517,7 +519,7 @@ impl NonAppendableSegmentEntry for Segment {
     fn flusher(&self, force: bool) -> Option<Flusher> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
 
-        match (self.version, current_persisted_version) {
+        match (*self.version.lock(), current_persisted_version) {
             (None, _) => {
                 // Segment is empty, nothing to flush
                 return None;
@@ -546,7 +548,8 @@ impl NonAppendableSegmentEntry for Segment {
         let state = self.get_state();
         let segment_path = self.segment_path.clone();
         let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
-        let payload_index_flusher = self.payload_index.borrow().flusher();
+
+        let payload_index_flusher = self.payload_index.read().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
@@ -707,28 +710,29 @@ impl NonAppendableSegmentEntry for Segment {
         self.segment_path.clone()
     }
 
-    fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
+    fn delete_field_index(&self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment.payload_index.borrow_mut().drop_index(key)?;
-            segment.version_tracker.set_payload_index_schema(key, None);
+            let mut payload_index = segment.payload_index.write();
+            let mut version_tracker = segment.version_tracker.write();
+            payload_index.drop_index(key)?;
+            version_tracker.set_payload_index_schema(key, None);
             Ok(true)
         })
     }
 
     fn delete_field_index_if_incompatible(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            let is_incompatible = segment
-                .payload_index
-                .borrow_mut()
-                .drop_index_if_incompatible(key, field_schema)?;
+            let mut payload_index = segment.payload_index.write();
+            let mut version_tracker = segment.version_tracker.write();
+            let is_incompatible = payload_index.drop_index_if_incompatible(key, field_schema)?;
 
             if is_incompatible {
-                segment.version_tracker.set_payload_index_schema(key, None);
+                version_tracker.set_payload_index_schema(key, None);
             }
 
             Ok(true)
@@ -743,13 +747,13 @@ impl NonAppendableSegmentEntry for Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult> {
         // Check version without updating it
-        if self.version.unwrap_or(0) > op_num {
+        if self.version.lock().unwrap_or(0) > op_num {
             return Ok(BuildFieldIndexResult::SkippedByVersion);
         }
 
         let field_index = match self
             .payload_index
-            .borrow()
+            .read()
             .build_index(key, field_type, hw_counter)?
         {
             BuildIndexResult::Built(indexes) => indexes,
@@ -769,21 +773,17 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn apply_field_index(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         key: PayloadKeyType,
         schema: PayloadFieldSchema,
         field_index: Vec<FieldIndex>,
     ) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
-            segment
-                .payload_index
-                .borrow_mut()
-                .apply_index(key.clone(), schema, field_index)?;
-
-            segment
-                .version_tracker
-                .set_payload_index_schema(&key, Some(op_num));
+            let mut payload_index = segment.payload_index.write();
+            let mut version_tracker = segment.version_tracker.write();
+            payload_index.apply_index(key.clone(), schema, field_index)?;
+            version_tracker.set_payload_index_schema(&key, Some(op_num));
 
             Ok(true)
         })
@@ -801,9 +801,10 @@ impl NonAppendableSegmentEntry for Segment {
             None => Ok(false),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
+                    // TODO coordinated locking
                     segment.delete_point_internal(internal_id, hw_counter)?;
 
-                    segment.version_tracker.set_payload(Some(op_num));
+                    segment.version_tracker.write().set_payload(Some(op_num));
 
                     Ok((true, Some(internal_id)))
                 })
@@ -812,11 +813,11 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        self.payload_index.borrow().indexed_fields()
+        self.payload_index.read().indexed_fields()
     }
 
     fn check_error(&self) -> Option<SegmentFailedState> {
-        self.error_status.clone()
+        self.error_status.read().clone()
     }
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
@@ -838,7 +839,7 @@ impl NonAppendableSegmentEntry for Segment {
             info: self.info(),
             config: self.config().clone(),
             vector_index_searches,
-            payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+            payload_field_indices: self.payload_index.read().get_telemetry_data(),
         }
     }
 
@@ -950,6 +951,7 @@ impl SegmentEntry for Segment {
                     if is_deleted {
                         segment
                             .version_tracker
+                            .write()
                             .set_vector(vector_name, Some(op_num));
                     }
 
@@ -969,12 +971,10 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment.payload_index.borrow_mut().overwrite_payload(
-                    internal_id,
-                    full_payload,
-                    hw_counter,
-                )?;
-                segment.version_tracker.set_payload(Some(op_num));
+                let mut payload_index = segment.payload_index.write();
+                let mut version_tracker = segment.version_tracker.write();
+                payload_index.overwrite_payload(internal_id, full_payload, hw_counter)?;
+                version_tracker.set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -995,13 +995,10 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment.payload_index.borrow_mut().set_payload(
-                    internal_id,
-                    payload,
-                    key,
-                    hw_counter,
-                )?;
-                segment.version_tracker.set_payload(Some(op_num));
+                let mut payload_index = segment.payload_index.write();
+                let mut version_tracker = segment.version_tracker.write();
+                payload_index.set_payload(internal_id, payload, key, hw_counter)?;
+                version_tracker.set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -1021,11 +1018,10 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .delete_payload(internal_id, key, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+                let mut payload_index = segment.payload_index.write();
+                let mut version_tracker = segment.version_tracker.write();
+                payload_index.delete_payload(internal_id, key, hw_counter)?;
+                version_tracker.set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }
@@ -1044,11 +1040,10 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .clear_payload(internal_id, hw_counter)?;
-                segment.version_tracker.set_payload(Some(op_num));
+                let mut payload_index = segment.payload_index.write();
+                let mut version_tracker = segment.version_tracker.write();
+                payload_index.clear_payload(internal_id, hw_counter)?;
+                version_tracker.set_payload(Some(op_num));
 
                 Ok((true, Some(internal_id)))
             }

@@ -20,6 +20,7 @@ use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
+use parking_lot::RwLock;
 use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -308,14 +309,12 @@ impl SegmentBuilder {
         });
         drop(locked_id_trackers);
 
-        let payloads: Vec<_> = segments.iter().map(|i| i.payload_index.borrow()).collect();
+        let payload_indexes: Vec<_> = segments.iter().map(|i| i.payload_index.read()).collect();
 
         for defragment_key in &self.defragment_keys {
             for point_data in &mut points_to_insert {
-                let Some(payload_indices) = payloads[point_data.segment_index.get() as usize]
-                    .field_indexes
-                    .get(defragment_key)
-                else {
+                let borrow = &payload_indexes[point_data.segment_index.get() as usize];
+                let Some(payload_indices) = borrow.field_indexes.get(defragment_key) else {
                     continue;
                 };
 
@@ -390,7 +389,7 @@ impl SegmentBuilder {
 
             let old_internal_id = point_data.internal_id;
 
-            let other_payload = payloads[point_data.segment_index.get() as usize]
+            let other_payload = payload_indexes[point_data.segment_index.get() as usize]
                 .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
 
             match self
@@ -451,7 +450,7 @@ impl SegmentBuilder {
             }
         }
 
-        for payload in payloads {
+        for payload in payload_indexes {
             for (field, payload_schema) in payload.indexed_fields() {
                 self.indexed_fields.insert(field, payload_schema);
             }
@@ -602,7 +601,7 @@ impl SegmentBuilder {
             drop(progress_payload_index);
 
             payload_index.flusher()()?;
-            let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
+            let payload_index_arc = Arc::new(RwLock::new(payload_index));
 
             // Try to lock GPU device.
             #[cfg(feature = "gpu")]
@@ -697,7 +696,7 @@ impl SegmentBuilder {
             }
 
             // Clear cache for payload index to avoid cache pollution
-            payload_index_arc.borrow().clear_cache_if_on_disk()?;
+            payload_index_arc.read().clear_cache_if_on_disk()?;
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(

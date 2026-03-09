@@ -54,7 +54,9 @@ impl Segment {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, vector, hw_counter)?;
-            self.version_tracker.set_vector(vector_name, Some(op_num));
+            self.version_tracker
+                .write()
+                .set_vector(vector_name, Some(op_num));
         }
         self.update_deferred_internal_id();
         Ok(())
@@ -87,7 +89,9 @@ impl Segment {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
-            self.version_tracker.set_vector(&vector_name, Some(op_num));
+            self.version_tracker
+                .write()
+                .set_vector(&vector_name, Some(op_num));
         }
         self.update_deferred_internal_id();
         Ok(())
@@ -112,7 +116,9 @@ impl Segment {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
             vector_index.update_vector(new_index, vector_opt, hw_counter)?;
-            self.version_tracker.set_vector(vector_name, Some(op_num));
+            self.version_tracker
+                .write()
+                .set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         self.update_deferred_internal_id();
@@ -132,18 +138,21 @@ impl Segment {
     ///
     /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
     pub(super) fn handle_segment_version_and_failure<F>(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&Segment) -> OperationResult<bool>,
     {
+        // Having a lock on the error_status linearize updates.
+        // TODO we have a "error_status()" method, make sure it doesn't deadlock.
+        let mut error_status_guard = self.error_status.write();
         if let Some(SegmentFailedState {
             version: failed_version,
             point_id: _failed_point_id,
             error,
-        }) = &self.error_status
+        }) = &*error_status_guard
         {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
@@ -162,7 +171,7 @@ impl Segment {
                 "Segment {:?} operation error: {error}",
                 self.segment_path.as_path(),
             );
-            self.error_status = Some(SegmentFailedState {
+            *error_status_guard = Some(SegmentFailedState {
                 version: op_num,
                 point_id: None,
                 error,
@@ -197,7 +206,7 @@ impl Segment {
             version: failed_version,
             point_id: _failed_point_id,
             error,
-        }) = &self.error_status
+        }) = self.error_status.get_mut()
         {
             // Failed operations should not be skipped,
             // fail if newer operation is attempted before proper recovery
@@ -213,7 +222,7 @@ impl Segment {
         match get_service_error(&res) {
             None => {
                 // Recover error state
-                match &self.error_status {
+                match self.error_status.get_mut() {
                     None => {} // all good
                     Some(error) => {
                         let point_id = op_point_offset.and_then(|point_offset| {
@@ -222,7 +231,7 @@ impl Segment {
                         if error.point_id == point_id {
                             // Fixed
                             log::info!("Recovered from error: {}", error.error);
-                            self.error_status = None;
+                            *self.error_status.get_mut() = None;
                         }
                     }
                 }
@@ -235,7 +244,7 @@ impl Segment {
                 );
                 let point_id = op_point_offset
                     .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
-                self.error_status = Some(SegmentFailedState {
+                *self.error_status.get_mut() = Some(SegmentFailedState {
                     version: op_num,
                     point_id,
                     error,
@@ -250,15 +259,15 @@ impl Segment {
     /// If current version is higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     fn handle_segment_version<F>(
-        &mut self,
+        &self,
         op_num: SeqNumberType,
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<bool>,
+        F: FnOnce(&Segment) -> OperationResult<bool>,
     {
         // Global version to check if operation has already been applied, then skip without execution
-        if self.version.unwrap_or(0) > op_num {
+        if self.version.lock().unwrap_or(0) > op_num {
             return Ok(false);
         }
 
@@ -310,7 +319,7 @@ impl Segment {
     ) -> OperationResult<()> {
         // Mark point as deleted, drop mapping
         self.payload_index
-            .borrow_mut()
+            .write()
             .clear_payload(internal_id, hw_counter)?;
 
         self.id_tracker.borrow_mut().drop_internal(internal_id)?;
@@ -330,8 +339,11 @@ impl Segment {
         Ok(())
     }
 
-    fn bump_segment_version(&mut self, op_num: SeqNumberType) {
-        self.version.replace(max(op_num, self.version.unwrap_or(0)));
+    // TODO are the callers use &mut self?  Are they under lock?
+    fn bump_segment_version(&self, op_num: SeqNumberType) {
+        let mut version_guard = self.version.lock();
+        let new_version = max(op_num, version_guard.unwrap_or(0));
+        version_guard.replace(new_version);
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
@@ -358,7 +370,7 @@ impl Segment {
     pub(super) fn get_state(&self) -> SegmentState {
         SegmentState {
             initial_version: self.initial_version,
-            version: self.version,
+            version: *self.version.lock(),
             config: self.segment_config.clone(),
         }
     }
@@ -453,7 +465,7 @@ impl Segment {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         self.payload_index
-            .borrow()
+            .read()
             .get_payload(point_offset, hw_counter)
     }
 
@@ -522,7 +534,7 @@ impl Segment {
         &mut self,
         desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
     ) -> OperationResult<()> {
-        let schema_applied = self.payload_index.borrow().indexed_fields();
+        let schema_applied = self.payload_index.read().indexed_fields();
         let schema_config = desired_schemas;
 
         // Create or update payload indices if they don't match configuration

@@ -9,6 +9,7 @@ use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
+use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::OperationResult;
 use segment::types::*;
 
@@ -27,7 +28,7 @@ pub struct ProxySegment {
     /// Present if the wrapped segment is a plain segment
     /// Used for faster deletion checks
     deleted_mask: Option<BitVec>,
-    changed_indexes: ProxyIndexChanges,
+    changed_indexes: RwLock<ProxyIndexChanges>,
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
@@ -36,7 +37,8 @@ pub struct ProxySegment {
 
     /// Version of the last change in this proxy, considering point deletes and payload index
     /// changes. Defaults to the version of the wrapped segment.
-    version: SeqNumberType,
+    // TODO atomic would work great here
+    version: Mutex<SeqNumberType>,
 }
 
 impl ProxySegment {
@@ -61,10 +63,10 @@ impl ProxySegment {
         ProxySegment {
             wrapped_segment: segment,
             deleted_mask,
-            changed_indexes: ProxyIndexChanges::default(),
+            changed_indexes: RwLock::new(ProxyIndexChanges::default()),
             deleted_points: AHashMap::new(),
             wrapped_config,
-            version,
+            version: version.into(),
         }
     }
 
@@ -176,10 +178,12 @@ impl ProxySegment {
         // Point deletions bump the segment version, can cause index changes to be ignored
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
+            let changed_indexes = self.changed_indexes.get_mut();
+
             let op_num = wrapped_segment.version();
-            if !self.changed_indexes.is_empty() {
+            if !changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (field_name, change) in self.changed_indexes.iter_ordered() {
+                    for (field_name, change) in changed_indexes.iter_ordered() {
                         debug_assert!(
                             change.version() >= op_num,
                             "proxied index change should have newer version than segment",
@@ -205,7 +209,7 @@ impl ProxySegment {
                     }
                     OperationResult::Ok(())
                 })?;
-                self.changed_indexes.clear();
+                changed_indexes.clear();
             }
         }
 
@@ -244,8 +248,8 @@ impl ProxySegment {
         &self.deleted_points
     }
 
-    pub fn get_index_changes(&self) -> &ProxyIndexChanges {
-        &self.changed_indexes
+    pub fn get_index_changes(&self) -> parking_lot::RwLockReadGuard<'_, ProxyIndexChanges> {
+        self.changed_indexes.read()
     }
 }
 

@@ -275,7 +275,7 @@ fn test_byte_storage_binary_quantization_hnsw(
 
     segment_byte
         .payload_index
-        .borrow_mut()
+        .write()
         .set_indexed(
             &JsonPath::new(int_key),
             PayloadSchemaType::Integer,

@@ -137,7 +137,7 @@ pub fn proxy_index_changes(proxies: &[LockedSegment]) -> ProxyIndexChanges {
             }
             LockedSegment::Proxy(proxy) => {
                 let proxy_read = proxy.read();
-                index_changes.merge(proxy_read.get_index_changes())
+                index_changes.merge(&proxy_read.get_index_changes())
             }
         }
     }
@@ -184,7 +184,7 @@ fn build_new_segment<F: ?Sized + OptimizationStrategy>(
     let mut defragmentation_keys = HashSet::new();
     for segment in &segments {
         let payload_index = &segment.read().payload_index;
-        let payload_index = payload_index.borrow();
+        let payload_index = payload_index.read();
         let keys = payload_index
             .config()
             .indices
