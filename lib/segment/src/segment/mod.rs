@@ -95,7 +95,7 @@ pub struct Segment {
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
     /// Points with internal id >= this value are hidden from reads.
-    /// Avaliable for appendable segments only.
+    /// Available for appendable segments only.
     pub(crate) deferred_internal_id: Option<PointOffsetType>,
 }
 
