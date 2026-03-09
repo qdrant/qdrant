@@ -9,12 +9,11 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::OpenOptions;
-use common::universal_io::UniversalRead;
 use common::universal_io::bitslice::MmapBitSliceStorage;
 use common::universal_io::mmap::MmapUniversal;
-use memmap2::MmapMut;
+use common::universal_io::{OpenOptions, UniversalRead};
 use fs_err as fs;
+use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::Encodable;

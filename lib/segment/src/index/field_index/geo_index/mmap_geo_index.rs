@@ -9,8 +9,8 @@ use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
 use common::universal_io::bitslice::MmapBitSliceStorage;
 use common::universal_io::mmap::MmapUniversal;
-use memmap2::MmapMut;
 use fs_err as fs;
+use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;

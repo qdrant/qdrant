@@ -103,9 +103,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
             };
 
             let mut storage_write = bitslice.write();
-            storage_write.set_bits_batch(
-                updates.iter().map(|(idx, val)| (*idx as u64, *val)),
-            )?;
+            storage_write.set_bits_batch(updates.iter().map(|(idx, val)| (*idx as u64, *val)))?;
             storage_write.flusher()()?;
 
             // Keep the guard till here to prevent concurrent drop/flushes

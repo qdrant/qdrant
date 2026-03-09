@@ -124,8 +124,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         )?;
 
         {
-            let mut deleted =
-                MmapBitSliceStorage::create(&deleted_path, point_to_values.len(), OpenOptions::default())?;
+            let mut deleted = MmapBitSliceStorage::create(
+                &deleted_path,
+                point_to_values.len(),
+                OpenOptions::default(),
+            )?;
             deleted.set_bits_batch(
                 point_to_values
                     .iter()
