@@ -376,6 +376,12 @@ impl<T: ?Sized> MeasurableRwLock<T> {
     pub fn write(&self) -> MeasurableRwLockWriteGuard<'_, T> {
         let metrics = get_current_measurable_rwlock_metrics(self.tag).expect("Unitialized metrics");
 
+        if self.tag == "non-appendable" {
+            use std::backtrace::Backtrace;
+            let bt = Backtrace::force_capture();
+            let tag = self.tag;
+            log::info!("*** Acquiring write lock for {tag:?}, backtrace:\n{bt}");
+        }
         let start = Instant::now();
         let inner = self.inner.write();
         let elapsed = start.elapsed();
