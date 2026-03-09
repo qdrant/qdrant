@@ -100,7 +100,15 @@ impl Raft for RaftService {
             .map(|(id, _)| id);
 
         if let Some(old_peer_id) = existing_peer_id {
-            if self.consensus_state.peer_has_shards(old_peer_id) {
+            let consensus_state = self.consensus_state.clone();
+            let has_shards = tokio::task::spawn_blocking(move || {
+                // Must use spawn_blocking for peer_has_shards
+                consensus_state.peer_has_shards(old_peer_id)
+            })
+            .await
+            .map_err(|err| Status::internal(format!("Failed to check shards: {err}")))?;
+
+            if has_shards {
                 return Err(Status::failed_precondition(format!(
                     "peer URI {uri} already used by peer {old_peer_id} which still has shards, \
                      remove its shards first or use a different URI",
