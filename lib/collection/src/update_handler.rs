@@ -231,7 +231,6 @@ impl UpdateHandler {
             scroll_read_lock,
             update_tracker,
             self.prevent_unoptimized,
-            self.optimization_handles.clone(),
             optimization_finished_receiver,
             applied_seq_handler,
             cancel,

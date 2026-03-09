@@ -7,10 +7,9 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
+use tokio::sync::{oneshot, watch};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
@@ -49,7 +48,6 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         prevent_unoptimized: bool,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
@@ -134,19 +132,6 @@ impl UpdateWorkers {
                     })
                     .await;
 
-                    if wait && prevent_unoptimized {
-                        let wait_result = Self::wait_for_deferred_points_ready(
-                            &segments,
-                            optimization_handles.clone(),
-                            &mut optimization_finished_receiver,
-                        )
-                        .await;
-                        if let Err(err) = wait_result {
-                            send_feedback(sender, Err(err), op_num);
-                            continue;
-                        }
-                    }
-
                     let res = match operation_result {
                         Ok(Ok(update_res)) => optimize_sender
                             .send(OptimizerSignal::Operation(op_num))
@@ -159,6 +144,19 @@ impl UpdateWorkers {
 
                     if let Err(err) = applied_seq_handler.update(op_num) {
                         log::error!("Can't update last applied_seq {err}")
+                    }
+
+                    if wait && prevent_unoptimized {
+                        let wait_result = Self::wait_for_deferred_points_ready(
+                            &segments,
+                            &optimize_sender,
+                            &mut optimization_finished_receiver,
+                        )
+                        .await;
+                        if let Err(err) = wait_result {
+                            send_feedback(sender, Err(err), op_num);
+                            continue;
+                        }
                     }
 
                     send_feedback(sender, res, op_num);
@@ -191,7 +189,7 @@ impl UpdateWorkers {
     /// Wait until all deferred points are ready for read/search.
     async fn wait_for_deferred_points_ready(
         segments: &LockedSegmentHolder,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
         loop {
@@ -211,16 +209,12 @@ impl UpdateWorkers {
                 return Ok(());
             }
 
-            // Block only if there are running optimization that can terminate.
-            {
-                let optimizations_guard = optimization_handles.lock().await;
-                if optimizations_guard.iter().all(|h| h.is_finished()) {
-                    return Ok(());
-                }
-            }
+            // The only way to make deferred points visible is optimization.
+            // Send Nop to re-trigger optimizers in case
+            // the previous signal was consumed without launching an optimization.
+            let _ = optimize_sender.try_send(OptimizerSignal::Nop);
 
-            // If there are deferred points, the only way to make it visible is optimization.
-            // So we wait the notification of optimization completion to re-check the deferred points.
+            // Wait for the optimizer to check conditions or complete an optimization.
             log::debug!("waiting for optimization to allow updates");
             if let Err(err) = optimization_finished_receiver.changed().await {
                 // This can be if optimization is cancelled, we don't need to wait anymore.
