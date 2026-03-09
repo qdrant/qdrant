@@ -14,7 +14,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
 use segment::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use segment::id_tracker::IdTracker;
-use segment::index::hnsw_index::num_rayon_threads;
+use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -350,7 +350,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
             .unwrap();
     }
 
-    let permit_cpu_count = num_rayon_threads(0);
+    let permit_cpu_count = get_num_indexing_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
     let progress = ProgressTracker::new_for_test();

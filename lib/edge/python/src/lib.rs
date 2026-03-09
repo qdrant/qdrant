@@ -14,6 +14,7 @@ pub mod utils;
 use std::path::PathBuf;
 
 use bytemuck::TransparentWrapperAlloc as _;
+use edge::config::shard::EdgeShardConfig;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
@@ -40,17 +41,14 @@ mod qdrant_edge {
         PyScalarQuantizationConfig, PyScalarType,
     };
     #[pymodule_export]
-    use super::config::sparse_vector_data::{
-        PyModifier, PySparseIndexConfig, PySparseIndexType, PySparseVectorDataConfig,
-        PySparseVectorStorageType,
-    };
+    use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
     #[pymodule_export]
     use super::config::vector_data::{
-        PyDistance, PyHnswIndexConfig, PyMultiVectorComparator, PyMultiVectorConfig,
-        PyPlainIndexConfig, PyVectorDataConfig, PyVectorStorageDatatype, PyVectorStorageType,
+        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMultiVectorComparator,
+        PyMultiVectorConfig, PyPlainIndexConfig, PyVectorStorageDatatype,
     };
     #[pymodule_export]
-    use super::config::{PyEdgeConfig, PyPayloadStorageType};
+    use super::config::{PyEdgeConfig, PyEdgeOptimizersConfig};
     #[pymodule_export]
     use super::count::PyCountRequest;
     #[pymodule_export]
@@ -102,7 +100,7 @@ impl PyEdgeShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
-        let shard = edge::EdgeShard::load(&path, config.map(SegmentConfig::from))?;
+        let shard = edge::EdgeShard::load(&path, config.map(EdgeShardConfig::from))?;
         Ok(Self(Some(shard)))
     }
 

@@ -71,7 +71,7 @@ mod tests;
 ///
 /// Uses [`thread_count_for_hnsw`] heuristic but accepts a `max_indexing_threads` parameter to
 /// allow configuring this.
-pub fn num_rayon_threads(max_indexing_threads: usize) -> usize {
+pub fn get_num_indexing_threads(max_indexing_threads: usize) -> usize {
     if max_indexing_threads == 0 {
         let num_cpu = common::cpu::get_num_cpus();
         num_cpu.clamp(1, thread_count_for_hnsw(num_cpu))

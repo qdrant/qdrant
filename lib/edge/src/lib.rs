@@ -1,3 +1,4 @@
+pub mod config;
 mod count;
 mod facet;
 mod info;
@@ -22,25 +23,34 @@ use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
-use segment::types::SegmentConfig;
-use shard::files::SEGMENTS_PATH;
+use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH};
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 
+use crate::config::optimizers::EdgeOptimizersConfig;
+use crate::config::shard::{EDGE_CONFIG_FILE, EdgeShardConfig};
+
 #[derive(Debug)]
 pub struct EdgeShard {
     path: PathBuf,
-    config: SegmentConfig,
+    config: SaveOnDisk<EdgeShardConfig>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
 }
 
 const WAL_PATH: &str = "wal";
 impl EdgeShard {
-    pub fn load(path: &Path, mut config: Option<SegmentConfig>) -> OperationResult<Self> {
+    /// Load an edge shard from `path`.
+    ///
+    /// * If `config` is `Some`, it is used and persisted to `edge_config.json`. Compatibility with
+    ///   existing segments (if any) is checked.
+    /// * If `config` is `None`, tries to load from `edge_config.json`. If that does not exist,
+    ///   infers config from existing segments (and ensures at least one segment or config was
+    ///   provided).
+    pub fn load(path: &Path, config: Option<EdgeShardConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
 
         if !wal_path.exists() {
@@ -70,6 +80,14 @@ impl EdgeShard {
         })?;
 
         let mut segments = SegmentHolder::default();
+        let mut config: Option<EdgeShardConfig> = match config {
+            Some(c) => Some(c),
+            None => match EdgeShardConfig::load(path) {
+                Some(Ok(c)) => Some(c),
+                Some(Err(e)) => return Err(e),
+                None => None,
+            },
+        };
 
         for entry in segments_dir {
             let entry = entry.map_err(|err| {
@@ -114,18 +132,16 @@ impl EdgeShard {
                     },
                 )?;
 
-            if let Some(config) = &config {
-                if !config.is_compatible(segment.config()) {
-                    return Err(OperationError::service_error(format!(
-                        "segment {} is incompatible with provided config or previously loaded segments: \
-                         expected {:?}, but received {:?}",
+            let segment_cfg = segment.config();
+            if let Some(ref cfg) = config {
+                cfg.check_compatible_with_segment_config(segment_cfg).map_err(
+                    |err| OperationError::service_error(format!(
+                        "segment {} is incompatible with provided config or previously loaded segments: {err}",
                         segment_path.display(),
-                        config,
-                        segment.config(),
-                    )));
-                }
+                    ))
+                )?;
             } else {
-                config = Some(segment.config().clone());
+                config = Some(EdgeShardConfig::from_segment_config(segment_cfg));
             }
 
             segment.check_consistency_and_repair().map_err(|err| {
@@ -139,13 +155,13 @@ impl EdgeShard {
         }
 
         if !segments.has_appendable_segment() {
-            let Some(config) = &config else {
+            let Some(ref cfg) = config else {
                 return Err(OperationError::service_error(
-                    "segment config is not provided and no segments were loaded",
+                    "edge config is not provided and no segments were loaded",
                 ));
             };
 
-            let payload_index_schema_path = path.join("payload_index.json");
+            let payload_index_schema_path = path.join(PAYLOAD_INDEX_CONFIG_FILE);
             let payload_index_schema = SaveOnDisk::load_or_init_default(&payload_index_schema_path)
                 .map_err(|err| {
                     OperationError::service_error(format!(
@@ -156,7 +172,7 @@ impl EdgeShard {
 
             segments.create_appendable_segment(
                 &segments_path,
-                config.clone(),
+                cfg.plain_segment_config(),
                 Arc::new(payload_index_schema),
                 None,
             )?;
@@ -164,9 +180,20 @@ impl EdgeShard {
             debug_assert!(segments.has_appendable_segment());
         }
 
+        let config = config.expect("config was provided or at least one segment was loaded");
+
+        let config_path = path.join(EDGE_CONFIG_FILE);
+        let config = SaveOnDisk::new(&config_path, config).map_err(|e| {
+            OperationError::service_error(format!(
+                "failed to persist edge config to {}: {}",
+                config_path.display(),
+                e
+            ))
+        })?;
+
         let shard = Self {
             path: path.into(),
-            config: config.expect("config was provided or at least one segment was loaded"),
+            config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
         };
@@ -174,12 +201,40 @@ impl EdgeShard {
         Ok(shard)
     }
 
-    pub fn config(&self) -> &SegmentConfig {
-        &self.config
+    pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeShardConfig> {
+        self.config.read()
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Update global HNSW config and persist. Does not change per-vector HNSW.
+    pub fn set_hnsw_config(&self, hnsw_config: segment::types::HnswConfig) -> OperationResult<()> {
+        self.config
+            .write(|cfg| cfg.set_hnsw_config(hnsw_config))
+            .map_err(|e| OperationError::service_error(e.to_string()))
+    }
+
+    /// Update HNSW config for a named vector and persist.
+    /// Fails if the vector does not exist. Immutable fields (e.g. size, distance) cannot be changed.
+    pub fn set_vector_hnsw_config(
+        &self,
+        vector_name: &str,
+        hnsw_config: segment::types::HnswConfig,
+    ) -> OperationResult<()> {
+        let mut cfg = self.config.read().clone();
+        cfg.set_vector_hnsw_config(vector_name, hnsw_config)?;
+        self.config
+            .write(|c| *c = cfg)
+            .map_err(|e| OperationError::service_error(e.to_string()))
+    }
+
+    /// Update optimizer config and persist.
+    pub fn set_optimizers_config(&self, optimizers: EdgeOptimizersConfig) -> OperationResult<()> {
+        self.config
+            .write(|cfg| cfg.set_optimizers_config(optimizers))
+            .map_err(|e| OperationError::service_error(e.to_string()))
     }
 
     pub fn flush(&self) {
@@ -194,6 +249,16 @@ impl EdgeShard {
             .expect("segment holder lock acquired")
             .flush_all(true, true)
             .expect("segments flushed");
+    }
+
+    /// This function removes edge-specific config and closes the shard.
+    /// Removing config might be necessary to avoid incompatibilities on snapshot recovery.
+    pub fn drop_and_clean_config(self) -> OperationResult<()> {
+        let config_path = self.path.join(EDGE_CONFIG_FILE);
+        if config_path.exists() {
+            fs_err::remove_file(self.path.join(EDGE_CONFIG_FILE))?;
+        }
+        Ok(())
     }
 }
 

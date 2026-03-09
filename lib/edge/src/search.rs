@@ -24,7 +24,8 @@ impl EdgeShard {
             HwMeasurementAcc::disposable_edge(),
             |vector_name| {
                 self.config
-                    .sparse_vector_data
+                    .read()
+                    .sparse_vectors
                     .get(vector_name)
                     .is_some_and(|v| v.modifier == Some(Modifier::Idf))
             },
@@ -100,7 +101,8 @@ impl EdgeShard {
 
         let distance = self
             .config
-            .vector_data
+            .read()
+            .vectors
             .get(&vector_name)
             .expect("vector config exist")
             .distance;

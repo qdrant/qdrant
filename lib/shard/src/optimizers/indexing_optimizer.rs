@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment::Segment;
-use segment::types::{HnswConfig, HnswGlobalConfig};
+use segment::types::HnswGlobalConfig;
 
 use super::config::SegmentOptimizerConfig;
 use super::segment_optimizer::{OptimizationPlanner, SegmentOptimizer};
@@ -25,8 +25,7 @@ pub struct IndexingOptimizer {
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     temp_path: PathBuf,
-    segment_config: SegmentOptimizerConfig,
-    hnsw_config: HnswConfig,
+    segment_optimizer_config: SegmentOptimizerConfig,
     hnsw_global_config: HnswGlobalConfig,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
 }
@@ -39,7 +38,6 @@ impl IndexingOptimizer {
         segments_path: PathBuf,
         temp_path: PathBuf,
         segment_config: SegmentOptimizerConfig,
-        hnsw_config: HnswConfig,
         hnsw_global_config: HnswGlobalConfig,
     ) -> Self {
         IndexingOptimizer {
@@ -47,8 +45,7 @@ impl IndexingOptimizer {
             thresholds_config,
             segments_path,
             temp_path,
-            segment_config,
-            hnsw_config,
+            segment_optimizer_config: segment_config,
             hnsw_global_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
         }
@@ -67,7 +64,7 @@ impl IndexingOptimizer {
 
         let has_deferred_points = segment.has_deferred_points();
 
-        for (vector_name, vector_cfg) in &self.segment_config.dense_vector {
+        for (vector_name, vector_cfg) in &self.segment_optimizer_config.dense_vector {
             if let Some(vector_data) = segment_data_config.vector_data.get(vector_name) {
                 let is_indexed = vector_data.index.is_indexed();
                 let is_on_disk = vector_data.storage_type.is_on_disk();
@@ -91,7 +88,7 @@ impl IndexingOptimizer {
             }
         }
 
-        for sparse_vector_name in self.segment_config.sparse_vector.keys() {
+        for sparse_vector_name in self.segment_optimizer_config.sparse_vector.keys() {
             if let Some(sparse_vector_data) = segment_data_config
                 .sparse_vector_data
                 .get(sparse_vector_name)
@@ -135,12 +132,8 @@ impl SegmentOptimizer for IndexingOptimizer {
         self.temp_path.as_path()
     }
 
-    fn segment_config(&self) -> &SegmentOptimizerConfig {
-        &self.segment_config
-    }
-
-    fn hnsw_config(&self) -> &HnswConfig {
-        &self.hnsw_config
+    fn segment_optimizer_config(&self) -> &SegmentOptimizerConfig {
+        &self.segment_optimizer_config
     }
 
     fn hnsw_global_config(&self) -> &HnswGlobalConfig {

@@ -137,3 +137,5 @@ pub fn move_data(from_shard_path: &Path, to_shard_path: &Path) -> std::io::Resul
 
     Ok(())
 }
+
+pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";

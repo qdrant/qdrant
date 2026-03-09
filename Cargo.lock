@@ -2175,6 +2175,7 @@ dependencies = [
  "parking_lot",
  "rand 0.10.0",
  "segment",
+ "serde",
  "serde_json",
  "shard",
  "tempfile",

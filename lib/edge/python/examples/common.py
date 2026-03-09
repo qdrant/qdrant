@@ -5,7 +5,14 @@ import os
 import shutil
 import uuid
 
-from qdrant_edge import *
+from qdrant_edge import (
+    Distance,
+    EdgeConfig,
+    EdgeShard,
+    EdgeVectorParams,
+    Point,
+    UpdateOperation,
+)
 
 DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
 
@@ -20,10 +27,7 @@ def load_new_shard():
 
     # Load Qdrant Edge shard
     config = EdgeConfig(
-        vector_data=VectorDataConfig(
-            size=4,
-            distance=Distance.Dot
-        )
+        vectors=EdgeVectorParams(size=4, distance=Distance.Dot),
     )
 
     return EdgeShard(DATA_DIRECTORY, config)
