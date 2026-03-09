@@ -257,18 +257,28 @@ impl UpdateWorkers {
         // Do not use for anything else
         let loggable_operation = operation.remove_details();
 
-        let result = CollectionUpdater::update(
-            &segments,
-            op_num,
-            operation,
-            update_operation_lock.clone(),
-            update_tracker.clone(),
-            &hw_measurements.get_counter_cell(),
-        );
+        let cpu_utilization = hw_measurements.cpu_utilization();
+
+        let result = cpu_utilization.measure(|| {
+            CollectionUpdater::update(
+                &segments,
+                op_num,
+                operation,
+                update_operation_lock.clone(),
+                update_tracker.clone(),
+                &hw_measurements.get_counter_cell(),
+            )
+        });
 
         let duration = start_time.elapsed();
+        let (_, _, cpu_ratio) = cpu_utilization.read();
 
-        log_request_to_collector(&collection_name, duration, move || loggable_operation);
+        log_request_to_collector(
+            &collection_name,
+            duration,
+            Some(cpu_ratio as f32),
+            move || loggable_operation,
+        );
 
         result
     }

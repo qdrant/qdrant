@@ -35,11 +35,18 @@ impl LocalShard {
             let is_stopped = stopping_guard.get_is_stopped();
 
             let hw_counter = hw_counter.fork();
+            let cpu_utilization = hw_counter.cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
-                let get_segment = segment.get();
-                let read_segment = get_segment.read();
+                let work = || {
+                    let get_segment = segment.get();
+                    let read_segment = get_segment.read();
 
-                read_segment.facet(&request, &is_stopped, &hw_counter)
+                    read_segment.facet(&request, &is_stopped, &hw_counter)
+                };
+                match cpu_utilization {
+                    Some(cu) => cu.measure(work),
+                    None => work(),
+                }
             });
             AbortOnDropHandle::new(task)
         };

@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::operations::loggable::Loggable;
 
-#[derive(Serialize, PartialEq, Eq, Clone, JsonSchema)]
+#[derive(Serialize, Clone, JsonSchema)]
 pub struct LogEntry {
     collection_name: String,
     #[serde(serialize_with = "duration_as_seconds")]
@@ -20,6 +20,8 @@ pub struct LogEntry {
     request_name: &'static str,
     approx_count: usize,
     request_body: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cpu_usage_ratio: Option<f32>,
     /// Used for fast comparison and lookup
     #[serde(skip)]
     content_hash: u64,
@@ -33,6 +35,7 @@ impl LogEntry {
         request_name: &'static str,
         request_body: serde_json::Value,
         content_hash: u64, // Pre-computed content hash
+        cpu_usage_ratio: Option<f32>,
     ) -> Self {
         LogEntry {
             collection_name,
@@ -41,6 +44,7 @@ impl LogEntry {
             request_name,
             approx_count: 1,
             request_body,
+            cpu_usage_ratio,
             content_hash,
         }
     }
@@ -49,6 +53,16 @@ impl LogEntry {
         self.approx_count = count;
     }
 }
+
+impl PartialEq for LogEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.content_hash == other.content_hash
+            && self.duration == other.duration
+            && self.collection_name == other.collection_name
+    }
+}
+
+impl Eq for LogEntry {}
 
 fn duration_as_seconds<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -132,6 +146,7 @@ impl SlowRequestsLog {
         duration: Duration,
         datetime: DateTime<Utc>,
         request: &dyn Loggable,
+        cpu_usage_ratio: Option<f32>,
     ) -> Option<LogEntry> {
         let content_hash = Self::content_hash(request.request_hash(), collection_name);
 
@@ -150,6 +165,7 @@ impl SlowRequestsLog {
                 request.request_name(),
                 request.to_log_value(),
                 content_hash,
+                cpu_usage_ratio,
             );
             return self.try_insert_dedup(entry);
         }
@@ -170,6 +186,7 @@ impl SlowRequestsLog {
             request.request_name(),
             request.to_log_value(),
             content_hash,
+            cpu_usage_ratio,
         );
 
         self.try_insert_dedup(entry)
@@ -225,13 +242,13 @@ mod tests {
     fn test_get_slow_requests_returns_all_logged() {
         let mut log = SlowRequestsLog::new(3);
         let request = DummyLoggable;
-        log.log_request("col1", Duration::from_secs(1), Utc::now(), &request);
-        log.log_request("col2", Duration::from_secs(2), Utc::now(), &request);
-        log.log_request("col3", Duration::from_secs(3), Utc::now(), &request);
+        log.log_request("col1", Duration::from_secs(1), Utc::now(), &request, None);
+        log.log_request("col2", Duration::from_secs(2), Utc::now(), &request, None);
+        log.log_request("col3", Duration::from_secs(3), Utc::now(), &request, None);
         let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col4", Duration::from_secs(4), Utc::now(), &request);
+        let evicted = log.log_request("col4", Duration::from_secs(4), Utc::now(), &request, None);
         assert!(evicted.is_some());
         let evicted = evicted.unwrap();
         assert_eq!(evicted.collection_name, "col1");
@@ -239,7 +256,7 @@ mod tests {
         let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
 
-        let evicted = log.log_request("col5", Duration::from_secs(1), Utc::now(), &request);
+        let evicted = log.log_request("col5", Duration::from_secs(1), Utc::now(), &request, None);
         assert!(evicted.is_none());
         let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);

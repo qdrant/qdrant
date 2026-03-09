@@ -6,6 +6,7 @@ pub mod bytes;
 pub mod counter;
 pub mod cow;
 pub mod cpu;
+pub mod cpu_utilization;
 pub mod defaults;
 pub mod delta_pack;
 pub mod disk;
