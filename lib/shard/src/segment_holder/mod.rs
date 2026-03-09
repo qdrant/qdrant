@@ -524,7 +524,7 @@ impl SegmentHolder {
         F: FnMut(
             PointIdType,
             SegmentId,
-            &mut RwLockWriteGuard<dyn SegmentEntry>,
+            &mut RwLockUpgradableReadGuard<dyn SegmentEntry>,
         ) -> OperationResult<bool>,
     {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
@@ -551,7 +551,7 @@ impl SegmentHolder {
         for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write();
+            let mut write_segment = segment_arc.upgradable_read();
 
             for point_id in points {
                 let is_applied = point_operation(point_id, segment_id, &mut write_segment)?;
@@ -647,7 +647,7 @@ impl SegmentHolder {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashSet<PointIdType>>
     where
-        F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        F: FnMut(PointIdType, &mut dyn SegmentEntry) -> OperationResult<bool>,
         for<'n, 'o, 'p> G: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
     {
         // Choose random appendable segment from this
@@ -666,7 +666,8 @@ impl SegmentHolder {
             let can_apply_operation = !write_segment.is_proxy() && write_segment.is_appendable();
 
             let is_applied = if can_apply_operation {
-                point_operation(point_id, write_segment)?
+                write_segment
+                    .with_upgraded(|write_segment| point_operation(point_id, write_segment))?
             } else {
                 self.aloha_random_write(
                     &appendable_segments,
@@ -695,7 +696,9 @@ impl SegmentHolder {
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.delete_point(op_num, point_id, hw_counter)?;
+                            write_segment.with_upgraded(|write_segment| {
+                                write_segment.delete_point(op_num, point_id, hw_counter)
+                            })?;
                         }
 
                         Ok(true)

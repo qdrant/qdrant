@@ -237,7 +237,7 @@ where
             for point_id in new_point_ids {
                 let point = points_map[&point_id];
                 res += usize::from(upsert_with_payload(
-                    &mut write_segment,
+                    &mut *write_segment,
                     op_num,
                     point_id,
                     point.get_vectors(),
@@ -315,7 +315,7 @@ pub fn conditional_upsert(
 /// - Ok(false) if the operation was successful and point was inserted
 /// - Err if the operation failed
 fn upsert_with_payload(
-    segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
+    segment: &mut dyn SegmentEntry,
     op_num: SeqNumberType,
     point_id: PointIdType,
     vectors: NamedVectors,
@@ -348,9 +348,12 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
-        let deleted_points = segments.apply_points(batch, |id, _idx, write_segment| {
-            write_segment.delete_point(op_num, id, hw_counter)
-        })?;
+        let deleted_points =
+            segments.apply_points(batch, |id, _idx, upgradable_segment_guard| {
+                upgradable_segment_guard.with_upgraded(|write_segment| {
+                    write_segment.delete_point(op_num, id, hw_counter)
+                })
+            })?;
 
         total_deleted_points += deleted_points;
     }
