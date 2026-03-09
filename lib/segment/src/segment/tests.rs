@@ -18,6 +18,7 @@ use tempfile::{Builder, TempDir};
 use super::*;
 use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
+use crate::data_types::facets::FacetParams;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
 use crate::data_types::query_context::QueryContext;
@@ -842,10 +843,12 @@ fn create_deferred_segment(
         op_num_counter += 1;
 
         let mut payload = Payload::default();
-        payload.0.insert(
-            "color".to_string(),
-            ["red", "blue", "yellow"][i % 3].to_string().into(),
-        );
+
+        let color_payload: Value = ["red", "blue", "yellow"][i % 3].to_string().into();
+        payload
+            .0
+            .insert("color-indexed".to_string(), color_payload.clone());
+        payload.0.insert("color".to_string(), color_payload);
         payload.0.insert(
             "number".to_string(),
             Value::Number(Number::from_u128(rng.random_range(0..2)).unwrap()),
@@ -855,6 +858,17 @@ fn create_deferred_segment(
             .unwrap();
         op_num_counter += 1;
     }
+
+    segment
+        .create_field_index(
+            op_num_counter,
+            &JsonPath::new("color-indexed"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+            &hw_counter,
+        )
+        .unwrap();
+
+    op_num_counter += 1;
 
     segment
         .create_field_index(
@@ -1181,6 +1195,60 @@ fn test_deferred_point_sparse() {
     }
 }
 
+#[test]
+fn test_deferred_point_facets() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+
+    let filter_field = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("color-indexed"),
+        Match::new_value(ValueVariants::String("blue".to_string())),
+    )));
+
+    // Test different amount of deferred points.
+    for n_deferred in [0, 1, 10, 300] {
+        // Test both exact and estimated.
+        for exact in [false, true] {
+            for filter in [None, Some(&filter_field)] {
+                log::debug!("  => deferred points = {n_deferred}");
+
+                let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+                let mut segment = create_deferred_segment(&dir, 5, N_POINTS, n_deferred);
+
+                let request = FacetParams {
+                    key: JsonPath::new("color-indexed"),
+                    limit: 1000, // High limit to include all points.
+                    filter: filter.cloned(),
+                    exact,
+                };
+
+                let facet_res_deferred = segment
+                    .facet(&request, &AtomicBool::new(false), &hw_counter)
+                    .unwrap();
+
+                segment.deferred_internal_id = None;
+                let facet_res = segment
+                    .facet(&request, &AtomicBool::new(false), &hw_counter)
+                    .unwrap();
+
+                let expected_deferred = if filter.is_some() {
+                    n_deferred.div_ceil(3)
+                } else {
+                    n_deferred
+                };
+
+                if n_deferred == 0 {
+                    assert_eq!(facet_res_deferred, facet_res);
+                } else {
+                    let facet_res_sum: usize = facet_res.values().sum();
+                    let facet_res_deferred_sum: usize = facet_res_deferred.values().sum();
+                    assert_eq!(facet_res_sum, facet_res_deferred_sum + expected_deferred);
+                }
+            }
+        }
+    }
+}
+
 /// Extensively tests whether deferred points are excluded from the result of the given `operation`.
 fn assert_deferred_points_excluded<F, R, T>(
     name: &str,
@@ -1192,9 +1260,6 @@ fn assert_deferred_points_excluded<F, R, T>(
     R: Fn(&T) -> ExtendedPointId,
 {
     init_logger();
-
-    // Always test with 12 (visible) points.
-    const N_POINTS: usize = 12;
 
     /// Helper to craft more complex cases where we also can use filters.
     struct FilterSet {

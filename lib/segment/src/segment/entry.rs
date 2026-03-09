@@ -429,6 +429,7 @@ impl NonAppendableSegmentEntry for Segment {
 
                 let total_points = self.id_tracker.borrow().available_point_count();
                 let available_points = self.non_deferred_point_count_estimated();
+                // cardinality
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         }
