@@ -11,10 +11,10 @@ use super::bool_index::simple_bool_index::SimpleBoolIndex;
 use super::geo_index::{GeoMapIndexGridstoreBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexGridstoreBuilder, MapIndexKey, MapIndexMmapBuilder};
-use super::mmap_point_to_values::MmapValue;
 use super::numeric_index::{
     Encodable, NumericIndexGridstoreBuilder, NumericIndexIntoInnerValue, NumericIndexMmapBuilder,
 };
+use super::stored_point_to_values::StoredValue;
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
@@ -351,7 +351,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_new<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
+    fn numeric_new<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         create_if_missing: bool,
@@ -379,7 +379,7 @@ impl IndexSelector<'_> {
     }
 
     #[cfg_attr(not(feature = "rocksdb"), expect(clippy::unnecessary_wraps))]
-    fn numeric_builder<T: Encodable + Numericable + MmapValue + Send + Sync + Default, P>(
+    fn numeric_builder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         #[cfg(feature = "rocksdb")] make_rocksdb: fn(

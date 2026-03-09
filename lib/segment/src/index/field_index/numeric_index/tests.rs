@@ -584,7 +584,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
 }
 
 fn test_cond<
-    T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Send + Sync + Default + 'static,
+    T: Encodable + Numericable + PartialOrd + Clone + StoredValue + Send + Sync + Default + 'static,
 >(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
