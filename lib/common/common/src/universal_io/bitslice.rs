@@ -12,6 +12,7 @@ use std::path::Path;
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
 use bitvec::vec::BitVec;
+use itertools::Itertools;
 
 use crate::mmap::create_and_ensure_length;
 use crate::universal_io::{
@@ -143,47 +144,38 @@ impl<S: UniversalWrite<u64>> BitSliceStorage<S> {
     /// Each `(bit_index, value)` pair sets a single bit. If contiguous, bits within the same
     /// `u64` element are coalesced into a single read-modify-write.
     pub fn set_bits_batch(&mut self, updates: impl IntoIterator<Item = (u64, bool)>) -> Result<()> {
-        // Group updates by element index for efficient read-modify-write
-        let mut by_element: std::collections::BTreeMap<u64, Vec<(u64, bool)>> =
-            std::collections::BTreeMap::new();
+        // group by bits on the same element
+        let chunks = updates
+            .into_iter()
+            .chunk_by(|(bit_index, _)| bit_index >> <u64 as BitRegister>::INDX);
 
-        for (bit_index, value) in updates {
-            let element_index = bit_index / BITS_PER_ELEMENT;
-            let bit_within_element = bit_index % BITS_PER_ELEMENT;
-            by_element
-                .entry(element_index)
-                .or_default()
-                .push((bit_within_element, value));
-        }
-
-        for (element_index, bit_updates) in by_element {
-            if element_index >= self.element_len {
-                // Report the first offending bit index for a useful error message
-                let first_bit = element_index * BITS_PER_ELEMENT + bit_updates[0].0;
+        for (element_idx, chunk) in &chunks {
+            if element_idx >= self.element_len {
                 return Err(UniversalIoError::OutOfBounds {
-                    start: first_bit,
-                    end: first_bit + 1,
-                    elements: self.bit_len() as usize,
+                    start: element_idx,
+                    end: element_idx.saturating_add(1),
+                    elements: self.element_len as usize,
                 });
             }
 
-            let elements = self.storage.read::<false>(ElementsRange {
-                start: element_index,
+            let mut element = self.storage.read::<false>(ElementsRange {
+                start: element_idx,
                 length: 1,
-            })?;
+            })?[0];
+            let old_element = element;
+            let new_element = &mut element;
 
-            let old_element = elements[0];
-            let mut new_element = old_element;
-            for (bit_within_element, value) in bit_updates {
-                if value {
-                    new_element |= 1u64 << bit_within_element;
-                } else {
-                    new_element &= !(1u64 << bit_within_element);
-                }
+            let bitslice = BitSlice::from_element_mut(new_element);
+
+            // Do all modifications to this element
+            for (bit_idx, value) in chunk {
+                let bit_within_element = bit_idx as u8 & <u64 as BitRegister>::MASK;
+                bitslice.set(bit_within_element as usize, value);
             }
 
-            if old_element != new_element {
-                self.storage.write(element_index, &[new_element])?;
+            // Write if it changed
+            if old_element != *new_element {
+                self.storage.write(element_idx, &[*new_element])?;
             }
         }
 
