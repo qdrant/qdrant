@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, hash_map};
 use std::io::{self, Read as _};
+use std::mem::size_of;
 use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
 
@@ -26,6 +27,18 @@ impl IoUringFile {
     fn fd(&self) -> Fd {
         Fd(self.file.as_raw_fd())
     }
+
+    /// Convert element range to byte range (offset, length in bytes)
+    fn element_range_to_bytes<T>(range: ElementsRange) -> (u64, u64) {
+        let byte_offset = Self::element_to_byte_offset::<T>(range.start);
+        let byte_length = range.length * size_of::<T>() as u64;
+        (byte_offset, byte_length)
+    }
+
+    /// Convert element offset to byte offset
+    fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
+        element_offset * size_of::<T>() as u64
+    }
 }
 
 impl UniversalReadFileOps for IoUringFile {
@@ -38,7 +51,7 @@ impl UniversalReadFileOps for IoUringFile {
     }
 }
 
-impl UniversalRead<u8> for IoUringFile {
+impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     fn open(path: impl AsRef<Path>, _options: OpenOptions) -> Result<Self>
     where
         Self: Sized,
@@ -56,24 +69,26 @@ impl UniversalRead<u8> for IoUringFile {
         Ok(file)
     }
 
-    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [u8]>> {
+    fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
-            let entry = rt.state.read(0, self.fd(), range)?;
+            let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
+            let entry = rt.state.read(0, self.fd(), byte_offset, byte_length)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
 
             let (_, resp) = rt.completed().next().expect("read operation completed")?;
-            let buffer = resp.expect_read();
-            Ok(Cow::from(buffer))
+            let bytes = resp.expect_read();
+            let items: Vec<T> = bytemuck::cast_vec(bytes);
+            Ok(Cow::from(items))
         })
     }
 
     fn read_batch<const SEQUENTIAL: bool>(
         &self,
         ranges: impl IntoIterator<Item = ElementsRange>,
-        mut callback: impl FnMut(usize, &[u8]) -> Result<()>,
+        mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
@@ -85,7 +100,8 @@ impl UniversalRead<u8> for IoUringFile {
                         return Ok(None);
                     };
 
-                    let entry = state.read(id as _, self.fd(), range)?;
+                    let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
+                    let entry = state.read(id as _, self.fd(), byte_offset, byte_length)?;
                     Ok(Some(entry))
                 })?;
 
@@ -93,8 +109,9 @@ impl UniversalRead<u8> for IoUringFile {
 
                 for result in rt.completed() {
                     let (id, resp) = result?;
-                    let buffer = resp.expect_read();
-                    callback(id as _, &buffer)?;
+                    let bytes = resp.expect_read();
+                    let items = bytemuck::cast_slice(&bytes);
+                    callback(id as _, items)?;
                 }
             }
 
@@ -105,7 +122,7 @@ impl UniversalRead<u8> for IoUringFile {
     fn read_multi<const SEQUENTIAL: bool>(
         files: &[Self],
         reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
-        mut callback: impl FnMut(usize, FileIndex, &[u8]) -> Result<()>,
+        mut callback: impl FnMut(usize, FileIndex, &[T]) -> Result<()>,
     ) -> Result<()>
     where
         Self: Sized,
@@ -113,21 +130,22 @@ impl UniversalRead<u8> for IoUringFile {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
             let mut reads = reads.into_iter().enumerate().peekable();
-            let mut file_idxs = Vec::new();
+            let mut file_indices = Vec::new();
 
             while reads.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (file_idx, range))) = reads.next() else {
+                    let Some((id, (file_index, range))) = reads.next() else {
                         return Ok(None);
                     };
 
-                    let file = files.get(file_idx).ok_or_else(|| {
-                        io::Error::other(format!("invalid file index {file_idx}"))
+                    let file = files.get(file_index).ok_or_else(|| {
+                        io::Error::other(format!("invalid file index {file_index}"))
                     })?;
 
-                    file_idxs.push(file_idx);
+                    file_indices.push(file_index);
 
-                    let entry = state.read(id as _, file.fd(), range)?;
+                    let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
+                    let entry = state.read(id as _, file.fd(), byte_offset, byte_length)?;
                     Ok(Some(entry))
                 })?;
 
@@ -135,9 +153,16 @@ impl UniversalRead<u8> for IoUringFile {
 
                 for result in rt.completed() {
                     let (id, resp) = result?;
+
+                    let file_idx = file_indices
+                        .get(id as usize)
+                        .copied()
+                        .expect("file index is tracked");
+
                     let buffer = resp.expect_read();
-                    let file_idx = file_idxs.get(id as usize).copied().unwrap_or(usize::MAX);
-                    callback(id as _, file_idx, &buffer)?;
+                    let items = bytemuck::cast_slice(&buffer);
+
+                    callback(id as _, file_idx, items)?;
                 }
             }
 
@@ -146,7 +171,9 @@ impl UniversalRead<u8> for IoUringFile {
     }
 
     fn len(&self) -> Result<u64> {
-        Ok(self.file.metadata()?.len())
+        let byte_len = self.file.metadata()?.len();
+        let items_len = byte_len / size_of::<T>() as u64;
+        Ok(items_len)
     }
 
     fn populate(&self) -> Result<()> {
@@ -163,12 +190,14 @@ impl UniversalRead<u8> for IoUringFile {
     }
 }
 
-impl UniversalWrite<u8> for IoUringFile {
-    fn write(&mut self, offset: ElementOffset, data: &[u8]) -> Result<()> {
+impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
+    fn write(&mut self, offset: ElementOffset, items: &[T]) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
 
-            let entry = rt.state.write(0, self.fd(), offset, data)?;
+            let byte_offset = Self::element_to_byte_offset::<T>(offset);
+            let bytes = bytemuck::cast_slice(items);
+            let entry = rt.state.write(0, self.fd(), byte_offset, bytes)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
 
@@ -180,19 +209,21 @@ impl UniversalWrite<u8> for IoUringFile {
 
     fn write_batch<'a>(
         &mut self,
-        offset_data: impl IntoIterator<Item = (ElementOffset, &'a [u8])>,
+        items: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
             let mut rt = IoUringRuntime::new(io_uring);
-            let mut offset_data = offset_data.into_iter().enumerate().peekable();
+            let mut items = items.into_iter().enumerate().peekable();
 
-            while offset_data.peek().is_some() || rt.in_progress > 0 {
+            while items.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (offset, data))) = offset_data.next() else {
+                    let Some((id, (offset, item))) = items.next() else {
                         return Ok(None);
                     };
 
-                    let entry = state.write(id as _, self.fd(), offset, data)?;
+                    let byte_offset = Self::element_to_byte_offset::<T>(offset);
+                    let bytes = bytemuck::cast_slice(item);
+                    let entry = state.write(id as _, self.fd(), byte_offset, bytes)?;
                     Ok(Some(entry))
                 })?;
 
@@ -210,7 +241,7 @@ impl UniversalWrite<u8> for IoUringFile {
 
     fn write_multi<'a>(
         files: &mut [Self],
-        writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [u8])>,
+        writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [T])>,
     ) -> Result<()>
     where
         Self: Sized,
@@ -221,15 +252,17 @@ impl UniversalWrite<u8> for IoUringFile {
 
             while writes.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (file_idx, offset, data))) = writes.next() else {
+                    let Some((id, (file_index, offset, items))) = writes.next() else {
                         return Ok(None);
                     };
 
-                    let file = files.get(file_idx).ok_or_else(|| {
-                        io::Error::other(format!("invalid file index {file_idx}"))
+                    let file = files.get(file_index).ok_or_else(|| {
+                        io::Error::other(format!("invalid file index {file_index}"))
                     })?;
 
-                    let entry = state.write(id as _, file.fd(), offset, data)?;
+                    let byte_offset = Self::element_to_byte_offset::<T>(offset);
+                    let bytes = bytemuck::cast_slice(items);
+                    let entry = state.write(id as _, file.fd(), byte_offset, bytes)?;
                     Ok(Some(entry))
                 })?;
 
@@ -360,20 +393,16 @@ impl<'a> IoUringState<'a> {
         &mut self,
         id: RequestId,
         fd: Fd,
-        range: ElementsRange,
+        byte_offset: u64,
+        byte_length: u64,
     ) -> io::Result<squeue::Entry> {
-        let ElementsRange {
-            start: offset,
-            length,
-        } = range;
-
         let buffer = self
-            .init(id, IoUringRequest::Read(vec![0; length as _]))?
+            .init(id, IoUringRequest::Read(vec![0; byte_length as _]))?
             .expect_read();
 
-        let length = u32::try_from(length).expect("read range length fit within u32");
+        let length = u32::try_from(byte_length).expect("read byte length fit within u32");
         let entry = opcode::Read::new(fd, buffer.as_mut_ptr(), length)
-            .offset(offset)
+            .offset(byte_offset)
             .build()
             .user_data(id);
 
@@ -384,14 +413,14 @@ impl<'a> IoUringState<'a> {
         &mut self,
         id: RequestId,
         fd: Fd,
-        offset: ElementOffset,
-        buffer: &'a [u8],
+        byte_offset: u64,
+        bytes: &'a [u8],
     ) -> io::Result<squeue::Entry> {
-        let buffer = self.init(id, IoUringRequest::Write(buffer))?.expect_write();
+        let bytes = self.init(id, IoUringRequest::Write(bytes))?.expect_write();
 
-        let length = u32::try_from(buffer.len()).expect("write buffer length fit within u32");
-        let entry = opcode::Write::new(fd, buffer.as_ptr(), length)
-            .offset(offset)
+        let length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
+        let entry = opcode::Write::new(fd, bytes.as_ptr(), length)
+            .offset(byte_offset)
             .build()
             .user_data(id);
 
