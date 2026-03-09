@@ -5,6 +5,10 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{WithPayload, WithVector};
+use shard::operations::CollectionUpdateOperations;
+use shard::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -13,11 +17,6 @@ use crate::operations::types::PointRequestInternal;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;
-
-use shard::operations::CollectionUpdateOperations;
-use shard::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
-};
 
 /// Create a collection config with `prevent_unoptimized` and a very small indexing threshold
 /// so that deferred points are triggered quickly.
@@ -48,7 +47,9 @@ fn make_upsert_op(point_id: u64) -> CollectionUpdateOperations {
 async fn build_shard(
     config: &crate::config::CollectionConfigInternal,
     collection_dir: &std::path::Path,
-    payload_index_schema: Arc<SaveOnDisk<crate::collection::payload_index_schema::PayloadIndexSchema>>,
+    payload_index_schema: Arc<
+        SaveOnDisk<crate::collection::payload_index_schema::PayloadIndexSchema>,
+    >,
 ) -> LocalShard {
     let current_runtime = Handle::current();
     LocalShard::build(
