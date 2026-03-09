@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, hash_map};
-use std::io;
+use std::io::{self, Read as _};
 use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
 
@@ -150,10 +150,15 @@ impl UniversalRead<u8> for IoUringFile {
     }
 
     fn populate(&self) -> Result<()> {
+        let mut file = self.file.as_ref();
+        let mut buffer = vec![0u8; 1024 * 1024];
+
+        while file.read(&mut buffer)? > 0 {}
         Ok(())
     }
 
     fn clear_ram_cache(&self) -> Result<()> {
+        crate::fs::clear_disk_cache(self.file.path())?;
         Ok(())
     }
 }
