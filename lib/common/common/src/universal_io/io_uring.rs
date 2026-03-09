@@ -58,7 +58,7 @@ impl UniversalRead<u8> for IoUringFile {
 
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [u8]>> {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
 
             let entry = rt.state.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
@@ -76,7 +76,7 @@ impl UniversalRead<u8> for IoUringFile {
         mut callback: impl FnMut(usize, &[u8]) -> Result<()>,
     ) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
             let mut ranges = ranges.into_iter().enumerate().peekable();
 
             while ranges.peek().is_some() || rt.in_progress > 0 {
@@ -111,7 +111,7 @@ impl UniversalRead<u8> for IoUringFile {
         Self: Sized,
     {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_idxs = Vec::new();
 
@@ -166,7 +166,7 @@ impl UniversalRead<u8> for IoUringFile {
 impl UniversalWrite<u8> for IoUringFile {
     fn write(&mut self, offset: ElementOffset, data: &[u8]) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
 
             let entry = rt.state.write(0, self.fd(), offset, data)?;
             rt.enqueue_single(entry)?;
@@ -183,7 +183,7 @@ impl UniversalWrite<u8> for IoUringFile {
         offset_data: impl IntoIterator<Item = (ElementOffset, &'a [u8])>,
     ) -> Result<()> {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
             let mut offset_data = offset_data.into_iter().enumerate().peekable();
 
             while offset_data.peek().is_some() || rt.in_progress > 0 {
@@ -216,7 +216,7 @@ impl UniversalWrite<u8> for IoUringFile {
         Self: Sized,
     {
         IO_URING.with_borrow_mut(|io_uring| {
-            let mut rt = Runtime::new(io_uring);
+            let mut rt = IoUringRuntime::new(io_uring);
             let mut writes = writes.into_iter().enumerate().peekable();
 
             while writes.peek().is_some() || rt.in_progress > 0 {
@@ -251,17 +251,17 @@ impl UniversalWrite<u8> for IoUringFile {
     }
 }
 
-struct Runtime<'a> {
+struct IoUringRuntime<'a> {
     io_uring: &'a mut IoUring,
-    state: State<'a>,
+    state: IoUringState<'a>,
     in_progress: usize,
 }
 
-impl<'a> Runtime<'a> {
+impl<'a> IoUringRuntime<'a> {
     pub fn new(io_uring: &'a mut IoUring) -> Self {
         Self {
             io_uring,
-            state: State::new(),
+            state: IoUringState::new(),
             in_progress: 0,
         }
     }
@@ -279,7 +279,7 @@ impl<'a> Runtime<'a> {
 
     pub fn enqueue<F>(&mut self, mut entries: F) -> io::Result<()>
     where
-        F: FnMut(&mut State<'a>) -> io::Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'a>) -> io::Result<Option<squeue::Entry>>,
     {
         let mut sqe = self.io_uring.submission();
 
@@ -303,7 +303,7 @@ impl<'a> Runtime<'a> {
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, Response)>> {
+    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
@@ -325,7 +325,7 @@ impl<'a> Runtime<'a> {
     }
 }
 
-impl<'a> Drop for Runtime<'a> {
+impl<'a> Drop for IoUringRuntime<'a> {
     fn drop(&mut self) {
         while self.in_progress > 0 {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
@@ -345,11 +345,11 @@ impl<'a> Drop for Runtime<'a> {
 }
 
 #[derive(Debug)]
-struct State<'a> {
-    requests: HashMap<RequestId, Request<'a>>,
+struct IoUringState<'a> {
+    requests: HashMap<RequestId, IoUringRequest<'a>>,
 }
 
-impl<'a> State<'a> {
+impl<'a> IoUringState<'a> {
     pub fn new() -> Self {
         Self {
             requests: HashMap::new(),
@@ -368,7 +368,7 @@ impl<'a> State<'a> {
         } = range;
 
         let buffer = self
-            .init(id, Request::Read(vec![0; length as _]))?
+            .init(id, IoUringRequest::Read(vec![0; length as _]))?
             .expect_read();
 
         let length = u32::try_from(length).expect("read range length fit within u32");
@@ -387,7 +387,7 @@ impl<'a> State<'a> {
         offset: ElementOffset,
         buffer: &'a [u8],
     ) -> io::Result<squeue::Entry> {
-        let buffer = self.init(id, Request::Write(buffer))?.expect_write();
+        let buffer = self.init(id, IoUringRequest::Write(buffer))?.expect_write();
 
         let length = u32::try_from(buffer.len()).expect("write buffer length fit within u32");
         let entry = opcode::Write::new(fd, buffer.as_ptr(), length)
@@ -398,7 +398,11 @@ impl<'a> State<'a> {
         Ok(entry)
     }
 
-    fn init(&mut self, id: RequestId, req: Request<'a>) -> io::Result<&mut Request<'a>> {
+    fn init(
+        &mut self,
+        id: RequestId,
+        req: IoUringRequest<'a>,
+    ) -> io::Result<&mut IoUringRequest<'a>> {
         let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
             return Err(io::Error::other(format!("request {id} already exists")));
         };
@@ -407,21 +411,21 @@ impl<'a> State<'a> {
         Ok(req)
     }
 
-    pub fn finalize(&mut self, id: RequestId, length: u32) -> io::Result<Response> {
+    pub fn finalize(&mut self, id: RequestId, length: u32) -> io::Result<IoUringResponse> {
         let req = self
             .requests
             .remove(&id)
             .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
 
         let resp = match req {
-            Request::Read(buffer) => {
+            IoUringRequest::Read(buffer) => {
                 assert_eq!(buffer.len(), length as usize);
-                Response::Read(buffer)
+                IoUringResponse::Read(buffer)
             }
 
-            Request::Write(buffer) => {
+            IoUringRequest::Write(buffer) => {
                 assert_eq!(buffer.len(), length as usize);
-                Response::Write
+                IoUringResponse::Write
             }
         };
 
@@ -437,7 +441,7 @@ impl<'a> State<'a> {
     }
 }
 
-impl<'a> Drop for State<'a> {
+impl<'a> Drop for IoUringState<'a> {
     fn drop(&mut self) {
         debug_assert!(self.is_empty());
     }
@@ -446,16 +450,16 @@ impl<'a> Drop for State<'a> {
 type RequestId = u64;
 
 #[derive(Debug)]
-enum Request<'a> {
+enum IoUringRequest<'a> {
     Read(Vec<u8>),
     Write(&'a [u8]),
 }
 
-impl<'a> Request<'a> {
+impl<'a> IoUringRequest<'a> {
     pub fn expect_read(&mut self) -> &mut Vec<u8> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Request::Read(buffer) => buffer,
+            IoUringRequest::Read(buffer) => buffer,
             _ => panic!(),
         }
     }
@@ -463,19 +467,19 @@ impl<'a> Request<'a> {
     pub fn expect_write(&self) -> &[u8] {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
-            Request::Write(buffer) => buffer,
+            IoUringRequest::Write(buffer) => buffer,
             _ => panic!(),
         }
     }
 }
 
 #[derive(Debug)]
-enum Response {
+enum IoUringResponse {
     Read(Vec<u8>),
     Write,
 }
 
-impl Response {
+impl IoUringResponse {
     pub fn expect_read(self) -> Vec<u8> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
