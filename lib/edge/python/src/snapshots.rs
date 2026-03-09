@@ -1,13 +1,14 @@
 use std::mem;
 use std::path::PathBuf;
 
-use crate::PyEdgeShard;
 use edge::EdgeShard;
 use edge::config::shard::EDGE_CONFIG_FILE;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::files::{clear_data, move_data};
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
 use tempfile::Builder;
+
+use crate::PyEdgeShard;
 
 impl PyEdgeShard {
     pub fn _update_from_snapshot(
