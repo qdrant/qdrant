@@ -102,6 +102,49 @@ impl UniversalRead<u8> for IoUringFile {
         })
     }
 
+    fn read_multi<const SEQUENTIAL: bool>(
+        files: &[Self],
+        reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+        mut callback: impl FnMut(usize, FileIndex, &[u8]) -> Result<()>,
+    ) -> Result<()>
+    where
+        Self: Sized,
+    {
+        IO_URING.with_borrow_mut(|io_uring| {
+            let mut rt = Runtime::new(io_uring);
+            let mut reads = reads.into_iter().enumerate().peekable();
+            let mut file_idxs = Vec::new();
+
+            while reads.peek().is_some() || rt.in_progress > 0 {
+                rt.enqueue(|state| {
+                    let Some((id, (file_idx, range))) = reads.next() else {
+                        return Ok(None);
+                    };
+
+                    let file = files.get(file_idx).ok_or_else(|| {
+                        io::Error::other(format!("invalid file index {file_idx}"))
+                    })?;
+
+                    file_idxs.push(file_idx);
+
+                    let entry = state.read(id as _, file.fd(), range)?;
+                    Ok(Some(entry))
+                })?;
+
+                rt.submit_and_wait(1)?;
+
+                for result in rt.completed() {
+                    let (id, resp) = result?;
+                    let buffer = resp.expect_read();
+                    let file_idx = file_idxs.get(id as usize).copied().unwrap_or(usize::MAX);
+                    callback(id as _, file_idx, &buffer)?;
+                }
+            }
+
+            Ok(())
+        })
+    }
+
     fn len(&self) -> Result<u64> {
         Ok(self.file.metadata()?.len())
     }
@@ -145,6 +188,43 @@ impl UniversalWrite<u8> for IoUringFile {
                     };
 
                     let entry = state.write(id as _, self.fd(), offset, data)?;
+                    Ok(Some(entry))
+                })?;
+
+                rt.submit_and_wait(1)?;
+
+                for result in rt.completed() {
+                    let (_, resp) = result?;
+                    resp.expect_write();
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    fn write_multi<'a>(
+        files: &mut [Self],
+        writes: impl IntoIterator<Item = (FileIndex, ElementOffset, &'a [u8])>,
+    ) -> Result<()>
+    where
+        Self: Sized,
+    {
+        IO_URING.with_borrow_mut(|io_uring| {
+            let mut rt = Runtime::new(io_uring);
+            let mut writes = writes.into_iter().enumerate().peekable();
+
+            while writes.peek().is_some() || rt.in_progress > 0 {
+                rt.enqueue(|state| {
+                    let Some((id, (file_idx, offset, data))) = writes.next() else {
+                        return Ok(None);
+                    };
+
+                    let file = files.get(file_idx).ok_or_else(|| {
+                        io::Error::other(format!("invalid file index {file_idx}"))
+                    })?;
+
+                    let entry = state.write(id as _, file.fd(), offset, data)?;
                     Ok(Some(entry))
                 })?;
 
