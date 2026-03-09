@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use api::grpc::ReadBatchRange;
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
     FileExistsRequest, FileExistsResponse, FileLengthRequest, FileLengthResponse, ListFilesRequest,
@@ -14,7 +15,9 @@ use api::grpc::qdrant::{
 use collection::operations::verification::new_unchecked_verification_pass;
 use common::mmap::AdviceSetting;
 use common::universal_io::mmap::MmapUniversal;
-use common::universal_io::{ElementsRange, OpenOptions, UniversalIoError, UniversalRead};
+use common::universal_io::{
+    ElementsRange, FileIndex, OpenOptions, UniversalIoError, UniversalRead,
+};
 use futures::Stream;
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
@@ -112,6 +115,34 @@ fn dispatch_read<S: UniversalRead<u8>>(
     }
 }
 
+/// Dispatch a read_batch call based on a runtime `sequential` flag.
+fn dispatch_read_batch<S: UniversalRead<u8>>(
+    storage: &S,
+    ranges: impl IntoIterator<Item = ElementsRange>,
+    sequential: bool,
+    callback: impl FnMut(usize, &[u8]) -> common::universal_io::Result<()>,
+) -> common::universal_io::Result<()> {
+    if sequential {
+        storage.read_batch::<true>(ranges, callback)
+    } else {
+        storage.read_batch::<false>(ranges, callback)
+    }
+}
+
+/// Dispatch a read_multi call based on a runtime `sequential` flag.
+fn dispatch_read_multi<S: UniversalRead<u8>>(
+    files: &[S],
+    reads: impl IntoIterator<Item = (FileIndex, ElementsRange)>,
+    sequential: bool,
+    callback: impl FnMut(usize, FileIndex, &[u8]) -> common::universal_io::Result<()>,
+) -> common::universal_io::Result<()> {
+    if sequential {
+        S::read_multi::<true>(files, reads, callback)
+    } else {
+        S::read_multi::<false>(files, reads, callback)
+    }
+}
+
 /// A wrapper around `mpsc::Receiver` that implements `Stream`.
 struct MpscStream<T>(mpsc::Receiver<T>);
 
@@ -132,10 +163,14 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<FileExistsResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
-        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
+        let FileExistsRequest {
+            collection_name,
+            path,
+            open_options,
+        } = request.into_inner();
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
 
-        let open_options = convert_open_options(inner.open_options);
+        let open_options = convert_open_options(open_options);
 
         let exists = tokio::task::spawn_blocking(move || match S::open(&path, open_options) {
             Ok(_) => true,
@@ -156,8 +191,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<ListFilesResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
-        let prefix_path = self.resolve_path(&auth, &inner.collection_name, &inner.prefix_path)?;
+        let ListFilesRequest {
+            collection_name,
+            prefix_path,
+        } = request.into_inner();
+        let prefix_path = self.resolve_path(&auth, &collection_name, &prefix_path)?;
 
         // Compute the base collection path to make results relative.
         let pass = new_unchecked_verification_pass();
@@ -165,7 +203,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let base = toc
             .storage_path()
             .join(COLLECTIONS_DIR)
-            .join(&inner.collection_name);
+            .join(&collection_name);
 
         let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
             .await
@@ -194,10 +232,14 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<FileLengthResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
-        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
+        let FileLengthRequest {
+            collection_name,
+            path,
+            open_options,
+        } = request.into_inner();
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
 
-        let open_options = convert_open_options(inner.open_options);
+        let open_options = convert_open_options(open_options);
         let length = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             storage.len().map_err(io_error_to_status)
@@ -215,12 +257,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<ReadBytesResponse>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
+        let ReadBytesRequest {
+            collection_name,
+            path,
+            offset,
+            length,
+            open_options,
+        } = request.into_inner();
 
-        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
-        let offset = inner.offset;
-        let length = inner.length;
-        let open_options = convert_open_options(inner.open_options);
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let open_options = convert_open_options(open_options);
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
@@ -233,7 +279,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 open_options.need_sequential,
             )
             .map_err(io_error_to_status)?;
-            Ok::<Vec<u8>, Status>(cow.into_owned())
+            Ok::<_, Status>(cow.into_owned())
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -252,12 +298,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     ) -> Result<Response<Self::ReadBytesStreamStream>, Status> {
         validate(request.get_ref())?;
         let auth = extract_auth(&mut request);
-        let inner = request.into_inner();
+        let ReadBytesStreamRequest {
+            collection_name,
+            path,
+            offset,
+            length,
+            open_options,
+        } = request.into_inner();
 
-        let path = self.resolve_path(&auth, &inner.collection_name, &inner.path)?;
-        let offset = inner.offset;
-        let total_length = inner.length;
-        let open_options = convert_open_options(inner.open_options);
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let open_options = convert_open_options(open_options);
 
         let (tx, rx) = mpsc::channel(4);
 
@@ -270,7 +320,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 }
             };
 
-            let mut remaining = total_length;
+            let mut remaining = length;
             let mut current_offset = offset;
 
             while remaining > 0 {
@@ -314,7 +364,25 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<ReadWholeRequest>,
     ) -> Result<Response<ReadWholeResponse>, Status> {
-        todo!()
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let ReadWholeRequest {
+            collection_name,
+            path,
+            open_options,
+        } = request.into_inner();
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
+        let open_options = convert_open_options(open_options);
+
+        let data = tokio::task::spawn_blocking(move || {
+            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let cow = storage.read_whole().map_err(io_error_to_status)?;
+            Ok::<_, Status>(cow.into_owned())
+        })
+        .await
+        .map_err(|e| Status::internal(format!("read_whole error: {e}")))??;
+
+        Ok(Response::new(ReadWholeResponse { data }))
     }
 
     // Maps to UniversalRead::read_batch() — multiple ranges from a single file.
@@ -322,7 +390,45 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<ReadBatchRequest>,
     ) -> Result<Response<ReadBatchResponse>, Status> {
-        todo!()
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let ReadBatchRequest {
+            collection_name,
+            path,
+            ranges,
+            open_options,
+        } = request.into_inner();
+        let path = self.resolve_path(&auth, &collection_name, &path)?;
+
+        let open_options = convert_open_options(open_options);
+        let ranges = ranges
+            .iter()
+            .map(|r| ElementsRange {
+                start: r.offset,
+                length: r.length,
+            })
+            .collect::<Vec<_>>();
+
+        let data = tokio::task::spawn_blocking(move || {
+            let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let mut results = vec![Vec::<u8>::new(); ranges.len()];
+            dispatch_read_batch(
+                &storage,
+                ranges,
+                open_options.need_sequential,
+                |idx, chunk| {
+                    results[idx].extend_from_slice(chunk);
+                    Ok(())
+                },
+            )
+            .map_err(io_error_to_status)?;
+
+            Ok::<_, Status>(results)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
+
+        Ok(Response::new(ReadBatchResponse { data }))
     }
 
     // Maps to UniversalRead::read_multi() — ranges across multiple files.
@@ -331,6 +437,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         &self,
         mut request: Request<ReadMultiRequest>,
     ) -> Result<Response<ReadMultiResponse>, Status> {
+        validate(request.get_ref())?;
+        let auth = extract_auth(&mut request);
+        let inner = request.into_inner();
+
         todo!()
     }
 }
