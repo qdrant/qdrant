@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::OverwriteDeferredFiltering;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::*;
 use shard::count::CountRequestInternal;
@@ -47,7 +48,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        ignore_deferred: bool,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

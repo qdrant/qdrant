@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::OverwriteDeferredFiltering;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
@@ -141,7 +142,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
-        _: bool,
+        _: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }

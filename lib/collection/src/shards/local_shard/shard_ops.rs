@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::OverwriteDeferredFiltering;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -194,7 +195,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    false,
+                    OverwriteDeferredFiltering::None,
                 )
                 .await?
             }
@@ -208,7 +209,7 @@ impl ShardOperation for LocalShard {
                     &order_by,
                     timeout,
                     hw_measurement_acc,
-                    false,
+                    OverwriteDeferredFiltering::None,
                 )
                 .await?
             }
@@ -229,7 +230,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        ignore_deferred: bool,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
         self.internal_scroll_by_id(
@@ -241,7 +242,7 @@ impl ShardOperation for LocalShard {
             search_runtime_handle,
             timeout,
             hw_measurement_acc,
-            ignore_deferred,
+            overwrite_deferred,
         )
         .await
     }
@@ -294,7 +295,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     hw_measurement_acc,
                     Some(timeout),
-                    false,
+                    OverwriteDeferredFiltering::None,
                 ),
             )
             .await

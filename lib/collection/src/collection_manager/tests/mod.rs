@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::OverwriteDeferredFiltering;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
@@ -88,7 +89,7 @@ fn test_update_proxy_segments() {
                 None,
                 &is_stopped,
                 &hw_counter,
-                false,
+                OverwriteDeferredFiltering::None,
             )
         })
         .sorted()

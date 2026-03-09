@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::OverwriteDeferredFiltering;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::RngExt;
@@ -88,7 +89,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    false,
+                    OverwriteDeferredFiltering::None,
                 )
                 .await?
             }
@@ -102,7 +103,7 @@ impl LocalShard {
                     order_by,
                     timeout,
                     hw_measurement_acc,
-                    false,
+                    OverwriteDeferredFiltering::None,
                 )
                 .await?
             }
@@ -147,7 +148,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
-        ignore_deferred: bool,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -169,7 +170,7 @@ impl LocalShard {
                     filter.as_ref(),
                     &is_stopped,
                     &hw_counter,
-                    ignore_deferred,
+                    overwrite_deferred,
                 )
             });
             AbortOnDropHandle::new(task)
@@ -236,7 +237,7 @@ impl LocalShard {
         order_by: &OrderBy,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
-        ignore_deferred: bool,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -266,7 +267,7 @@ impl LocalShard {
                     &order_by,
                     &is_stopped,
                     &hw_counter,
-                    ignore_deferred,
+                    overwrite_deferred,
                 )
             });
             AbortOnDropHandle::new(task)

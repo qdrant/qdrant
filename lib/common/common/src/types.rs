@@ -92,3 +92,50 @@ impl From<usize> for DetailsLevel {
         }
     }
 }
+
+/// Overwrite the filtering of deferred points.
+/// Can be used in places where we sometimes must access all points, including deferred ones.
+#[derive(Clone, Copy)]
+pub enum OverwriteDeferredFiltering {
+    // No overwrite. Points will not be included in
+    // the result if they are deferred.
+    None,
+
+    /// Overwrite the filtering of deferred points and include *all* points in the response, even deferred ones.
+    IncludeAll,
+}
+
+impl OverwriteDeferredFiltering {
+    /// Apply the overwrite to a given `deferred_internal_id`.
+    pub fn apply(&self, deferred_internal_id: Option<PointOffsetType>) -> Option<PointOffsetType> {
+        match self {
+            // No overwrite so we just return the passed `deferred_internal_id`.
+            OverwriteDeferredFiltering::None => deferred_internal_id,
+
+            // Setting `deferred_internal_id` to `None` results in no points being left out
+            // at deferred-point filtering.
+            OverwriteDeferredFiltering::IncludeAll => None,
+        }
+    }
+
+    /// Returns `true` if filtering deferred points should be disabled
+    /// and *all* points should be included in the result.
+    pub fn include_all_points(&self) -> bool {
+        matches!(self, OverwriteDeferredFiltering::IncludeAll)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_deferred_overwrite() {
+        assert_eq!(OverwriteDeferredFiltering::None.apply(Some(32)), Some(32));
+        assert_eq!(OverwriteDeferredFiltering::None.apply(None), None);
+
+        // `IncludeAll` always returns `None` because then the filtering of deferred points is disabled.
+        assert_eq!(OverwriteDeferredFiltering::IncludeAll.apply(Some(32)), None);
+        assert_eq!(OverwriteDeferredFiltering::IncludeAll.apply(None), None);
+    }
+}

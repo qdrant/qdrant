@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::OverwriteDeferredFiltering;
 use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::*;
@@ -56,6 +57,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -81,7 +83,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
-                            false, // TODO(jonas): Maybe use `true` here?
+                            overwrite_deferred,
                         )
                         .await
                 }

@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::OverwriteDeferredFiltering;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
@@ -392,7 +393,7 @@ pub fn delete_points_by_filter(
                     &is_stopped,
                     hw_counter,
                     // Delete also deferred points.
-                    true,
+                    OverwriteDeferredFiltering::IncludeAll,
                 ),
             )
         })
@@ -904,7 +905,14 @@ fn points_by_filter(
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter), &is_stopped, hw_counter, true);
+        let points = s.read_filtered(
+            None,
+            None,
+            Some(filter),
+            &is_stopped,
+            hw_counter,
+            OverwriteDeferredFiltering::IncludeAll,
+        );
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;

@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::OverwriteDeferredFiltering;
 use segment::common::operation_error::OperationResult;
 use segment::index::field_index::EstimationMerge;
 use shard::count::CountRequestInternal;
@@ -23,7 +24,7 @@ impl EdgeShard {
                         filter.as_ref(),
                         &AtomicBool::new(false),
                         &HardwareCounterCell::disposable(),
-                        false,
+                        OverwriteDeferredFiltering::None,
                     )
                 })
                 .count()

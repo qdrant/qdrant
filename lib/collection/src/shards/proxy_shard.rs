@@ -7,7 +7,7 @@ use ahash::AHashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
-use common::types::TelemetryDetail;
+use common::types::{OverwriteDeferredFiltering, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
@@ -223,8 +223,8 @@ impl ShardOperation for ProxyShard {
                             &runtime_handle,
                             hw_measurement_acc.clone(),
                             None, // no timeout on update path
-                            // Ignoring deferred points here since they could be part of the update operation.
-                            true,
+                            // Including deferred points in the result here since they could be part of the update operation.
+                            OverwriteDeferredFiltering::IncludeAll,
                         )
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
@@ -282,7 +282,7 @@ impl ShardOperation for ProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        ignore_deferred: bool,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -295,7 +295,7 @@ impl ShardOperation for ProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                ignore_deferred,
+                overwrite_deferred,
             )
             .await
     }
