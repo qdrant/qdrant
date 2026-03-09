@@ -48,7 +48,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-        prevent_unoptimized_threshold_kb: Option<usize>,
+        prevent_unoptimized: bool,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
@@ -134,9 +134,8 @@ impl UpdateWorkers {
                     })
                     .await;
 
-                    if wait {
+                    if wait && prevent_unoptimized {
                         let wait_result = Self::wait_for_deferred_points_ready(
-                            prevent_unoptimized_threshold_kb,
                             &segments,
                             optimization_handles.clone(),
                             &mut optimization_finished_receiver,
@@ -191,18 +190,10 @@ impl UpdateWorkers {
 
     /// Wait until all deferred points are ready for read/search.
     async fn wait_for_deferred_points_ready(
-        // Size of the unoptimized segment to be considered large enough for waiting.
-        // If `None`, waiting is disabled.
-        optimization_threshold_kb: Option<usize>,
         segments: &LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
-        if optimization_threshold_kb.is_none() {
-            // Deferred points feature is disabled, nothing to wait for.
-            return Ok(());
-        };
-
         loop {
             let locked_segments = segments.clone();
             let has_deferred_points = tokio::task::spawn_blocking(move || {
