@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::mem::size_of;
 use std::path::Path;
 
+use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
@@ -104,22 +105,22 @@ impl<S: UniversalRead<u64>> BitSliceStorage<S> {
     ///
     /// Returns `None` if `bit_index` is out of bounds.
     pub fn get_bit(&self, bit_index: u64) -> Result<Option<bool>> {
-        let element_index = bit_index / BITS_PER_ELEMENT;
-        let bit_within_element = bit_index % BITS_PER_ELEMENT;
+
+		let element_index = bit_index >> <u64 as BitRegister>::INDX;
+		let bit_within_element = bit_index as u8 & <u64 as BitRegister>::MASK;
 
         if element_index >= self.element_len {
             return Ok(None);
         }
 
-        let elements = self.storage.read::<false>(ElementsRange {
+        let element = self.storage.read::<false>(ElementsRange {
             start: element_index,
             length: 1,
-        })?;
+        })?[0];
 
-        let element = elements[0];
-        // bitvec Lsb0 ordering: bit 0 is the least significant bit
-        let bit = (element >> bit_within_element) & 1;
-        Ok(Some(bit != 0))
+        let bitslice = BitSlice::<u64, Lsb0>::from_element(&element);
+
+        Ok(bitslice.get(bit_within_element as usize).as_deref().copied())
     }
 
     /// Validate a bit range and return the corresponding element range.
