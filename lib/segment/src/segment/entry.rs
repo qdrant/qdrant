@@ -1075,4 +1075,9 @@ impl SegmentEntry for Segment {
             }),
         })
     }
+
+    fn has_deferred_points(&self) -> bool {
+        // Point is deferred if his internal ID >= deferred_internal_id
+        self.deferred_internal_id.is_some()
+    }
 }
