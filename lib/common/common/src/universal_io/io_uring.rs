@@ -7,7 +7,7 @@ use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
 
 use ::io_uring::types::Fd;
-use ::io_uring::{IoUring, opcode, squeue};
+use ::io_uring::{IoUring, Probe, opcode, squeue};
 use fs_err as fs;
 
 use super::*;
@@ -56,6 +56,20 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: Sized,
     {
+        // Check that `io_uring` was succesfully initialized and basic read/write operations are supported
+        with_uring(|io_uring| {
+            let mut probe = Probe::new();
+            io_uring.submitter().register_probe(&mut probe)?;
+
+            if probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE) {
+                Ok(())
+            } else {
+                Err(io::Error::other(
+                    "io_uring does not support required operations",
+                ))
+            }
+        })??;
+
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
