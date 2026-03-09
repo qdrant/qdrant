@@ -19,10 +19,6 @@ use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 pub const EDGE_CONFIG_FILE: &str = "edge_config.json";
 
 /// Full configuration for an edge shard.
-///
-/// User-facing only: `on_disk_payload`, `on_disk` per vector, global
-/// `hnsw_config` and `quantization_config`. No `SegmentConfig`, no
-/// `payload_storage_type`, no per-vector quantization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct EdgeShardConfig {
@@ -35,10 +31,11 @@ pub struct EdgeShardConfig {
     /// Sparse vector params per vector name.
     #[serde(default)]
     pub sparse_vectors: HashMap<VectorNameBuf, EdgeSparseVectorParams>,
-    /// Global HNSW config; per-vector override is in `vectors[].index` when `Indexes::Hnsw`.
+    /// Global HNSW config; per-vector override is in `vectors[].hnsw_config`
     #[serde(default)]
     pub hnsw_config: HnswConfig,
-    /// Global quantization config for all vectors (no per-vector quantization).
+    /// Global quantization config for all vectors
+    /// Per-vector override in in `vectors[].quantization_config`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]

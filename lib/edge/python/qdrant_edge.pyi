@@ -411,17 +411,17 @@ class EdgeOptimizersConfig:
         ...
 
     @property
-    def deleted_threshold(self) -> float:
+    def deleted_threshold(self) -> Optional[float]:
         """Deleted threshold."""
         ...
 
     @property
-    def vacuum_min_vector_number(self) -> int:
+    def vacuum_min_vector_number(self) -> Optional[int]:
         """Vacuum min vector number."""
         ...
 
     @property
-    def default_segment_number(self) -> int:
+    def default_segment_number(self) -> Optional[int]:
         """Default segment number."""
         ...
 

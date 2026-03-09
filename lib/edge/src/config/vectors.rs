@@ -1,8 +1,4 @@
 //! User-facing vector and sparse-vector parameters for the edge shard.
-//!
-//! Uses `on_disk` (bool) instead of internal `storage_type`. Per-vector quantization
-//! is supported via `EdgeVectorParams::quantization_config`; when set it overrides the
-//! global `EdgeShardConfig::quantization_config` for that vector.
 
 use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -15,8 +11,8 @@ use shard::optimizers::config::DenseVectorOptimizerConfig;
 
 /// User-facing dense vector parameters.
 ///
-/// Uses `on_disk: bool` instead of `storage_type`. Per-vector quantization is
-/// supported via `quantization_config` and overrides the global config when set.
+/// This configuration is applied per named vector and overrides
+/// global shard-level vector configuration when specified.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct EdgeVectorParams {
@@ -115,8 +111,6 @@ impl EdgeVectorParams {
 }
 
 /// User-facing sparse vector parameters.
-///
-/// Uses `on_disk: bool` instead of internal storage/index type enums.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct EdgeSparseVectorParams {
