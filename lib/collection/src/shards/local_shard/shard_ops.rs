@@ -294,6 +294,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     hw_measurement_acc,
                     Some(timeout),
+                    false,
                 ),
             )
             .await

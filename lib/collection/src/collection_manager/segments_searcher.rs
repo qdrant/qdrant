@@ -410,6 +410,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
+        ignore_deferred: bool,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
@@ -439,9 +440,7 @@ impl SegmentsSearcher {
                         filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
-                        // No need to ignore deferred points here since this function is
-                        // always used in user-facing read-APIs.
-                        false,
+                        ignore_deferred,
                     )
                 })
                 .collect();

@@ -949,9 +949,18 @@ impl LocalShard {
         runtime_handle: &Handle,
         hw_counter: HwMeasurementAcc,
         timeout: Option<Duration>,
+        ignore_deferred: bool,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
+        SegmentsSearcher::read_filtered(
+            segments,
+            filter,
+            runtime_handle,
+            hw_counter,
+            timeout,
+            ignore_deferred,
+        )
+        .await
     }
 
     pub fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {
