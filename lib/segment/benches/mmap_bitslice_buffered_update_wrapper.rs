@@ -2,11 +2,11 @@ use std::hint::black_box;
 use std::iter;
 
 use common::universal_io::OpenOptions;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use segment::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use segment::common::stored_bitslice::MmapBitSlice;
 use tempfile::tempdir;
 
 const SIZE: usize = 4 * 1024 * 1024;
@@ -18,8 +18,7 @@ fn mmap_bitslice_buffered_update_wrapper(c: &mut Criterion) {
     let dir = tempdir().unwrap();
     let path = dir.path().join("bitslice.mmap");
 
-    let bitslice_storage =
-        MmapBitSliceStorage::create(&path, SIZE, OpenOptions::default()).unwrap();
+    let bitslice_storage = MmapBitSlice::create(&path, SIZE, OpenOptions::default()).unwrap();
     let mmap_bitslice_buffered_update_wrapper =
         MmapBitSliceBufferedUpdateWrapper::new(bitslice_storage);
 

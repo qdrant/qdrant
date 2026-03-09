@@ -1,4 +1,3 @@
-pub mod bitslice;
 pub mod error;
 pub mod file_ops;
 #[cfg(target_os = "linux")]

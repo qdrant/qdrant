@@ -9,7 +9,6 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::types::PointOffsetType;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use common::universal_io::mmap::MmapUniversal;
 use common::universal_io::{OpenOptions, UniversalRead};
 use fs_err as fs;
@@ -21,6 +20,7 @@ use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::stored_point_to_values::{StoredPointToValues, StoredValue};
 
@@ -134,7 +134,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
         }
 
         {
-            let mut deleted = MmapBitSliceStorage::create(
+            let mut deleted = MmapBitSlice::create(
                 &deleted_path,
                 in_memory_index.point_to_values.len(),
                 OpenOptions::default(),
@@ -168,7 +168,7 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
-        let deleted = MmapBitSliceStorage::open(&deleted_path, OpenOptions::default())?;
+        let deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
         let deleted_count = deleted.count_ones()?;
         let do_populate = !is_on_disk;
         let map = unsafe {

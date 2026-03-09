@@ -9,7 +9,6 @@ use common::ext::BitSliceExt as _;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length, open_write_mmap};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use fs_err::File;
 use uuid::Uuid;
 
@@ -17,6 +16,7 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
@@ -246,7 +246,7 @@ impl ImmutableIdTracker {
     }
 
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let deleted_storage = MmapBitSliceStorage::open(
+        let deleted_storage = MmapBitSlice::open(
             Self::deleted_file_path(segment_path),
             OpenOptions {
                 populate: Some(true),
@@ -289,7 +289,7 @@ impl ImmutableIdTracker {
 
         debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
 
-        let mut deleted_storage = MmapBitSliceStorage::create(
+        let mut deleted_storage = MmapBitSlice::create(
             &deleted_filepath,
             mappings.total_point_count(),
             OpenOptions::default(),

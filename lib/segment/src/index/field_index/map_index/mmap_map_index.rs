@@ -11,7 +11,6 @@ use common::fs::{atomic_save_json, clear_disk_cache, read_json};
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use common::universal_io::mmap::MmapUniversal;
 use fs_err as fs;
 use itertools::Itertools;
@@ -21,6 +20,7 @@ use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::stored_point_to_values::StoredPointToValues;
 
 const DELETED_PATH: &str = "deleted.bin";
@@ -65,7 +65,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path, do_populate)?;
         let point_to_values = StoredPointToValues::open(path, do_populate)?;
 
-        let deleted = MmapBitSliceStorage::open(
+        let deleted = MmapBitSlice::open(
             &deleted_path,
             OpenOptions {
                 populate: Some(do_populate),
@@ -124,11 +124,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         )?;
 
         {
-            let mut deleted = MmapBitSliceStorage::create(
-                &deleted_path,
-                point_to_values.len(),
-                OpenOptions::default(),
-            )?;
+            let mut deleted =
+                MmapBitSlice::create(&deleted_path, point_to_values.len(), OpenOptions::default())?;
             deleted.set_bits_batch(
                 point_to_values
                     .iter()

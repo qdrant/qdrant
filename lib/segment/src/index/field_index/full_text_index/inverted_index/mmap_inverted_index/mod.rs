@@ -9,7 +9,6 @@ use common::mmap::{AdviceSetting, MmapSlice};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use itertools::Either;
 use mmap_postings::{MmapPostingValue, MmapPostings};
 
@@ -24,6 +23,7 @@ use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::stored_bitslice::MmapBitSlice;
 use crate::index::field_index::full_text_index::inverted_index::Document;
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
@@ -91,7 +91,7 @@ impl MmapInvertedIndex {
             .map(|count| *count == 0)
             .collect();
         {
-            let mut deleted_storage = MmapBitSliceStorage::create(
+            let mut deleted_storage = MmapBitSlice::create(
                 &deleted_points_path,
                 deleted_bitslice.len(),
                 OpenOptions::default(),
@@ -147,7 +147,7 @@ impl MmapInvertedIndex {
             )?)?
         };
 
-        let deleted = MmapBitSliceStorage::open(
+        let deleted = MmapBitSlice::open(
             &deleted_points_path,
             OpenOptions {
                 populate: Some(populate),

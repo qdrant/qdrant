@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::universal_io::bitslice::MmapBitSliceStorage;
 use parking_lot::RwLock;
 
 use crate::common::Flusher;
 use crate::common::operation_error::OperationError;
+use crate::common::stored_bitslice::MmapBitSlice;
 
 /// A wrapper around [`MmapBitSliceStorage`] that delays writing changes to the underlying file
 /// until they get flushed manually.
 /// This expects the underlying storage not to grow in size.
 #[derive(Debug)]
 pub struct MmapBitSliceBufferedUpdateWrapper {
-    bitslice: Arc<RwLock<MmapBitSliceStorage>>,
+    bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
     pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
     /// Lock to prevent concurrent flush and drop
@@ -20,7 +20,7 @@ pub struct MmapBitSliceBufferedUpdateWrapper {
 }
 
 impl MmapBitSliceBufferedUpdateWrapper {
-    pub fn new(bitslice: MmapBitSliceStorage) -> Self {
+    pub fn new(bitslice: MmapBitSlice) -> Self {
         let len = bitslice.bit_len() as usize;
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
