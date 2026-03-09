@@ -96,6 +96,7 @@ def main() -> None:
 
     # Copy resources.
     shutil.copytree(REPO_ROOT / "lib/segment/tokenizer", AMALGAMATION / "tokenizer")
+    shutil.copy2(Path(__file__).parent / "crates-io-readme.md", AMALGAMATION / "README.md")
 
     # Write Cargo.toml.
     manifest = {
@@ -106,6 +107,11 @@ def main() -> None:
             "license": "Apache-2.0",
             "edition": "2024",
             "description": "A lightweight, in-process vector search engine designed for embedded devices, autonomous systems, and mobile agents.",
+            "readme": "README.md",
+            "homepage": "https://qdrant.tech/edge/",
+            "repository": "https://github.com/qdrant/qdrant",
+            "keywords": ["vector-search", "retrieval", "search", "qdrant", "embedded"],
+            "categories": ["database-implementations"],
             "publish": True,
         },
         **gather_dependencies(
