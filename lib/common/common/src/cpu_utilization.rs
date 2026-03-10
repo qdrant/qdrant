@@ -124,7 +124,11 @@ mod tests {
         cu1.measure(|| std::hint::black_box(42));
         cu2.measure(|| std::hint::black_box(42));
 
-        assert_eq!(cu1.ratio(), cu2.ratio(), "clones should share the same counters");
+        assert_eq!(
+            cu1.ratio(),
+            cu2.ratio(),
+            "clones should share the same counters"
+        );
     }
 
     #[test]

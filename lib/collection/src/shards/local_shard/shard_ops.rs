@@ -218,7 +218,11 @@ impl ShardOperation for LocalShard {
 
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(result)
     }
@@ -313,7 +317,11 @@ impl ShardOperation for LocalShard {
         };
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(CountResult { count: total_count })
     }
@@ -359,7 +367,11 @@ impl ShardOperation for LocalShard {
 
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
 
         Ok(ordered_records)
@@ -398,7 +410,11 @@ impl ShardOperation for LocalShard {
 
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || {
             requests.remove_details()
         });
@@ -445,7 +461,11 @@ impl ShardOperation for LocalShard {
         };
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
-        let cpu_usage_ratio = if cpu_ratio > 0.0 { Some(cpu_ratio) } else { None };
+        let cpu_usage_ratio = if cpu_ratio > 0.0 {
+            Some(cpu_ratio)
+        } else {
+            None
+        };
         log_request_to_collector(&self.collection_name, elapsed, cpu_usage_ratio, || request);
         Ok(FacetResponse { hits })
     }
