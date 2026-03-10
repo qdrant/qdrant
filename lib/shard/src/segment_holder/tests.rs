@@ -971,7 +971,8 @@ fn test_points_deduplication_with_deferred() {
     //   Latest v9 is deferred-only → keep older non-deferred (seg1)
     //   Two deferred copies (seg2, seg3) → keep one, remove the other
     assert!(!rem1.contains(&6.into()));
-    let deferred_6_removed = rem2.contains(&6.into()) as usize + rem3.contains(&6.into()) as usize;
+    let deferred_6_removed =
+        usize::from(rem2.contains(&6.into())) + usize::from(rem3.contains(&6.into()));
     assert_eq!(
         deferred_6_removed, 1,
         "exactly one of the two deferred copies of point 6 should be removed"
@@ -1057,9 +1058,9 @@ fn test_points_deduplication_with_deferred_randomized() {
     let mut is_deferred: HashMap<(u64, usize), bool> = HashMap::new();
     for id in 0..POINT_COUNT {
         let point_id = PointIdType::from(id);
-        for seg_idx in 0..SEGMENT_COUNT {
-            if segments[seg_idx].has_point(point_id) {
-                is_deferred.insert((id, seg_idx), segments[seg_idx].point_is_deferred(point_id));
+        for (seg_idx, segment) in segments.iter().enumerate() {
+            if segment.has_point(point_id) {
+                is_deferred.insert((id, seg_idx), segment.point_is_deferred(point_id));
             }
         }
     }
