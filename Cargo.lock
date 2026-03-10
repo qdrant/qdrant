@@ -1450,7 +1450,6 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
- "ahash",
  "atomicwrites",
  "bincode 1.3.3",
  "bitvec",
@@ -3048,7 +3047,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "lz4_flex",
- "memmap2 0.9.10",
  "parking_lot",
  "proptest",
  "rand 0.10.0",
