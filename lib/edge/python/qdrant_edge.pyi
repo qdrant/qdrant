@@ -51,7 +51,17 @@ class EdgeShard:
     A shard is a self-contained unit of storage that can be loaded, queried,
     and updated independently. Use load() to open existing data, or create()
     to create a new shard.
+
+    The constructor EdgeShard(path, config=None) is equivalent to load(path, config)
+    and is provided for backward compatibility.
     """
+
+    def __init__(self, path: str, config: Optional["EdgeConfig"] = None) -> None:
+        """
+        Load an edge shard (backward-compatible constructor).
+        Equivalent to EdgeShard.load(path, config).
+        """
+        ...
 
     @staticmethod
     def load(path: str, config: Optional["EdgeConfig"] = None) -> "EdgeShard":
@@ -428,17 +438,17 @@ class EdgeOptimizersConfig:
         ...
 
     @property
-    def deleted_threshold(self) -> float:
+    def deleted_threshold(self) -> Optional[float]:
         """Deleted threshold."""
         ...
 
     @property
-    def vacuum_min_vector_number(self) -> int:
+    def vacuum_min_vector_number(self) -> Optional[int]:
         """Vacuum min vector number."""
         ...
 
     @property
-    def default_segment_number(self) -> int:
+    def default_segment_number(self) -> Optional[int]:
         """Default segment number."""
         ...
 

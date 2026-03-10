@@ -97,6 +97,13 @@ pub struct PyEdgeShard(Option<edge::EdgeShard>);
 
 #[pymethods]
 impl PyEdgeShard {
+    /// Constructor for backward compatibility: equivalent to `EdgeShard.load(path, config)`.
+    #[new]
+    #[pyo3(signature = (path, config = None))]
+    pub fn py_new(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
+        Self::load(path, config)
+    }
+
     /// Load an edge shard from existing files at `path`.
     /// Optional `config`: if provided, compatibility is checked and config is overwritten on disk.
     #[staticmethod]
