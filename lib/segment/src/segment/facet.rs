@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
 use itertools::{Either, Itertools};
 
 use super::Segment;
@@ -86,12 +87,10 @@ impl Segment {
                     .filter_map(|(value, iter)| {
                         let count = iter
                             .unique()
-                            .filter(|&point_id| {
-                                // TODO(deferred): We can maybe improve on this filter and exit early if `point_id` reaches `deferred_internal_id`.
-                                // But we need to make sure that every index type returns an ordered `iter`.
-                                !self.is_point_deferred_internal(point_id)
-                                    && context.check(point_id)
+                            .take_while(|&point_id| {
+                                point_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
                             })
+                            .filter(|&point_id| context.check(point_id))
                             .count();
 
                         (count > 0).then_some(FacetHit { value, count })
