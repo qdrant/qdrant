@@ -1440,9 +1440,9 @@ mod tests {
             for wal in &wals {
                 opened_wals.push(wal.0.wal.lock().await);
             }
-            opened_wals.windows(2).for_each(|wals| {
+            opened_wals.array_windows().for_each(|[a, b]| {
                 assert!(
-                    wals[0].read(0).eq(wals[1].read(0)),
+                    a.read(0).eq(b.read(0)),
                     "all WALs must have the same entries",
                 );
             });

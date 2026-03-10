@@ -44,7 +44,7 @@ pub struct RemappedSparseVector {
 /// Sort two arrays by the first array.
 pub fn double_sort<T: Ord + Copy, V: Copy>(indices: &mut [T], values: &mut [V]) {
     // Check if the indices are already sorted
-    if indices.windows(2).all(|w| w[0] < w[1]) {
+    if indices.array_windows().all(|[a, b]| a < b) {
         return;
     }
 
@@ -102,7 +102,7 @@ impl RemappedSparseVector {
 
     /// Check if this vector is sorted by indices.
     pub fn is_sorted(&self) -> bool {
-        self.indices.windows(2).all(|w| w[0] < w[1])
+        self.indices.array_windows().all(|[a, b]| a < b)
     }
 
     /// Score this vector against another vector using dot product.

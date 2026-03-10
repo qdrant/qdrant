@@ -4228,20 +4228,20 @@ mod tests {
             .sorted_by_key(|(_, dt)| dt.timestamp())
             .collect();
 
-        sorted_datetimes.windows(2).for_each(|pair| {
-            let (i1, dt1) = pair[0];
-            let (i2, dt2) = pair[1];
-            assert!(
-                i1 < i2,
-                "i1: {}, dt1: {}, ts1: {}\ni2: {}, dt2: {}, ts2: {}",
-                i1,
-                dt1.0,
-                dt1.timestamp(),
-                i2,
-                dt2.0,
-                dt2.timestamp()
-            );
-        });
+        sorted_datetimes
+            .array_windows()
+            .for_each(|[(i1, dt1), (i2, dt2)]| {
+                assert!(
+                    i1 < i2,
+                    "i1: {}, dt1: {}, ts1: {}\ni2: {}, dt2: {}, ts2: {}",
+                    i1,
+                    dt1.0,
+                    dt1.timestamp(),
+                    i2,
+                    dt2.0,
+                    dt2.timestamp()
+                );
+            });
     }
 
     #[test]
