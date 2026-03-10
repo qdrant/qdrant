@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -57,7 +57,37 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             .storage_path()
             .join(COLLECTIONS_DIR)
             .join(collection_name);
-        todo!()
+
+        let rel = std::path::Path::new(relative_path);
+        for c in rel.components() {
+            match c {
+                Component::Normal(_) => {}
+                _ => {
+                    return Err(Status::invalid_argument(format!(
+                        "Invalid path component in '{relative_path}'"
+                    )));
+                }
+            }
+        }
+
+        let full = base.join(rel);
+
+        // Double-check: canonicalize if the path exists and verify it's under base.
+        // If the file doesn't exist yet (e.g. for exists check), the component check above
+        // is sufficient since we rejected all non-Normal components.
+        if full.exists() {
+            let canonical = fs_err::canonicalize(&full)
+                .map_err(|e| Status::internal(format!("Failed to canonicalize path: {e}")))?;
+            let canonical_base = fs_err::canonicalize(&base).unwrap_or(base.clone());
+            if !canonical.starts_with(&canonical_base) {
+                return Err(Status::permission_denied(format!(
+                    "Path '{}' is outside the collection directory",
+                    full.display()
+                )));
+            }
+        }
+
+        Ok(full)
     }
 }
 
