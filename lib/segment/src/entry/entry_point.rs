@@ -115,7 +115,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        ignore_deferred: OverwriteDeferredFiltering,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> Vec<PointIdType>;
 
     /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
@@ -130,7 +130,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        ignore_deferred: OverwriteDeferredFiltering,
+        overwrite_deferred: OverwriteDeferredFiltering,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
     /// Return random points which satisfies filtering condition.

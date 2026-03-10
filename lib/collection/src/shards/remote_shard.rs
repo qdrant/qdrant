@@ -1125,7 +1125,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
         _hw_measurement_acc: HwMeasurementAcc,
-        _ignore_deferred: OverwriteDeferredFiltering,
+        _overwrite_deferred: OverwriteDeferredFiltering,
     ) -> CollectionResult<Vec<RecordInternal>> {
         debug_assert!(false, "RemoteShard does not support local_scroll_by_id");
         Err(CollectionError::service_error(
