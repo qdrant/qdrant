@@ -233,6 +233,17 @@ async fn test_deferred_points_dedup_after_optimization() {
         .await
         .unwrap();
 
+    // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
+    let has_deferred = shard
+        .segments()
+        .read()
+        .iter()
+        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    assert!(
+        has_deferred,
+        "Expected to have deferred points after updates, but found none"
+    );
+
     // Wait for optimization triggered by the overwrites
     wait_optimization(&shard, timeout).await;
 
@@ -242,6 +253,17 @@ async fn test_deferred_points_dedup_after_optimization() {
         .update(upsert_op(random_points()), true, None, hw_acc.clone())
         .await
         .unwrap();
+
+    // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
+    let has_deferred = shard
+        .segments()
+        .read()
+        .iter()
+        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    assert!(
+        has_deferred,
+        "Expected to have deferred points after updates, but found none"
+    );
 
     // Wait for final optimization
     wait_optimization(&shard, timeout).await;

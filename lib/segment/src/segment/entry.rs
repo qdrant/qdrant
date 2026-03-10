@@ -885,7 +885,7 @@ impl NonAppendableSegmentEntry for Segment {
         let id_tracker = self.id_tracker.borrow();
         id_tracker
             .iter_internal()
-            .filter(move |&internal_id| internal_id >= deferred_from)
+            .skip_while(|&internal_id| internal_id < deferred_from)
             .filter_map(|internal_id| id_tracker.external_id(internal_id))
             .collect()
     }
