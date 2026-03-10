@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -159,6 +160,40 @@ pub fn build_segment_2(path: &Path) -> Segment {
         .unwrap();
 
     segment2
+}
+
+/// Build an empty appendable segment with a deferred-points threshold.
+///
+/// With dim=4 (16 bytes per f32 vector) and `deferred_threshold_bytes`,
+/// internal IDs >= `deferred_threshold_bytes / 16` will be deferred.
+pub fn empty_segment_with_deferred(path: &Path, deferred_threshold_bytes: usize) -> Segment {
+    use std::collections::HashMap;
+
+    use segment::segment_constructor::build_segment;
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageType};
+
+    build_segment(
+        path,
+        &segment::types::SegmentConfig {
+            vector_data: HashMap::from([(
+                segment::data_types::vectors::DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: 4,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(NonZeroUsize::new(deferred_threshold_bytes).unwrap()),
+        true,
+    )
+    .unwrap()
 }
 
 /// Builds a segment with a deferred threshold that causes points 4 and 5 to be deferred, while points 1, 2, and 3 are not deferred.

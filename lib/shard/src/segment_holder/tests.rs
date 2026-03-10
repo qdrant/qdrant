@@ -859,6 +859,333 @@ fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
     assert!(!delete_set(&sid3).contains(&4.into()));
 }
 
+/// Test deduplication with deferred points.
+///
+/// Exercises all deduplication rules:
+/// - Non-deferred duplicate with lower version is removed when latest has non-deferred
+/// - Deferred points are never removed
+/// - Older non-deferred copies are kept when the latest version is deferred-only
+/// - Multiple deferred copies are reduced to one
+#[test]
+fn test_points_deduplication_with_deferred() {
+    use crate::fixtures::empty_segment_with_deferred;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+    let vec4 = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
+
+    // Segment 1 (normal, no deferred):
+    //   Point 3 at v10, Point 4 at v10, Point 5 at v3, Point 6 at v8
+    let mut segment1 = empty_segment(dir.path());
+    segment1
+        .upsert_point(10, 3.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    segment1
+        .upsert_point(10, 4.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    segment1
+        .upsert_point(3, 5.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    segment1
+        .upsert_point(8, 6.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+
+    // Segment 2 (with deferred, threshold=48 → 48/16=3, internal IDs >= 3 are deferred):
+    //   Insert order: point 1, 2, 3 (non-deferred), then 4, 5, 6 (deferred)
+    //   All at version 6
+    let mut segment2 = empty_segment_with_deferred(dir.path(), 48);
+    for id in 1..=6u64 {
+        segment2
+            .upsert_point(6, id.into(), vec4.clone(), &hw_counter)
+            .unwrap();
+    }
+    // Verify deferred status
+    assert!(!segment2.point_is_deferred(1.into()));
+    assert!(!segment2.point_is_deferred(2.into()));
+    assert!(!segment2.point_is_deferred(3.into()));
+    assert!(segment2.point_is_deferred(4.into()));
+    assert!(segment2.point_is_deferred(5.into()));
+    assert!(segment2.point_is_deferred(6.into()));
+
+    // Segment 3 (also with deferred, same threshold) — to test multiple deferred copies:
+    //   Only point 6 at v9 (deferred, since it's the 1st point → internal_id 0,
+    //   but threshold=48/16=3, so internal_id 0 < 3 → NOT deferred)
+    //   Actually, to get point 6 deferred, we need 3 other points first.
+    let mut segment3 = empty_segment_with_deferred(dir.path(), 48);
+    // Insert dummy points to push internal IDs up
+    segment3
+        .upsert_point(1, 100.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    segment3
+        .upsert_point(1, 101.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    segment3
+        .upsert_point(1, 102.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    // Now internal_id 3 → deferred
+    segment3
+        .upsert_point(9, 6.into(), vec4.clone(), &hw_counter)
+        .unwrap();
+    assert!(segment3.point_is_deferred(6.into()));
+
+    let mut holder = SegmentHolder::default();
+    let sid1 = holder.add_new(segment1);
+    let sid2 = holder.add_new(segment2);
+    let sid3 = holder.add_new(segment3);
+
+    let duplicates = holder.find_duplicated_points();
+
+    let removed_from = |sid: SegmentId| -> HashSet<PointIdType> {
+        duplicates
+            .get(&sid)
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default()
+    };
+
+    let rem1 = removed_from(sid1);
+    let rem2 = removed_from(sid2);
+    let rem3 = removed_from(sid3);
+
+    // Point 1: only in seg2 (non-deferred, v6) → no dedup
+    assert!(!rem2.contains(&1.into()));
+
+    // Point 2: only in seg2 (non-deferred, v6) → no dedup
+    assert!(!rem2.contains(&2.into()));
+
+    // Point 3: seg1 v10 (non-deferred) vs seg2 v6 (non-deferred)
+    //   Latest v10 has non-deferred → remove older non-deferred from seg2
+    assert!(!rem1.contains(&3.into()));
+    assert!(rem2.contains(&3.into()));
+
+    // Point 4: seg1 v10 (non-deferred) vs seg2 v6 (deferred)
+    //   Latest v10 has non-deferred (seg1) → seg1 kept as winner
+    //   Seg2 is deferred → never removed
+    assert!(!rem1.contains(&4.into()));
+    assert!(!rem2.contains(&4.into()));
+
+    // Point 5: seg1 v3 (non-deferred) vs seg2 v6 (deferred)
+    //   Latest v6 is deferred-only → keep older non-deferred (seg1)
+    //   Seg2 is deferred → never removed
+    assert!(!rem1.contains(&5.into()));
+    assert!(!rem2.contains(&5.into()));
+
+    // Point 6: seg1 v8 (non-deferred) vs seg2 v6 (deferred) vs seg3 v9 (deferred)
+    //   Latest v9 is deferred-only → keep older non-deferred (seg1)
+    //   Two deferred copies (seg2, seg3) → keep one, remove the other
+    assert!(!rem1.contains(&6.into()));
+    let deferred_6_removed = rem2.contains(&6.into()) as usize + rem3.contains(&6.into()) as usize;
+    assert_eq!(
+        deferred_6_removed, 1,
+        "exactly one of the two deferred copies of point 6 should be removed"
+    );
+
+    // Now run actual dedup and verify it completes
+    let removed_count = deduplicate_points_sync(&holder).unwrap();
+    // Point 3 from seg2 + 1 deferred copy of point 6 = 2
+    assert_eq!(removed_count, 2);
+
+    // After dedup: point 3 should only be in seg1
+    assert!(holder.get(sid1).unwrap().get().read().has_point(3.into()));
+    assert!(!holder.get(sid2).unwrap().get().read().has_point(3.into()));
+
+    // Points 4 and 5 should still be in both seg1 and seg2
+    assert!(holder.get(sid1).unwrap().get().read().has_point(4.into()));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(4.into()));
+    assert!(holder.get(sid1).unwrap().get().read().has_point(5.into()));
+    assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
+}
+
+/// Randomized test for deduplication with a mix of normal and deferred segments.
+///
+/// Verifies invariants after deduplication:
+/// - Each point has at most one deferred copy remaining
+/// - If a non-deferred copy was removed, a non-deferred copy with >= version remains
+/// - Deferred copies are never removed (only extra deferred duplicates are)
+/// - If the latest version is deferred-only, older non-deferred copies are preserved
+#[test]
+fn test_points_deduplication_with_deferred_randomized() {
+    use crate::fixtures::empty_segment_with_deferred;
+
+    const POINT_COUNT: u64 = 200;
+    const SEGMENT_COUNT: usize = 5;
+
+    let mut rng = rand::rng();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let vec4 = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
+    let hw_counter = HardwareCounterCell::new();
+
+    // Create segments: first 3 normal, last 2 with deferred points.
+    // Deferred threshold = 48 bytes → 48/16 = 3 → internal IDs >= 3 are deferred.
+    let segments: Vec<_> = (0..SEGMENT_COUNT)
+        .map(|i| {
+            if i < 3 {
+                empty_segment(dir.path())
+            } else {
+                empty_segment_with_deferred(dir.path(), 48)
+            }
+        })
+        .collect();
+
+    // Track what we inserted: point_id → [(segment_idx, version)]
+    let mut point_versions: HashMap<u64, Vec<(usize, u64)>> = HashMap::new();
+
+    // Wrap in a mutable vec to insert points
+    let mut segments = segments;
+    for id in 0..POINT_COUNT {
+        let point_id = PointIdType::from(id);
+        // Insert into a random subset of segments (at least 1, to ensure the point exists)
+        let insert_count = rng.random_range(1..=SEGMENT_COUNT);
+        let mut segment_indices: Vec<usize> = (0..SEGMENT_COUNT).collect();
+        // Shuffle and take first insert_count
+        for i in (1..segment_indices.len()).rev() {
+            let j = rng.random_range(0..=i);
+            segment_indices.swap(i, j);
+        }
+        segment_indices.truncate(insert_count);
+
+        for &seg_idx in &segment_indices {
+            let version = rng.random_range(1..20u64);
+            segments[seg_idx]
+                .upsert_point(version, point_id, vec4.clone(), &hw_counter)
+                .unwrap();
+            point_versions
+                .entry(id)
+                .or_default()
+                .push((seg_idx, version));
+        }
+    }
+
+    // Record deferred status before putting into holder
+    let mut is_deferred: HashMap<(u64, usize), bool> = HashMap::new();
+    for id in 0..POINT_COUNT {
+        let point_id = PointIdType::from(id);
+        for seg_idx in 0..SEGMENT_COUNT {
+            if segments[seg_idx].has_point(point_id) {
+                is_deferred.insert((id, seg_idx), segments[seg_idx].point_is_deferred(point_id));
+            }
+        }
+    }
+
+    // Put segments into holder
+    let mut holder = SegmentHolder::default();
+    let segment_ids: Vec<_> = segments
+        .into_iter()
+        .map(|segment| holder.add_new(segment))
+        .collect();
+
+    // Record versions before dedup
+    let mut versions_before: HashMap<(u64, usize), Option<u64>> = HashMap::new();
+    for id in 0..POINT_COUNT {
+        let point_id = PointIdType::from(id);
+        for (seg_idx, &sid) in segment_ids.iter().enumerate() {
+            let seg = holder.get(sid).unwrap().get();
+            let seg = seg.read();
+            versions_before.insert((id, seg_idx), seg.point_version(point_id));
+        }
+    }
+
+    // Run dedup
+    let duplicates = holder.find_duplicated_points();
+
+    // Collect what will be removed: (point_id, segment_idx)
+    let mut to_remove: HashSet<(u64, usize)> = HashSet::new();
+    for (&sid, point_ids) in &duplicates {
+        let seg_idx = segment_ids.iter().position(|&s| s == sid).unwrap();
+        for &point_id in point_ids {
+            if let PointIdType::NumId(num) = point_id {
+                to_remove.insert((num, seg_idx));
+            }
+        }
+    }
+
+    // Verify invariants
+    for id in 0..POINT_COUNT {
+        // Collect all copies of this point
+        let copies: Vec<(usize, u64, bool)> = (0..SEGMENT_COUNT)
+            .filter_map(|seg_idx| {
+                versions_before
+                    .get(&(id, seg_idx))
+                    .and_then(|v| *v)
+                    .map(|version| {
+                        let deferred = *is_deferred.get(&(id, seg_idx)).unwrap_or(&false);
+                        (seg_idx, version, deferred)
+                    })
+            })
+            .collect();
+
+        if copies.len() <= 1 {
+            continue; // No duplicates possible
+        }
+
+        let max_version = copies.iter().map(|c| c.1).max().unwrap();
+        let latest_has_non_deferred = copies.iter().any(|c| c.1 == max_version && !c.2);
+
+        // Copies remaining after dedup
+        let remaining: Vec<_> = copies
+            .iter()
+            .filter(|(seg_idx, _, _)| !to_remove.contains(&(id, *seg_idx)))
+            .collect();
+
+        // Invariant 1: At most one deferred copy remains
+        let remaining_deferred = remaining.iter().filter(|c| c.2).count();
+        assert!(
+            remaining_deferred <= 1,
+            "Point {id}: {remaining_deferred} deferred copies remain, expected at most 1"
+        );
+
+        // Invariant 2: Deferred copies in the removal set must be extra duplicates
+        // (there must be another deferred copy remaining)
+        for &(seg_idx, _, deferred) in &copies {
+            if deferred && to_remove.contains(&(id, seg_idx)) {
+                assert!(
+                    remaining_deferred == 1,
+                    "Point {id}: deferred copy removed from seg {seg_idx} but no deferred copy remains"
+                );
+            }
+        }
+
+        // Invariant 3: If latest has non-deferred, exactly one non-deferred copy remains
+        if latest_has_non_deferred {
+            let remaining_non_deferred: Vec<_> = remaining.iter().filter(|c| !c.2).collect();
+            assert_eq!(
+                remaining_non_deferred.len(),
+                1,
+                "Point {id}: expected exactly 1 non-deferred copy when latest has non-deferred, got {}",
+                remaining_non_deferred.len()
+            );
+            // And it should have the latest version
+            assert_eq!(
+                remaining_non_deferred[0].1, max_version,
+                "Point {id}: remaining non-deferred copy should have latest version"
+            );
+        }
+
+        // Invariant 4: If latest is deferred-only, all non-deferred copies should remain
+        if !latest_has_non_deferred {
+            let original_non_deferred = copies.iter().filter(|c| !c.2).count();
+            let remaining_non_deferred = remaining.iter().filter(|c| !c.2).count();
+            assert_eq!(
+                remaining_non_deferred, original_non_deferred,
+                "Point {id}: when latest is deferred-only, all non-deferred copies should be preserved"
+            );
+        }
+
+        // Invariant 5: At least one copy remains
+        assert!(
+            !remaining.is_empty(),
+            "Point {id}: all copies were removed!"
+        );
+    }
+
+    // Actually apply the dedup and verify it succeeds
+    let removed_count = deduplicate_points_sync(&holder).unwrap();
+    assert_eq!(
+        removed_count,
+        to_remove.len(),
+        "deduplicate_points_sync removed a different count than find_duplicated_points reported"
+    );
+}
+
 fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
     let mut removed_points = 0;
 
