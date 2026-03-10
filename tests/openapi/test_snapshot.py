@@ -432,8 +432,8 @@ def test_collection_snapshot_security(collection_name):
             "location": "file:///etc/passwd",
         }
     )
-    assert response.status_code == 400
-    assert response.json()["status"]["error"].startswith("Bad request: Snapshot file path must be inside the snapshots directory")
+    assert response.status_code == 403
+    assert response.json()["status"]["error"].startswith("Forbidden: Snapshot file path must be inside the snapshots directory")
 
     # Absolute paths must not be accessible through relative interface
     response = request_with_validation(

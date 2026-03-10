@@ -67,7 +67,7 @@ fn validate_snapshot_path(path: &Path, allowed_dir: &Path) -> Result<PathBuf, St
     })?;
 
     if !canonical_path.starts_with(&canonical_allowed) {
-        return Err(StorageError::bad_request(format!(
+        return Err(StorageError::forbidden(format!(
             "Snapshot file path must be inside the snapshots directory {canonical_allowed:?}",
         )));
     }
