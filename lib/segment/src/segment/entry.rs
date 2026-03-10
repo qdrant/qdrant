@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::safe_delete_with_suffix;
-use common::types::{OverwriteDeferredFiltering, TelemetryDetail};
+use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
 use super::Segment;
@@ -278,10 +278,10 @@ impl NonAppendableSegmentEntry for Segment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self.read_by_id_stream(offset, limit, overwrite_deferred),
+            None => self.read_by_id_stream(offset, limit, deferred_behavior),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit, hw_counter) {
                     self.filtered_read_by_index(
@@ -290,7 +290,7 @@ impl NonAppendableSegmentEntry for Segment {
                         condition,
                         is_stopped,
                         hw_counter,
-                        overwrite_deferred,
+                        deferred_behavior,
                     )
                 } else {
                     self.filtered_read_by_id_stream(
@@ -299,7 +299,7 @@ impl NonAppendableSegmentEntry for Segment {
                         condition,
                         is_stopped,
                         hw_counter,
-                        overwrite_deferred,
+                        deferred_behavior,
                     )
                 }
             }
@@ -313,7 +313,7 @@ impl NonAppendableSegmentEntry for Segment {
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
             None => self.filtered_read_by_value_stream(
@@ -322,7 +322,7 @@ impl NonAppendableSegmentEntry for Segment {
                 None,
                 is_stopped,
                 hw_counter,
-                overwrite_deferred,
+                deferred_behavior,
             ),
             Some(filter) => {
                 if self.should_pre_filter(filter, limit, hw_counter) {
@@ -332,7 +332,7 @@ impl NonAppendableSegmentEntry for Segment {
                         filter,
                         is_stopped,
                         hw_counter,
-                        overwrite_deferred,
+                        deferred_behavior,
                     )
                 } else {
                     self.filtered_read_by_value_stream(
@@ -341,7 +341,7 @@ impl NonAppendableSegmentEntry for Segment {
                         Some(filter),
                         is_stopped,
                         hw_counter,
-                        overwrite_deferred,
+                        deferred_behavior,
                     )
                 }
             }

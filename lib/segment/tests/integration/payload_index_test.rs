@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{OverwriteDeferredFiltering, PointOffsetType};
+use common::types::{DeferredBehavior, PointOffsetType};
 use fnv::FnvBuildHasher;
 use fs_err as fs;
 use indexmap::IndexSet;
@@ -1329,7 +1329,7 @@ fn validate_facet_result(
                 count_filter.as_ref(),
                 &Default::default(),
                 &hw_counter,
-                OverwriteDeferredFiltering::None,
+                DeferredBehavior::Filter,
             )
             .len();
 

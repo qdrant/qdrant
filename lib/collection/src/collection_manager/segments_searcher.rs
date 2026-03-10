@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::{OverwriteDeferredFiltering, ScoreType};
+use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
@@ -410,7 +410,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
@@ -440,7 +440,7 @@ impl SegmentsSearcher {
                         filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
-                        overwrite_deferred,
+                        deferred_behavior,
                     )
                 })
                 .collect();

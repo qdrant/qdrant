@@ -6,7 +6,7 @@ use ahash::HashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
-use common::types::{OverwriteDeferredFiltering, TelemetryDetail};
+use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
@@ -241,9 +241,9 @@ impl ForwardProxyShard {
                 &WithVector::Bool(true),
                 filter,
                 runtime_handle,
-                None,                                   // No timeout
+                None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                OverwriteDeferredFiltering::IncludeAll, // We must transfer deferred points too so we include them in this scroll operation.
+                DeferredBehavior::IncludeAll, // We must transfer deferred points too so we include them in this scroll operation.
             )
             .await?;
 
@@ -310,9 +310,9 @@ impl ForwardProxyShard {
                 &WithVector::Bool(false),
                 None,
                 runtime_handle,
-                None,                                   // No timeout
+                None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                OverwriteDeferredFiltering::IncludeAll, // We must transfer deferred points too so we include them in this scroll op.
+                DeferredBehavior::IncludeAll, // We must transfer deferred points too so we include them in this scroll op.
             )
             .await?;
 
@@ -478,7 +478,7 @@ impl ShardOperation for ForwardProxyShard {
                         &Handle::current(),
                         None,                           // No timeout
                         HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
-                        OverwriteDeferredFiltering::IncludeAll,
+                        DeferredBehavior::IncludeAll,
                     )
                     .await?
                     .into_iter()
@@ -587,7 +587,7 @@ impl ShardOperation for ForwardProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -600,7 +600,7 @@ impl ShardOperation for ForwardProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                overwrite_deferred,
+                deferred_behavior,
             )
             .await
     }

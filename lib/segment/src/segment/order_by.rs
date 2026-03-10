@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::{OverwriteDeferredFiltering, PointOffsetType};
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Either;
 
 use super::Segment;
@@ -23,7 +23,7 @@ impl Segment {
         condition: &Filter,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
@@ -40,7 +40,7 @@ impl Segment {
 
         let start_from = order_by.start_from();
 
-        let effective_deferred_id = overwrite_deferred.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
 
         let values_ids_iterator = payload_index
             .iter_filtered_points(
@@ -97,7 +97,7 @@ impl Segment {
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
 
@@ -113,7 +113,7 @@ impl Segment {
             .stream_range(&order_by.as_range())
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
             .filter(|&(_, internal_id)| {
-                overwrite_deferred.include_all_points()
+                deferred_behavior.include_all_points()
                     || internal_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
             });
 

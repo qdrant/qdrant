@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 
 use super::Segment;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
@@ -67,9 +67,9 @@ impl Segment {
         condition: &Filter,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
-        let effective_deferred_id = overwrite_deferred.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
 
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition, hw_counter);
@@ -87,9 +87,9 @@ impl Segment {
         &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
-        let effective_deferred_id = overwrite_deferred.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
 
         self.id_tracker
             .borrow()
@@ -106,9 +106,9 @@ impl Segment {
         condition: &Filter,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
-        let effective_deferred_id = overwrite_deferred.apply(self.deferred_internal_id);
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
 
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();

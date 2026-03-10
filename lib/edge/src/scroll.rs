@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use itertools::Itertools as _;
 use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
@@ -150,7 +150,7 @@ impl EdgeShard {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 )
             })
             .collect();
@@ -203,7 +203,7 @@ impl EdgeShard {
                     order_by,
                     &AtomicBool::new(false),
                     &hw_counter,
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 )
             })
             .collect::<Result<_, _>>()?;

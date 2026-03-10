@@ -4,7 +4,7 @@ use std::ops::Deref as _;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};
 use shard::operations::point_ops::UpdateMode;
 
@@ -345,7 +345,7 @@ impl ShardHolder {
                         // Internal operation, no performance tracking needed
                         HwMeasurementAcc::disposable(),
                         true,
-                        OverwriteDeferredFiltering::IncludeAll,
+                        DeferredBehavior::IncludeAll,
                     )
                     .await?;
             }

@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use fs_err as fs;
 use fs_err::File;
 use ordered_float::OrderedFloat;
@@ -1035,7 +1035,7 @@ fn test_deferred_point_read_operations() {
                 filter,
                 &AtomicBool::new(false),
                 &hw_counter,
-                OverwriteDeferredFiltering::None,
+                DeferredBehavior::Filter,
             )
         },
         |i| *i,
@@ -1057,7 +1057,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 )
                 .unwrap()
         },

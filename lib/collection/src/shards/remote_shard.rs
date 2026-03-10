@@ -22,7 +22,7 @@ use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::{OverwriteDeferredFiltering, TelemetryDetail};
+use common::types::{DeferredBehavior, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -1125,7 +1125,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
         _hw_measurement_acc: HwMeasurementAcc,
-        _overwrite_deferred: OverwriteDeferredFiltering,
+        _overwrite_deferred: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         debug_assert!(false, "RemoteShard does not support local_scroll_by_id");
         Err(CollectionError::service_error(

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -195,7 +195,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 )
                 .await?
             }
@@ -209,7 +209,7 @@ impl ShardOperation for LocalShard {
                     &order_by,
                     timeout,
                     hw_measurement_acc,
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 )
                 .await?
             }
@@ -230,7 +230,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
         self.internal_scroll_by_id(
@@ -242,7 +242,7 @@ impl ShardOperation for LocalShard {
             search_runtime_handle,
             timeout,
             hw_measurement_acc,
-            overwrite_deferred,
+            deferred_behavior,
         )
         .await
     }
@@ -295,7 +295,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     hw_measurement_acc,
                     Some(timeout),
-                    OverwriteDeferredFiltering::None,
+                    DeferredBehavior::Filter,
                 ),
             )
             .await

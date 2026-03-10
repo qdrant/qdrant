@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use futures::future;
 use futures::future::try_join_all;
 use itertools::{Itertools, process_results};
@@ -128,7 +128,7 @@ impl LocalShard {
                         search_runtime_handle,
                         hw_acc,
                         Some(timeout.saturating_sub(instant.elapsed())),
-                        OverwriteDeferredFiltering::None,
+                        DeferredBehavior::Filter,
                     )
                     .await?
                     .len();

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use ahash::AHashMap;
 use cancel::{CancellationToken, DropGuard};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use parking_lot::RwLock;
 use segment::types::ExtendedPointId;
 use tokio::sync::watch::{Receiver, Sender};
@@ -293,7 +293,7 @@ async fn clean_task(
                 None,
                 None,
                 HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
-                OverwriteDeferredFiltering::IncludeAll, // Include also deferred points in the cleanup task.
+                DeferredBehavior::IncludeAll,   // Include also deferred points in the cleanup task.
             )
             .await
         {

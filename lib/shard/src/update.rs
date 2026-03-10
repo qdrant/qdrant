@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::OverwriteDeferredFiltering;
+use common::types::DeferredBehavior;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
@@ -393,7 +393,7 @@ pub fn delete_points_by_filter(
                     &is_stopped,
                     hw_counter,
                     // Delete also deferred points.
-                    OverwriteDeferredFiltering::IncludeAll,
+                    DeferredBehavior::IncludeAll,
                 ),
             )
         })
@@ -912,7 +912,7 @@ fn points_by_filter(
             &is_stopped,
             hw_counter,
             // Read operation used for updates, so we must handle all points
-            OverwriteDeferredFiltering::IncludeAll,
+            DeferredBehavior::IncludeAll,
         );
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)

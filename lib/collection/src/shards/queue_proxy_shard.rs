@@ -6,7 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
-use common::types::{OverwriteDeferredFiltering, TelemetryDetail};
+use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
@@ -329,7 +329,7 @@ impl ShardOperation for QueueProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
             .local_scroll_by_id(
@@ -341,7 +341,7 @@ impl ShardOperation for QueueProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                overwrite_deferred,
+                deferred_behavior,
             )
             .await
     }
@@ -679,7 +679,7 @@ impl ShardOperation for Inner {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-        overwrite_deferred: OverwriteDeferredFiltering,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -692,7 +692,7 @@ impl ShardOperation for Inner {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
-                overwrite_deferred,
+                deferred_behavior,
             )
             .await
     }
