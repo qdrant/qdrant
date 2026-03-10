@@ -97,11 +97,10 @@ impl From<usize> for DetailsLevel {
 /// Can be used in places where we sometimes must access all points, including deferred ones.
 #[derive(Clone, Copy)]
 pub enum OverwriteDeferredFiltering {
-    // No overwrite. Points will not be included in
-    // the result if they are deferred.
+    /// Deferred points are not affected nor visible.
     None,
 
-    /// Overwrite the filtering of deferred points and include *all* points in the response, even deferred ones.
+    /// Deferred points are affected and visible.
     IncludeAll,
 }
 

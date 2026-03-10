@@ -345,7 +345,7 @@ impl ShardHolder {
                         // Internal operation, no performance tracking needed
                         HwMeasurementAcc::disposable(),
                         true,
-                        OverwriteDeferredFiltering::IncludeAll, // Including also deferred points when aborting resharding.
+                        OverwriteDeferredFiltering::IncludeAll,
                     )
                     .await?;
             }

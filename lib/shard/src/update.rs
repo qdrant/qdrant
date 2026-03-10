@@ -911,6 +911,7 @@ fn points_by_filter(
             Some(filter),
             &is_stopped,
             hw_counter,
+            // Read operation used for updates, so we must handle all points
             OverwriteDeferredFiltering::IncludeAll,
         );
         affected_points.extend_from_slice(points.as_slice());
