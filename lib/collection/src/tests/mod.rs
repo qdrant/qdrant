@@ -1,3 +1,4 @@
+mod deferred_points_dedup;
 mod fix_payload_indices;
 pub mod fixtures;
 mod hw_metrics;
