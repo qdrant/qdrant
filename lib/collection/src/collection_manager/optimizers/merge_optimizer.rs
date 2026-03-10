@@ -85,7 +85,7 @@ mod tests {
                 max_segment_size_kb: 1000,
                 memmap_threshold_kb: 100,
                 indexing_threshold_kb: 50,
-                deferred_points_threshold_bytes: None,
+                deferred_internal_id: None,
             }),
             segment_path.to_owned(),
             collection_temp_dir.to_owned(),

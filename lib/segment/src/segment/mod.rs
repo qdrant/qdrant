@@ -16,7 +16,6 @@ mod vectors;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -95,13 +94,8 @@ pub struct Segment {
     pub error_status: Option<SegmentFailedState>,
     #[cfg(feature = "rocksdb")]
     pub database: Option<Arc<parking_lot::RwLock<DB>>>,
-    /// Deferred-points threshold in bytes propagated from optimizer config.
-    /// If `None`, deferred-points behavior is disabled for this segment.
-    pub(crate) deferred_points_threshold_bytes: Option<NonZeroUsize>,
-    /// Cached deferred internal ID for fast visibility checks.
     /// Points with internal id >= this value are hidden from reads.
-    /// It's `None` if deferred_points_threshold_bytes is `None` or if there are no deferred points.
-    /// Also `None` for non-appendable segments, as they don't accept new points and thus don't have deferred points.
+    /// Available for appendable segments only.
     pub(crate) deferred_internal_id: Option<PointOffsetType>,
 }
 

@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -131,7 +132,11 @@ impl OptimizersConfig {
         get_indexing_threshold_kb(self.indexing_threshold)
     }
 
-    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
+    pub fn optimizer_thresholds(
+        &self,
+        num_indexing_threads: usize,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> OptimizerThresholds {
         let indexing_threshold_kb = self.get_indexing_threshold_kb();
 
         #[expect(deprecated)]
@@ -147,10 +152,7 @@ impl OptimizersConfig {
                 self.max_segment_size,
                 num_indexing_threads,
             ),
-            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
-                self.prevent_unoptimized,
-                indexing_threshold_kb,
-            ),
+            deferred_internal_id,
         }
     }
 
@@ -253,7 +255,13 @@ pub fn build_optimizers(
     let segment_config =
         build_segment_optimizer_config(collection_params, hnsw_config, quantization_config);
     let num_indexing_threads = max_num_indexing_threads(&segment_config);
-    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
+    let threshold_config = optimizers_config.optimizer_thresholds(
+        num_indexing_threads,
+        collection_params.get_deferred_point_id(
+            hnsw_config,
+            optimizers_config.get_deferred_points_threshold_bytes(),
+        ),
+    );
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(

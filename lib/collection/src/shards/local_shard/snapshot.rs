@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
+use common::types::PointOffsetType;
 use fs_err as fs;
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -61,13 +62,16 @@ impl LocalShard {
         let shard_path = self.path.clone();
 
         let segments_path = Self::segments_path(&self.path);
-        let (segment_config, deferred_points_threshold_bytes) = {
+        let (segment_config, deferred_internal_id) = {
             let collection_config = self.collection_config.read().await;
             (
                 collection_config.to_base_segment_config(),
-                collection_config
-                    .optimizer_config
-                    .get_deferred_points_threshold_bytes(),
+                collection_config.params.get_deferred_point_id(
+                    &collection_config.hnsw_config,
+                    collection_config
+                        .optimizer_config
+                        .get_deferred_points_threshold_bytes(),
+                ),
             )
         };
 
@@ -97,7 +101,7 @@ impl LocalShard {
                     &segments_path,
                     Some(segment_config),
                     payload_index_schema,
-                    deferred_points_threshold_bytes,
+                    deferred_internal_id,
                     &temp_path,
                     &tar.descend(Path::new(SEGMENTS_PATH))?,
                     format,
@@ -253,7 +257,7 @@ pub fn snapshot_all_segments(
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     temp_dir: &Path,
     tar: &tar_ext::BuilderExt,
     format: SnapshotFormat,
@@ -267,7 +271,7 @@ pub fn snapshot_all_segments(
         segments_path,
         segment_config,
         payload_index_schema,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         |segment| {
             let read_segment = segment.read();
             let request_segment_manifest = if let Some(manifest) = manifest {
@@ -318,7 +322,7 @@ pub fn proxy_all_segments_and_apply<F>(
     segments_path: &Path,
     segment_config: Option<SegmentConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     mut operation: F,
 ) -> OperationResult<()>
 where
@@ -334,7 +338,7 @@ where
         segments_path,
         segment_config,
         payload_index_schema,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
     )?;
 
     // Flush all pending changes of each segment, now wrapped segments won't change anymore

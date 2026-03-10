@@ -5,6 +5,7 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -22,8 +23,8 @@ use wal::WalOptions;
 
 use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
-    CollectionError, CollectionResult, CollectionWarning, SparseVectorParams, SparseVectorsConfig,
-    VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
+    CollectionError, CollectionResult, CollectionWarning, Datatype, SparseVectorParams,
+    SparseVectorsConfig, VectorParams, VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
@@ -200,6 +201,47 @@ impl CollectionParams {
         }
 
         Ok(())
+    }
+
+    pub fn get_deferred_point_id(
+        &self,
+        hnsw_config: &HnswConfig,
+        deferred_point_threshold_bytes: Option<NonZeroUsize>,
+    ) -> Option<PointOffsetType> {
+        let threshold_bytes = deferred_point_threshold_bytes?.get();
+
+        // Because we cannot predict multivector size,
+        // define here a constant-size inner vectors count for multivector.
+        const MULTIVECTOR_SIZE: usize = 16;
+
+        self.vectors
+            .params_iter()
+            // Skip vectors without HNSW indexing
+            .filter_map(|(_name, params)| {
+                // Merge HNSW config with vector config to get effective HNSW config for the vector.
+                let effective_hnsw = hnsw_config.update_opt(params.hnsw_config.as_ref());
+                (effective_hnsw.m > 0 || effective_hnsw.payload_m.unwrap_or_default() > 0)
+                    .then_some(params)
+            })
+            .map(|params| {
+                let element_bytes = match params.datatype {
+                    Some(Datatype::Float16) => 2,
+                    Some(Datatype::Uint8) => 1,
+                    Some(Datatype::Float32) | None => 4,
+                };
+
+                let dim = params.size.get() as usize;
+
+                let vector_bytes = if params.multivector_config.is_some() {
+                    element_bytes * dim * MULTIVECTOR_SIZE
+                } else {
+                    element_bytes * dim
+                };
+
+                let deferred_from = threshold_bytes.div_ceil(vector_bytes);
+                PointOffsetType::try_from(deferred_from).unwrap_or(PointOffsetType::MAX)
+            })
+            .min()
     }
 }
 
