@@ -8,6 +8,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -17,6 +18,7 @@ use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use itertools::Itertools;
+use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
@@ -25,6 +27,7 @@ use segment::common::operation_time_statistics::{
 use segment::entry::NonAppendableSegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::types::PointIdType;
 use uuid::Uuid;
 
 use crate::locked_segment::LockedSegment;
@@ -480,7 +483,26 @@ fn finish_optimization(
         writable_segment_holder.remove_segment_if_not_needed(cow_segment_id)?;
     }
 
-    drop(writable_segment_holder);
+    let read_segment_holder = RwLockWriteGuard::downgrade(writable_segment_holder);
+    // Can read, but can't yet write updates.
+
+    let mut deferred_points_set = AHashSet::new();
+    for proxy in &proxies {
+        deferred_points_set.extend(proxy.get().read().deferred_point_ids());
+    }
+    let deferred_points: Vec<PointIdType> = deferred_points_set.into_iter().collect();
+
+    if !deferred_points.is_empty() {
+        // Deferred points in proxy segment may become visible for optimized segment (in most cases).
+        // It's time to deduplicate them and remove older versions from optimized segment,
+        // where they were visible while deferred status.
+        // There are a situations, when deferred point is still deferred after optimization,
+        // so `deduplicate_points` also cover this case and delete only older versions of the point,
+        // which are still visible for optimized segment.
+        read_segment_holder.deduplicate_points(&deferred_points, hw_counter)?;
+    }
+
+    drop(read_segment_holder);
     // Allow updates again
     drop(update_guard);
 

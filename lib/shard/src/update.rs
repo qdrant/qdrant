@@ -348,9 +348,10 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
-        let deleted_points = segments.apply_points(batch, |id, _idx, write_segment| {
-            write_segment.delete_point(op_num, id, hw_counter)
-        })?;
+        let deleted_points =
+            segments.apply_points(batch, hw_counter, |id, _idx, write_segment| {
+                write_segment.delete_point(op_num, id, hw_counter)
+            })?;
 
         total_deleted_points += deleted_points;
     }

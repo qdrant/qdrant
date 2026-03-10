@@ -518,6 +518,7 @@ impl SegmentHolder {
     pub fn apply_points<F>(
         &self,
         ids: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
         mut point_operation: F,
     ) -> OperationResult<usize>
     where
@@ -530,21 +531,7 @@ impl SegmentHolder {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
-        for (segment_id, points) in to_delete {
-            let segment = self.get(segment_id).unwrap();
-            let segment_arc = segment.get();
-            let mut write_segment = segment_arc.write();
-
-            for point_id in points {
-                if let Some(version) = write_segment.point_version(point_id) {
-                    write_segment.delete_point(
-                        version,
-                        point_id,
-                        &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
-                    )?;
-                }
-            }
-        }
+        self.delete_points_from_segments(to_delete, hw_counter)?;
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -560,6 +547,37 @@ impl SegmentHolder {
         }
 
         Ok(applied_points)
+    }
+
+    pub fn delete_points_from_segments(
+        &self,
+        to_delete: AHashMap<SegmentId, Vec<PointIdType>>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        for (segment_id, points) in to_delete {
+            let segment = self.get(segment_id).unwrap();
+            let segment_arc = segment.get();
+            let mut write_segment = segment_arc.write();
+
+            for point_id in points {
+                if let Some(version) = write_segment.point_version(point_id) {
+                    write_segment.delete_point(version, point_id, hw_counter)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// This operation deduplicates subset of points across all segments.
+    /// It scans all segments for presence of the points, detects points with the highest version,
+    /// and removes all other versions of the points from all segments.
+    pub fn deduplicate_points(
+        &self,
+        points: &[PointIdType],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let (_to_keep, to_delete) = self.find_points_to_update_and_delete(points);
+        self.delete_points_from_segments(to_delete, hw_counter)
     }
 
     /// Try to acquire read lock over the given segment with increasing wait time.
@@ -655,7 +673,7 @@ impl SegmentHolder {
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
 
-        let _applied_points_count = self.apply_points(ids, |point_id, idx, write_segment| {
+        let _ = self.apply_points(ids, hw_counter, |point_id, idx, write_segment| {
             if let Some(point_version) = write_segment.point_version(point_id)
                 && point_version >= op_num
             {
