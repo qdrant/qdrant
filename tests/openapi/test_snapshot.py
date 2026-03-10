@@ -422,3 +422,27 @@ def test_collection_snapshot_security(collection_name):
     )
     assert not response.ok
     assert response.status_code == 404
+
+    # Path must be inside snapshots directory
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file:///etc/passwd",
+        }
+    )
+    assert response.status_code == 403
+    assert response.json()["status"]["error"].startswith("Forbidden: Snapshot file path must be inside the snapshots directory")
+
+    # Absolute paths must not be accessible through relative interface
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file://./etc/passwd",
+        }
+    )
+    assert response.status_code == 400
+    assert response.json()["status"]["error"] == "Bad request: Invalid snapshot URI, file path must be absolute or on localhost"

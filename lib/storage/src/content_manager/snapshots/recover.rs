@@ -128,6 +128,7 @@ async fn _do_recover_from_snapshot(
         location,
         // Default temporary path to storage dir, to allow faster recovery within the same volume
         &toc.optional_temp_or_storage_temp_path()?,
+        toc.snapshots_path(),
         checksum.is_some(),
     )
     .await?;

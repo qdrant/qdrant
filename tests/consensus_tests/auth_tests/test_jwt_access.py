@@ -1,6 +1,6 @@
 import json
-import tempfile
 from inspect import isfunction
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
@@ -1315,16 +1315,17 @@ def test_upload_collection_snapshot(collection_snapshot: bytes):
     )
 
 
-def test_recover_collection_snapshot(collection_snapshot: bytes):
-    # Save file to temp file
-    temp_file = tempfile.NamedTemporaryFile(suffix=".snapshot")
-    temp_file.write(collection_snapshot)
-    temp_file.seek(0)
-    file = temp_file.name
+def test_recover_collection_snapshot(collection_snapshot: bytes, jwt_cluster):
+    # Snapshot file path must be inside the peer's snapshots directory (security restriction)
+    _peer_api_uris, peer_dirs, _bootstrap_uri = jwt_cluster
+    snapshots_dir = Path(peer_dirs[0]) / "snapshots" / COLL_NAME
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshots_dir / "test_recover_snapshot.snapshot"
+    snapshot_path.write_bytes(collection_snapshot)
 
     check_access(
         "recover_collection_snapshot",
-        rest_request={"location": f"file://{file}"},
+        rest_request={"location": f"file://{snapshot_path}"},
         path_params={"collection_name": COLL_NAME},
     )
 
