@@ -1284,12 +1284,12 @@ mod tests {
         use super::{GRPC_ENDPOINT_WHITELIST, REST_ENDPOINT_WHITELIST};
 
         assert!(
-            REST_ENDPOINT_WHITELIST.windows(2).all(|n| n[0] <= n[1]),
-            "REST_ENDPOINT_WHITELIST must be sorted in code to allow binary search"
+            REST_ENDPOINT_WHITELIST.array_windows().all(|[a, b]| a <= b),
+            "REST_ENDPOINT_WHITELIST must be sorted in code to allow binary search",
         );
         assert!(
-            GRPC_ENDPOINT_WHITELIST.windows(2).all(|n| n[0] <= n[1]),
-            "GRPC_ENDPOINT_WHITELIST must be sorted in code to allow binary search"
+            GRPC_ENDPOINT_WHITELIST.array_windows().all(|[a, b]| a <= b),
+            "GRPC_ENDPOINT_WHITELIST must be sorted in code to allow binary search",
         );
     }
 }

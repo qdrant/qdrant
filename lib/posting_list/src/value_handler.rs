@@ -95,8 +95,8 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
 
         let last_offset = offsets.last();
         let ranges = offsets
-            .windows(2)
-            .map(|w| w[0].get() as usize..w[1].get() as usize)
+            .array_windows()
+            .map(|[a, b]| a.get() as usize..b.get() as usize)
             // the last one is not included in windows, but goes until the end
             .chain(last_offset.map(|&last| last.get() as usize..current_offset as usize));
 

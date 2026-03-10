@@ -75,7 +75,7 @@ impl Csr {
                 &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
             )
         });
-        if !indptr.windows(2).all(|w| w[0] <= w[1]) || indptr.last() != Some(&(nnz as u64)) {
+        if !indptr.array_windows().all(|[a, b]| a <= b) || indptr.last() != Some(&(nnz as u64)) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid indptr array",
