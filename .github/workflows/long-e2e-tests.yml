@@ -29,7 +29,7 @@ jobs:
           uv --project tests lock --check
           uv --project tests sync
       - name: Build Qdrant Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests

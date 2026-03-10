@@ -101,7 +101,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Docker build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: qdrant_consensus
@@ -133,7 +133,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install -y clang jq
       - name: Docker build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: tools/schema2openapi
           tags: schema2openapi
@@ -246,7 +246,7 @@ jobs:
           uv --project tests lock --check
           uv --project tests sync
       - name: Build Qdrant Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: qdrant/qdrant:e2e-tests
