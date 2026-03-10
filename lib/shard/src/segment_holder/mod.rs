@@ -521,11 +521,7 @@ impl SegmentHolder {
         mut point_operation: F,
     ) -> OperationResult<usize>
     where
-        F: FnMut(
-            PointIdType,
-            SegmentId,
-            &mut RwLockUpgradableReadGuard<dyn SegmentEntry>,
-        ) -> OperationResult<bool>,
+        F: FnMut(PointIdType, SegmentId, &RwLock<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
@@ -550,11 +546,10 @@ impl SegmentHolder {
         let mut applied_points = 0;
         for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
-            let segment_arc = segment.get();
-            let mut write_segment = segment_arc.upgradable_read();
+            let segment_lock = segment.get();
 
             for point_id in points {
-                let is_applied = point_operation(point_id, segment_id, &mut write_segment)?;
+                let is_applied = point_operation(point_id, segment_id, segment_lock)?;
                 applied_points += usize::from(is_applied);
             }
         }
@@ -655,19 +650,22 @@ impl SegmentHolder {
 
         let mut applied_points: AHashSet<PointIdType> = Default::default();
 
-        let _applied_points_count = self.apply_points(ids, |point_id, idx, write_segment| {
-            if let Some(point_version) = write_segment.point_version(point_id)
-                && point_version >= op_num
+        let _applied_points_count = self.apply_points(ids, |point_id, idx, segment_lock| {
+            let can_apply_operation;
             {
-                applied_points.insert(point_id);
-                return Ok(false);
+                let read_segment = segment_lock.read();
+                if let Some(point_version) = read_segment.point_version(point_id)
+                    && point_version >= op_num
+                {
+                    applied_points.insert(point_id);
+                    return Ok(false);
+                }
+
+                can_apply_operation = !read_segment.is_proxy() && read_segment.is_appendable();
             }
 
-            let can_apply_operation = !write_segment.is_proxy() && write_segment.is_appendable();
-
             let is_applied = if can_apply_operation {
-                write_segment
-                    .with_upgraded(|write_segment| point_operation(point_id, write_segment))?
+                point_operation(point_id, &mut *segment_lock.write())?
             } else {
                 self.aloha_random_write(
                     &appendable_segments,
@@ -680,25 +678,28 @@ impl SegmentHolder {
                             .lock()
                             .add_dependency(idx, appendable_idx, op_num);
 
-                        let mut all_vectors = write_segment.all_vectors(point_id, hw_counter)?;
-                        let mut payload = write_segment.payload(point_id, hw_counter)?;
+                        {
+                            let read_segment = segment_lock.read();
+                            let mut all_vectors = read_segment.all_vectors(point_id, hw_counter)?;
+                            let mut payload = read_segment.payload(point_id, hw_counter)?;
 
-                        point_cow_operation(point_id, &mut all_vectors, &mut payload);
+                            point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
-                        appendable_write_segment.upsert_point(
-                            op_num,
-                            point_id,
-                            all_vectors,
-                            hw_counter,
-                        )?;
-                        appendable_write_segment
-                            .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+                            appendable_write_segment.upsert_point(
+                                op_num,
+                                point_id,
+                                all_vectors,
+                                hw_counter,
+                            )?;
+                            appendable_write_segment
+                                .set_full_payload(op_num, point_id, &payload, hw_counter)?;
+                        }
 
                         // Keep the source of the CoW operation as the deferred point is invisible until indexing.
                         if !appendable_write_segment.point_is_deferred(point_id) {
-                            write_segment.with_upgraded(|write_segment| {
-                                write_segment.delete_point(op_num, point_id, hw_counter)
-                            })?;
+                            segment_lock
+                                .write()
+                                .delete_point(op_num, point_id, hw_counter)?;
                         }
 
                         Ok(true)

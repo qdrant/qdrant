@@ -350,9 +350,9 @@ pub fn delete_points(
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
         let deleted_points =
             segments.apply_points(batch, |id, _idx, upgradable_segment_guard| {
-                upgradable_segment_guard.with_upgraded(|write_segment| {
-                    write_segment.delete_point(op_num, id, hw_counter)
-                })
+                upgradable_segment_guard
+                    .write()
+                    .delete_point(op_num, id, hw_counter)
             })?;
 
         total_deleted_points += deleted_points;
