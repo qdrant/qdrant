@@ -313,7 +313,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
         let transfer_key = transfer.key();
-        log::debug!("Aborting shard transfer {transfer_key:?}");
+        log::debug!("Aborting shard transfer {transfer:?}");
 
         let _transfer_result = self
             .transfer_tasks
