@@ -559,3 +559,43 @@ impl IoUringResponse {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io_uring_file_for_u64() -> Result<()> {
+        // 1. Write some u64 binary data to a file using regular std::fs APIs
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test_u64.bin");
+
+        let data: Vec<u64> = (0..128).collect();
+        let bytes = bytemuck::cast_slice(&data);
+        std::fs::write(&path, bytes).unwrap();
+
+        // 2. Read data back using `IoUringFile` and verify it matches what was written
+        let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
+
+        // Read all elements
+        let read_back = <IoUringFile as UniversalRead<u64>>::read::<true>(&file, ElementsRange {
+            start: 0,
+            length: data.len() as u64,
+        })?;
+        assert_eq!(read_back.as_ref(), &data);
+
+        // Read a sub-range
+        let read_sub = <IoUringFile as UniversalRead<u64>>::read::<true>(&file, ElementsRange {
+            start: 10,
+            length: 20,
+        })?;
+        assert_eq!(read_sub.as_ref(), &data[10..30]);
+
+        // Verify len()
+        let len = <IoUringFile as UniversalRead<u64>>::len(&file)?;
+        assert_eq!(len, 128);
+
+        Ok(())
+    }
+}
