@@ -49,20 +49,37 @@ class EdgeShard:
     The main class representing a Qdrant Edge shard.
 
     A shard is a self-contained unit of storage that can be loaded, queried,
-    and updated independently.
+    and updated independently. Use load() to open existing data, or create()
+    to create a new shard.
     """
 
-    def __init__(
-            self,
-            path: str,
-            config: Optional["EdgeConfig"] = None,
-    ) -> None:
+    @staticmethod
+    def load(path: str, config: Optional["EdgeConfig"] = None) -> "EdgeShard":
         """
-        Load or create a Qdrant Edge shard.
+        Load an edge shard from existing files at path.
 
         Args:
             path: Path to the shard directory.
-            config: Optional configuration for creating a new shard.
+            config: Optional; if provided, compatibility is checked and config
+                    is overwritten on disk.
+
+        Returns:
+            Loaded EdgeShard instance.
+        """
+        ...
+
+    @staticmethod
+    def create(path: str, config: "EdgeConfig") -> "EdgeShard":
+        """
+        Create a new edge shard at path with the given configuration.
+        Fails if the path already contains segment data.
+
+        Args:
+            path: Path to the shard directory (must not contain existing segments).
+            config: Configuration for the new shard.
+
+        Returns:
+            New EdgeShard instance.
         """
         ...
 
@@ -411,17 +428,17 @@ class EdgeOptimizersConfig:
         ...
 
     @property
-    def deleted_threshold(self) -> Optional[float]:
+    def deleted_threshold(self) -> float:
         """Deleted threshold."""
         ...
 
     @property
-    def vacuum_min_vector_number(self) -> Optional[int]:
+    def vacuum_min_vector_number(self) -> int:
         """Vacuum min vector number."""
         ...
 
     @property
-    def default_segment_number(self) -> Optional[int]:
+    def default_segment_number(self) -> int:
         """Default segment number."""
         ...
 
