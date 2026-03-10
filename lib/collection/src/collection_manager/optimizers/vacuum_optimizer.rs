@@ -174,7 +174,7 @@ mod tests {
                 max_segment_size_kb: 1000000,
                 memmap_threshold_kb: 1000000,
                 indexing_threshold_kb: 1000000,
-                deferred_points_threshold_bytes: None,
+                deferred_internal_id: None,
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
@@ -256,7 +256,7 @@ mod tests {
             max_segment_size_kb: usize::MAX,
             memmap_threshold_kb: usize::MAX,
             indexing_threshold_kb: 10,
-            deferred_points_threshold_bytes: None,
+            deferred_internal_id: None,
         };
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Multi(BTreeMap::from([

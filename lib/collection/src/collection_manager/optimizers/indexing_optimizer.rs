@@ -138,7 +138,7 @@ mod tests {
                 max_segment_size_kb: 300,
                 memmap_threshold_kb: 1000,
                 indexing_threshold_kb: 1000,
-                deferred_points_threshold_bytes: None,
+                deferred_internal_id: None,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -231,7 +231,7 @@ mod tests {
                 max_segment_size_kb: 300,
                 memmap_threshold_kb: 1000,
                 indexing_threshold_kb: 1000,
-                deferred_points_threshold_bytes: None,
+                deferred_internal_id: None,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -533,7 +533,7 @@ mod tests {
                 max_segment_size_kb: 1000,
                 memmap_threshold_kb: 1000,
                 indexing_threshold_kb: 10, // Always optimize
-                deferred_points_threshold_bytes: None,
+                deferred_internal_id: None,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -600,7 +600,7 @@ mod tests {
             max_segment_size_kb: usize::MAX,
             memmap_threshold_kb: 10,
             indexing_threshold_kb: usize::MAX,
-            deferred_points_threshold_bytes: None,
+            deferred_internal_id: None,
         };
         let mut collection_params = CollectionParams {
             vectors: VectorsConfig::Single(

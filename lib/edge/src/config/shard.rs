@@ -10,7 +10,6 @@ use segment::types::{
 };
 use serde::{Deserialize, Serialize};
 use shard::operations::optimization::OptimizerThresholds;
-use shard::optimizers::config::get_deferred_points_threshold_bytes;
 
 use super::optimizers::EdgeOptimizersConfig;
 use super::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
@@ -209,10 +208,7 @@ impl EdgeShardConfig {
             max_segment_size_kb: self
                 .optimizers
                 .get_max_segment_size_kb(num_indexing_threads),
-            deferred_points_threshold_bytes: get_deferred_points_threshold_bytes(
-                self.optimizers.prevent_unoptimized,
-                indexing_threshold_kb,
-            ),
+            deferred_internal_id: None,
         }
     }
 

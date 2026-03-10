@@ -351,8 +351,10 @@ impl LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
-        let deferred_points_threshold_bytes =
-            effective_optimizers_config.get_deferred_points_threshold_bytes();
+        let deferred_internal_id = collection_config_read.params.get_deferred_point_id(
+            &collection_config_read.hnsw_config,
+            effective_optimizers_config.get_deferred_points_threshold_bytes(),
+        );
 
         let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(&wal_path, (&collection_config_read.wal_config).into())
@@ -412,7 +414,7 @@ impl LocalShard {
                     let mut segment = load_segment(
                         &segment_path,
                         uuid,
-                        deferred_points_threshold_bytes,
+                        deferred_internal_id,
                         &AtomicBool::new(false),
                     )?;
 
@@ -497,7 +499,7 @@ impl LocalShard {
                 &segments_path,
                 segment_config,
                 payload_index_schema.clone(),
-                deferred_points_threshold_bytes,
+                deferred_internal_id,
             )?;
         }
 
@@ -609,8 +611,10 @@ impl LocalShard {
             .to_base_vector_data(config.quantization_config.as_ref());
         let sparse_vector_params = config.params.to_sparse_vector_data();
         let segment_number = config.optimizer_config.get_number_segments();
-        let deferred_points_threshold_bytes =
-            effective_optimizers_config.get_deferred_points_threshold_bytes();
+        let deferred_internal_id = config.params.get_deferred_point_id(
+            &config.hnsw_config,
+            effective_optimizers_config.get_deferred_points_threshold_bytes(),
+        );
 
         for _sid in 0..segment_number {
             let path_clone = segments_path.clone();
@@ -622,12 +626,7 @@ impl LocalShard {
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
                 .spawn(move || {
-                    build_segment(
-                        &path_clone,
-                        &segment_config,
-                        deferred_points_threshold_bytes,
-                        true,
-                    )
+                    build_segment(&path_clone, &segment_config, deferred_internal_id, true)
                 })
                 .unwrap();
             build_handlers.push(segment);

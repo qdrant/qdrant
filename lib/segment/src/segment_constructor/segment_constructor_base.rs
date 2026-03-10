@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -13,6 +12,7 @@ use common::is_alive_lock::IsAliveLock;
 use common::mmap::{Advice, AdviceSetting};
 use common::progress_tracker::ProgressTracker;
 use common::storage_version::StorageVersion;
+use common::types::PointOffsetType;
 use fs_err as fs;
 use fs_err::File;
 use log::info;
@@ -29,6 +29,7 @@ use uuid::Uuid;
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
+use crate::entry::NonAppendableSegmentEntry;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 #[cfg(feature = "rocksdb")]
@@ -459,7 +460,7 @@ fn create_segment(
     version: Option<SeqNumberType>,
     segment_path: &Path,
     uuid: Uuid,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     config: &SegmentConfig,
     stopped: &AtomicBool,
     create: bool,
@@ -647,12 +648,12 @@ fn create_segment(
         error_status: None,
         #[cfg(feature = "rocksdb")]
         database: db_builder.build(),
-        deferred_points_threshold_bytes,
         deferred_internal_id: None,
     };
 
-    segment.update_deferred_internal_id();
-
+    if segment.is_appendable() {
+        segment.deferred_internal_id = deferred_internal_id;
+    }
     Ok(segment)
 }
 
@@ -780,7 +781,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
 pub fn load_segment(
     path: &Path,
     uuid: Uuid,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
     let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
@@ -828,7 +829,7 @@ pub fn load_segment(
         segment_state.version,
         path,
         uuid,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         &segment_state.config,
         stopped,
         false,
@@ -864,7 +865,7 @@ pub fn load_segment(
 pub fn build_segment(
     segments_path: &Path,
     config: &SegmentConfig,
-    deferred_points_threshold_bytes: Option<NonZeroUsize>,
+    deferred_internal_id: Option<PointOffsetType>,
     ready: bool,
 ) -> OperationResult<Segment> {
     let uuid = Uuid::new_v4();
@@ -877,7 +878,7 @@ pub fn build_segment(
         None,
         &segment_path,
         uuid,
-        deferred_points_threshold_bytes,
+        deferred_internal_id,
         config,
         &stopped,
         true,
