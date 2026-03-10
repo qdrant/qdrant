@@ -208,10 +208,10 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         // Select appropriate last-id by also considering deferred points.
         let max_point = self
             .deferred_internal_id
-            .map_or(PointOffsetType::MAX, |defered_id| {
+            .map_or(PointOffsetType::MAX, |deferred_id| {
                 // `for_each_till_id` expects the last ID to be included.
                 // Therefore we have to subtract 1.
-                defered_id.saturating_sub(1)
+                deferred_id.saturating_sub(1)
             });
 
         posting
