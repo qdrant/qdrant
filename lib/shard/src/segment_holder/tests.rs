@@ -890,10 +890,10 @@ fn test_points_deduplication_with_deferred() {
         .upsert_point(8, 6.into(), vec4.clone(), &hw_counter)
         .unwrap();
 
-    // Segment 2 (with deferred, threshold=48 → 48/16=3, internal IDs >= 3 are deferred):
+    // Segment 2 (with deferred, internal IDs >= 3 are deferred):
     //   Insert order: point 1, 2, 3 (non-deferred), then 4, 5, 6 (deferred)
     //   All at version 6
-    let mut segment2 = empty_segment_with_deferred(dir.path(), 48);
+    let mut segment2 = empty_segment_with_deferred(dir.path(), 3);
     for id in 1..=6u64 {
         segment2
             .upsert_point(6, id.into(), vec4.clone(), &hw_counter)
@@ -907,11 +907,9 @@ fn test_points_deduplication_with_deferred() {
     assert!(segment2.point_is_deferred(5.into()));
     assert!(segment2.point_is_deferred(6.into()));
 
-    // Segment 3 (also with deferred, same threshold) — to test multiple deferred copies:
-    //   Only point 6 at v9 (deferred, since it's the 1st point → internal_id 0,
-    //   but threshold=48/16=3, so internal_id 0 < 3 → NOT deferred)
-    //   Actually, to get point 6 deferred, we need 3 other points first.
-    let mut segment3 = empty_segment_with_deferred(dir.path(), 48);
+    // Segment 3 (also with deferred, internal IDs >= 3) — to test multiple deferred copies:
+    //   To get point 6 deferred, we need 3 dummy points first to push internal IDs up.
+    let mut segment3 = empty_segment_with_deferred(dir.path(), 3);
     // Insert dummy points to push internal IDs up
     segment3
         .upsert_point(1, 100.into(), vec4.clone(), &hw_counter)
@@ -1015,13 +1013,13 @@ fn test_points_deduplication_with_deferred_randomized() {
     let hw_counter = HardwareCounterCell::new();
 
     // Create segments: first 3 normal, last 2 with deferred points.
-    // Deferred threshold = 48 bytes → 48/16 = 3 → internal IDs >= 3 are deferred.
+    // Deferred internal ID = 3 → internal IDs >= 3 are deferred.
     let segments: Vec<_> = (0..SEGMENT_COUNT)
         .map(|i| {
             if i < 3 {
                 empty_segment(dir.path())
             } else {
-                empty_segment_with_deferred(dir.path(), 48)
+                empty_segment_with_deferred(dir.path(), 3)
             }
         })
         .collect();
