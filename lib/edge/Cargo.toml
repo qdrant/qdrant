@@ -25,7 +25,6 @@ ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
