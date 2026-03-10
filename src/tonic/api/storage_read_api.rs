@@ -51,6 +51,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         collection_name: &str,
         relative_path: &str,
     ) -> Result<PathBuf, Status> {
+        let pass = new_unchecked_verification_pass();
+        let toc = self.dispatcher.toc(auth, &pass);
+        let base = toc
+            .storage_path()
+            .join(COLLECTIONS_DIR)
+            .join(collection_name);
         todo!()
     }
 }
