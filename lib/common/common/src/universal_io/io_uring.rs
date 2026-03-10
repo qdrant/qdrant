@@ -572,7 +572,7 @@ mod tests {
 
         let data: Vec<u64> = (0..128).collect();
         let bytes = bytemuck::cast_slice(&data);
-        std::fs::write(&path, bytes).unwrap();
+        fs_err::write(&path, bytes).unwrap();
 
         // 2. Read data back using `IoUringFile` and verify it matches what was written
         let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
