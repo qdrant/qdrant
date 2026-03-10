@@ -560,7 +560,6 @@ impl IoUringResponse {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,17 +578,23 @@ mod tests {
         let file = <IoUringFile as UniversalRead<u64>>::open(&path, OpenOptions::default())?;
 
         // Read all elements
-        let read_back = <IoUringFile as UniversalRead<u64>>::read::<true>(&file, ElementsRange {
-            start: 0,
-            length: data.len() as u64,
-        })?;
+        let read_back = <IoUringFile as UniversalRead<u64>>::read::<true>(
+            &file,
+            ElementsRange {
+                start: 0,
+                length: data.len() as u64,
+            },
+        )?;
         assert_eq!(read_back.as_ref(), &data);
 
         // Read a sub-range
-        let read_sub = <IoUringFile as UniversalRead<u64>>::read::<true>(&file, ElementsRange {
-            start: 10,
-            length: 20,
-        })?;
+        let read_sub = <IoUringFile as UniversalRead<u64>>::read::<true>(
+            &file,
+            ElementsRange {
+                start: 10,
+                length: 20,
+            },
+        )?;
         assert_eq!(read_sub.as_ref(), &data[10..30]);
 
         // Verify len()
