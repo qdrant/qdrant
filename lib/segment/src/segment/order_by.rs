@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
 use itertools::Either;
 
 use super::Segment;
@@ -107,7 +108,9 @@ impl Segment {
         let range_iter = numeric_index
             .stream_range(&order_by.as_range())
             // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
-            .filter(|&(_, internal_id)| !self.is_point_deferred_internal(internal_id));
+            .filter(|&(_, internal_id)| {
+                internal_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+            });
 
         let directed_range_iter = match order_by.direction() {
             Direction::Asc => Either::Left(range_iter),

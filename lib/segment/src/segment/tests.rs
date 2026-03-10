@@ -750,6 +750,7 @@ fn create_deferred_segment(
 ) -> Segment {
     let hw_counter = HardwareCounterCell::new();
 
+    let total_vectors = n_vectors + n_deferred;
     let mut segment = build_segment(
         dir.path(),
         &SegmentConfig {
@@ -768,7 +769,7 @@ fn create_deferred_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
-        Some(n_deferred as PointOffsetType),
+        Some(n_vectors as PointOffsetType),
         true,
     )
     .unwrap();
@@ -865,7 +866,7 @@ fn test_dense_deferred_points() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let segment = create_deferred_segment(&dir, dim, 13, 7);
+    let mut segment = create_deferred_segment(&dir, dim, 13, 7);
 
     // Points 1-13 (internal_ids 0-12) should NOT be deferred
     for i in 1..=13 {
@@ -896,18 +897,10 @@ fn test_dense_deferred_points() {
     segment.flush(true).unwrap();
     let path = segment.segment_path.clone();
 
-    let deferred_threshold_bytes = segment.deferred_points_threshold_bytes.unwrap();
-
     drop(segment);
 
     // Reopen segment to ensure deferred points are loaded correctly from disk
-    let segment = load_segment(
-        &path,
-        Uuid::nil(),
-        Some(DEFERRED_POINTS_ID),
-        &AtomicBool::new(false),
-    )
-    .unwrap();
+    let segment = load_segment(&path, Uuid::nil(), Some(13), &AtomicBool::new(false)).unwrap();
 
     // Deferred points should still be the same after reopening
     assert!(
@@ -916,7 +909,7 @@ fn test_dense_deferred_points() {
     );
     assert_eq!(
         segment.deferred_internal_id,
-        Some(DEFERRED_POINTS_ID),
+        Some(13),
         "Deferred internal ID should still be `DEFERRED_POINTS_ID` after reopening"
     );
 }

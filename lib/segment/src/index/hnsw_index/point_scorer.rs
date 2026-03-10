@@ -10,7 +10,6 @@ use smallvec::SmallVec;
 use crate::common::operation_error::{CancellableResult, OperationResult, check_process_stopped};
 use crate::data_types::vectors::QueryVector;
 use crate::payload_storage::FilterContext;
-use crate::segment::Segment;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::quantized::quantized_query_scorer::InternalScorerUnsupported;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -359,7 +358,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             .map(|p| p as PointOffsetType)
             .take_while(|&point_id| {
                 // Early exit if we hit the max point ID (e.g. a deferred point).
-                !Segment::is_internal_id_deferred(point_id, deferred_internal_id)
+                point_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
             });
 
         self.peek_top_iter(iter, is_stopped)

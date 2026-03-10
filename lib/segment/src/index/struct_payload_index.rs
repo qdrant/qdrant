@@ -36,7 +36,6 @@ use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
-use crate::segment::Segment;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,
@@ -656,7 +655,7 @@ impl StructPayloadIndex {
                     // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
                     .flatten()
                     .filter(move |&internal_id| {
-                        !Segment::is_internal_id_deferred(internal_id, deferred_internal_id)
+                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
                     })
                     .stop_if(is_stopped);
 
