@@ -118,7 +118,7 @@ impl ValuePointer {
 /// the now persisted changes from these pointer updates. With this mechanism we write each update to
 /// disk exactly once.
 #[derive(Debug, Default, Clone, PartialEq)]
-pub(super) struct PointerUpdates {
+pub(crate) struct PointerUpdates {
     /// Pointer to write in tracker when persisting
     current: Option<ValuePointer>,
     /// List of pointers to free in bitmask when persisting
