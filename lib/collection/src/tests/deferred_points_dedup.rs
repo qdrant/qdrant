@@ -89,11 +89,7 @@ async fn build_shard() -> (LocalShard, TempDir) {
         metadata: None,
     };
 
-    let payload_index_schema_dir = Builder::new()
-        .prefix("qdrant-test-schema")
-        .tempdir()
-        .unwrap();
-    let payload_index_schema_file = payload_index_schema_dir.path().join("payload.json");
+    let payload_index_schema_file = collection_dir.path().join("payload.json");
     let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
         Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
 
