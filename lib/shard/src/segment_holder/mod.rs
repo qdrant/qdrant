@@ -986,6 +986,8 @@ impl SegmentHolder {
 
             // Track whether we've already kept one deferred point
             let mut kept_deferred = false;
+            // Track whether we've already kept the non-deferred winner
+            let mut kept_non_deferred = false;
 
             // Decide which points to remove
             //
@@ -1006,11 +1008,12 @@ impl SegmentHolder {
                     } else {
                         kept_deferred = true;
                     }
-                } else if dedup_point.version == latest_version {
+                } else if dedup_point.version == latest_version && !kept_non_deferred {
                     // Non-deferred with latest version: keep (this is the winner)
+                    kept_non_deferred = true;
                 } else if latest_has_non_deferred {
-                    // Older non-deferred copy: safe to delete because the latest
-                    // version also has a non-deferred copy
+                    // Older non-deferred copy or extra copy with latest version:
+                    // safe to delete because we already kept the non-deferred winner
                     points_to_remove
                         .entry(dedup_point.segment_id)
                         .or_default()
