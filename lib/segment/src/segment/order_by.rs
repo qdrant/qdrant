@@ -3,8 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
-use common::types::OverwriteDeferredFiltering;
-use common::types::PointOffsetType;
+use common::types::{OverwriteDeferredFiltering, PointOffsetType};
 use itertools::Either;
 
 use super::Segment;
