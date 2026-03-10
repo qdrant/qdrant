@@ -4,6 +4,7 @@ use std::error::Error;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use examples::DATA_DIRECTORY;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
 use qdrant_edge::shard::files::{clear_data, move_data};
@@ -15,8 +16,6 @@ const SNAPSHOT_URL: &str =
 // Obtained via download_partial.py and manually inserting a new point with ID 100500
 const PARTIAL_SNAPSHOT_URL: &str =
     "https://storage.googleapis.com/qdrant-benchmark-snapshots/partial.snapshot";
-
-const DATA_DIRECTORY: &str = "./data/restore-snapshot";
 
 fn main() -> Result<(), Box<dyn Error>> {
     let snapshot_path = download_snapshot(SNAPSHOT_URL, DATA_DIRECTORY)?;

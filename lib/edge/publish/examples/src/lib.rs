@@ -16,15 +16,17 @@ use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
 use qdrant_edge::shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use serde_json::{Value, json};
 
-pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
+pub const DATA_DIRECTORY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");
+
+pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
     println!("---- Load shard ----");
 
     // Clear and recreate data directory
-    if Path::new(data_dir).exists() {
-        fs_err::remove_dir_all(data_dir)?;
+    if Path::new(DATA_DIRECTORY).exists() {
+        fs_err::remove_dir_all(DATA_DIRECTORY)?;
     }
 
-    fs_err::create_dir_all(data_dir)?;
+    fs_err::create_dir_all(DATA_DIRECTORY)?;
 
     // Load Qdrant Edge shard
     let config = EdgeShardConfig {
@@ -47,7 +49,7 @@ pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
         optimizers: Default::default(),
     };
 
-    Ok(EdgeShard::load(Path::new(data_dir), Some(config))?)
+    Ok(EdgeShard::load(Path::new(DATA_DIRECTORY), Some(config))?)
 }
 
 pub fn fill_dummy_data(shard: &EdgeShard) -> Result<(), Box<dyn Error>> {

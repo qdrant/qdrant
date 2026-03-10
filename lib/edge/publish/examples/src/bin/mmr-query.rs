@@ -8,10 +8,8 @@ use qdrant_edge::segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use qdrant_edge::segment::types::{WithPayloadInterface, WithVector};
 use qdrant_edge::shard::query::{MmrInternal, ScoringQuery, ShardQueryRequest};
 
-const DATA_DIR: &str = "./data/mmr-query";
-
 fn main() -> Result<(), Box<dyn Error>> {
-    let shard = load_new_shard(DATA_DIR)?;
+    let shard = load_new_shard()?;
     fill_dummy_data(&shard)?;
 
     let result = shard.query(ShardQueryRequest {
