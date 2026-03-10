@@ -157,10 +157,10 @@ pub(super) fn read_config_and_tracker(
     let config_path = base_path.join(CONFIG_FILENAME);
     let config: StorageConfig = read_json_via::<MmapUniversalRo<u8>, StorageConfig>(&config_path)
         .map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to read config from '{config_path:?}': {err}"
-            ))
-        })?;
+        GridstoreError::service_error(format!(
+            "Failed to read config from '{config_path:?}': {err}"
+        ))
+    })?;
 
     let tracker = Tracker::open(base_path)?;
 
