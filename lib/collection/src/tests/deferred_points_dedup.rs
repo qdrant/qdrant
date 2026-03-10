@@ -7,7 +7,7 @@ use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::types::Distance;
+use segment::types::{Distance, Filter, PointIdType};
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -270,6 +270,137 @@ async fn test_deferred_points_dedup_after_optimization() {
 
     // Step 4: Assert no duplicate non-deferred point IDs across segments
     assert_no_duplicate_point_ids(&shard);
+
+    shard.stop_gracefully().await;
+}
+
+fn delete_by_ids_op(ids: Vec<PointIdType>) -> OperationWithClockTag {
+    CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }).into()
+}
+
+fn delete_by_filter_op(filter: Filter) -> OperationWithClockTag {
+    CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(filter)).into()
+}
+
+/// Count total available (non-deleted) points across all segments.
+fn total_point_count(shard: &LocalShard) -> usize {
+    let segments = shard.segments();
+    let holder = segments.read();
+    holder
+        .iter()
+        .map(|(_, segment)| segment.get().read().available_point_count())
+        .sum()
+}
+
+/// Set up a shard where points have a newer deferred copy and an older non-deferred copy.
+///
+/// Returns the shard after:
+/// 1. Insert points + wait for optimization (all points non-deferred in optimized segment)
+/// 2. Overwrite all points (creates deferred copies in appendable segment)
+/// 3. Plunge to apply update, verify deferred points exist
+async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
+    let (shard, tmp_dir) = build_shard().await;
+    let hw_acc = HwMeasurementAcc::new();
+    let timeout = Duration::from_secs(30);
+
+    // Insert initial points and wait for optimization so they are non-deferred in optimized segment
+    shard
+        .update(upsert_op(random_points()), true, None, hw_acc.clone())
+        .await
+        .unwrap();
+    wait_optimization(&shard, timeout).await;
+
+    // Overwrite all points — creates newer deferred copies in appendable segment
+    // while old non-deferred copies remain in the optimized segment
+    shard
+        .update(upsert_op(random_points()), false, None, hw_acc.clone())
+        .await
+        .unwrap();
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // Verify we actually have deferred points, otherwise the test scenario is invalid
+    let has_deferred = shard
+        .segments()
+        .read()
+        .iter()
+        .any(|segment| !segment.1.get().read().deferred_point_ids().is_empty());
+    assert!(
+        has_deferred,
+        "Expected deferred points after overwrites, but found none"
+    );
+
+    (shard, tmp_dir)
+}
+
+/// Test that delete-by-ID removes all copies of a point, including old non-deferred
+/// copies when the latest version is deferred.
+///
+/// Bug scenario:
+/// 1. Point X is in optimized segment (v5, non-deferred, visible)
+/// 2. Upsert creates a new copy in appendable segment (v10, deferred, hidden)
+/// 3. Delete by ID should remove from ALL segments
+/// 4. After optimization, point should be completely gone
+#[tokio::test(flavor = "multi_thread")]
+async fn test_delete_by_id_with_deferred_points() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let (shard, _tmp_dir) = setup_shard_with_deferred_points().await;
+    let hw_acc = HwMeasurementAcc::new();
+    let timeout = Duration::from_secs(30);
+
+    // Delete all points by ID
+    let all_ids: Vec<PointIdType> = (0..NUM_POINTS).map(|i| i.into()).collect();
+    shard
+        .update(delete_by_ids_op(all_ids), false, None, hw_acc.clone())
+        .await
+        .unwrap();
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // Wait for optimization to settle (deferred points trigger optimization)
+    wait_optimization(&shard, timeout).await;
+
+    // All points should be gone
+    let remaining = total_point_count(&shard);
+    assert_eq!(
+        remaining, 0,
+        "Expected 0 points after delete-by-ID, but {remaining} survived \
+         (old non-deferred copies likely not deleted when latest was deferred)"
+    );
+
+    shard.stop_gracefully().await;
+}
+
+/// Test that delete-by-filter removes all copies of a point, including deferred ones.
+/// This uses an empty filter (matches all points) to mirror the delete-by-ID test above.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_delete_by_filter_with_deferred_points() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let (shard, _tmp_dir) = setup_shard_with_deferred_points().await;
+    let hw_acc = HwMeasurementAcc::new();
+    let timeout = Duration::from_secs(30);
+
+    // Delete all points by filter (empty filter = match all)
+    shard
+        .update(
+            delete_by_filter_op(Filter::default()),
+            false,
+            None,
+            hw_acc.clone(),
+        )
+        .await
+        .unwrap();
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // Wait for optimization to settle
+    wait_optimization(&shard, timeout).await;
+
+    // All points should be gone
+    let remaining = total_point_count(&shard);
+    assert_eq!(
+        remaining, 0,
+        "Expected 0 points after delete-by-filter, but {remaining} survived"
+    );
 
     shard.stop_gracefully().await;
 }
