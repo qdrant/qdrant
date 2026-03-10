@@ -2,7 +2,7 @@ name: Qdrant Edge Tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ '**' ]
   pull_request:
     branches: [ '**' ]
 
@@ -15,13 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # For PRs, only run on ubuntu to save CI time
-        os: >-
-          ${{
-            github.event_name == 'pull_request'
-            && fromJSON('["ubuntu-latest"]')
-            || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]')
-          }}
+        # # For PRs, only run on ubuntu to save CI time
+        # os: >-
+        #   ${{
+        #     github.event_name == 'pull_request'
+        #     && fromJSON('["ubuntu-latest"]')
+        #     || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]')
+        #   }}
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
 
     steps:
       - name: Checkout Qdrant
