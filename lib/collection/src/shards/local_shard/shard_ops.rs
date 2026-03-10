@@ -276,6 +276,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "count", || {
@@ -295,7 +296,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     hw_measurement_acc,
                     Some(timeout),
-                    DeferredBehavior::Filter,
+                    deferred_behavior,
                 ),
             )
             .await

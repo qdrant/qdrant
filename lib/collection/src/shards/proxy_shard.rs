@@ -327,10 +327,17 @@ impl ShardOperation for ProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .count(
+                request,
+                search_runtime_handle,
+                timeout,
+                hw_measurement_acc,
+                deferred_behavior,
+            )
             .await
     }
 

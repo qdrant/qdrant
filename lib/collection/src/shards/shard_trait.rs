@@ -67,6 +67,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult>;
 
     async fn retrieve(

@@ -1227,6 +1227,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let processed_timeout = Self::process_read_timeout(timeout, "count")?;
         let count_points = CountPoints {
