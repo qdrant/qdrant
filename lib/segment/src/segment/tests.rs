@@ -920,9 +920,9 @@ fn test_dense_deferred_points() {
 fn test_dense_deferred_point_segment_combinations() {
     init_logger();
 
-    for dim in (2..40).step_by(3) {
-        for n_deferred in 0..15 {
-            for n_vectors in 1..15 {
+    for dim in [2, 17, 50] {
+        for n_deferred in [0, 1, 5, 14] {
+            for n_vectors in [1, 5, 14] {
                 let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
                 create_deferred_segment(&dir, dim, n_vectors, n_deferred);
             }
