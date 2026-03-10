@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use examples::{DATA_DIRECTORY, load_new_shard, point};
+use examples::{TMP_DIR, load_new_shard, point};
 use ordered_float::OrderedFloat;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::data_types::vectors::{
@@ -269,7 +269,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     drop(shard);
 
-    let reopened_shard = EdgeShard::load(Path::new(DATA_DIRECTORY), None)?;
+    let reopened_shard = EdgeShard::load(Path::new(TMP_DIR), None)?;
     println!(
         "Edge shard reopened. Approx Points: {}",
         reopened_shard.info().points_count

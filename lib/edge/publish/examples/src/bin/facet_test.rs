@@ -1,18 +1,18 @@
 use std::error::Error;
 use std::path::Path;
 
-use examples::DATA_DIRECTORY;
+use examples::DATA_DIR;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::shard::facet::FacetRequestInternal;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let facet_dir = Path::new(DATA_DIRECTORY).join("facet_test");
+    let facet_dir = Path::new(DATA_DIR).join("facet_test");
     let snapshot_path = facet_dir.join("shard.snapshot");
     let shard_data = facet_dir.join("shard_data");
 
     if !snapshot_path.exists() {
         eprintln!("Snapshot not found at {}", snapshot_path.display());
-        eprintln!("Run examples/prepare_facet_snapshot.sh first to create it.");
+        eprintln!("Run tools/prepare_facet_snapshot.sh first to create it.");
         std::process::exit(1);
     }
 

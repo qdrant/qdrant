@@ -16,17 +16,18 @@ use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
 use qdrant_edge::shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use serde_json::{Value, json};
 
-pub const DATA_DIRECTORY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");
+pub const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");
+pub const TMP_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/tmp");
 
 pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
     println!("---- Load shard ----");
 
-    // Clear and recreate data directory
-    if Path::new(DATA_DIRECTORY).exists() {
-        fs_err::remove_dir_all(DATA_DIRECTORY)?;
+    // Clear and recreate tmp directory
+    if Path::new(TMP_DIR).exists() {
+        fs_err::remove_dir_all(TMP_DIR)?;
     }
 
-    fs_err::create_dir_all(DATA_DIRECTORY)?;
+    fs_err::create_dir_all(TMP_DIR)?;
 
     // Load Qdrant Edge shard
     let config = EdgeShardConfig {
@@ -49,7 +50,7 @@ pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
         optimizers: Default::default(),
     };
 
-    Ok(EdgeShard::load(Path::new(DATA_DIRECTORY), Some(config))?)
+    Ok(EdgeShard::load(Path::new(TMP_DIR), Some(config))?)
 }
 
 pub fn fill_dummy_data(shard: &EdgeShard) -> Result<(), Box<dyn Error>> {

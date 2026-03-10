@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use examples::DATA_DIRECTORY;
+use examples::DATA_DIR;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
 use qdrant_edge::shard::files::{clear_data, move_data};
@@ -18,10 +18,10 @@ const PARTIAL_SNAPSHOT_URL: &str =
     "https://storage.googleapis.com/qdrant-benchmark-snapshots/partial.snapshot";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let snapshot_path = download_snapshot(SNAPSHOT_URL, DATA_DIRECTORY)?;
+    let snapshot_path = download_snapshot(SNAPSHOT_URL, DATA_DIR)?;
     println!("Snapshot downloaded to: {}", snapshot_path.display());
 
-    let recovered_path = Path::new(DATA_DIRECTORY).join("restored_shard");
+    let recovered_path = Path::new(DATA_DIR).join("restored_shard");
     println!(
         "Restoring shard from snapshot to: {}",
         recovered_path.display()
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         serde_json::to_string_pretty(&manifest)?
     );
 
-    let partial_snapshot_path = download_snapshot(PARTIAL_SNAPSHOT_URL, DATA_DIRECTORY)?;
+    let partial_snapshot_path = download_snapshot(PARTIAL_SNAPSHOT_URL, DATA_DIR)?;
 
     update_from_snapshot(shard, &recovered_path, &partial_snapshot_path)?;
 

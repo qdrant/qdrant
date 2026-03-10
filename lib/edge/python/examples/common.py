@@ -4,6 +4,7 @@
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 from qdrant_edge import (
     Distance,
@@ -14,23 +15,24 @@ from qdrant_edge import (
     UpdateOperation,
 )
 
-DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+TMP_DIR = DATA_DIR / "tmp"
 
 def load_new_shard():
     print("---- Load shard ----")
 
-    # Clear and recreate data directory
-    if os.path.exists(DATA_DIRECTORY):
-        shutil.rmtree(DATA_DIRECTORY)
+    # Clear and recreate tmp directory
+    if os.path.exists(TMP_DIR):
+        shutil.rmtree(TMP_DIR)
 
-    os.makedirs(DATA_DIRECTORY)
+    os.makedirs(TMP_DIR)
 
     # Load Qdrant Edge shard
     config = EdgeConfig(
         vectors=EdgeVectorParams(size=4, distance=Distance.Dot),
     )
 
-    return EdgeShard(DATA_DIRECTORY, config)
+    return EdgeShard(TMP_DIR, config)
 
 
 def fill_dummy_data(shard: EdgeShard):

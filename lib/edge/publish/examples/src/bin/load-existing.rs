@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::path::Path;
 
-use examples::{DATA_DIRECTORY, load_new_shard, point};
+use examples::{TMP_DIR, load_new_shard, point};
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::data_types::vectors::VectorStructInternal;
 use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Re-load edge shard from disk, assert points are available
     drop(edge);
-    let edge = EdgeShard::load(Path::new(DATA_DIRECTORY), None)?;
+    let edge = EdgeShard::load(Path::new(TMP_DIR), None)?;
 
     let (points, _) = edge.scroll(ScrollRequestInternal {
         offset: None,
