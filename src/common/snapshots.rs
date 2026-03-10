@@ -218,6 +218,7 @@ pub async fn recover_shard_snapshot(
                         &client,
                         url,
                         &download_dir,
+                        collection.snapshots_path(),
                         checksum.is_some(),
                     )
                     .await?

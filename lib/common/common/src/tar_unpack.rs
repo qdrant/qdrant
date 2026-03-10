@@ -23,14 +23,32 @@ pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Er
     fs::create_dir_all(dst)?;
     let dst = &fs::canonicalize(dst).unwrap_or(dst.to_path_buf());
 
-    for entry in archive.entries()? {
-        let mut entry = entry?;
+    for entry in archive.entries().map_err(|err| {
+        io::Error::new(
+            err.kind(),
+            // Must hide error in release builds to not leak contents of potentially sensitive files
+            #[cfg(not(debug_assertions))]
+            format!("Malformed tar archive, unable to read entries"),
+            #[cfg(debug_assertions)]
+            format!("Malformed tar archive, unable to read entries: {err}"),
+        )
+    })? {
+        let mut entry = entry.map_err(|err| {
+            io::Error::new(
+                err.kind(),
+                // Must hide error in release builds to not leak contents of potentially sensitive files
+                #[cfg(not(debug_assertions))]
+                format!("Malformed tar archive, reached unknown entry"),
+                #[cfg(debug_assertions)]
+                format!("Malformed tar archive, reached unknown entry: {err}"),
+            )
+        })?;
 
         match entry.header().entry_type() {
             EntryType::Directory | EntryType::Regular | EntryType::GNUSparse => (),
             entry_type => {
                 return Err(io::Error::other(format!(
-                    "Invalid entry type in tar archive: {entry_type:?}"
+                    "Forbidden entry type in tar archive: {entry_type:?}"
                 )));
             }
         }
