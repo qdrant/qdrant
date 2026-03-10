@@ -27,6 +27,9 @@ jobs:
           - windows-latest
 
     steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -34,24 +37,40 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         uses: rui314/setup-mold@v1
 
+      - name: Install Just
+        # TODO: switch to extractions/setup-just@v3 once this PR is merged:
+        # https://github.com/extractions/setup-crate/pull/8
+        uses: xzfc/setup-just@fb4bb125d47d4680296d3f3766c6ec83f70b3523
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
       - name: Install ast-grep
-        run: npm install --global @ast-grep/cli
+        run: uv tool install ast-grep-cli
 
-      - name: Checkout Qdrant
-        uses: actions/checkout@v6
+      - name: Setup Qdrant (for testing examples)
+        id: setup-qdrant
+        # No Qdrant release for Windows ARM yet.
+        # So, build only, but not test.
+        if: matrix.os != 'windows-11-arm'
+        uses: ./.github/actions/setup-qdrant
 
       - name: Restore Rust build cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Amalgamate
-        run: uv run lib/edge/publish/amalgamate.py
+      - name: Prepare data files (for testing examples)
+        if: steps.setup-qdrant.conclusion == 'success'
+        working-directory: lib/edge
+        run: just prepare-data
 
-      - name: Cargo build
-        working-directory: lib/edge/publish
-        run: cargo build -p examples
+      - name: Build examples
+        working-directory: lib/edge
+        run: just rs-examples-build
+
+      - name: Run examples
+        if: steps.setup-qdrant.conclusion == 'success'
+        working-directory: lib/edge
+        run: just rs-examples
 
 
   publish:
@@ -71,7 +90,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install ast-grep
-        run: npm install --global @ast-grep/cli
+        run: uv tool install ast-grep-cli
 
       - name: Checkout Qdrant
         uses: actions/checkout@v6

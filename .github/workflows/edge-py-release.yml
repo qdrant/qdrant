@@ -141,6 +141,60 @@ jobs:
           path: lib/edge/python/dist
 
 
+  edge-py-test:
+    name: Test Python wheels [${{ matrix.os }}, ${{ matrix.python }}]
+
+    runs-on: ${{ matrix.os }}
+    needs:
+      - edge-py-linux
+      - edge-py-macos
+      - edge-py-windows
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+          - windows-latest
+        python:
+          - '3.10'
+          - 'pypy3.11'
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - uses: extractions/setup-just@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v8
+        with:
+          pattern: qdrant-edge-*
+          merge-multiple: true
+          path: lib/edge/python/dist
+
+      - name: Setup Qdrant
+        uses: ./.github/actions/setup-qdrant
+
+      - name: Install and test wheel
+        working-directory: lib/edge/python
+        run: |
+          uv venv --allow-existing --python ${{ matrix.python }}
+          uv pip install --no-index --find-links dist/ qdrant-edge-py
+          uv pip install requests
+          just py-examples
+
+
   merge-artifacts:
     name: Merge release artifacts
 
@@ -149,6 +203,7 @@ jobs:
       - edge-py-linux
       - edge-py-macos
       - edge-py-windows
+      - edge-py-test
 
     if: inputs.publish
 
