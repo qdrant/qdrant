@@ -65,11 +65,7 @@ impl PartialDocument {
         tokens_positions.sort_by_key(|tok_pos| tok_pos.position);
 
         // There should be no duplicate token with same position
-        debug_assert!(
-            tokens_positions
-                .windows(2)
-                .all(|window| window[0] != window[1])
-        );
+        debug_assert!(tokens_positions.array_windows().all(|[a, b]| a != b));
 
         Self(tokens_positions)
     }
@@ -105,8 +101,8 @@ impl PartialDocument {
         self.0.windows(window_size).filter_map(|window| {
             // make sure the positions are sequential
             window
-                .windows(2)
-                .all(|pair| pair[0].position + 1 == pair[1].position)
+                .array_windows()
+                .all(|[a, b]| a.position + 1 == b.position)
                 .then_some(window.iter().map(|tok_pos| tok_pos.token_id))
         })
     }

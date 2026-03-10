@@ -151,7 +151,11 @@ mod tests {
         let scored_points = rrf_scoring(responses, DEFAULT_RRF_K, None).unwrap();
         assert_eq!(scored_points.len(), 4);
         // assert that the list is sorted
-        assert!(scored_points.windows(2).all(|w| w[0].score >= w[1].score));
+        assert!(
+            scored_points
+                .array_windows()
+                .all(|[a, b]| a.score >= b.score),
+        );
 
         assert_eq!(scored_points.len(), 4);
         assert_eq!(scored_points[0].id, 1.into());

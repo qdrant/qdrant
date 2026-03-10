@@ -144,12 +144,12 @@ impl PostingBuilder {
         // Check for duplicates
         #[cfg(debug_assertions)]
         {
-            if let Some(e) = self
+            if let Some([e, _]) = self
                 .elements
-                .windows(2)
-                .find(|e| e[0].record_id == e[1].record_id)
+                .array_windows()
+                .find(|[a, b]| a.record_id == b.record_id)
             {
-                panic!("Duplicate id {} in posting list", e[0].record_id);
+                panic!("Duplicate id {} in posting list", e.record_id);
             }
         }
 
