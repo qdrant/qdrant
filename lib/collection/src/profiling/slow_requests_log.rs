@@ -19,9 +19,10 @@ pub struct LogEntry {
     datetime: DateTime<Utc>,
     request_name: &'static str,
     approx_count: usize,
-    request_body: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_usage_ratio: Option<f32>,
+    request_body: serde_json::Value,
+
     /// Used for fast comparison and lookup
     #[serde(skip)]
     content_hash: u64,
@@ -43,8 +44,8 @@ impl LogEntry {
             datetime,
             request_name,
             approx_count: 1,
-            request_body,
             cpu_usage_ratio,
+            request_body,
             content_hash,
         }
     }
