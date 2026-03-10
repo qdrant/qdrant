@@ -8,6 +8,7 @@ use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, watch};
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::operations::generalizer::Generalizer;
@@ -187,6 +188,10 @@ impl UpdateWorkers {
     }
 
     /// Wait until all deferred points are ready for read/search.
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe.
     async fn wait_for_deferred_points_ready(
         segments: &LockedSegmentHolder,
         optimize_sender: &Sender<OptimizerSignal>,
@@ -194,15 +199,16 @@ impl UpdateWorkers {
     ) -> CollectionResult<()> {
         loop {
             let locked_segments = segments.clone();
-            let has_deferred_points = tokio::task::spawn_blocking(move || {
-                let segments = locked_segments.read();
-                segments.iter().any(|(_, segment)| {
-                    let segment_guard = segment.get().read();
-                    segment_guard.has_deferred_points()
-                })
-            })
-            .await
-            .map_err(CollectionError::from)?;
+            let has_deferred_points =
+                AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                    let segments = locked_segments.read();
+                    segments.iter().any(|(_, segment)| {
+                        let segment_guard = segment.get().read();
+                        segment_guard.has_deferred_points()
+                    })
+                }))
+                .await
+                .map_err(CollectionError::from)?;
 
             // No deferred points, nothing to wait for.
             if !has_deferred_points {
