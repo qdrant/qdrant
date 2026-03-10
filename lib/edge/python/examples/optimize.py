@@ -12,14 +12,14 @@ import shutil
 
 import requests
 
+from common import DATA_DIRECTORY
 from qdrant_edge import *
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 COLLECTION = "edge_optimize_example"
 QDRANT_URL = "http://localhost:6333"
-SNAPSHOT_DIR = os.path.join(DATA_DIR, "snapshots")
+SNAPSHOT_DIR = os.path.join(DATA_DIRECTORY, "snapshots")
 SNAPSHOT_PATH = os.path.join(SNAPSHOT_DIR, "optimize.snapshot")
-SHARD_DIR = os.path.join(DATA_DIR, "optimize_test_shard")
+SHARD_DIR = os.path.join(DATA_DIRECTORY, "optimize_test_shard")
 VECTOR_SIZE = 384
 POINT_COUNT = 1000
 DELETED_COUNT = 250
