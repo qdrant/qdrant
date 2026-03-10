@@ -205,7 +205,7 @@ jobs:
       - edge-py-windows
       - edge-py-test
 
-    if: inputs.publish
+    # if: inputs.publish
 
     steps:
       - name: Merge release artifacts
@@ -223,7 +223,7 @@ jobs:
     needs:
       - merge-artifacts
 
-    if: inputs.publish
+    # if: inputs.publish
 
     steps:
       - name: Install Python
@@ -234,10 +234,13 @@ jobs:
         with:
           name: qdrant-edge
 
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN_EDGE }}
-        run: |
-          pip install --upgrade twine
-          twine upload --skip-existing *
+      # - name: Publish to PyPI
+      #   env:
+      #     TWINE_USERNAME: __token__
+      #     TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN_EDGE }}
+      #   run: |
+      #     pip install --upgrade twine
+      #     twine upload --skip-existing *
+
+      - name: Pretend to publish
+        run: echo "Would publish to PyPI here"

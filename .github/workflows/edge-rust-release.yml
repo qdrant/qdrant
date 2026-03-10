@@ -80,7 +80,7 @@ jobs:
     needs:
       - edge-rust-check
 
-    if: inputs.publish
+    # if: inputs.publish
 
     steps:
       - name: Install Rust
@@ -98,8 +98,11 @@ jobs:
       - name: Amalgamate
         run: uv run lib/edge/publish/amalgamate.py
 
-      - name: Publish to crates.io
-        working-directory: lib/edge/publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN_EDGE }}
-        run: cargo publish -p qdrant-edge --no-verify
+      # - name: Publish to crates.io
+      #   working-directory: lib/edge/publish
+      #   env:
+      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN_EDGE }}
+      #   run: cargo publish -p qdrant-edge --no-verify
+
+      - name: Pretend to publish
+        run: echo "Would publish to crates.io here"
