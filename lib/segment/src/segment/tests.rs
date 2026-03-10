@@ -750,6 +750,8 @@ fn create_deferred_segment(
 ) -> Segment {
     let hw_counter = HardwareCounterCell::new();
 
+    let deferred_internal_id = (n_deferred > 0).then_some(n_vectors as PointOffsetType);
+
     let total_vectors = n_vectors + n_deferred;
     let mut segment = build_segment(
         dir.path(),
@@ -769,7 +771,7 @@ fn create_deferred_segment(
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
         },
-        Some(n_vectors as PointOffsetType),
+        deferred_internal_id,
         true,
     )
     .unwrap();
