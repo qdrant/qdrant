@@ -999,12 +999,6 @@ impl SegmentHolder {
                 if dedup_point.is_deferred {
                     if kept_deferred {
                         // Multiple deferred copies — remove extras
-                        log::trace!(
-                            "Selected deferred point {} in segment {} for deduplication (duplicate deferred, version {:?})",
-                            dedup_point.point_id,
-                            dedup_point.segment_id,
-                            dedup_point.version,
-                        );
                         points_to_remove
                             .entry(dedup_point.segment_id)
                             .or_default()
@@ -1017,14 +1011,6 @@ impl SegmentHolder {
                 } else if latest_has_non_deferred {
                     // Older non-deferred copy: safe to delete because the latest
                     // version also has a non-deferred copy
-                    log::trace!(
-                        "Selected point {} in segment {} for deduplication (version {:?} versus {:?} in segment {})",
-                        dedup_point.point_id,
-                        dedup_point.segment_id,
-                        dedup_point.version,
-                        points[0].version,
-                        points[0].segment_id,
-                    );
                     points_to_remove
                         .entry(dedup_point.segment_id)
                         .or_default()
