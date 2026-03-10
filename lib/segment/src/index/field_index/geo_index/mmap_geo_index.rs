@@ -171,11 +171,15 @@ impl MmapGeoMapIndex {
         }
 
         {
-            let mut deleted = MmapBitSlice::create(
+            let _ = create_and_ensure_length(
                 &deleted_path,
-                dynamic_index.point_to_values.len(),
-                OpenOptions::default(),
+                dynamic_index
+                    .point_to_values
+                    .len()
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<usize>()),
             )?;
+            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
             deleted.set_bits_batch(
                 dynamic_index
                     .point_to_values

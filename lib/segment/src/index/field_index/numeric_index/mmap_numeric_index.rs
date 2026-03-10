@@ -134,11 +134,15 @@ impl<T: Encodable + Numericable + Default + StoredValue> MmapNumericIndex<T> {
         }
 
         {
-            let mut deleted = MmapBitSlice::create(
+            let deleted_flags_count = in_memory_index.point_to_values.len();
+            let _ = create_and_ensure_length(
                 &deleted_path,
-                in_memory_index.point_to_values.len(),
-                OpenOptions::default(),
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<u64>()),
             )?;
+
+            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
             deleted.set_bits_batch(
                 in_memory_index
                     .point_to_values

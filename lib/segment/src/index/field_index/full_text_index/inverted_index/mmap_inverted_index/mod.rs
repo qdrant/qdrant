@@ -4,8 +4,7 @@ use std::path::PathBuf;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
-use common::mmap;
-use common::mmap::{AdviceSetting, MmapSlice};
+use common::mmap::{self, AdviceSetting, MmapSlice, create_and_ensure_length};
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
@@ -91,19 +90,17 @@ impl MmapInvertedIndex {
             .map(|count| *count == 0)
             .collect();
         {
-            let mut deleted_storage = MmapBitSlice::create(
+            let deleted_flags_count = deleted_bitslice.len();
+            let _ = create_and_ensure_length(
                 &deleted_points_path,
-                deleted_bitslice.len(),
-                OpenOptions::default(),
-            )?;
-            deleted_storage.set_bits_batch(
-                deleted_bitslice
-                    .iter()
-                    .by_vals()
-                    .enumerate()
-                    .filter(|(_, bit)| *bit)
-                    .map(|(idx, _)| (idx as u64, true)),
-            )?;
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<u64>()),
+            );
+
+            let mut deleted_storage =
+                MmapBitSlice::open(&deleted_points_path, OpenOptions::default())?;
+            deleted_storage.write_bitslice(&deleted_bitslice)?;
             deleted_storage.flusher()()?;
         }
 

@@ -289,27 +289,25 @@ impl ImmutableIdTracker {
 
         debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
 
-        let mut deleted_storage = MmapBitSlice::create(
+        let _ = create_and_ensure_length(
             &deleted_filepath,
-            mappings.total_point_count(),
-            OpenOptions::default(),
-        )?;
-        // Set bits for deleted points from the mappings, plus any trailing points
-        // beyond mappings.deleted().len() are also marked deleted.
-        deleted_storage.set_bits_batch(
             mappings
-                .deleted()
-                .iter()
-                .by_vals()
-                .enumerate()
-                .filter(|(_, bit)| *bit)
-                .map(|(idx, _)| (idx as u64, true))
-                .chain(
-                    (mappings.deleted().len()..mappings.total_point_count())
-                        .map(|i| (i as u64, true)),
-                ),
+                .total_point_count()
+                .div_ceil(u8::BITS as usize)
+                .next_multiple_of(size_of::<u64>()),
         )?;
+
+        let mut deleted_storage = MmapBitSlice::open(&deleted_filepath, OpenOptions::default())?;
+
+        // Set bits for deleted points from the mappings,
+        deleted_storage.write_bitslice(mappings.deleted())?;
+        // plus any trailing points beyond mappings.deleted().len() are also marked deleted.
+        deleted_storage.set_bits_batch(
+            (mappings.deleted().len()..mappings.total_point_count()).map(|i| (i as u64, true)),
+        )?;
+
         deleted_storage.flusher()()?;
+
         let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         // Create mmap file for internal-to-version list

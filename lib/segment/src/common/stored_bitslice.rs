@@ -6,13 +6,11 @@
 //! operations at the bit level.
 
 use std::borrow::Cow;
-use std::mem::size_of;
 use std::path::Path;
 
 use bitvec::mem::BitRegister;
 use bitvec::order::Lsb0;
 use bitvec::vec::BitVec;
-use common::mmap::create_and_ensure_length;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };
@@ -57,20 +55,6 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
             storage,
             element_len,
         })
-    }
-
-    /// Create a new bitslice storage file with the given number of bits, all
-    /// initialized to `false`.
-    ///
-    /// Creates the file at `path`, sizes it to hold at least `num_bits` bits
-    /// (u64-aligned), and opens it.
-    pub fn create(path: impl AsRef<Path>, num_bits: usize, options: OpenOptions) -> Result<Self> {
-        let byte_len = num_bits
-            .div_ceil(u8::BITS as usize)
-            .next_multiple_of(size_of::<u64>());
-        // TODO: Replace with generic FileOps
-        create_and_ensure_length(path.as_ref(), byte_len)?;
-        Self::open(path, options)
     }
 
     /// Total number of bits available.
@@ -180,6 +164,43 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         }
 
         Ok(())
+    }
+
+    /// Write a bitslice into the storage starting from bit 0.
+    ///
+    /// `source.len()` must not exceed the storage's bit length.
+    pub fn write_bitslice<T2, O2>(&mut self, source: &bitvec::slice::BitSlice<T2, O2>) -> Result<()>
+    where
+        T2: bitvec::store::BitStore,
+        O2: bitvec::order::BitOrder,
+    {
+        let bit_count = source.len() as u64;
+
+        // validate length
+        if bit_count == 0 {
+            return Ok(());
+        }
+        if bit_count > self.bit_len() {
+            return Err(UniversalIoError::OutOfBounds {
+                start: 0,
+                end: bit_count,
+                data_length: self.bit_len() as usize,
+            });
+        }
+
+        // Fetch existing, in case the source length is not a multiple of element size
+        let element_count = bit_count.div_ceil(BITS_PER_ELEMENT);
+
+        let existing = self.storage.read::<false>(ElementsRange {
+            start: 0,
+            length: element_count,
+        })?;
+
+        let mut buf = existing.into_owned();
+        let buf_bits = BitSlice::from_slice_mut(&mut buf);
+        buf_bits[..bit_count as usize].clone_from_bitslice(source);
+
+        self.storage.write(0, &buf)
     }
 
     /// Get a flusher for the underlying storage.

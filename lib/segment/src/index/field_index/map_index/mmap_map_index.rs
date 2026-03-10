@@ -8,6 +8,7 @@ use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::fs::{atomic_save_json, clear_disk_cache, read_json};
+use common::mmap::create_and_ensure_length;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::OpenOptions;
@@ -124,8 +125,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         )?;
 
         {
-            let mut deleted =
-                MmapBitSlice::create(&deleted_path, point_to_values.len(), OpenOptions::default())?;
+            let deleted_flags_count = point_to_values.len();
+            let _ = create_and_ensure_length(
+                &deleted_path,
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<u64>()),
+            )?;
+
+            let mut deleted = MmapBitSlice::open(&deleted_path, OpenOptions::default())?;
             deleted.set_bits_batch(
                 point_to_values
                     .iter()
