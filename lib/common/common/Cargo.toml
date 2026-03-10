@@ -16,7 +16,6 @@ workspace = true
 testing = []
 
 [dependencies]
-ahash = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
