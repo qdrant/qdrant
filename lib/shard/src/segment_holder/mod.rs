@@ -928,6 +928,7 @@ impl SegmentHolder {
             segment_id: SegmentId,
             point_id: PointIdType,
             version: Option<SeqNumberType>,
+            is_deferred: bool,
         }
 
         let segments = self
@@ -949,6 +950,7 @@ impl SegmentHolder {
                         segment_id,
                         point_id,
                         version: None,
+                        is_deferred: false,
                     })
             })
             .kmerge_by(|a, b| a.point_id < b.point_id)
@@ -965,31 +967,71 @@ impl SegmentHolder {
                 continue;
             }
 
-            // Enrich with point version
+            // Enrich with point version and deferred status
             for dedup_point in &mut points {
-                dedup_point.version =
-                    locked_segments[&dedup_point.segment_id].point_version(point_id);
+                let segment = &locked_segments[&dedup_point.segment_id];
+                dedup_point.version = segment.point_version(point_id);
+                dedup_point.is_deferred = segment.point_is_deferred(point_id);
             }
 
             // Sort points from highest to lowest version
             points.sort_unstable_by_key(|p| Reverse(p.version));
 
-            // Keep the first point, remove all others which are older
-            for &DedupPoint {
-                segment_id,
-                point_id,
-                version,
-            } in &points[1..]
-            {
-                log::trace!(
-                    "Selected point {point_id} in segment {segment_id} for deduplication (version {version:?} versus {:?} in segment {})",
-                    points[0].version,
-                    points[0].segment_id,
-                );
-                points_to_remove
-                    .entry(segment_id)
-                    .or_default()
-                    .push(point_id);
+            let latest_version = points[0].version;
+
+            // Check if the latest version has a non-deferred copy
+            let latest_has_non_deferred = points
+                .iter()
+                .any(|p| p.version == latest_version && !p.is_deferred);
+
+            // Track whether we've already kept one deferred point
+            let mut kept_deferred = false;
+
+            // Decide which points to remove
+            //
+            // Rules:
+            // - Never delete deferred points — optimizer handles them
+            //   (but if there are multiple deferred copies, keep only one)
+            // - Delete older non-deferred copies only if the latest version
+            //   has a non-deferred copy too
+            // - Keep older non-deferred copies when the latest is deferred-only
+            for dedup_point in &points {
+                if dedup_point.is_deferred {
+                    if kept_deferred {
+                        // Multiple deferred copies — remove extras
+                        log::trace!(
+                            "Selected deferred point {} in segment {} for deduplication (duplicate deferred, version {:?})",
+                            dedup_point.point_id,
+                            dedup_point.segment_id,
+                            dedup_point.version,
+                        );
+                        points_to_remove
+                            .entry(dedup_point.segment_id)
+                            .or_default()
+                            .push(dedup_point.point_id);
+                    } else {
+                        kept_deferred = true;
+                    }
+                } else if dedup_point.version == latest_version {
+                    // Non-deferred with latest version: keep (this is the winner)
+                } else if latest_has_non_deferred {
+                    // Older non-deferred copy: safe to delete because the latest
+                    // version also has a non-deferred copy
+                    log::trace!(
+                        "Selected point {} in segment {} for deduplication (version {:?} versus {:?} in segment {})",
+                        dedup_point.point_id,
+                        dedup_point.segment_id,
+                        dedup_point.version,
+                        points[0].version,
+                        points[0].segment_id,
+                    );
+                    points_to_remove
+                        .entry(dedup_point.segment_id)
+                        .or_default()
+                        .push(dedup_point.point_id);
+                }
+                // Otherwise: older non-deferred copies are kept when the latest
+                // is deferred-only (we need them visible until deferred is indexed)
             }
         }
 
