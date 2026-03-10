@@ -155,7 +155,7 @@ impl BatchedPoints {
             batch_index += 1;
         }
 
-        for [a, b] in batches.array_windows(2) {
+        for [a, b] in batches.array_windows() {
             assert_eq!(a.end, b.start);
         }
 
