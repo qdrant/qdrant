@@ -91,6 +91,7 @@ const REST_TIMINGS_FOR_STATUS: u16 = 200;
 /// Encapsulates metrics data in Prometheus format.
 pub struct MetricsData {
     metrics: Vec<MetricFamily>,
+    per_collection: bool,
 }
 
 impl MetricsData {
@@ -98,9 +99,20 @@ impl MetricsData {
         TextEncoder::new().encode_to_string(&self.metrics).unwrap()
     }
 
+    pub fn per_collection(&self) -> bool {
+        self.per_collection
+    }
+
     /// Creates a new `MetricsData` from telemetry data and an optional prefix for metrics names.
-    pub fn new_from_telemetry(telemetry_data: TelemetryData, prefix: Option<&str>) -> Self {
-        let mut metrics = MetricsData::empty();
+    pub fn new_from_telemetry(
+        telemetry_data: TelemetryData,
+        prefix: Option<&str>,
+        per_collection: bool,
+    ) -> Self {
+        let mut metrics = MetricsData {
+            metrics: vec![],
+            per_collection,
+        };
         telemetry_data.add_metrics(&mut metrics, prefix);
         metrics
     }
@@ -110,14 +122,6 @@ impl MetricsData {
         if let Some(metric_family) = metric_family {
             self.metrics.push(metric_family);
         }
-    }
-
-    /// Creates an empty collection of Prometheus metric families `MetricsData`.
-    /// This should only be used when you explicitly need an empty collection to gather metrics.
-    ///
-    /// In most cases, you should use [`MetricsData::new_from_telemetry`] to initialize new metrics data.
-    fn empty() -> Self {
-        Self { metrics: vec![] }
     }
 }
 
@@ -242,7 +246,7 @@ impl CollectionsTelemetry {
 
             total_optimizations_running.push(gauge(
                 collection.count_optimizers_running() as f64,
-                &[("id", &collection.id)],
+                &[("id", &collection.id), ("collection", &collection.id)],
             ));
 
             let min_max_active_replicas = collection
@@ -303,7 +307,7 @@ impl CollectionsTelemetry {
 
             points_per_collection.push(gauge(
                 collection.count_points() as f64,
-                &[("id", &collection.id)],
+                &[("id", &collection.id), ("collection", &collection.id)],
             ));
 
             for (vec_name, count) in collection.count_points_per_vector() {
@@ -360,11 +364,11 @@ impl CollectionsTelemetry {
 
             shard_transfers_in.push(gauge(
                 f64::from(incoming_transfers),
-                &[("id", &collection.id)],
+                &[("id", &collection.id), ("collection", &collection.id)],
             ));
             shard_transfers_out.push(gauge(
                 f64::from(outgoing_transfers),
-                &[("id", &collection.id)],
+                &[("id", &collection.id), ("collection", &collection.id)],
             ));
 
             // Update queue
@@ -377,7 +381,10 @@ impl CollectionsTelemetry {
                 .map(|uq| uq.length)
                 .sum();
 
-            update_queue_length.push(gauge(total_queue_length as f64, &[("id", &collection.id)]));
+            update_queue_length.push(gauge(
+                total_queue_length as f64,
+                &[("id", &collection.id), ("collection", &collection.id)],
+            ));
         }
 
         for snapshot_telemetry in self.snapshots.iter().flatten() {
@@ -666,6 +673,37 @@ impl MetricsProvider for WebApiTelemetry {
             }
         }
         builder.build(prefix, "rest", metrics);
+
+        if metrics.per_collection() {
+            let mut builder_by_collection = OperationDurationMetricsBuilder::default();
+
+            for (endpoint_key, collections_map) in &self.responses_by_collection {
+                let Some((method, endpoint)) = endpoint_key.split_once(' ') else {
+                    continue;
+                };
+
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
+
+                for (collection, responses) in collections_map {
+                    for (status, stats) in responses {
+                        builder_by_collection.add(
+                            stats,
+                            &[
+                                ("method", method),
+                                ("endpoint", endpoint),
+                                ("status", &status.to_string()),
+                                ("collection", collection),
+                            ],
+                            *status == REST_TIMINGS_FOR_STATUS,
+                        );
+                    }
+                }
+            }
+
+            builder_by_collection.build(prefix, "rest_by_collection", metrics);
+        }
     }
 }
 

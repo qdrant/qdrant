@@ -18,6 +18,9 @@ pub type GrpcStatusCode = i32;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+
+    pub responses_by_collection:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -32,6 +35,11 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+
+    methods_by_collection: HashMap<
+        String,
+        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -122,6 +130,25 @@ impl ActixWorkerTelemetryCollector {
         ScopeDurationMeasurer::new_with_instant(aggregator, instant);
     }
 
+    pub fn add_response_by_collection(
+        &mut self,
+        method: String,
+        collection: String,
+        status_code: HttpStatusCode,
+        instant: std::time::Instant,
+    ) {
+        let aggregator = self
+            .methods_by_collection
+            .entry(method)
+            .or_default()
+            .entry(collection)
+            .or_default()
+            .entry(status_code)
+            .or_insert_with(OperationDurationsAggregator::new);
+
+        ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+    }
+
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
         let mut responses = HashMap::new();
         for (method, status_codes) in &self.methods {
@@ -131,7 +158,22 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+        let mut responses_by_collection = HashMap::new();
+        for (method, collections_map) in &self.methods_by_collection {
+            let mut by_collection = HashMap::new();
+            for (collection, status_codes) in collections_map {
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                by_collection.insert(collection.clone(), status_codes_map);
+            }
+            responses_by_collection.insert(method.clone(), by_collection);
+        }
+        WebApiTelemetry {
+            responses,
+            responses_by_collection,
+        }
     }
 }
 
@@ -154,6 +196,20 @@ impl WebApiTelemetry {
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
+            }
+        }
+
+        for (method, collections_map) in &other.responses_by_collection {
+            let my_collections = self
+                .responses_by_collection
+                .entry(method.clone())
+                .or_default();
+            for (collection, status_codes) in collections_map {
+                let my_statuses = my_collections.entry(collection.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = my_statuses.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -194,7 +250,26 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
-        WebApiTelemetry { responses }
+        let responses_by_collection = self
+            .responses_by_collection
+            .iter()
+            .map(|(method_key, collections_map)| {
+                let anon_collections_map = collections_map
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, (_collection_name, status_map))| {
+                        (format!("collection_{idx}"), status_map.clone())
+                    })
+                    .collect();
+
+                (method_key.clone(), anon_collections_map)
+            })
+            .collect();
+
+        WebApiTelemetry {
+            responses,
+            responses_by_collection,
+        }
     }
 }
 
