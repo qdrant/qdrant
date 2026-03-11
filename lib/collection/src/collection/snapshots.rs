@@ -10,7 +10,6 @@ use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
 use shard::snapshots::snapshot_manifest::{RecoveryType, SnapshotManifest};
-// Removed TempPath
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;

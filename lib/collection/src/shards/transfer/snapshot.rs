@@ -5,7 +5,6 @@ use common::defaults;
 use parking_lot::Mutex;
 use semver::Version;
 
-// Removed TempPath import
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, TransferStage};
 use crate::operations::snapshot_ops::SnapshotPriority;
