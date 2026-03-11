@@ -415,7 +415,7 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> CardinalityEstimation {
         match filter {
             None => {
-                let available = self.non_deferred_point_count_estimated();
+                let available = self.available_point_count_without_deferred_estimated();
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -428,7 +428,7 @@ impl NonAppendableSegmentEntry for Segment {
                 let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
                 let total_points = self.id_tracker.borrow().available_point_count();
-                let available_points = self.non_deferred_point_count_estimated();
+                let available_points = self.available_point_count_without_deferred_estimated();
                 adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         }
@@ -507,7 +507,8 @@ impl NonAppendableSegmentEntry for Segment {
             0
         };
 
-        let num_points = self.available_point_count();
+        let num_points = self.available_point_count_without_deferred_estimated();
+        let num_deferred_points = self.deferred_point_count_estimated();
 
         let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
 
@@ -523,7 +524,8 @@ impl NonAppendableSegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count(),
+            num_points,
+            num_deferred_points,
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
@@ -890,6 +892,7 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
+        // TODO(deferred): subtract deferred point count here?
         query_context.add_available_point_count(self.available_point_count());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
@@ -935,6 +938,13 @@ impl NonAppendableSegmentEntry for Segment {
             .skip_while(|&internal_id| internal_id < deferred_from)
             .filter_map(|internal_id| id_tracker.external_id(internal_id))
             .collect()
+    }
+
+    fn available_point_count_without_deferred_estimated(&self) -> usize {
+        self.id_tracker
+            .borrow()
+            .available_point_count()
+            .saturating_sub(self.deferred_point_count_estimated())
     }
 }
 

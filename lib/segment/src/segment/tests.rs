@@ -942,7 +942,10 @@ fn create_deferred_segment(
 
     // Test deferred point count estimation.
     assert_eq!(segment.deferred_point_count_estimated(), n_deferred);
-    assert_eq!(segment.non_deferred_point_count_estimated(), n_vectors);
+    assert_eq!(
+        segment.available_point_count_without_deferred_estimated(),
+        n_vectors
+    );
 
     segment
 }

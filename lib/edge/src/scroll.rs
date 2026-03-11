@@ -261,7 +261,7 @@ impl EdgeShard {
                 let segment = segment.get();
                 let segment = segment.read();
 
-                let point_count = segment.available_point_count();
+                let point_count = segment.available_point_count_without_deferred_estimated();
                 let point_ids = segment.read_random_filtered(
                     limit,
                     filter,

@@ -667,14 +667,6 @@ impl Segment {
             None => 0,
         }
     }
-
-    /// Returns the amount of points that are not deferred.
-    pub fn non_deferred_point_count_estimated(&self) -> usize {
-        self.id_tracker
-            .borrow()
-            .available_point_count()
-            .saturating_sub(self.deferred_point_count_estimated())
-    }
 }
 
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {

@@ -510,7 +510,8 @@ impl NonAppendableSegmentEntry for ProxySegment {
             segment_type: SegmentType::Special,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count(),
+            num_points: self.available_point_count_without_deferred_estimated(),
+            num_deferred_points: wrapped_info.num_deferred_points,
             num_deleted_vectors: wrapped_info.num_deleted_vectors
                 + deleted_points_count * vector_name_count,
             vectors_size_bytes: wrapped_info.vectors_size_bytes, //  + write_info.vectors_size_bytes,
@@ -730,6 +731,10 @@ impl NonAppendableSegmentEntry for ProxySegment {
         let mut ids = self.wrapped_segment.get().read().deferred_point_ids();
         ids.retain(|point_id| !self.deleted_points.contains_key(point_id));
         ids
+    }
+
+    fn available_point_count_without_deferred_estimated(&self) -> usize {
+        self.available_point_count()
     }
 }
 
