@@ -400,7 +400,7 @@ impl EdgeShard {
         Ok(top_mmr)
     }
 
-    /// This function doesn't filter deferred points.
+    /// This function always filters deferred points.
     fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
@@ -427,7 +427,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
-            DeferredBehavior::IncludeAll,
+            DeferredBehavior::Filter,
         )?;
 
         // It might be possible, that we won't find all records,

@@ -53,7 +53,7 @@ impl Segment {
             with_vector,
             hw_counter,
             is_stopped,
-            DeferredBehavior::IncludeAll, // We already filter in read operations.
+            DeferredBehavior::Filter,
         )?;
 
         let mut results = Vec::with_capacity(point_ids.len());

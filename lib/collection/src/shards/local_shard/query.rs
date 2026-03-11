@@ -105,7 +105,7 @@ impl LocalShard {
 
     /// Fetches the payload and/or vector if required. This will filter out points if they are deleted between search and retrieve.
     ///
-    /// This function doesn't filter out deferred points.
+    /// This function always filters out deferred points.
     async fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
@@ -136,7 +136,7 @@ impl LocalShard {
                 &self.search_runtime,
                 timeout,
                 hw_measurement_acc,
-                DeferredBehavior::IncludeAll,
+                DeferredBehavior::Filter,
             ),
         )
         .await
