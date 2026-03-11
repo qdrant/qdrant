@@ -70,6 +70,7 @@ pub trait ShardOperation {
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn retrieve(
         &self,
         request: Arc<PointRequestInternal>,
@@ -78,6 +79,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hardware_accumulator: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn query_batch(

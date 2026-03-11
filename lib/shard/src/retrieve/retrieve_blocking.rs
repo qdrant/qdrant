@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{PointIdType, SeqNumberType, WithPayload, WithVector};
 
@@ -11,6 +12,7 @@ use crate::retrieve::record_internal::RecordInternal;
 use crate::segment_holder::SegmentHolder;
 use crate::segment_holder::locked::LockedSegmentHolder;
 
+#[allow(clippy::too_many_arguments)]
 pub fn retrieve_blocking(
     segments: LockedSegmentHolder,
     points: &[PointIdType],
@@ -19,6 +21,7 @@ pub fn retrieve_blocking(
     timeout: Duration,
     is_stopped: &AtomicBool,
     hw_measurement_acc: HwMeasurementAcc,
+    deferred_behavior: DeferredBehavior,
 ) -> OperationResult<AHashMap<PointIdType, RecordInternal>> {
     let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
     let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
@@ -51,6 +54,7 @@ pub fn retrieve_blocking(
             with_vector,
             &hw_counter,
             is_stopped,
+            deferred_behavior,
         )? {
             // We expect all points to be found since we already checked their versions
             point_records.insert(id, RecordInternal::from(record));

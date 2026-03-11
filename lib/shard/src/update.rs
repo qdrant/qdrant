@@ -475,8 +475,14 @@ pub fn sync_points(
             let with_vector = WithVector::Bool(true);
             let with_payload = WithPayload::from(true);
             // Since we retrieve points, which we already know exist, we expect all of them to be found
-            let stored_records =
-                segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
+            let stored_records = segment.retrieve(
+                ids,
+                &with_payload,
+                &with_vector,
+                hw_counter,
+                &is_stopped,
+                DeferredBehavior::IncludeAll,
+            )?;
             let mut updated = 0;
 
             for (id, stored_record) in stored_records {

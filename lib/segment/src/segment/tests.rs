@@ -1090,6 +1090,7 @@ fn test_deferred_point_read_operations() {
                     &WithVector::Bool(false),
                     &hw_counter,
                     &AtomicBool::new(false),
+                    DeferredBehavior::Filter,
                 )
                 .unwrap()
                 .into_iter()

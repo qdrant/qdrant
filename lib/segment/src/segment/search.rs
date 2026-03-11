@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::ScoredPointOffset;
+use common::types::{DeferredBehavior, ScoredPointOffset};
 
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -21,6 +21,8 @@ use crate::types::{ScoredPoint, WithPayload, WithVector};
 
 impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
+    ///
+    /// Doesn't filter deferred points.
     pub(super) fn process_search_result(
         &self,
         internal_result: Vec<ScoredPointOffset>,
@@ -51,6 +53,7 @@ impl Segment {
             with_vector,
             hw_counter,
             is_stopped,
+            DeferredBehavior::IncludeAll, // We already filter in read operations.
         )?;
 
         let mut results = Vec::with_capacity(point_ids.len());

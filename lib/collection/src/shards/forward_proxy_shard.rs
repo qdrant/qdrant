@@ -333,7 +333,6 @@ impl ForwardProxyShard {
         };
         let batch = self
             .wrapped_shard
-            // TODO(deferred): don't filter deferred points in this `.retrieve()` call, once it's implemented.
             .retrieve(
                 Arc::new(request),
                 &WithPayload::from(true),
@@ -341,6 +340,7 @@ impl ForwardProxyShard {
                 runtime_handle,
                 None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                DeferredBehavior::IncludeAll,
             )
             .await?;
 
@@ -651,6 +651,7 @@ impl ShardOperation for ForwardProxyShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -661,6 +662,7 @@ impl ShardOperation for ForwardProxyShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                deferred_behavior,
             )
             .await
     }

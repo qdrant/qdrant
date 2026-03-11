@@ -180,6 +180,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<Duration>,
         _: HwMeasurementAcc,
+        _: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }

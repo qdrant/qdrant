@@ -176,12 +176,15 @@ impl NonAppendableSegmentEntry for Segment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let mut records = AHashMap::with_capacity(point_ids.len());
 
         // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
         // but still satisfy rusts ownership constraints.
-        let filtered_point_ids = self.has_deferred_points().then(|| {
+        let behavior_allows_filtering = !deferred_behavior.include_all_points();
+        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
+        let filtered_point_ids = filter_deferred.then(|| {
             point_ids
                 .iter()
                 .filter(|&&point_id| !self.point_is_deferred(point_id))

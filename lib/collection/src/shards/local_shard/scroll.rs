@@ -210,6 +210,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                DeferredBehavior::IncludeAll, // Points are already filtered in `point_ids`.
             ),
         )
         .await
@@ -315,6 +316,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                DeferredBehavior::IncludeAll, // Points are already filtered in `point_ids`.
             ),
         )
         .await
@@ -459,6 +461,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                DeferredBehavior::IncludeAll, // Points are already filtered in `selected_points`.
             ),
         )
         .await

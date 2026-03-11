@@ -216,6 +216,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let filtered_point_ids: Vec<PointIdType> = point_ids
             .iter()
@@ -228,6 +229,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             with_vector,
             hw_counter,
             is_stopped,
+            deferred_behavior,
         )
     }
 

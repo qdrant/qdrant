@@ -321,6 +321,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
@@ -337,6 +338,7 @@ impl ShardOperation for LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                deferred_behavior,
             ),
         )
         .await

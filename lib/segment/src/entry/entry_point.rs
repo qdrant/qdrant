@@ -92,6 +92,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
     /// Retrieve payload for the point
