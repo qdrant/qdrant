@@ -153,7 +153,7 @@ actix-web-extras = "0.1.0"
 procfs = { version = "0.18.0", default-features = false }
 # Pyroscope integration (1.0.2): includes signal-safety fixes for both jemalloc deadlock
 # (tikv/pprof-rs#282) and SIGPROF SIG_DFL race (grafana/pyroscope-rs#18).
-pyroscope = { version = "1.0.2", features = ["backend-pprof-rs"] }
+pyroscope = { version = "2.0.0", features = ["backend-pprof-rs"] }
 # Backtrace
 rstack-self = { version = "0.3.0", optional = true }
 
