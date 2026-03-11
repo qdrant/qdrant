@@ -41,6 +41,15 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         }
     }
 
+    /// Return the base directory for a collection.
+    fn collection_base_path(&self, auth: &storage::rbac::Auth, collection_name: &str) -> PathBuf {
+        let pass = new_unchecked_verification_pass();
+        let toc = self.dispatcher.toc(auth, &pass);
+        toc.storage_path()
+            .join(COLLECTIONS_DIR)
+            .join(collection_name)
+    }
+
     /// Resolve a collection-scoped relative path to an absolute path,
     /// rejecting any traversal attempts.
     fn resolve_path(
@@ -49,12 +58,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         collection_name: &str,
         relative_path: &str,
     ) -> Result<PathBuf, Status> {
-        let pass = new_unchecked_verification_pass();
-        let toc = self.dispatcher.toc(auth, &pass);
-        let base = toc
-            .storage_path()
-            .join(COLLECTIONS_DIR)
-            .join(collection_name);
+        let base = self.collection_base_path(auth, collection_name);
 
         let rel = std::path::Path::new(relative_path);
         for c in rel.components() {
@@ -121,7 +125,7 @@ fn convert_open_options(proto: Option<StorageOpenOptions>) -> OpenOptions {
     };
     OpenOptions {
         need_sequential: opts.need_sequential,
-        disk_parallel: opts.disk_parallel.map(|v| v as usize),
+        disk_parallel: opts.disk_parallel.and_then(|v| usize::try_from(v).ok()),
         populate: opts.populate,
         advice: opts.advice.and_then(|v| {
             MmapAdvice::try_from(v).ok().map(|a| {
@@ -215,15 +219,8 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             collection_name,
             prefix_path,
         } = request.into_inner();
+        let base = self.collection_base_path(&auth, &collection_name);
         let prefix_path = self.resolve_path(&auth, &collection_name, &prefix_path)?;
-
-        // Compute the base collection path to make results relative.
-        let pass = new_unchecked_verification_pass();
-        let toc = self.dispatcher.toc(&auth, &pass);
-        let base = toc
-            .storage_path()
-            .join(COLLECTIONS_DIR)
-            .join(&collection_name);
 
         let paths = tokio::task::spawn_blocking(move || S::list_files(&prefix_path))
             .await
@@ -324,6 +321,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         } = request.into_inner();
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
+
+        if length == 0 {
+            return Ok(Response::new(Box::pin(futures::stream::empty())));
+        }
+
         let open_options = convert_open_options(open_options);
         let sequential = open_options.need_sequential;
         let storage = tokio::task::spawn_blocking(move || {
@@ -415,7 +417,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
-            let mut results = vec![Vec::<u8>::new(); ranges.len()];
+            let mut results = ranges
+                .iter()
+                .map(|r| Vec::with_capacity(r.length as usize))
+                .collect::<Vec<_>>();
             dispatch_read_batch(
                 &storage,
                 ranges,
@@ -465,8 +470,6 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             reads_.push((file_index, ElementsRange::new(entry.offset, entry.length)));
         }
 
-        let num_reads = reads.len();
-
         let data = tokio::task::spawn_blocking(move || {
             let files = unique_paths
                 .iter()
@@ -474,7 +477,10 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 .collect::<common::universal_io::Result<Vec<_>>>()
                 .map_err(io_error_to_status)?;
 
-            let mut results = vec![Vec::new(); num_reads];
+            let mut results = reads_
+                .iter()
+                .map(|(_, r)| Vec::with_capacity(r.length as usize))
+                .collect::<Vec<_>>();
             dispatch_read_multi(
                 &files,
                 reads_,
