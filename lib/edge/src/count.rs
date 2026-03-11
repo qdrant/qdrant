@@ -24,7 +24,7 @@ impl EdgeShard {
                         filter.as_ref(),
                         &AtomicBool::new(false),
                         &HardwareCounterCell::disposable(),
-                        DeferredBehavior::Filter,
+                        DeferredBehavior::Exclude,
                     )
                 })
                 .count()

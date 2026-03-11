@@ -315,11 +315,20 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.storage.value_to_points.keys()
     }
 
-    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.storage.value_to_points.iter().map(|(k, v)| {
+    pub fn iter_counts_per_value(
+        &self,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> impl Iterator<Item = (&N, usize)> + '_ {
+        self.storage.value_to_points.iter().map(move |(k, v)| {
             let count = v
                 .iter()
-                .filter(|idx| !self.storage.deleted.get(**idx as usize).unwrap_or(true))
+                .filter(|&&idx| {
+                    !self.storage.deleted.get(idx as usize).unwrap_or(true)
+
+                    // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
+                    // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
+                    && deferred_internal_id.is_none_or(|deferred| idx < deferred)
+                })
                 .unique()
                 .count();
             (k, count)

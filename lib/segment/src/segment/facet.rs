@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
 use itertools::{Either, Itertools};
 
 use super::Segment;
@@ -86,6 +87,9 @@ impl Segment {
                     .filter_map(|(value, iter)| {
                         let count = iter
                             .unique()
+                            .take_while(|&point_id| {
+                                point_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                            })
                             .filter(|&point_id| context.check(point_id))
                             .count();
 
@@ -98,7 +102,7 @@ impl Segment {
         } else {
             // just count how many points each value has
             let iter = facet_index
-                .iter_counts_per_value()
+                .iter_counts_per_value(self.deferred_internal_id)
                 .stop_if(is_stopped)
                 .filter(|hit| hit.count > 0);
 
@@ -150,7 +154,7 @@ impl Segment {
                 .collect()
         } else {
             facet_index
-                .iter_values()
+                .iter_values(hw_counter, self.deferred_internal_id)
                 .stop_if(is_stopped)
                 .map(|value_ref| value_ref.to_owned())
                 .collect()
