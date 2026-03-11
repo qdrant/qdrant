@@ -1227,6 +1227,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        // TODO(deferred): Find a solution for this parameter, and don't` simply ignore it. E.g. we might call `count` directly and remove the parameter from the trait signature.
         _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let processed_timeout = Self::process_read_timeout(timeout, "count")?;
@@ -1282,6 +1283,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        // TODO(deferred): Find a solution for this parameter, and don't simply ignore it.
         _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "retrieve")?;
