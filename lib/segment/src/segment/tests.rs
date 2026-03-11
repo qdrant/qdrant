@@ -966,6 +966,8 @@ fn test_dense_deferred_point_segment_combinations() {
     }
 }
 
+const N_POINTS: usize = 12;
+
 #[test]
 fn test_deferred_point_estimation_with_filter() {
     init_logger();
@@ -975,8 +977,6 @@ fn test_deferred_point_estimation_with_filter() {
         JsonPath::new("color"),
         Match::new_value(ValueVariants::String("blue".to_string())),
     )));
-
-    const N_POINTS: usize = 12;
 
     for n_deferred in [0, 3, 10, 20, 100] {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -1021,6 +1021,7 @@ fn test_deferred_point_read_operations() {
                 .unwrap()
         },
         |i| i.id,
+        true,
     );
 
     // Read filtered (count API)
@@ -1030,6 +1031,7 @@ fn test_deferred_point_read_operations() {
             segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
         },
         |i| *i,
+        true,
     );
 
     // Read filtered ordered (scroll)
@@ -1051,6 +1053,7 @@ fn test_deferred_point_read_operations() {
                 .unwrap()
         },
         |i| i.1,
+        true,
     );
 
     // Read random filtered (random scroll)
@@ -1060,6 +1063,32 @@ fn test_deferred_point_read_operations() {
             segment.read_random_filtered(500, filter, &AtomicBool::new(false), &hw_counter)
         },
         |i| *i,
+        true,
+    );
+
+    // Retrieve API
+    assert_deferred_points_excluded(
+        "Retrieve",
+        |segment, _| {
+            let point_ids: Vec<_> = (1..=segment.available_point_count())
+                .map(|i| ExtendedPointId::NumId(i as u64))
+                .collect();
+
+            segment
+                .retrieve(
+                    &point_ids,
+                    &WithPayload::default(),
+                    &WithVector::Bool(false),
+                    &hw_counter,
+                    &AtomicBool::new(false),
+                )
+                .unwrap()
+                .into_iter()
+                .map(|i| i.0)
+                .collect::<Vec<_>>()
+        },
+        |i| *i,
+        false,
     );
 }
 
@@ -1111,6 +1140,7 @@ fn test_deferred_point_sparse() {
                         .unwrap()
                 },
                 |i| i.id,
+                true,
             );
 
             // Search feedback
@@ -1135,14 +1165,19 @@ fn test_deferred_point_sparse() {
                         .unwrap()
                 },
                 |i| i.id,
+                true,
             );
         }
     }
 }
 
 /// Extensively tests whether deferred points are excluded from the result of the given `operation`.
-fn assert_deferred_points_excluded<F, R, T>(name: &str, operation: F, to_external_id: R)
-where
+fn assert_deferred_points_excluded<F, R, T>(
+    name: &str,
+    operation: F,
+    to_external_id: R,
+    test_with_filter: bool,
+) where
     F: Fn(&Segment, Option<&Filter>) -> Vec<T>,
     R: Fn(&T) -> ExtendedPointId,
 {
@@ -1202,13 +1237,16 @@ where
 
     log::debug!("Testing deferred read operation: {name:?}");
 
+    let set_of_filters = if test_with_filter {
+        vec![&filter_case_1, &filter_case_2, &filter_case_3]
+    } else {
+        vec![&filter_case_1]
+    };
+
     // Test different amount of deferred points.
     for n_deferred in [0, 1, 10, 300] {
         // Test with different types of filters.
-        for (filter_set_id, filter_set) in [&filter_case_1, &filter_case_2, &filter_case_3]
-            .into_iter()
-            .enumerate()
-        {
+        for (filter_set_id, filter_set) in set_of_filters.iter().enumerate() {
             log::debug!("  => deferred points = {n_deferred}; filter-set ID = {filter_set_id}",);
 
             let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
