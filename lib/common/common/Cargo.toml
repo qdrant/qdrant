@@ -34,6 +34,7 @@ num_cpus = "1.17"
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 ph = { workspace = true }
+quick_cache = "0.6.19"
 rand = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }

@@ -1495,6 +1495,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "parking_lot",
  "ph",
+ "quick_cache",
  "rand 0.10.0",
  "rstest",
  "schemars 0.8.22",
