@@ -5,7 +5,7 @@ use common::fs::read_json;
 use common::storage_version::StorageVersion as _;
 use common::tar_ext::BuilderExt;
 use common::tar_unpack::tar_unpack_file;
-use fs_err::File;
+use fs_err::{self as fs, File};
 use segment::types::SnapshotFormat;
 use segment::utils::fs::move_all;
 use shard::snapshots::snapshot_data::SnapshotData;
@@ -152,7 +152,7 @@ impl Collection {
         })?;
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
-        let snapshot_description = snapshot_manager
+        let (snapshot_description, temp_paths) = snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
             .map_err(|err| {
@@ -162,7 +162,32 @@ impl Collection {
                 ))
             })?;
 
-        // Archive is stored, persistent. Checksum is also stored.
+        let mut kept_paths: Vec<std::path::PathBuf> = Vec::new();
+        for temp_path in temp_paths {
+            let path = temp_path.to_path_buf();
+            if let Err(err) = temp_path.keep() {
+                log::error!(
+                    "Failed to persist collection snapshot component at {}: {err}",
+                    path.display()
+                );
+
+                for kept_path in kept_paths {
+                    if let Err(rollback_err) = fs::remove_file(&kept_path) {
+                        log::warn!(
+                            "Failed to roll back collection snapshot component at {}: {rollback_err}",
+                            kept_path.display()
+                        );
+                    }
+                }
+
+                return Err(CollectionError::service_error(format!(
+                    "failed to persist collection snapshot component for {}: {err}",
+                    snapshot_description.name
+                )));
+            }
+            kept_paths.push(path);
+        }
+
         Ok(snapshot_description)
     }
 

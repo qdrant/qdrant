@@ -124,7 +124,7 @@ impl SnapshotStorageManager {
         &self,
         source_path: &Path,
         target_path: &Path,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotDescription, Vec<tempfile::TempPath>)> {
         debug_assert_ne!(
             source_path, target_path,
             "Source and target paths must be different"
@@ -267,7 +267,7 @@ impl SnapshotStorageLocalFS {
         &self,
         source_path: &Path,
         target_path: &Path,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotDescription, Vec<tempfile::TempPath>)> {
         // Steps:
         //
         // 1. Make sure that the target directory exists.
@@ -288,19 +288,19 @@ impl SnapshotStorageLocalFS {
 
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
-        let checksum_path = get_checksum_path(target_path);
+        let _checksum_path = get_checksum_path(target_path);
         let checksum = hash_file(source_path).await?;
-        let checksum_file = TempPath::from_path(&checksum_path);
-        let mut file = tokio_fs::File::create(checksum_path.as_path()).await?;
+        let checksum_file_tmp = TempPath::from_path(get_checksum_path(&target_path_tmp));
+
+        let mut file = tokio_fs::File::create(&checksum_file_tmp).await?;
         file.write_all(checksum.as_bytes()).await?;
         file.flush().await?;
         drop(file);
 
-        move_file(&source_path, &target_path_tmp).await?;
-        target_path_tmp.persist(target_path).map_err(|e| e.error)?;
+        move_file(source_path, &target_path_tmp).await?;
+        let description = get_snapshot_description(&target_path_tmp).await?;
 
-        checksum_file.keep()?;
-        get_snapshot_description(target_path).await
+        Ok((description, vec![target_path_tmp, checksum_file_tmp]))
     }
 
     async fn get_stored_file(
@@ -407,10 +407,12 @@ impl SnapshotStorageCloud {
         &self,
         source_path: &Path,
         target_path: &Path,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotDescription, Vec<tempfile::TempPath>)> {
         snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path).await?;
         tokio_fs::remove_file(source_path).await?;
-        snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await
+        let description =
+            snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await?;
+        Ok((description, Vec::new()))
     }
 
     async fn get_stored_file(
