@@ -523,7 +523,7 @@ impl NonAppendableSegmentEntry for Segment {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
-            num_points: self.available_point_count(),
+            num_points: self.non_deferred_point_count_estimated(),
             num_deleted_vectors: self.deleted_point_count(),
             vectors_size_bytes,  // Considers vector storage, but not indices
             payloads_size_bytes, // Considers payload storage, but not indices
