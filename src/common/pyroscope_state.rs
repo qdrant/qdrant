@@ -1,6 +1,7 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
 
+    use pyroscope::backend::jemalloc::jemalloc_backend;
     use pyroscope::backend::{BackendConfig, PprofConfig, pprof_backend};
     use pyroscope::pyroscope::{PyroscopeAgentBuilder, PyroscopeAgentRunning};
     use pyroscope::{PyroscopeAgent, PyroscopeError};
@@ -9,11 +10,12 @@ pub mod pyro {
 
     pub struct PyroscopeState {
         pub config: PyroscopeConfig,
-        pub agent: Option<PyroscopeAgent<PyroscopeAgentRunning>>,
+        pub cpu_agent: Option<PyroscopeAgent<PyroscopeAgentRunning>>,
+        pub heap_agent: Option<PyroscopeAgent<PyroscopeAgentRunning>>,
     }
 
     impl PyroscopeState {
-        fn build_agent(
+        fn build_cpu_agent(
             config: &PyroscopeConfig,
         ) -> Result<PyroscopeAgent<PyroscopeAgentRunning>, PyroscopeError> {
             // pprof uses tempfile::NamedTempFile which respects TMPDIR.
@@ -33,7 +35,7 @@ pub mod pyro {
             let backend_impl = pprof_backend(pprof_config, BackendConfig::default());
 
             log::info!(
-                "Starting pyroscope agent with identifier {}",
+                "Starting pyroscope CPU agent with identifier {}",
                 &config.identifier
             );
             // TODO: Add more tags like peerId and peerUrl
@@ -52,42 +54,109 @@ pub mod pyro {
             Ok(running_agent)
         }
 
+        fn build_heap_agent(
+            config: &PyroscopeConfig,
+        ) -> Result<PyroscopeAgent<PyroscopeAgentRunning>, PyroscopeError> {
+            let backend_impl = jemalloc_backend();
+
+            log::info!(
+                "Starting pyroscope heap agent with identifier {}",
+                &config.identifier
+            );
+            let agent = PyroscopeAgentBuilder::new(
+                config.url.clone(),
+                "qdrant",
+                0,
+                "pyroscope-rs",
+                env!("CARGO_PKG_VERSION"),
+                backend_impl,
+            )
+            .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
+            .build()?;
+            let running_agent = agent.start()?;
+
+            Ok(running_agent)
+        }
+
+        fn is_jemalloc_profiling_enabled() -> bool {
+            std::env::var("MALLOC_CONF")
+                .map(|conf| conf.split(',').any(|opt| opt.trim() == "prof:true"))
+                .unwrap_or(false)
+        }
+
         pub fn from_config(config: Option<PyroscopeConfig>) -> Option<Self> {
             match config {
                 Some(pyro_config) => {
-                    let agent = PyroscopeState::build_agent(&pyro_config);
-                    match agent {
-                        Ok(agent) => Some(PyroscopeState {
-                            config: pyro_config,
-                            agent: Some(agent),
-                        }),
+                    let cpu_agent = match PyroscopeState::build_cpu_agent(&pyro_config) {
+                        Ok(agent) => Some(agent),
                         Err(err) => {
-                            log::warn!("Pyroscope agent failed to start {err}");
-                            None
+                            log::warn!("Pyroscope CPU agent failed to start: {err}");
+                            return None;
                         }
-                    }
+                    };
+
+                    let heap_agent = if Self::is_jemalloc_profiling_enabled() {
+                        match PyroscopeState::build_heap_agent(&pyro_config) {
+                            Ok(agent) => {
+                                log::info!(
+                                    "Pyroscope heap agent started (MALLOC_CONF has prof:true)"
+                                );
+                                Some(agent)
+                            }
+                            Err(err) => {
+                                log::warn!("Pyroscope heap agent failed to start: {err}");
+                                None
+                            }
+                        }
+                    } else {
+                        log::info!(
+                            "Jemalloc profiling not enabled, skipping heap agent. Set MALLOC_CONF=\"prof:true,prof_active:true\" to enable."
+                        );
+                        None
+                    };
+
+                    Some(PyroscopeState {
+                        config: pyro_config,
+                        cpu_agent,
+                        heap_agent,
+                    })
                 }
                 None => None,
             }
         }
 
-        pub fn stop_agent(&mut self) -> bool {
-            log::info!("Stopping pyroscope agent");
-            if let Some(agent) = self.agent.take() {
-                return match agent.stop() {
-                    Ok(stopped_agent) => {
-                        log::info!("Stopped pyroscope agent. Shutting it down");
-                        stopped_agent.shutdown();
-                        log::info!("Pyroscope agent shut down completed.");
-                        true
-                    }
-                    Err(err) => {
-                        log::warn!("Pyroscope agent failed to stop {err}");
-                        false
-                    }
-                };
+        fn stop_single_agent(agent: PyroscopeAgent<PyroscopeAgentRunning>, name: &str) -> bool {
+            match agent.stop() {
+                Ok(stopped_agent) => {
+                    log::info!("Stopped pyroscope {name} agent. Shutting it down");
+                    stopped_agent.shutdown();
+                    log::info!("Pyroscope {name} agent shut down completed.");
+                    true
+                }
+                Err(err) => {
+                    log::warn!("Pyroscope {name} agent failed to stop: {err}");
+                    false
+                }
             }
-            true
+        }
+
+        pub fn stop_agent(&mut self) -> bool {
+            log::info!("Stopping pyroscope agents");
+            let mut success = true;
+
+            if let Some(agent) = self.cpu_agent.take()
+                && !Self::stop_single_agent(agent, "CPU")
+            {
+                success = false;
+            }
+
+            if let Some(agent) = self.heap_agent.take()
+                && !Self::stop_single_agent(agent, "heap")
+            {
+                success = false;
+            }
+
+            success
         }
     }
 
