@@ -28,7 +28,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable_edge(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )?;
 
         let points: Vec<_> = point_ids

@@ -195,7 +195,7 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Filter,
+                    DeferredBehavior::Exclude,
                 )
                 .await?
             }
@@ -209,7 +209,7 @@ impl ShardOperation for LocalShard {
                     &order_by,
                     timeout,
                     hw_measurement_acc,
-                    DeferredBehavior::Filter,
+                    DeferredBehavior::Exclude,
                 )
                 .await?
             }

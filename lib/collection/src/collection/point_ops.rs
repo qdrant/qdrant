@@ -420,7 +420,7 @@ impl Collection {
                     timeout,
                     shard_selection.is_shard_id(),
                     hw_measurement_acc.clone(),
-                    DeferredBehavior::Filter,
+                    DeferredBehavior::Exclude,
                 )
             })
             .collect();

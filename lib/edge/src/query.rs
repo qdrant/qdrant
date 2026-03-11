@@ -427,7 +427,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )?;
 
         // It might be possible, that we won't find all records,
