@@ -193,11 +193,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let path = self.resolve_path(&auth, &collection_name, &path)?;
 
         let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
-            Ok(exists) => exists,
-            _ => false,
+            Ok(exists) => Ok(exists),
+            Err(UniversalIoError::NotFound { .. }) => Ok(false),
+            Err(e) => Err(io_error_to_status(e)),
         })
         .await
-        .map_err(|e| Status::internal(format!("Task join error: {e}")))?;
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
 
         Ok(Response::new(FileExistsResponse { exists }))
     }
