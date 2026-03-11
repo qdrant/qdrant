@@ -35,6 +35,24 @@ impl Collection {
             .check_transfer_exists(transfer_key)
     }
 
+    async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+        let prevent_unoptimized = self
+            .collection_config
+            .read()
+            .await
+            .optimizer_config
+            .prevent_unoptimized
+            .unwrap_or(false);
+        if prevent_unoptimized {
+            log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
+            ShardTransferMethod::Snapshot
+        } else {
+            self.shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or_default()
+        }
+    }
+
     pub async fn start_shard_transfer<T, F>(
         &self,
         mut shard_transfer: ShardTransfer,
@@ -49,22 +67,7 @@ impl Collection {
     {
         // Select transfer method
         if shard_transfer.method.is_none() {
-            let prevent_unoptimized = self
-                .collection_config
-                .read()
-                .await
-                .optimizer_config
-                .prevent_unoptimized
-                .unwrap_or(false);
-
-            let method = if prevent_unoptimized {
-                log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
-                ShardTransferMethod::Snapshot
-            } else {
-                self.shared_storage_config
-                    .default_shard_transfer_method
-                    .unwrap_or_default()
-            };
+            let method = self.default_shard_transfer_method().await;
             log::warn!("No shard transfer method selected, defaulting to {method:?}");
             shard_transfer.method.replace(method);
         }
