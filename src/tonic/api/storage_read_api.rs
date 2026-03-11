@@ -71,8 +71,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             Ok(canonical) => {
                 if canonical != expected_canonical_base {
                     return Err(Status::permission_denied(format!(
-                        "Collection '{}' resolves outside its directory",
-                        collection_name
+                        "Collection '{collection_name}' resolves outside its directory",
                     )));
                 }
                 Some(canonical)
