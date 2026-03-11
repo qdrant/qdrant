@@ -59,6 +59,8 @@ FIELD_NAME = "test_field"
 PEER_ID = 0
 SHARD_KEY = "existing_shard_key"
 FACET_KEY = "a"
+STORAGE_READ_TEST_PATH = "auth/storage_read_test.bin"
+STORAGE_READ_TEST_DATA = b"jwt-storage-read-test-data"
 
 _cached_grpc_clients = None
 
@@ -81,6 +83,11 @@ def setup(jwt_cluster):
         json={"shard_key": SHARD_KEY},
         headers=API_KEY_HEADERS,
     ).raise_for_status()
+
+    for peer_dir in peer_dirs:
+        test_path = Path(peer_dir) / "storage" / "collections" / COLL_NAME / STORAGE_READ_TEST_PATH
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        test_path.write_bytes(STORAGE_READ_TEST_DATA)
 
     yield peer_api_uris, peer_dirs, bootstrap_uri
 
@@ -1954,21 +1961,21 @@ def test_update_logger_config():
 def test_storage_read_list_files():
     check_access(
         "storage_read_list_files",
-        grpc_request={"collection_name": COLL_NAME, "prefix_path": ""},
+        grpc_request={"collection_name": COLL_NAME, "prefix_path": "auth/"},
     )
 
 
 def test_storage_read_file_exists():
     check_access(
         "storage_read_file_exists",
-        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
     )
 
 
 def test_storage_read_file_length():
     check_access(
         "storage_read_file_length",
-        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
     )
 
 
@@ -1977,7 +1984,7 @@ def test_storage_read_read_bytes():
         "storage_read_read_bytes",
         grpc_request={
             "collection_name": COLL_NAME,
-            "path": "nonexistent.bin",
+            "path": STORAGE_READ_TEST_PATH,
             "offset": 0,
             "length": 1,
         },
@@ -1989,7 +1996,7 @@ def test_storage_read_read_bytes_stream():
         "storage_read_read_bytes_stream",
         grpc_request={
             "collection_name": COLL_NAME,
-            "path": "nonexistent.bin",
+            "path": STORAGE_READ_TEST_PATH,
             "offset": 0,
             "length": 1,
         },
@@ -1999,7 +2006,7 @@ def test_storage_read_read_bytes_stream():
 def test_storage_read_read_whole():
     check_access(
         "storage_read_read_whole",
-        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+        grpc_request={"collection_name": COLL_NAME, "path": STORAGE_READ_TEST_PATH},
     )
 
 
@@ -2008,8 +2015,8 @@ def test_storage_read_read_batch():
         "storage_read_read_batch",
         grpc_request={
             "collection_name": COLL_NAME,
-            "path": "nonexistent.bin",
-            "ranges": [],
+            "path": STORAGE_READ_TEST_PATH,
+            "ranges": [{"offset": 0, "length": 1}],
         },
     )
 
@@ -2017,5 +2024,8 @@ def test_storage_read_read_batch():
 def test_storage_read_read_multi():
     check_access(
         "storage_read_read_multi",
-        grpc_request={"collection_name": COLL_NAME, "reads": []},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "reads": [{"path": STORAGE_READ_TEST_PATH, "offset": 0, "length": 1}],
+        },
     )
