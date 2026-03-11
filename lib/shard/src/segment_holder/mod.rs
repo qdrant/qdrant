@@ -940,8 +940,8 @@ impl SegmentHolder {
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
 
-        // Iterator produces groups of points by point ID
-        let point_group_iter = locked_segments
+        // Merge-sort all points across segments, grouped by point_id
+        let point_groups = locked_segments
             .iter()
             .map(|(&segment_id, locked_segment)| {
                 locked_segment
@@ -959,10 +959,9 @@ impl SegmentHolder {
         let mut points = Vec::new();
         let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
-        for (point_id, group_iter) in &point_group_iter {
-            // Fill buffer with points of current chunk, need at least 2 points to deduplicate
+        for (point_id, group) in &point_groups {
             points.clear();
-            points.extend(group_iter);
+            points.extend(group);
             if points.len() < 2 {
                 continue;
             }
@@ -984,43 +983,32 @@ impl SegmentHolder {
                 .iter()
                 .any(|p| p.version == latest_version && !p.is_deferred);
 
-            // Track whether we've already kept one deferred point
+            // Decide which copies to remove:
+            // - Deferred: keep the first, remove duplicates
+            // - Non-deferred with latest version: keep the first (the winner)
+            // - Older non-deferred: remove only if the latest has a non-deferred copy
+            //   (otherwise keep visible until the deferred point is indexed)
             let mut kept_deferred = false;
-            // Track whether we've already kept the non-deferred winner
             let mut kept_non_deferred = false;
 
-            // Decide which points to remove
-            //
-            // Rules:
-            // - Never delete deferred points — optimizer handles them
-            //   (but if there are multiple deferred copies, keep only one)
-            // - Delete older non-deferred copies only if the latest version
-            //   has a non-deferred copy too
-            // - Keep older non-deferred copies when the latest is deferred-only
             for dedup_point in &points {
-                if dedup_point.is_deferred {
-                    if kept_deferred {
-                        // Multiple deferred copies — remove extras
-                        points_to_remove
-                            .entry(dedup_point.segment_id)
-                            .or_default()
-                            .push(dedup_point.point_id);
-                    } else {
-                        kept_deferred = true;
-                    }
+                let should_remove = if dedup_point.is_deferred {
+                    let duplicate = kept_deferred;
+                    kept_deferred = true;
+                    duplicate
                 } else if dedup_point.version == latest_version && !kept_non_deferred {
-                    // Non-deferred with latest version: keep (this is the winner)
                     kept_non_deferred = true;
-                } else if latest_has_non_deferred {
-                    // Older non-deferred copy or extra copy with latest version:
-                    // safe to delete because we already kept the non-deferred winner
+                    false
+                } else {
+                    latest_has_non_deferred
+                };
+
+                if should_remove {
                     points_to_remove
                         .entry(dedup_point.segment_id)
                         .or_default()
                         .push(dedup_point.point_id);
                 }
-                // Otherwise: older non-deferred copies are kept when the latest
-                // is deferred-only (we need them visible until deferred is indexed)
             }
         }
 
