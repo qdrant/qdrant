@@ -154,7 +154,7 @@ impl Segment {
                 .collect()
         } else {
             facet_index
-                .iter_values()
+                .iter_values(&hw_counter, self.deferred_internal_id)
                 .stop_if(is_stopped)
                 .map(|value_ref| value_ref.to_owned())
                 .collect()

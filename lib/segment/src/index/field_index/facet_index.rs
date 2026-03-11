@@ -51,12 +51,28 @@ impl<'a> FacetIndexEnum<'a> {
         }
     }
 
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
-        match self {
-            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values(*index)),
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values(*index)),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values(*index)),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values(*index)),
+    pub fn iter_values(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+        deferred_internal_id: Option<PointOffsetType>,
+    ) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
+        match deferred_internal_id {
+            Some(deferred_internal_id) => Box::new(self.iter_values_map(hw_counter).filter_map(
+                move |(facet_value, id_iter)| {
+                    let has_visible_point = id_iter
+                        .take_while(|&id| id < deferred_internal_id)
+                        .next()
+                        .is_some();
+
+                    has_visible_point.then_some(facet_value)
+                },
+            )),
+            None => match self {
+                FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values(*index)),
+                FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values(*index)),
+                FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values(*index)),
+                FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values(*index)),
+            },
         }
     }
 
