@@ -5,8 +5,9 @@ use charabia::{Language, Script, Segment, StrDetection};
 
 use super::{TokensProcessor, japanese};
 
-/// Default normalizer options from charabia(<https://github.com/meilisearch/charabia/blob/main/charabia/src/normalizer/mod.rs#L82>) used
-/// in `str::tokenize()`.
+/// Default normalizer options from [charabia] used in `str::tokenize()`.
+///
+/// [charabia]: https://github.com/meilisearch/charabia/blob/v0.9.9/charabia/src/normalizer/mod.rs#L84
 const DEFAULT_NORMALIZER: NormalizerOption = NormalizerOption {
     create_char_map: false,
     lossy: true,

@@ -146,7 +146,7 @@ pub struct OptimizersConfigDiff {
     pub memmap_threshold: Option<usize>,
     /// Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
     ///
-    /// Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
+    /// Default value is 20,000, based on <https://github.com/google-research/google-research/blob/3a7753e9db9bc4e8a17702faaad7ee0fffa33416/scann/docs/algorithms.md>.
     ///
     /// To disable vector indexing, set to `0`.
     ///
