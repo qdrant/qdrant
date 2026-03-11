@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{WithPayload, WithVector};
 use shard::operations::CollectionUpdateOperations;
@@ -83,6 +84,7 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
             &current_runtime,
             None,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .await
         .unwrap();
