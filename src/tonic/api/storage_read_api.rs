@@ -96,13 +96,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if let Some(canonical_ancestor) = canonicalize_existing_ancestor(&full)
                     .map_err(|e| Status::internal(format!("Failed to canonicalize path: {e}")))?
+                    && !canonical_ancestor.starts_with(&canonical_collections_root)
                 {
-                    if !canonical_ancestor.starts_with(&canonical_collections_root) {
-                        return Err(Status::permission_denied(format!(
-                            "Path '{}' is outside the collections directory",
-                            full.display()
-                        )));
-                    }
+                    return Err(Status::permission_denied(format!(
+                        "Path '{}' is outside the collections directory",
+                        full.display()
+                    )));
                 }
             }
             Err(e) => {
