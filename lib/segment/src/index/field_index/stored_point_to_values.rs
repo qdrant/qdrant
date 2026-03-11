@@ -208,14 +208,16 @@ where
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &ConditionedCounter,
     ) -> OperationResult<bool> {
-        let Some(values_iter) = self.values_iter(point_id, *hw_counter)? else {
+        let Some(mut values_iter) = self.values_iter(point_id, *hw_counter)? else {
             return Ok(false);
         };
-        for value in values_iter {
-            if check_fn(&value) {
+
+        while let Some(satisfy) = values_iter.map_next(&check_fn) {
+            if satisfy {
                 return Ok(true);
             }
         }
+
         Ok(false)
     }
 
@@ -223,7 +225,7 @@ where
         &self,
         point_id: PointOffsetType,
         hw_counter: ConditionedCounter, // TODO: make it by reference
-    ) -> OperationResult<Option<impl Iterator<Item = Cow<'_, T>>>> {
+    ) -> OperationResult<Option<ValuesIter<'_, T>>> {
         let hw_cell = hw_counter.payload_index_io_read_counter();
 
         // first, get range of values for point
@@ -243,12 +245,7 @@ where
         let bytes = self.store.read::<false>(bytes_range)?;
         let count = self.get_values_count(point_id)?.unwrap_or(0);
 
-        let iter = ValuesIter {
-            bytes,
-            start: 0,
-            count,
-            _type: std::marker::PhantomData,
-        };
+        let iter = ValuesIter::new(bytes, count);
 
         Ok(Some(iter))
     }
@@ -324,11 +321,39 @@ where
     }
 }
 
-struct ValuesIter<'a, T: ?Sized> {
+pub struct ValuesIter<'a, T: ?Sized> {
     bytes: Cow<'a, [u8]>,
     start: usize,
     count: usize,
     _type: std::marker::PhantomData<T>,
+}
+
+impl<'a, T: StoredValue + ?Sized + 'a> ValuesIter<'a, T> {
+    fn new(bytes: Cow<'a, [u8]>, count: usize) -> Self {
+        Self {
+            bytes,
+            start: 0,
+            count,
+            _type: std::marker::PhantomData,
+        }
+    }
+
+    /// Similar to [`Iterator::next()`], but immediately process the reference, so that we don't
+    /// need to `Cow` the value to be able to return it.
+    fn map_next<U>(&mut self, map: impl Fn(&T) -> U) -> Option<U> {
+        if self.count == 0 {
+            return None;
+        }
+
+        let value = T::read_from_prefix(self.bytes.get(self.start..)?)?;
+
+        let out = map(value);
+
+        self.start += T::stored_size(value);
+        self.count = self.count.saturating_sub(1);
+
+        Some(out)
+    }
 }
 
 impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
