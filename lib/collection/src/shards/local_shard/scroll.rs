@@ -7,9 +7,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
-use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
+use rand::RngExt;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
@@ -382,7 +382,7 @@ impl LocalShard {
                     let read_segment = get_segment.read();
 
                     Ok((
-                        read_segment.available_point_count(),
+                        read_segment.available_point_count_without_deferred_estimated(),
                         read_segment.read_random_filtered(
                             limit,
                             filter.as_ref(),

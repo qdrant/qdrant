@@ -191,10 +191,19 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
     /// Number of available points
     ///
     /// - excludes soft deleted points
+    /// - includes deferred points.
     fn available_point_count(&self) -> usize;
 
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
+
+    /// Returns the amount of points that are not deferred.
+    fn available_point_count_without_deferred_estimated(&self) -> usize;
+
+    // fn deferred_point_count_estimated(&self) -> usize {
+    //     self.available_point_count()
+    //         .saturating_sub(self.available_point_count_without_deferred_estimated())
+    // }
 
     /// Size of all available vectors in storage
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
