@@ -63,8 +63,9 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
     ) -> Result<PathBuf, Status> {
         let collections_root = self.collections_base_path(auth);
         let base = self.collection_base_path(auth, collection_name);
-        let canonical_collections_root = fs_err::canonicalize(&collections_root)
-            .map_err(|e| Status::internal(format!("Failed to canonicalize collections root: {e}")))?;
+        let canonical_collections_root = fs_err::canonicalize(&collections_root).map_err(|e| {
+            Status::internal(format!("Failed to canonicalize collections root: {e}"))
+        })?;
 
         let rel = Path::new(relative_path);
         for c in rel.components() {
