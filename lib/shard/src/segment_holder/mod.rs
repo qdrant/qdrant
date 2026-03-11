@@ -975,7 +975,8 @@ impl SegmentHolder {
             }
 
             // Sort points from highest to lowest version
-            points.sort_unstable_by_key(|p| Reverse(p.version));
+            // If versions are equal, sort by segment ID to make the order deterministic.
+            points.sort_unstable_by_key(|p| (Reverse(p.version), p.segment_id));
 
             let latest_version = points[0].version;
 
