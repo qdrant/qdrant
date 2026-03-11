@@ -161,6 +161,39 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2
 }
 
+/// Build an empty appendable segment with a deferred internal ID.
+///
+/// Points with internal ID >= `deferred_internal_id` will be deferred.
+pub fn empty_segment_with_deferred(path: &Path, deferred_internal_id: u32) -> Segment {
+    use std::collections::HashMap;
+
+    use segment::segment_constructor::build_segment;
+    use segment::types::{Indexes, VectorDataConfig, VectorStorageType};
+
+    build_segment(
+        path,
+        &segment::types::SegmentConfig {
+            vector_data: HashMap::from([(
+                segment::data_types::vectors::DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: 4,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::default(),
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        },
+        Some(deferred_internal_id),
+        true,
+    )
+    .unwrap()
+}
+
 /// Builds a segment with a deferred threshold that causes points 4 and 5 to be deferred, while points 1, 2, and 3 are not deferred.
 /// This allows testing of deferred point behavior in the segment.
 pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
