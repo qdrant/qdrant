@@ -66,6 +66,24 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         let canonical_collections_root = fs_err::canonicalize(&collections_root).map_err(|e| {
             Status::internal(format!("Failed to canonicalize collections root: {e}"))
         })?;
+        let expected_canonical_base = canonical_collections_root.join(collection_name);
+        let canonical_base = match fs_err::canonicalize(&base) {
+            Ok(canonical) => {
+                if canonical != expected_canonical_base {
+                    return Err(Status::permission_denied(format!(
+                        "Collection '{}' resolves outside its directory",
+                        collection_name
+                    )));
+                }
+                Some(canonical)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(Status::internal(format!(
+                    "Failed to canonicalize collection base: {e}"
+                )));
+            }
+        };
 
         let rel = Path::new(relative_path);
         for c in rel.components() {
@@ -86,9 +104,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         // check above is sufficient since we rejected all non-Normal components.
         match fs_err::canonicalize(&full) {
             Ok(canonical) => {
-                if !canonical.starts_with(&canonical_collections_root) {
+                if let Some(canonical_base) = &canonical_base
+                    && !canonical.starts_with(canonical_base)
+                {
                     return Err(Status::permission_denied(format!(
-                        "Path '{}' is outside the collections directory",
+                        "Path '{}' is outside the collection directory",
                         full.display()
                     )));
                 }
@@ -96,10 +116,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 if let Some(canonical_ancestor) = canonicalize_existing_ancestor(&full)
                     .map_err(|e| Status::internal(format!("Failed to canonicalize path: {e}")))?
-                    && !canonical_ancestor.starts_with(&canonical_collections_root)
+                    && let Some(canonical_base) = &canonical_base
+                    && !canonical_ancestor.starts_with(canonical_base)
                 {
                     return Err(Status::permission_denied(format!(
-                        "Path '{}' is outside the collections directory",
+                        "Path '{}' is outside the collection directory",
                         full.display()
                     )));
                 }
@@ -128,6 +149,29 @@ fn canonicalize_existing_ancestor(path: &Path) -> std::io::Result<Option<PathBuf
     }
 
     Ok(None)
+}
+
+/// Validate a requested range against the file size using the same
+/// out-of-bounds semantics as `UniversalRead::read()`.
+fn validate_range(range: ElementsRange, data_length: u64) -> common::universal_io::Result<()> {
+    let end = range
+        .start
+        .checked_add(range.length)
+        .ok_or(UniversalIoError::OutOfBounds {
+            start: range.start,
+            end: u64::MAX,
+            data_length: usize::try_from(data_length).unwrap_or(usize::MAX),
+        })?;
+
+    if end > data_length {
+        return Err(UniversalIoError::OutOfBounds {
+            start: range.start,
+            end,
+            data_length: usize::try_from(data_length).unwrap_or(usize::MAX),
+        });
+    }
+
+    Ok(())
 }
 
 /// Convert UniversalIoError to tonic Status.
@@ -369,20 +413,14 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         } = request.into_inner();
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
-
-        if length == 0 {
-            return Ok(Response::new(Box::pin(futures::stream::empty())));
-        }
-
         let open_options = convert_open_options(open_options);
         let sequential = open_options.need_sequential;
-        let (storage, length) = tokio::task::spawn_blocking(move || {
+        let range = ElementsRange::new(offset, length);
+        let (storage, range) = tokio::task::spawn_blocking(move || {
             let s = S::open(&path, open_options).map_err(io_error_to_status)?;
             let file_len = s.len().map_err(io_error_to_status)?;
-            // Clamp to available bytes so the stream stops at EOF
-            // instead of producing an OutOfBounds error.
-            let clamped = length.min(file_len.saturating_sub(offset));
-            Ok::<_, Status>((s, clamped))
+            validate_range(range, file_len).map_err(io_error_to_status)?;
+            Ok::<_, Status>((s, range))
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
@@ -390,7 +428,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let storage = Arc::new(storage);
 
         let stream = futures::stream::try_unfold(
-            (storage, offset, length),
+            (storage, range.start, range.length),
             move |(storage, current_offset, remaining)| async move {
                 if remaining == 0 {
                     return Ok(None);
@@ -413,7 +451,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
                 Ok(Some((
                     ReadBytesStreamResponse { data },
-                    (storage, current_offset + chunk_size, remaining - chunk_size),
+                    (
+                        storage,
+                        current_offset + chunk_size,
+                        remaining - chunk_size,
+                    ),
                 )))
             },
         );
@@ -573,6 +615,7 @@ mod tests {
         create_general_purpose_runtime, create_search_runtime, create_update_runtime,
     };
 
+    const OTHER_COLLECTION_NAME: &str = "other-collection";
     const TEST_COLLECTION_NAME: &str = "test-collection";
 
     fn test_storage_config(storage_path: &Path) -> StorageConfig {
@@ -711,6 +754,33 @@ mod tests {
             .file_exists(Request::new(FileExistsRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
                 path: "escape.bin".to_string(),
+            }))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), Code::PermissionDenied);
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn file_exists_rejects_symlink_escape_to_other_collection() {
+        use std::os::unix::fs::symlink;
+
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        let other_collection_dir = storage_dir
+            .path()
+            .join(COLLECTIONS_DIR)
+            .join(OTHER_COLLECTION_NAME);
+        fs_err::create_dir_all(&other_collection_dir).unwrap();
+        fs_err::write(other_collection_dir.join("secret.bin"), b"secret").unwrap();
+        symlink(&other_collection_dir, collection_dir.join("linked")).unwrap();
+
+        let err = service
+            .file_exists(Request::new(FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "linked/secret.bin".to_string(),
             }))
             .await
             .unwrap_err();
@@ -924,12 +994,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_bytes_stream_clamps_length_to_file_size() {
+    async fn read_bytes_stream_zero_length_checks_file_exists() {
+        let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+        let err = match service
+            .read_bytes_stream(Request::new(ReadBytesStreamRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "stream/missing.bin".to_string(),
+                offset: 0,
+                length: 0,
+                open_options: None,
+            }))
+            .await
+        {
+            Ok(_) => panic!("expected missing file to be reported"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.code(), Code::NotFound);
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_bytes_stream_out_of_bounds_returns_error() {
         let (service, storage_dir, collection_dir) = create_service_async().await;
         let payload = b"short";
         write_collection_file(&collection_dir, "stream/clamp.bin", payload);
 
-        let mut stream = service
+        let err = match service
             .read_bytes_stream(Request::new(ReadBytesStreamRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
                 path: "stream/clamp.bin".to_string(),
@@ -938,15 +1031,12 @@ mod tests {
                 open_options: None,
             }))
             .await
-            .unwrap()
-            .into_inner();
+        {
+            Ok(_) => panic!("expected out-of-bounds stream request to fail"),
+            Err(err) => err,
+        };
 
-        let mut reconstructed = Vec::new();
-        while let Some(item) = stream.next().await {
-            reconstructed.extend_from_slice(&item.unwrap().data);
-        }
-
-        assert_eq!(reconstructed, payload.to_vec());
+        assert_eq!(err.code(), Code::OutOfRange);
 
         drop_service(service, storage_dir).await;
     }
