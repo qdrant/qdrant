@@ -48,6 +48,17 @@ def get_collection_info():
     return response.json()['result']
 
 
+def facet_points(key):
+    response = request_with_validation(
+        api='/collections/{collection_name}/facet',
+        method="POST",
+        path_params={'collection_name': COLLECTION_NAME},
+        body={"key": key},
+    )
+    assert response.ok
+    return response.json()['result']
+
+
 def upsert_points(start_id, count, wait=False):
     """Upsert points with sequential IDs and random vectors."""
     random.seed(42)
@@ -58,7 +69,7 @@ def upsert_points(start_id, count, wait=False):
         points.append({
             "id": point_id,
             "vector": vector,
-            "payload": {"idx": point_id},
+            "payload": {"idx": point_id, "color": "red" if point_id % 2 == 0 else "blue"},
         })
 
     # Upsert in batches of 100 to avoid too large requests
@@ -127,6 +138,19 @@ def retrieve_points(ids):
 def test_deferred_points():
     create_collection()
 
+    # Create a keyword index on "color" for facet queries
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': COLLECTION_NAME},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "color",
+            "field_schema": "keyword",
+        }
+    )
+    assert response.ok
+
     # Upsert 10000 points with wait=false, creating deferred points
     upsert_points(start_id=1, count=NUM_POINTS, wait=False)
 
@@ -161,6 +185,14 @@ def test_deferred_points():
     assert len(retrieved) == points_count, (
         f"Retrieve returned {len(retrieved)} points, expected {points_count}"
     )
+
+    # Facets should only reflect visible (non-deferred) points
+    facet_result = facet_points("color")
+    total_facet_count = sum(hit['count'] for hit in facet_result['hits'])
+    assert total_facet_count == points_count, (
+        f"Facet total count {total_facet_count} doesn't match visible points {points_count}"
+    )
+    assert len(facet_result['hits']) <= 2, "Expected at most 2 color facet values"
 
     # Now enable optimizers and upsert a single point with wait=true
     # This should trigger optimization and make all deferred points visible
@@ -204,4 +236,21 @@ def test_deferred_points():
     retrieved = retrieve_points(all_ids)
     assert len(retrieved) == total_points, (
         f"After optimization, retrieve returned {len(retrieved)}, expected {total_points}"
+    )
+
+    # Facets should now reflect all points
+    facet_result = facet_points("color")
+    total_facet_count = sum(hit['count'] for hit in facet_result['hits'])
+    assert total_facet_count == total_points, (
+        f"After optimization, facet total count {total_facet_count} doesn't match {total_points}"
+    )
+    # The extra point (NUM_POINTS + 1) is odd, so "blue" gets one more
+    expected_red = NUM_POINTS // 2
+    expected_blue = (NUM_POINTS // 2) + 1
+    facet_map = {hit['value']: hit['count'] for hit in facet_result['hits']}
+    assert facet_map.get("red") == expected_red, (
+        f"Expected {expected_red} red, got {facet_map.get('red')}"
+    )
+    assert facet_map.get("blue") == expected_blue, (
+        f"Expected {expected_blue} blue, got {facet_map.get('blue')}"
     )
