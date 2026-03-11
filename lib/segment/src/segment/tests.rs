@@ -6,10 +6,12 @@ use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
+use ordered_float::OrderedFloat;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use serde_json::{Number, Value};
+use sparse::common::sparse_vector::SparseVector;
 use tempfile::{Builder, TempDir};
 
 use super::*;
@@ -19,11 +21,12 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, only_default_vector,
+    DEFAULT_VECTOR_NAME, QueryVector, VectorInternal, VectorRef, only_default_vector,
 };
 use crate::entry::SnapshotEntry as _;
 use crate::entry::entry_point::{NonAppendableSegmentEntry as _, SegmentEntry as _};
 use crate::id_tracker::IdTracker;
+use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::JsonPath;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
@@ -31,10 +34,12 @@ use crate::segment_constructor::simple_segment_constructor::{
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
-    Payload, PayloadFieldSchema, PayloadSchemaType, PointIdType, SnapshotFormat, ValueVariants,
-    VectorDataConfig, VectorStorageType, WithPayload, WithVector,
+    Payload, PayloadFieldSchema, PayloadSchemaType, PointIdType, SearchParams, SnapshotFormat,
+    SparseVectorDataConfig, SparseVectorStorageType, ValueVariants, VectorDataConfig,
+    VectorStorageType, WithPayload, WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
+use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
 
 fn init_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -768,7 +773,29 @@ fn create_deferred_segment(
                     datatype: None,
                 },
             )]),
-            sparse_vector_data: Default::default(),
+            sparse_vector_data: HashMap::from_iter([
+                (
+                    "sparse".to_string(),
+                    SparseVectorDataConfig {
+                        // Don't do full scan unless explicitly enabled so we cover more parts with our tests.
+                        index: SparseIndexConfig::new(Some(1), SparseIndexType::MutableRam, None),
+                        storage_type: SparseVectorStorageType::Mmap,
+                        modifier: None,
+                    },
+                ),
+                (
+                    "sparse-plain".to_string(),
+                    SparseVectorDataConfig {
+                        index: SparseIndexConfig::new(
+                            Some(usize::MAX),
+                            SparseIndexType::MutableRam,
+                            None,
+                        ),
+                        storage_type: SparseVectorStorageType::Mmap,
+                        modifier: None,
+                    },
+                ),
+            ]),
             payload_storage_type: Default::default(),
         },
         deferred_internal_id,
@@ -792,15 +819,24 @@ fn create_deferred_segment(
 
     let mut rng = StdRng::seed_from_u64(41);
 
+    let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&default_vector));
+    for sparse_name in ["sparse", "sparse-plain"] {
+        vectors.insert(
+            sparse_name.to_string(),
+            VectorInternal::Sparse(
+                SparseVector::new(
+                    vec![0, 42, 120, 420, 512, 1000, 1024, 4200],
+                    vec![0.1, 0.42, 0.9, 1.1, 3.9, 0.21, 1.28, 0.99],
+                )
+                .unwrap(),
+            ),
+        );
+    }
+
     for i in 1..=total_vectors {
         let point_id = PointIdType::from(i as u64);
         segment
-            .insert_new_vectors(
-                point_id,
-                op_num_counter,
-                &only_default_vector(&default_vector),
-                &hw_counter,
-            )
+            .insert_new_vectors(point_id, op_num_counter, &vectors, &hw_counter)
             .unwrap();
         op_num_counter += 1;
 
@@ -1025,6 +1061,83 @@ fn test_deferred_point_read_operations() {
         },
         |i| *i,
     );
+}
+
+#[test]
+fn test_deferred_point_sparse() {
+    init_logger();
+
+    let sparse_query_vec = VectorInternal::Sparse(
+        SparseVector::new(
+            vec![42, 512, 600, 1023, 1024],
+            vec![0.1, 0.42, 0.1, 1.0, 100.0],
+        )
+        .unwrap(),
+    );
+    let sparse_nearest_vec = QueryVector::Nearest(sparse_query_vec.clone());
+
+    let sparse_feedback_query = QueryVector::FeedbackNaive(NaiveFeedbackQuery {
+        target: sparse_query_vec.clone(),
+        feedback: vec![FeedbackItem {
+            vector: sparse_query_vec.clone(),
+            score: OrderedFloat(1.0),
+        }],
+        coefficients: NaiveFeedbackCoefficients {
+            a: OrderedFloat(1.0),
+            b: OrderedFloat(1.1),
+            c: OrderedFloat(1.2),
+        },
+    });
+
+    for sparse_vec_name in ["sparse", "sparse-plain"] {
+        for exact in [false, true] {
+            // Search nearest
+            assert_deferred_points_excluded(
+                &format!("Sparse search nearest; exact={exact}; sparse_vec_name={sparse_vec_name}"),
+                |segment, filter| {
+                    segment
+                        .search(
+                            sparse_vec_name,
+                            &sparse_nearest_vec,
+                            &WithPayload::default(),
+                            &WithVector::Bool(false),
+                            filter,
+                            500,
+                            Some(&SearchParams {
+                                exact,
+                                ..Default::default()
+                            }),
+                        )
+                        .unwrap()
+                },
+                |i| i.id,
+            );
+
+            // Search feedback
+            assert_deferred_points_excluded(
+                &format!(
+                    "Sparse search feedback; exact={exact}; sparse_vec_name={sparse_vec_name}"
+                ),
+                |segment, filter| {
+                    segment
+                        .search(
+                            sparse_vec_name,
+                            &sparse_feedback_query,
+                            &WithPayload::default(),
+                            &WithVector::Bool(false),
+                            filter,
+                            500,
+                            Some(&SearchParams {
+                                exact,
+                                ..Default::default()
+                            }),
+                        )
+                        .unwrap()
+                },
+                |i| i.id,
+            );
+        }
+    }
 }
 
 /// Extensively tests whether deferred points are excluded from the result of the given `operation`.

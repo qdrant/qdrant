@@ -19,6 +19,7 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
         get_pooled_scores(),
         &is_stopped,
         &hardware_counter,
+        None,
     );
 
     let result = search_context.search(&match_all);
@@ -31,6 +32,7 @@ fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
         get_pooled_scores(),
         &is_stopped,
         &hardware_counter,
+        None,
     );
     let plain_result = search_context.plain_search(&docs);
 

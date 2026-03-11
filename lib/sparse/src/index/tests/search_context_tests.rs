@@ -125,6 +125,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hw_counter,
+            None,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
     }
@@ -152,6 +153,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(
@@ -210,6 +212,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(
@@ -252,6 +255,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(
@@ -306,6 +310,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(
@@ -347,6 +352,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(
@@ -399,6 +405,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -433,6 +440,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -472,6 +480,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
@@ -527,6 +536,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         assert_eq!(search_context.posting_list_len(0), 2);
@@ -559,6 +569,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         let scores = search_context.plain_search(&[1, 3, 2]);
@@ -613,6 +624,7 @@ mod tests {
             get_pooled_scores(),
             &is_stopped,
             &hardware_counter,
+            None,
         );
 
         let scores = search_context.plain_search(&[1, 2, 3]);
