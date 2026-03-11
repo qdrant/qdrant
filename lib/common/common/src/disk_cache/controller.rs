@@ -218,9 +218,11 @@ static GLOBAL: OnceLock<Arc<CacheController>> = OnceLock::new();
 
 impl CacheController {
     pub fn initialize_global(path: &Path, size_bytes: u64) {
-        assert!(GLOBAL.get().is_none(), "cacher is already initialized");
-        let cacher = Self::new(path, size_bytes).expect("failed to initialize cacher");
-        GLOBAL.set(cacher).expect("cacher is already initialized");
+        assert!(GLOBAL.get().is_none(), "disk cacher is already initialized");
+        let cacher = Self::new(path, size_bytes).expect("failed to initialize disk cacher");
+        GLOBAL
+            .set(cacher)
+            .expect("disk cacher is already initialized");
     }
 
     pub fn global() -> Option<&'static Arc<CacheController>> {

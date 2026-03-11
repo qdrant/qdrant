@@ -7,7 +7,6 @@ mod tests;
 use std::ops::Range;
 
 pub use cached_file::CachedFile;
-pub use cached_slice::{CachedSlice, unsafe_transmute_zerocopy_vec};
 pub use controller::CacheController;
 
 /// We cache data in blocks of this size.
@@ -20,10 +19,7 @@ struct FileId(u32);
 
 /// Offset within a file, in blocks.
 ///
-/// `u32` with 4 KiB blocks is enough for up to 16 TiB files.
-/// TODO(xzfc): maybe `u16` would be enough?
-///     (luis): It would restrict it to 268 MiB, definitely not enough
-///     (xzfc): right now, our chunks are 32 MiB (`CHUNK_SIZE`)
+/// `u32` with 16 KiB blocks covers up to 70 TiB worth of data
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct BlockOffset(u32);
 

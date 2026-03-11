@@ -2,10 +2,8 @@
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
-use std::mem::{self, ManuallyDrop};
+use std::mem;
 use std::ops::Range;
-
-use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use super::CachedFile;
 
@@ -18,7 +16,7 @@ pub struct CachedSlice<T> {
 impl<T> CachedSlice<T>
 where
     [T]: ToOwned<Owned = Vec<T>>,
-    T: Clone + FromBytes + Immutable + KnownLayout,
+    T: Clone + bytemuck::Pod,
 {
     pub fn new(cached_file: CachedFile) -> Self {
         Self {
@@ -44,11 +42,10 @@ where
 
         match data {
             Cow::Borrowed(bytes) => {
-                let slice = <[T]>::ref_from_bytes(bytes)
-                    .expect("byte slice is not a valid &[T] (alignment or size mismatch)");
+                let slice = bytemuck::cast_slice(bytes);
                 Cow::Borrowed(slice)
             }
-            Cow::Owned(vec_u8) => Cow::Owned(transmute_zerocopy_vec(vec_u8)),
+            Cow::Owned(vec_u8) => Cow::Owned(bytemuck::cast_vec(vec_u8)),
         }
     }
 
@@ -57,52 +54,7 @@ where
         (0..total_len).map(|idx| self.get(idx))
     }
 
-    #[expect(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.cached_file.len() / mem::size_of::<T>()
     }
-}
-
-pub fn transmute_zerocopy_vec<T>(vec_u8: Vec<u8>) -> Vec<T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-    T: Clone + FromBytes + Immutable + KnownLayout,
-{
-    unsafe { unsafe_transmute_zerocopy_vec(vec_u8) }
-}
-
-pub unsafe fn unsafe_transmute_zerocopy_vec<T>(mut vec_u8: Vec<u8>) -> Vec<T> {
-    let t_size = mem::size_of::<T>();
-
-    // Make sure `capacity` is also an exact multiple of `size_of::<T>()`
-    vec_u8.shrink_to_fit();
-
-    debug_assert_eq!(
-        vec_u8.len() % t_size,
-        0,
-        "byte length {} is not a multiple of element size {}",
-        vec_u8.len(),
-        t_size,
-    );
-    debug_assert_eq!(
-        vec_u8.capacity() % t_size,
-        0,
-        "byte capacity {} is not a multiple of element size {}",
-        vec_u8.capacity(),
-        t_size,
-    );
-
-    let len = vec_u8.len() / t_size;
-    let cap = vec_u8.capacity() / t_size;
-    let mut vec_u8 = ManuallyDrop::new(vec_u8);
-    let ptr = vec_u8.as_mut_ptr().cast::<T>();
-
-    // SAFETY:
-    // - `T: FromBytes` (zerocopy) guarantees that any initialized
-    //   byte pattern constitutes a valid `T` value.
-    // - `shrink_to_fit()` brings capacity down to len,
-    //   so `cap * size_of::<T>()` matches the allocation size.
-    // - The buffer originates from a `ManuallyDrop<Vec<u8>>`;
-    //   `ManuallyDrop` prevents double-free.
-    unsafe { Vec::from_raw_parts(ptr, len, cap) }
 }

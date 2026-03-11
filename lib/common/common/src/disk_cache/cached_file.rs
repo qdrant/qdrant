@@ -30,7 +30,7 @@ impl CachedFile {
         debug_assert!(bytes_range.start <= bytes_range.end);
         debug_assert!(bytes_range.end <= self.len);
 
-        blocks_for_range_in(self.file_id, bytes_range)
+        blocks_for_range_in_file(self.file_id, bytes_range)
     }
 
     /// Get a Cow reference to the range of bytes within the file.
@@ -41,6 +41,7 @@ impl CachedFile {
         let total_len = range.end - range.start;
         let mut blocks_iter = self.blocks_for(range);
 
+        // TODO(perf): if blocks are consecutive in the big cache file, we can still return without allocating.
         if blocks_iter.len() == 1 {
             // single value case, just return the reference
             let req = blocks_iter.next().expect("We just checked len() == 1");
@@ -75,7 +76,7 @@ impl CachedFile {
 
 // Extracted to make testing simpler
 #[inline(always)]
-fn blocks_for_range_in(
+fn blocks_for_range_in_file(
     file_id: FileId,
     bytes_range: Range<usize>,
 ) -> impl ExactSizeIterator<Item = BlockRequest> {
@@ -124,7 +125,7 @@ mod tests {
         //     block 0
         // |                          ... |
         //  < range >
-        let blocks: Vec<_> = blocks_for_range_in(file_id, 0..100).collect();
+        let blocks: Vec<_> = blocks_for_range_in_file(file_id, 0..100).collect();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].key.offset.0, 0);
         assert_eq!(blocks[0].range, 0..100);
@@ -133,7 +134,7 @@ mod tests {
         // |                |                 |
         //              < range >
         let blocks: Vec<_> =
-            blocks_for_range_in(file_id, BLOCK_SIZE - 50..BLOCK_SIZE + 50).collect();
+            blocks_for_range_in_file(file_id, BLOCK_SIZE - 50..BLOCK_SIZE + 50).collect();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].key.offset.0, 0);
         assert_eq!(blocks[0].range, (BLOCK_SIZE - 50)..BLOCK_SIZE);
@@ -143,7 +144,8 @@ mod tests {
         //     block 2      block 3
         // |            |             |
         // <          range           >
-        let blocks: Vec<_> = blocks_for_range_in(file_id, BLOCK_SIZE * 2..BLOCK_SIZE * 4).collect();
+        let blocks: Vec<_> =
+            blocks_for_range_in_file(file_id, BLOCK_SIZE * 2..BLOCK_SIZE * 4).collect();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].key.offset.0, 2);
         assert_eq!(blocks[0].range, 0..BLOCK_SIZE);
@@ -153,7 +155,8 @@ mod tests {
         //  block 9  (last full block)   block 10 (partial block with trailing data)
         // |                           |         000000000000000000000|
         //    <         range                   >
-        let blocks: Vec<_> = blocks_for_range_in(file_id, BLOCK_SIZE * 9 + 50..file_len).collect();
+        let blocks: Vec<_> =
+            blocks_for_range_in_file(file_id, BLOCK_SIZE * 9 + 50..file_len).collect();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].key.offset.0, 9);
         assert_eq!(blocks[0].range, 50..BLOCK_SIZE);
