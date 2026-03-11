@@ -104,7 +104,9 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
+                result_size += index
+                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -115,7 +117,9 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
+                result_size += index
+                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -141,7 +145,9 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
+                result_size += index
+                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .len();
                 query_count += 1;
             },
             BatchSize::SmallInput,
@@ -152,7 +158,9 @@ fn range_filtering(c: &mut Criterion) {
         b.iter_batched(
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
-                result_size += index.query_points(&filter, &hw_counter, &is_stopped).len();
+                result_size += index
+                    .query_points(&filter, &hw_counter, &is_stopped, None)
+                    .len();
                 query_count += 1;
             },
             BatchSize::SmallInput,

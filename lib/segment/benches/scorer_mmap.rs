@@ -70,7 +70,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
                     borrowed_id_tracker.deleted_point_bitslice(),
                     10,
                 )
-                .peek_top_all(&DEFAULT_STOPPED)
+                .peek_top_all(&DEFAULT_STOPPED, None)
                 .unwrap()
             },
             BatchSize::SmallInput,
@@ -107,7 +107,7 @@ fn benchmark_scorer_mmap_4(c: &mut Criterion) {
                     borrowed_id_tracker.deleted_point_bitslice(),
                     10,
                 )
-                .peek_top_all(&DEFAULT_STOPPED)
+                .peek_top_all(&DEFAULT_STOPPED, None)
                 .unwrap()
             },
             BatchSize::SmallInput,

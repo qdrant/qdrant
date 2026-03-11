@@ -316,14 +316,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
                         let filtered_points =
-                            payload_index.query_points(filter, &hw_counter, &is_stopped);
+                            payload_index.query_points(filter, &hw_counter, &is_stopped, None);
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
                 searcher.peek_top_iter(&mut filtered_points, &is_stopped)?
             }
-            None => searcher.peek_top_all(&is_stopped)?,
+            None => searcher.peek_top_all(&is_stopped, None)?,
         };
         let res = results.pop().expect("single element results");
         Ok(res)
@@ -353,7 +353,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let ids = match prefiltered_points {
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = payload_index.query_points(filter, &hw_counter, &is_stopped);
+                let filtered_points =
+                    payload_index.query_points(filter, &hw_counter, &is_stopped, None);
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }

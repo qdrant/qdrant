@@ -620,9 +620,11 @@ impl StructPayloadIndex {
         query_cardinality: &'a CardinalityEstimation,
         hw_counter: &'a HardwareCounterCell,
         is_stopped: &'a AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator = id_tracker.iter_internal();
+            let full_scan_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
+
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points = full_scan_iterator
@@ -647,8 +649,15 @@ impl StructPayloadIndex {
                     .iter_conditions()
                     .all(|condition| query_cardinality.is_primary(condition));
 
-                let joined_primary_iterator =
-                    primary_iterators.into_iter().flatten().stop_if(is_stopped);
+                let joined_primary_iterator = primary_iterators
+                    .into_iter()
+                    // Filter out deferred points.
+                    // This iterator (and each primary iterator too) can yield items in non sorted order, depending on the type of index and primary condition.
+                    .flatten()
+                    .filter(move |&internal_id| {
+                        internal_id < deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+                    })
+                    .stop_if(is_stopped);
 
                 return if all_conditions_are_primary {
                     // All conditions are primary clauses,
@@ -671,7 +680,7 @@ impl StructPayloadIndex {
             // and applying full filter.
             let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
-            let id_tracker_iterator = id_tracker.iter_internal();
+            let id_tracker_iterator = id_tracker.iter_internal_visible(deferred_internal_id);
 
             let iter = id_tracker_iterator
                 .stop_if(is_stopped)
@@ -953,6 +962,7 @@ impl PayloadIndex for StructPayloadIndex {
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(filter, hw_counter);
@@ -963,6 +973,7 @@ impl PayloadIndex for StructPayloadIndex {
             &query_cardinality,
             hw_counter,
             is_stopped,
+            deferred_internal_id,
         )
         .collect()
     }

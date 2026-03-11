@@ -752,6 +752,7 @@ impl HNSWIndex {
                 &cardinality_estimation,
                 &disposed_hw_counter,
                 stopped,
+                None,
             )
             .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
             .collect()
@@ -1281,6 +1282,8 @@ impl HNSWIndex {
             &query_cardinality,
             hw_counter,
             is_stopped,
+            // No deferred filtering here since it's HNSW index.
+            None,
         );
         self.search_plain_batched(vectors, filtered_points, top, params, vector_query_context)
     }
