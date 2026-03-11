@@ -96,7 +96,7 @@ def main() -> None:
 
     # Copy resources.
     shutil.copytree(REPO_ROOT / "lib/segment/tokenizer", AMALGAMATION / "tokenizer")
-    shutil.copy2(Path(__file__).parent / "crates-io-readme.md", AMALGAMATION / "README.md")
+    shutil.copy2(Path(__file__).parent / "README.md", AMALGAMATION / "README.md")
 
     # Write Cargo.toml.
     manifest = {

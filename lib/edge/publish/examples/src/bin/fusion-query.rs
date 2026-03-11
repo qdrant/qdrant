@@ -11,10 +11,8 @@ use qdrant_edge::segment::types::{
 use qdrant_edge::shard::query::query_enum::QueryEnum;
 use qdrant_edge::shard::query::{FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 
-const DATA_DIR: &str = "./data/fusion-query";
-
 fn main() -> Result<(), Box<dyn Error>> {
-    let shard = load_new_shard(DATA_DIR)?;
+    let shard = load_new_shard()?;
     fill_dummy_data(&shard)?;
 
     let search_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(

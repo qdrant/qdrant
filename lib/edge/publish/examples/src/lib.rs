@@ -9,24 +9,25 @@ use qdrant_edge::EdgeShard;
 use qdrant_edge::config::shard::EdgeShardConfig;
 use qdrant_edge::config::vectors::EdgeVectorParams;
 use qdrant_edge::segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
-use qdrant_edge::segment::types::{
-    Distance, ExtendedPointId, Payload, PayloadStorageType, VectorDataConfig, VectorStorageType,
-};
+use qdrant_edge::segment::types::{Distance, ExtendedPointId, Payload};
 use qdrant_edge::shard::operations::CollectionUpdateOperations::PointOperation;
 use qdrant_edge::shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use qdrant_edge::shard::operations::point_ops::PointOperations::UpsertPoints;
 use qdrant_edge::shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use serde_json::{Value, json};
 
-pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
+pub const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");
+pub const TMP_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/tmp");
+
+pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
     println!("---- Load shard ----");
 
-    // Clear and recreate data directory
-    if Path::new(data_dir).exists() {
-        fs_err::remove_dir_all(data_dir)?;
+    // Clear and recreate tmp directory
+    if Path::new(TMP_DIR).exists() {
+        fs_err::remove_dir_all(TMP_DIR)?;
     }
 
-    fs_err::create_dir_all(data_dir)?;
+    fs_err::create_dir_all(TMP_DIR)?;
 
     // Load Qdrant Edge shard
     let config = EdgeShardConfig {
@@ -49,7 +50,7 @@ pub fn load_new_shard(data_dir: &str) -> Result<EdgeShard, Box<dyn Error>> {
         optimizers: Default::default(),
     };
 
-    Ok(EdgeShard::load(Path::new(data_dir), Some(config))?)
+    Ok(EdgeShard::load(Path::new(TMP_DIR), Some(config))?)
 }
 
 pub fn fill_dummy_data(shard: &EdgeShard) -> Result<(), Box<dyn Error>> {

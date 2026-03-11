@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use examples::{load_new_shard, point};
+use examples::{TMP_DIR, load_new_shard, point};
 use ordered_float::OrderedFloat;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::data_types::vectors::{
@@ -29,8 +29,6 @@ use qdrant_edge::shard::search::CoreSearchRequest;
 use qdrant_edge::sparse::common::sparse_vector::SparseVector;
 use serde_json::json;
 use uuid::Uuid;
-
-const DATA_DIR: &str = "./data/demo";
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("---- Point conversions ----");
@@ -60,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("---- Load shard ----");
 
-    let shard = load_new_shard(DATA_DIR)?;
+    let shard = load_new_shard()?;
 
     println!("---- Upsert ----");
 
@@ -271,7 +269,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     drop(shard);
 
-    let reopened_shard = EdgeShard::load(Path::new(DATA_DIR), None)?;
+    let reopened_shard = EdgeShard::load(Path::new(TMP_DIR), None)?;
     println!(
         "Edge shard reopened. Approx Points: {}",
         reopened_shard.info().points_count

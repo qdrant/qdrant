@@ -1,0 +1,104 @@
+name: Qdrant Edge Tests
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  edge-test:
+    name: Test Qdrant Edge
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # For PRs, only run on ubuntu to save CI time
+        os: >-
+          ${{
+            github.event_name == 'pull_request'
+            && fromJSON('["ubuntu-latest"]')
+            || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]')
+          }}
+
+    steps:
+      - name: Checkout Qdrant
+        uses: actions/checkout@v6
+
+      - name: Install Rust nightly (for fmt)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install mold
+        if: runner.os == 'Linux'
+        uses: rui314/setup-mold@v1
+
+      - name: Enable mold
+        if: runner.os == 'Linux'
+        run: |
+          mkdir .cargo
+
+          cat >.cargo/config.toml <<-EOF
+          [target.x86_64-unknown-linux-gnu]
+          linker = "clang"
+          rustflags = ["-C", "link-arg=-fuse-ld=/usr/local/bin/mold"]
+          EOF
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install Just
+        uses: extractions/setup-just@v3
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install tools
+        run: |
+          uv tool install ast-grep-cli
+          uv tool install maturin
+
+      - name: Setup Qdrant
+        uses: ./.github/actions/setup-qdrant
+
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prepare data files
+        id: rs-prepare-data
+        working-directory: lib/edge
+        run: just prepare-data
+
+      - name: 🦀 Check Rust
+        working-directory: lib/edge
+        run: just rs-check
+
+      - name: 🦀 Build Rust examples
+        working-directory: lib/edge
+        run: just rs-examples-build
+
+      - name: 🦀 Run Rust examples
+        working-directory: lib/edge
+        run: just rs-examples
+
+      - name: 🐍 Build Python edge
+        working-directory: lib/edge/python
+        run: just py-build
+
+      - name: 🐍 Run Python examples
+        working-directory: lib/edge
+        run: just py-examples
+
+      - name: Check for uncommitted changes
+        if: always()
+        run: git diff --exit-code

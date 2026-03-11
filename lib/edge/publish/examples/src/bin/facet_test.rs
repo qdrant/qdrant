@@ -1,32 +1,34 @@
 use std::error::Error;
 use std::path::Path;
 
+use examples::DATA_DIR;
 use qdrant_edge::EdgeShard;
 use qdrant_edge::shard::facet::FacetRequestInternal;
 
-const SNAPSHOT_PATH: &str = "./data/facet_test/shard.snapshot";
-const DATA_DIR: &str = "./data/facet_test/shard_data";
-
 fn main() -> Result<(), Box<dyn Error>> {
-    if !Path::new(SNAPSHOT_PATH).exists() {
-        eprintln!("Snapshot not found at {SNAPSHOT_PATH}");
-        eprintln!("Run examples/prepare_facet_snapshot.sh first to create it.");
+    let facet_dir = Path::new(DATA_DIR).join("facet_test");
+    let snapshot_path = facet_dir.join("shard.snapshot");
+    let shard_data = facet_dir.join("shard_data");
+
+    if !snapshot_path.exists() {
+        eprintln!("Snapshot not found at {}", snapshot_path.display());
+        eprintln!("Run tools/prepare_facet_snapshot.sh first to create it.");
         std::process::exit(1);
     }
 
     println!("---- Unpack snapshot ----");
 
     // Clean up existing data directory
-    if Path::new(DATA_DIR).exists() {
-        fs_err::remove_dir_all(DATA_DIR)?;
+    if shard_data.exists() {
+        fs_err::remove_dir_all(&shard_data)?;
     }
 
     // Unpack snapshot
-    EdgeShard::unpack_snapshot(Path::new(SNAPSHOT_PATH), Path::new(DATA_DIR))?;
-    println!("Snapshot unpacked to {DATA_DIR}");
+    EdgeShard::unpack_snapshot(&snapshot_path, &shard_data)?;
+    println!("Snapshot unpacked to {}", shard_data.display());
 
     println!("---- Load shard ----");
-    let shard = EdgeShard::load(Path::new(DATA_DIR), None)?;
+    let shard = EdgeShard::load(&shard_data, None)?;
     println!("Shard loaded. Points: {}", shard.info().points_count);
 
     println!("---- Test Facet on 'color' field ----");
