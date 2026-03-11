@@ -338,7 +338,11 @@ fn upsert_with_payload(
 /// Max amount of points to delete in a batched deletion iteration
 const DELETION_BATCH_SIZE: usize = 512;
 
-/// Tries to delete points from all segments, returns number of actually deleted points
+/// Tries to delete points from all segments, returns number of actually deleted points.
+///
+/// Iterates all segments directly (rather than going through `apply_points`) to ensure
+/// that ALL copies of a point are deleted, including old non-deferred copies in optimized
+/// segments when the latest version is deferred in an appendable segment.
 pub fn delete_points(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -348,12 +352,19 @@ pub fn delete_points(
     let mut total_deleted_points = 0;
 
     for batch in ids.chunks(DELETION_BATCH_SIZE) {
-        let deleted_points =
-            segments.apply_points(batch, hw_counter, |id, _idx, write_segment| {
-                write_segment.delete_point(op_num, id, hw_counter)
-            })?;
+        for (_segment_id, segment) in segments.iter() {
+            let segment_arc = segment.get();
+            let mut write_segment = segment_arc.write();
+            for &id in batch {
+                if write_segment.delete_point(op_num, id, hw_counter)? {
+                    total_deleted_points += 1;
+                }
+            }
+        }
+    }
 
-        total_deleted_points += deleted_points;
+    if total_deleted_points == 0 {
+        segments.bump_max_segment_version_overwrite(op_num);
     }
 
     Ok(total_deleted_points)
