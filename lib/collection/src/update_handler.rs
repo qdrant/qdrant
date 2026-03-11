@@ -110,10 +110,8 @@ pub struct UpdateHandler {
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
 
-    /// If specified, this threshold (in kilobytes) configures a max size of unoptimized segment
-    /// which can still be updated. If there are unoptimized segments larger than this threshold,
-    /// updates will be blocked until those segments are optimized.
-    pub prevent_unoptimized_threshold_kb: Option<usize>,
+    /// If enabled, use deferred points to skip them from read/search while they are not optimized.
+    pub prevent_unoptimized: bool,
 
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
@@ -150,7 +148,7 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
-        prevent_unoptimized_threshold_kb: Option<usize>,
+        prevent_unoptimized: bool,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
         scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
@@ -177,7 +175,7 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
-            prevent_unoptimized_threshold_kb,
+            prevent_unoptimized,
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
@@ -232,8 +230,7 @@ impl UpdateHandler {
             segments,
             scroll_read_lock,
             update_tracker,
-            self.prevent_unoptimized_threshold_kb,
-            self.optimization_handles.clone(),
+            self.prevent_unoptimized,
             optimization_finished_receiver,
             applied_seq_handler,
             cancel,

@@ -216,7 +216,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     let hw_acc = HwMeasurementAcc::new();
     let timeout = Duration::from_secs(30);
 
-    // Step 1: Insert initial batch of points
+    // Step 1: Insert initial batch of points (wait=true to ensure they are persisted)
     shard
         .update(upsert_op(random_points()), true, None, hw_acc.clone())
         .await
@@ -226,12 +226,16 @@ async fn test_deferred_points_dedup_after_optimization() {
     wait_optimization(&shard, timeout).await;
 
     // Step 2: Overwrite all point values with new random vectors — this triggers CoW.
-    // The overwritten points now have newer versions and may coexist with
-    // deferred copies in the appendable segment.
+    // Use wait=false so that the update doesn't block waiting for deferred points to be
+    // resolved (with prevent_unoptimized=true, wait=true would wait for optimization).
+    // Then use plunge_async to ensure the update is actually applied before checking.
     shard
-        .update(upsert_op(random_points()), true, None, hw_acc.clone())
+        .update(upsert_op(random_points()), false, None, hw_acc.clone())
         .await
         .unwrap();
+
+    // Wait for empty update worker
+    shard.plunge_async().await.unwrap().await.unwrap();
 
     // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
     let has_deferred = shard
@@ -250,9 +254,12 @@ async fn test_deferred_points_dedup_after_optimization() {
     // Step 3: Overwrite again — this creates another round of CoW on top of the
     // previous deferred points, stressing the deduplication logic further.
     shard
-        .update(upsert_op(random_points()), true, None, hw_acc.clone())
+        .update(upsert_op(random_points()), false, None, hw_acc.clone())
         .await
         .unwrap();
+
+    // Wait for empty update worker
+    shard.plunge_async().await.unwrap().await.unwrap();
 
     // Check that there are deferred points in the shard, otherwise the test scenario is not valid.
     let has_deferred = shard

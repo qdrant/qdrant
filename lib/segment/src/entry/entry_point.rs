@@ -404,4 +404,6 @@ pub trait SegmentEntry: NonAppendableSegmentEntry {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
+
+    fn has_deferred_points(&self) -> bool;
 }

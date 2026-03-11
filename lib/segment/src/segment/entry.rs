@@ -1088,4 +1088,11 @@ impl SegmentEntry for Segment {
             }),
         })
     }
+
+    fn has_deferred_points(&self) -> bool {
+        if let Some(deferred_from) = self.deferred_internal_id {
+            return self.is_appendable() && self.total_point_count() > deferred_from as usize;
+        };
+        false
+    }
 }

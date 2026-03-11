@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::entry::NonAppendableSegmentEntry as _;
+use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry};
 use segment::segment::Segment;
 use segment::types::HnswGlobalConfig;
 
