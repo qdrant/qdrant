@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::path::Path;
 
-use examples::{load_new_shard, point};
+use examples::{TMP_DIR, load_new_shard, point};
 use qdrant_edge::EdgeShard;
 use qdrant_edge::segment::data_types::vectors::VectorStructInternal;
 use qdrant_edge::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
@@ -14,11 +14,9 @@ use qdrant_edge::shard::scroll::ScrollRequestInternal;
 use serde_json::json;
 use uuid::Uuid;
 
-const DATA_DIR: &str = "./data/load-existing";
-
 fn main() -> Result<(), Box<dyn Error>> {
     // Create *new* edge shard and upsert some points
-    let edge = load_new_shard(DATA_DIR)?;
+    let edge = load_new_shard()?;
 
     edge.update(PointOperation(UpsertPoints(PointsList(vec![
         point(
@@ -74,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Re-load edge shard from disk, assert points are available
     drop(edge);
-    let edge = EdgeShard::load(Path::new(DATA_DIR), None)?;
+    let edge = EdgeShard::load(Path::new(TMP_DIR), None)?;
 
     let (points, _) = edge.scroll(ScrollRequestInternal {
         offset: None,

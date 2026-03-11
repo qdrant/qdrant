@@ -187,5 +187,5 @@ print("---- Close and reopen shard ----")
 
 shard.close()
 
-reopened_shard = EdgeShard(DATA_DIRECTORY)
+reopened_shard = EdgeShard(TMP_DIR)
 print(f"Edge shard reopened. Approx Points: {reopened_shard.info().points_count}")

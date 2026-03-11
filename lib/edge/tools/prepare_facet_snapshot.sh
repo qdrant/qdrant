@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates snapshot for `facet_test.rs` example.
+# Creates snapshot for the `facet_test.rs` example.
 
 SNAPSHOT_DIR="./data/facet_test"
 QDRANT_URL="http://localhost:6333"

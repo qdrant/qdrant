@@ -1,23 +1,9 @@
-# Python Bindings for Qdrant Edge
+# Qdrant Edge
 
-Setup environment
+Qdrant Edge is a lightweight, in-process vector search engine designed for embedded devices, autonomous systems, and mobile agents. It enables on-device retrieval with minimal memory footprint, no background services, and optional synchronization with Qdrant Cloud.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
+For connecting to remote Qdrant instances, use the [`qdrant-client`](https://pypi.org/project/qdrant-client/) package instead.
 
-pip install --user maturin
-```
-
-Build and install the package
-
-```bash
-cd lib/edge/python
-maturin develop --no-default-features
-```
-
-Run example
-
-```bash
-python examples/demo.py
-```
+- Website: https://qdrant.tech/edge/
+- Documentation: https://qdrant.tech/documentation/edge/
+- Examples: https://github.com/qdrant/qdrant/tree/dev/lib/edge/python/examples
