@@ -589,6 +589,31 @@ ACTION_ACCESS = {
     "clear_issues": EndpointAccess(False, False, True, "DELETE /issues"),
     "get_logger_config": EndpointAccess(True, False, True, "GET /logger", coll_r=False),
     "update_logger_config": EndpointAccess(False, False, True, "POST /logger"),
+    ### StorageRead (gRPC only, no REST equivalent) ###
+    "storage_read_list_files": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ListFiles"
+    ),
+    "storage_read_file_exists": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/FileExists"
+    ),
+    "storage_read_file_length": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/FileLength"
+    ),
+    "storage_read_read_bytes": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ReadBytes"
+    ),
+    "storage_read_read_bytes_stream": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ReadBytesStream"
+    ),
+    "storage_read_read_whole": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ReadWhole"
+    ),
+    "storage_read_read_batch": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ReadBatch"
+    ),
+    "storage_read_read_multi": EndpointAccess(
+        True, True, True, None, "qdrant.StorageRead/ReadMulti"
+    ),
 }
 
 
@@ -760,83 +785,84 @@ def check_access(
 
     assert isinstance(action_access, EndpointAccess)
 
-    ## Check Rest
-    method, path = action_access.rest_endpoint.split(" ")
-
     allowed_for = action_access.access
 
-    check_rest_access(
-        method, path, rest_request, allowed_for.read, TOKEN_R, path_params, rest_req_kwargs
-    )
-    check_rest_access(
-        method, path, rest_request, allowed_for.coll_r, TOKEN_COLL_R, path_params, rest_req_kwargs
-    )
-    check_rest_access(
-        method,
-        path,
-        rest_request,
-        allowed_for.coll_rw,
-        TOKEN_COLL_RW,
-        path_params,
-        rest_req_kwargs,
-    )
-    check_rest_access(
-        method,
-        path,
-        rest_request,
-        allowed_for.everything or False,  # Payload constraints deprecated
-        TOKEN_COLL_R_PAYLOAD,
-        path_params,
-        rest_req_kwargs,
-        expected_status_code=401,
-    )
-    check_rest_access(
-        method,
-        path,
-        rest_request,
-        allowed_for.everything or False,  # Payload constraints deprecated
-        TOKEN_COLL_RW_PAYLOAD,
-        path_params,
-        rest_req_kwargs,
-        expected_status_code=401,
-    )
+    ## Check Rest
+    if action_access.rest_endpoint is not None:
+        method, path = action_access.rest_endpoint.split(" ")
 
-    if allowed_for.coll_prw is not None:
+        check_rest_access(
+            method, path, rest_request, allowed_for.read, TOKEN_R, path_params, rest_req_kwargs
+        )
+        check_rest_access(
+            method, path, rest_request, allowed_for.coll_r, TOKEN_COLL_R, path_params, rest_req_kwargs
+        )
         check_rest_access(
             method,
             path,
             rest_request,
-            allowed_for.coll_prw,
-            TOKEN_COLL_PRW,
+            allowed_for.coll_rw,
+            TOKEN_COLL_RW,
+            path_params,
+            rest_req_kwargs,
+        )
+        check_rest_access(
+            method,
+            path,
+            rest_request,
+            allowed_for.everything or False,  # Payload constraints deprecated
+            TOKEN_COLL_R_PAYLOAD,
+            path_params,
+            rest_req_kwargs,
+            expected_status_code=401,
+        )
+        check_rest_access(
+            method,
+            path,
+            rest_request,
+            allowed_for.everything or False,  # Payload constraints deprecated
+            TOKEN_COLL_RW_PAYLOAD,
+            path_params,
+            rest_req_kwargs,
+            expected_status_code=401,
+        )
+
+        if allowed_for.coll_prw is not None:
+            check_rest_access(
+                method,
+                path,
+                rest_request,
+                allowed_for.coll_prw,
+                TOKEN_COLL_PRW,
+                path_params,
+                rest_req_kwargs,
+            )
+
+        check_rest_access(
+            method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
+        )
+
+        # Check that API key is the same as manage token
+        check_rest_access(
+            method,
+            path,
+            rest_request,
+            allowed_for.manage,
+            SECRET,
             path_params,
             rest_req_kwargs,
         )
 
-    check_rest_access(
-        method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
-    )
-
-    # Check that API key is the same as manage token
-    check_rest_access(
-        method,
-        path,
-        rest_request,
-        allowed_for.manage,
-        SECRET,
-        path_params,
-        rest_req_kwargs,
-    )
-
-    # Check that read-only API key is the same as read-only token
-    check_rest_access(
-        method,
-        path,
-        rest_request,
-        allowed_for.read,
-        READ_ONLY_API_KEY,
-        path_params,
-        rest_req_kwargs,
-    )
+        # Check that read-only API key is the same as read-only token
+        check_rest_access(
+            method,
+            path,
+            rest_request,
+            allowed_for.read,
+            READ_ONLY_API_KEY,
+            path_params,
+            rest_req_kwargs,
+        )
 
     ## Check GRPC
     grpc_endpoint = action_access.grpc_endpoint
@@ -1923,3 +1949,73 @@ def test_get_logger_config():
 
 def test_update_logger_config():
     check_access("update_logger_config", {})
+
+
+def test_storage_read_list_files():
+    check_access(
+        "storage_read_list_files",
+        grpc_request={"collection_name": COLL_NAME, "prefix_path": ""},
+    )
+
+
+def test_storage_read_file_exists():
+    check_access(
+        "storage_read_file_exists",
+        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+    )
+
+
+def test_storage_read_file_length():
+    check_access(
+        "storage_read_file_length",
+        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+    )
+
+
+def test_storage_read_read_bytes():
+    check_access(
+        "storage_read_read_bytes",
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "path": "nonexistent.bin",
+            "offset": 0,
+            "length": 1,
+        },
+    )
+
+
+def test_storage_read_read_bytes_stream():
+    check_access(
+        "storage_read_read_bytes_stream",
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "path": "nonexistent.bin",
+            "offset": 0,
+            "length": 1,
+        },
+    )
+
+
+def test_storage_read_read_whole():
+    check_access(
+        "storage_read_read_whole",
+        grpc_request={"collection_name": COLL_NAME, "path": "nonexistent.bin"},
+    )
+
+
+def test_storage_read_read_batch():
+    check_access(
+        "storage_read_read_batch",
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "path": "nonexistent.bin",
+            "ranges": [],
+        },
+    )
+
+
+def test_storage_read_read_multi():
+    check_access(
+        "storage_read_read_multi",
+        grpc_request={"collection_name": COLL_NAME, "reads": []},
+    )
