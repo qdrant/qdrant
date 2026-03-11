@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use shard::count::CountRequestInternal;
 
@@ -89,6 +90,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                 }),
                 None,
                 hw_acc,
+                DeferredBehavior::IncludeAll,
             )
             .await?
         else {

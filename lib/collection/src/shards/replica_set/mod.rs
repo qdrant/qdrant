@@ -19,6 +19,7 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
+use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
 use segment::types::{ExtendedPointId, Filter, SeqNumberType, ShardKey};
 use serde::{Deserialize, Serialize};
@@ -1045,6 +1046,7 @@ impl ShardReplicaSet {
         filter: Filter,
         hw_measurement_acc: HwMeasurementAcc,
         force: bool,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<UpdateResult> {
         let local_shard_guard = self.local.read().await;
 
@@ -1071,6 +1073,7 @@ impl ShardReplicaSet {
                     &self.search_runtime,
                     None,
                     hw_measurement_acc.clone(),
+                    deferred_behavior,
                 )
                 .await?;
 

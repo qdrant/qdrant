@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
+use common::types::{DeferredBehavior, ScoreType};
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
@@ -400,6 +400,7 @@ impl EdgeShard {
         Ok(top_mmr)
     }
 
+    /// This function always filters deferred points.
     fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
@@ -426,6 +427,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
+            DeferredBehavior::Filter,
         )?;
 
         // It might be possible, that we won't find all records,

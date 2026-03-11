@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use itertools::Itertools as _;
 use rand::RngExt;
 use rand::distr::weighted::WeightedIndex;
@@ -149,6 +150,7 @@ impl EdgeShard {
                     filter,
                     &AtomicBool::new(false),
                     &hw_counter,
+                    DeferredBehavior::Filter,
                 )
             })
             .collect();
@@ -169,6 +171,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
+            DeferredBehavior::Filter,
         )?;
 
         let ordered_points = point_ids
@@ -201,6 +204,7 @@ impl EdgeShard {
                     order_by,
                     &AtomicBool::new(false),
                     &hw_counter,
+                    DeferredBehavior::Filter,
                 )
             })
             .collect::<Result<_, _>>()?;
@@ -223,6 +227,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
+            DeferredBehavior::Filter,
         )?;
 
         let ordered_points = point_ids
@@ -327,6 +332,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             hw_measurement_acc,
+            DeferredBehavior::Filter,
         )?
         .into_values()
         .collect();

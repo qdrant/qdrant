@@ -4,6 +4,7 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::tar_unpack::tar_unpack_file;
+use common::types::DeferredBehavior;
 use fs_err as fs;
 use fs_err::File;
 use ordered_float::OrderedFloat;
@@ -1028,7 +1029,14 @@ fn test_deferred_point_read_operations() {
     assert_deferred_points_excluded(
         "Read Filtered",
         |segment, filter| {
-            segment.read_filtered(None, None, filter, &AtomicBool::new(false), &hw_counter)
+            segment.read_filtered(
+                None,
+                None,
+                filter,
+                &AtomicBool::new(false),
+                &hw_counter,
+                DeferredBehavior::Filter,
+            )
         },
         |i| *i,
         true,
@@ -1049,6 +1057,7 @@ fn test_deferred_point_read_operations() {
                     },
                     &AtomicBool::new(false),
                     &hw_counter,
+                    DeferredBehavior::Filter,
                 )
                 .unwrap()
         },
@@ -1081,6 +1090,7 @@ fn test_deferred_point_read_operations() {
                     &WithVector::Bool(false),
                     &hw_counter,
                     &AtomicBool::new(false),
+                    DeferredBehavior::Filter,
                 )
                 .unwrap()
                 .into_iter()

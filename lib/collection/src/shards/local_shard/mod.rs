@@ -33,6 +33,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
+use common::types::DeferredBehavior;
 use common::{panic, tar_ext};
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
@@ -949,9 +950,18 @@ impl LocalShard {
         runtime_handle: &Handle,
         hw_counter: HwMeasurementAcc,
         timeout: Option<Duration>,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter, timeout).await
+        SegmentsSearcher::read_filtered(
+            segments,
+            filter,
+            runtime_handle,
+            hw_counter,
+            timeout,
+            deferred_behavior,
+        )
+        .await
     }
 
     pub fn local_update_queue_info(&self) -> ShardUpdateQueueInfo {

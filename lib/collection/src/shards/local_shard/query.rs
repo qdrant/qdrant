@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use ordered_float::OrderedFloat;
@@ -103,6 +104,8 @@ impl LocalShard {
     }
 
     /// Fetches the payload and/or vector if required. This will filter out points if they are deleted between search and retrieve.
+    ///
+    /// This function always filters out deferred points.
     async fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
@@ -133,6 +136,7 @@ impl LocalShard {
                 &self.search_runtime,
                 timeout,
                 hw_measurement_acc,
+                DeferredBehavior::Filter,
             ),
         )
         .await

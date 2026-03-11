@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
 use shard::retrieve::record_internal::RecordInternal;
@@ -27,6 +28,7 @@ impl EdgeShard {
             DEFAULT_EDGE_TIMEOUT,
             &AtomicBool::new(false),
             HwMeasurementAcc::disposable_edge(),
+            DeferredBehavior::Filter,
         )?;
 
         let points: Vec<_> = point_ids

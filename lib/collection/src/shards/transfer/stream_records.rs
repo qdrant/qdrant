@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use semver::Version;
 use shard::count::CountRequestInternal;
@@ -110,6 +111,7 @@ pub(super) async fn transfer_stream_records(
                 }),
                 None, // no timeout
                 hw_acc,
+                DeferredBehavior::IncludeAll,
             )
             .await?
         else {
