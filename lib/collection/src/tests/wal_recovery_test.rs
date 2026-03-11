@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
+use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType, WithPayload, WithVector};
 use shard::operations::CollectionUpdateOperations;
@@ -345,6 +346,7 @@ async fn test_truncate_unapplied_wal() {
             &current_runtime,
             None,
             hw_acc.clone(),
+            DeferredBehavior::Filter,
         )
         .await
         .unwrap();

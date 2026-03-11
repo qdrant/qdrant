@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::TelemetryDetail;
+use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
 use crate::common::Flusher;
@@ -92,6 +92,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
     /// Retrieve payload for the point
@@ -115,6 +116,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType>;
 
     /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
@@ -129,6 +131,7 @@ pub trait NonAppendableSegmentEntry: SnapshotEntry {
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
     /// Return random points which satisfies filtering condition.

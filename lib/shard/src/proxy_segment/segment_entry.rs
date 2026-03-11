@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::TelemetryDetail;
+use common::types::{DeferredBehavior, TelemetryDetail};
 use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
@@ -216,6 +216,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let filtered_point_ids: Vec<PointIdType> = point_ids
             .iter()
@@ -228,6 +229,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             with_vector,
             hw_counter,
             is_stopped,
+            deferred_behavior,
         )
     }
 
@@ -245,12 +247,17 @@ impl NonAppendableSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
         if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_filtered(offset, limit, filter, is_stopped, hw_counter)
+            self.wrapped_segment.get().read().read_filtered(
+                offset,
+                limit,
+                filter,
+                is_stopped,
+                hw_counter,
+                deferred_behavior,
+            )
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -262,6 +269,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 is_stopped,
                 hw_counter,
+                deferred_behavior,
             )
         }
     }
@@ -273,12 +281,17 @@ impl NonAppendableSegmentEntry for ProxySegment {
         order_by: &'a segment::data_types::order_by::OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let read_points = if self.deleted_points.is_empty() {
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_ordered_filtered(limit, filter, order_by, is_stopped, hw_counter)?
+            self.wrapped_segment.get().read().read_ordered_filtered(
+                limit,
+                filter,
+                order_by,
+                is_stopped,
+                hw_counter,
+                deferred_behavior,
+            )?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -290,6 +303,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
                 order_by,
                 is_stopped,
                 hw_counter,
+                deferred_behavior,
             )?
         };
         Ok(read_points)

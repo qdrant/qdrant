@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::DeferredBehavior;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
@@ -391,6 +392,8 @@ pub fn delete_points_by_filter(
                     Some(filter),
                     &is_stopped,
                     hw_counter,
+                    // Delete also deferred points.
+                    DeferredBehavior::IncludeAll,
                 ),
             )
         })
@@ -472,8 +475,14 @@ pub fn sync_points(
             let with_vector = WithVector::Bool(true);
             let with_payload = WithPayload::from(true);
             // Since we retrieve points, which we already know exist, we expect all of them to be found
-            let stored_records =
-                segment.retrieve(ids, &with_payload, &with_vector, hw_counter, &is_stopped)?;
+            let stored_records = segment.retrieve(
+                ids,
+                &with_payload,
+                &with_vector,
+                hw_counter,
+                &is_stopped,
+                DeferredBehavior::IncludeAll,
+            )?;
             let mut updated = 0;
 
             for (id, stored_record) in stored_records {
@@ -902,7 +911,15 @@ fn points_by_filter(
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter), &is_stopped, hw_counter);
+        let points = s.read_filtered(
+            None,
+            None,
+            Some(filter),
+            &is_stopped,
+            hw_counter,
+            // Read operation used for updates, so we must handle all points
+            DeferredBehavior::IncludeAll,
+        );
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;

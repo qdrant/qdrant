@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::DeferredBehavior;
 
 use super::Segment;
 use crate::entry::entry_point::NonAppendableSegmentEntry;
@@ -66,12 +67,15 @@ impl Segment {
         condition: &Filter,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
+
         let payload_index = self.payload_index.borrow();
         let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
-            .iter_from_visible(offset, self.deferred_internal_id)
+            .iter_from_visible(offset, effective_deferred_id)
             .stop_if(is_stopped)
             .filter(move |(_, internal_id)| filter_context.check(*internal_id))
             .map(|(external_id, _)| external_id)
@@ -83,10 +87,13 @@ impl Segment {
         &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
+
         self.id_tracker
             .borrow()
-            .iter_from_visible(offset, self.deferred_internal_id)
+            .iter_from_visible(offset, effective_deferred_id)
             .map(|x| x.0)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
@@ -99,7 +106,10 @@ impl Segment {
         condition: &Filter,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
+        let effective_deferred_id = deferred_behavior.apply(self.deferred_internal_id);
+
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
         let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
@@ -111,7 +121,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
-                self.deferred_internal_id,
+                effective_deferred_id,
             )
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::RngExt;
@@ -88,6 +89,7 @@ impl LocalShard {
                     search_runtime_handle,
                     timeout,
                     hw_measurement_acc,
+                    DeferredBehavior::Filter,
                 )
                 .await?
             }
@@ -101,6 +103,7 @@ impl LocalShard {
                     order_by,
                     timeout,
                     hw_measurement_acc,
+                    DeferredBehavior::Filter,
                 )
                 .await?
             }
@@ -145,6 +148,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -166,6 +170,7 @@ impl LocalShard {
                     filter.as_ref(),
                     &is_stopped,
                     &hw_counter,
+                    deferred_behavior,
                 )
             });
             AbortOnDropHandle::new(task)
@@ -205,6 +210,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                deferred_behavior,
             ),
         )
         .await
@@ -232,6 +238,7 @@ impl LocalShard {
         order_by: &OrderBy,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -261,6 +268,7 @@ impl LocalShard {
                     &order_by,
                     &is_stopped,
                     &hw_counter,
+                    deferred_behavior,
                 )
             });
             AbortOnDropHandle::new(task)
@@ -308,6 +316,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                deferred_behavior,
             ),
         )
         .await
@@ -452,6 +461,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 hw_measurement_acc,
+                DeferredBehavior::Filter,
             ),
         )
         .await

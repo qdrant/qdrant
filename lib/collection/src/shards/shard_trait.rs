@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::*;
 use shard::count::CountRequestInternal;
@@ -47,6 +48,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
@@ -65,8 +67,10 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn retrieve(
         &self,
         request: Arc<PointRequestInternal>,
@@ -75,6 +79,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
         hardware_accumulator: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn query_batch(

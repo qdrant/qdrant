@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::*;
@@ -56,6 +57,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -81,6 +83,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
+                            deferred_behavior,
                         )
                         .await
                 }
@@ -125,6 +128,7 @@ impl ShardReplicaSet {
         timeout: Option<Duration>,
         local_only: bool,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         self.execute_and_resolve_read_operation(
             |shard| {
@@ -133,7 +137,13 @@ impl ShardReplicaSet {
                 let hw_measurement_acc_clone = hw_measurement_acc.clone();
                 async move {
                     shard
-                        .count(request, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .count(
+                            request,
+                            &search_runtime,
+                            timeout,
+                            hw_measurement_acc_clone,
+                            deferred_behavior,
+                        )
                         .await
                 }
                 .boxed()
@@ -176,6 +186,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             timeout,
                             hw_acc,
+                            DeferredBehavior::Filter,
                         )
                         .await
                 }
@@ -200,6 +211,7 @@ impl ShardReplicaSet {
         request: Arc<CountRequestInternal>,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Option<CountResult>> {
         let local = self.local.read().await;
         match &*local {
@@ -209,7 +221,13 @@ impl ShardReplicaSet {
                 Ok(Some(
                     shard
                         .get()
-                        .count(request, &search_runtime, timeout, hw_measurement_acc)
+                        .count(
+                            request,
+                            &search_runtime,
+                            timeout,
+                            hw_measurement_acc,
+                            deferred_behavior,
+                        )
                         .await?,
                 ))
             }

@@ -105,6 +105,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::types::DeferredBehavior;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
     use segment::data_types::vectors::{
@@ -219,6 +220,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -257,6 +259,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -300,6 +303,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -338,6 +342,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -356,6 +361,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -381,6 +387,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -453,6 +460,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()
@@ -516,6 +524,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap()
         .into_values()

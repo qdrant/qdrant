@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
+use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
@@ -372,6 +372,7 @@ impl SegmentsSearcher {
     /// The points ids can contain duplicates, the records will be fetched only once
     ///
     /// If an id is not found in the segments, it won't be included in the output.
+    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve(
         segments: LockedSegmentHolder,
         points: &[PointIdType],
@@ -380,6 +381,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
         let points = runtime_handle.spawn_blocking({
@@ -398,6 +400,7 @@ impl SegmentsSearcher {
                     timeout,
                     &is_stopped,
                     hw_measurement_acc,
+                    deferred_behavior,
                 )
             }
         });
@@ -410,6 +413,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
+        deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
@@ -439,6 +443,7 @@ impl SegmentsSearcher {
                         filter.as_ref(),
                         &is_stopped,
                         &hw_counter,
+                        deferred_behavior,
                     )
                 })
                 .collect();
@@ -944,6 +949,7 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         )
         .unwrap();
         assert_eq!(records.len(), 3);
@@ -963,6 +969,7 @@ mod tests {
             Duration::from_secs(1),
             &AtomicBool::new(false),
             HwMeasurementAcc::new(),
+            DeferredBehavior::Filter,
         );
         assert!(matches!(records, Err(OperationError::Timeout { .. })));
     }

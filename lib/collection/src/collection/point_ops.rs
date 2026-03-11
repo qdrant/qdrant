@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};
 use itertools::Itertools;
@@ -419,6 +420,7 @@ impl Collection {
                     timeout,
                     shard_selection.is_shard_id(),
                     hw_measurement_acc.clone(),
+                    DeferredBehavior::Filter,
                 )
             })
             .collect();

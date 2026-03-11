@@ -2,6 +2,7 @@ use std::cmp;
 use std::sync::{Arc, LazyLock};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
 use semver::Version;
@@ -396,7 +397,12 @@ impl Collection {
                 // So that we can monitor hardware usage without interference
                 let hw_acc = HwMeasurementAcc::disposable();
                 let count_result = replica_set
-                    .count_local(count_request.clone(), None, hw_acc)
+                    .count_local(
+                        count_request.clone(),
+                        None,
+                        hw_acc,
+                        DeferredBehavior::Filter,
+                    )
                     .await
                     .unwrap_or_default();
 

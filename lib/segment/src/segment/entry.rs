@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::safe_delete_with_suffix;
-use common::types::TelemetryDetail;
+use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
 use super::Segment;
@@ -176,12 +176,15 @@ impl NonAppendableSegmentEntry for Segment {
         with_vector: &WithVector,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let mut records = AHashMap::with_capacity(point_ids.len());
 
         // Filter out deferred points. This is done in two stages to prevent cloning `point_ids` and iterating more that needed
         // but still satisfy rusts ownership constraints.
-        let filtered_point_ids = self.has_deferred_points().then(|| {
+        let behavior_allows_filtering = !deferred_behavior.include_all_points();
+        let filter_deferred = self.has_deferred_points() && behavior_allows_filtering;
+        let filtered_point_ids = filter_deferred.then(|| {
             point_ids
                 .iter()
                 .filter(|&&point_id| !self.point_is_deferred(point_id))
@@ -278,15 +281,28 @@ impl NonAppendableSegmentEntry for Segment {
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self.read_by_id_stream(offset, limit),
+            None => self.read_by_id_stream(offset, limit, deferred_behavior),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit, hw_counter) {
-                    self.filtered_read_by_index(offset, limit, condition, is_stopped, hw_counter)
+                    self.filtered_read_by_index(
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        deferred_behavior,
+                    )
                 } else {
                     self.filtered_read_by_id_stream(
-                        offset, limit, condition, is_stopped, hw_counter,
+                        offset,
+                        limit,
+                        condition,
+                        is_stopped,
+                        hw_counter,
+                        deferred_behavior,
                     )
                 }
             }
@@ -300,15 +316,26 @@ impl NonAppendableSegmentEntry for Segment {
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
-            None => {
-                self.filtered_read_by_value_stream(order_by, limit, None, is_stopped, hw_counter)
-            }
+            None => self.filtered_read_by_value_stream(
+                order_by,
+                limit,
+                None,
+                is_stopped,
+                hw_counter,
+                deferred_behavior,
+            ),
             Some(filter) => {
                 if self.should_pre_filter(filter, limit, hw_counter) {
                     self.filtered_read_by_index_ordered(
-                        order_by, limit, filter, is_stopped, hw_counter,
+                        order_by,
+                        limit,
+                        filter,
+                        is_stopped,
+                        hw_counter,
+                        deferred_behavior,
                     )
                 } else {
                     self.filtered_read_by_value_stream(
@@ -317,6 +344,7 @@ impl NonAppendableSegmentEntry for Segment {
                         Some(filter),
                         is_stopped,
                         hw_counter,
+                        deferred_behavior,
                     )
                 }
             }
