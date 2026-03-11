@@ -107,9 +107,6 @@ impl EdgeShard {
         })?;
 
         let config_path = path.join(EDGE_CONFIG_FILE);
-        if !config_path.exists() {
-            config.save(path)?;
-        }
         let config = SaveOnDisk::new(&config_path, config)
             .map_err(|e| OperationError::service_error(e.to_string()))?;
 
