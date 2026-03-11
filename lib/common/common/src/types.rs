@@ -98,7 +98,7 @@ impl From<usize> for DetailsLevel {
 #[derive(Clone, Copy)]
 pub enum DeferredBehavior {
     /// Deferred points are not affected nor visible.
-    Filter,
+    Exclude,
 
     /// Deferred points are affected and visible.
     IncludeAll,
@@ -108,8 +108,8 @@ impl DeferredBehavior {
     /// Apply the behavior to a given `deferred_internal_id`.
     pub fn apply(&self, deferred_internal_id: Option<PointOffsetType>) -> Option<PointOffsetType> {
         match self {
-            // No overwrite so we just return the passed `deferred_internal_id`.
-            DeferredBehavior::Filter => deferred_internal_id,
+            // Excluding deferred points from the result, if `deferred_internal_id` is set.
+            DeferredBehavior::Exclude => deferred_internal_id,
 
             // Setting `deferred_internal_id` to `None` results in no points being left out
             // at deferred-point filtering.
@@ -130,8 +130,8 @@ mod test {
 
     #[test]
     fn test_deferred_overwrite() {
-        assert_eq!(DeferredBehavior::Filter.apply(Some(32)), Some(32));
-        assert_eq!(DeferredBehavior::Filter.apply(None), None);
+        assert_eq!(DeferredBehavior::Exclude.apply(Some(32)), Some(32));
+        assert_eq!(DeferredBehavior::Exclude.apply(None), None);
 
         // `IncludeAll` always returns `None` because then the filtering of deferred points is disabled.
         assert_eq!(DeferredBehavior::IncludeAll.apply(Some(32)), None);

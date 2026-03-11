@@ -220,7 +220,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -259,7 +259,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -303,7 +303,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -342,7 +342,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -361,7 +361,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -387,7 +387,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -460,7 +460,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
@@ -524,7 +524,7 @@ mod tests {
             TEST_TIMEOUT,
             &is_stopped,
             HwMeasurementAcc::new(),
-            DeferredBehavior::Filter,
+            DeferredBehavior::Exclude,
         )
         .unwrap()
         .into_values()
