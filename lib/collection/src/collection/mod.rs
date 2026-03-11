@@ -761,20 +761,20 @@ impl Collection {
 
             // Select shard transfer method, prefer user configured method or choose one now
             // If all peers are 1.8+, we try WAL delta transfer, otherwise we use the default method
-            let shard_transfer_method =
-                match self.shared_storage_config.default_shard_transfer_method {
-                    Some(method) => method,
-                    None => {
-                        let all_support_wal_delta = self
-                            .channel_service
-                            .all_peers_at_version(&Version::new(1, 8, 0));
-                        if all_support_wal_delta {
-                            ShardTransferMethod::WalDelta
-                        } else {
-                            self.default_shard_transfer_method().await
-                        }
+            let default_method = self.default_shard_transfer_method().await;
+            let shard_transfer_method = self
+                .shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or_else(|| {
+                    let all_support_wal_delta = self
+                        .channel_service
+                        .all_peers_at_version(&Version::new(1, 8, 0));
+                    if all_support_wal_delta {
+                        ShardTransferMethod::WalDelta
+                    } else {
+                        default_method
                     }
-                };
+                });
 
             // Try to find a replica to transfer from
             //
