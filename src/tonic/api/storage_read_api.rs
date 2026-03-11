@@ -532,10 +532,12 @@ mod tests {
     use storage::content_manager::toc::TableOfContent;
     use storage::types::{PerformanceConfig, StorageConfig};
     use tempfile::TempDir;
-    use tokio::runtime::Runtime;
     use tonic::Code;
 
     use super::*;
+    use crate::common::helpers::{
+        create_general_purpose_runtime, create_search_runtime, create_update_runtime,
+    };
 
     const TEST_COLLECTION_NAME: &str = "test-collection";
 
@@ -586,14 +588,29 @@ mod tests {
         }
     }
 
+    /// Create service on a blocking thread to avoid nested-runtime panics.
+    /// `TableOfContent::new` internally calls `block_on`, and dropping the
+    /// `Runtime` instances it owns also requires a non-async context.
+    async fn create_service_async() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf) {
+        tokio::task::spawn_blocking(create_service).await.unwrap()
+    }
+
+    /// Drop service (and its `TempDir`) on a blocking thread so the `Runtime`
+    /// instances inside `TableOfContent` are not dropped from async context.
+    async fn drop_service(service: StorageReadService<MmapUniversal<u8>>, storage_dir: TempDir) {
+        tokio::task::spawn_blocking(move || drop((service, storage_dir)))
+            .await
+            .unwrap();
+    }
+
     fn create_service() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf) {
         let storage_dir = tempfile::tempdir().unwrap();
         let config = test_storage_config(storage_dir.path());
         let toc = Arc::new(TableOfContent::new(
             &config,
-            Runtime::new().unwrap(),
-            Runtime::new().unwrap(),
-            Runtime::new().unwrap(),
+            create_search_runtime(1).unwrap(),
+            create_update_runtime(1).unwrap(),
+            create_general_purpose_runtime().unwrap(),
             ResourceBudget::default(),
             ChannelService::new(6333, false, None, None),
             0,
@@ -622,265 +639,354 @@ mod tests {
         path
     }
 
-    #[test]
-    fn file_exists_rejects_path_traversal() {
-        let (service, _storage_dir, _collection_dir) = create_service();
+    #[tokio::test]
+    async fn file_exists_rejects_path_traversal() {
+        let (service, storage_dir, _collection_dir) = create_service_async().await;
 
-        Runtime::new().unwrap().block_on(async {
-            let err = service
-                .file_exists(Request::new(FileExistsRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "nested/../secret.bin".to_string(),
-                }))
-                .await
-                .unwrap_err();
+        let err = service
+            .file_exists(Request::new(FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "nested/../secret.bin".to_string(),
+            }))
+            .await
+            .unwrap_err();
 
-            assert_eq!(err.code(), Code::InvalidArgument);
-            assert!(
-                err.message().contains("Invalid path component"),
-                "unexpected error message: {}",
-                err.message()
-            );
-        });
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert!(
+            err.message().contains("Invalid path component"),
+            "unexpected error message: {}",
+            err.message()
+        );
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         write_collection_file(&collection_dir, "exists/present.bin", b"abc");
 
-        Runtime::new().unwrap().block_on(async {
-            let existing = service
-                .file_exists(Request::new(FileExistsRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "exists/present.bin".to_string(),
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let existing = service
+            .file_exists(Request::new(FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "exists/present.bin".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            let missing = service
-                .file_exists(Request::new(FileExistsRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "exists/missing.bin".to_string(),
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let missing = service
+            .file_exists(Request::new(FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "exists/missing.bin".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            assert!(existing.exists);
-            assert!(!missing.exists);
-        });
+        assert!(existing.exists);
+        assert!(!missing.exists);
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn list_files_returns_paths_relative_to_collection_dir() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn list_files_returns_paths_relative_to_collection_dir() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         write_collection_file(&collection_dir, "index/chunk_1.bin", b"123");
         write_collection_file(&collection_dir, "index/chunk_2.bin", b"456");
         write_collection_file(&collection_dir, "index/other.bin", b"789");
 
-        Runtime::new().unwrap().block_on(async {
-            let mut paths = service
-                .list_files(Request::new(ListFilesRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    prefix_path: "index/chunk_".to_string(),
-                }))
-                .await
-                .unwrap()
-                .into_inner()
-                .paths;
+        let mut paths = service
+            .list_files(Request::new(ListFilesRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                prefix_path: "index/chunk_".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner()
+            .paths;
 
-            paths.sort();
+        paths.sort();
 
-            assert_eq!(
-                paths,
-                vec![
-                    "index/chunk_1.bin".to_string(),
-                    "index/chunk_2.bin".to_string(),
-                ]
-            );
-        });
+        assert_eq!(
+            paths,
+            vec![
+                "index/chunk_1.bin".to_string(),
+                "index/chunk_2.bin".to_string(),
+            ]
+        );
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn file_length_returns_file_size() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn file_length_returns_file_size() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         write_collection_file(&collection_dir, "length/data.bin", b"1234567");
 
-        Runtime::new().unwrap().block_on(async {
-            let response = service
-                .file_length(Request::new(FileLengthRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "length/data.bin".to_string(),
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let response = service
+            .file_length(Request::new(FileLengthRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "length/data.bin".to_string(),
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            assert_eq!(response.length, 7);
-        });
+        assert_eq!(response.length, 7);
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn read_bytes_returns_requested_range() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn file_length_not_found_returns_error() {
+        let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+        let err = service
+            .file_length(Request::new(FileLengthRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "nonexistent/file.bin".to_string(),
+                open_options: None,
+            }))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), Code::NotFound);
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_bytes_returns_requested_range() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         write_collection_file(&collection_dir, "bytes/data.bin", b"abcdefghij");
 
-        Runtime::new().unwrap().block_on(async {
-            let response = service
-                .read_bytes(Request::new(ReadBytesRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "bytes/data.bin".to_string(),
-                    offset: 3,
-                    length: 4,
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let response = service
+            .read_bytes(Request::new(ReadBytesRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "bytes/data.bin".to_string(),
+                offset: 3,
+                length: 4,
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            assert_eq!(response.data, b"defg".to_vec());
-        });
+        assert_eq!(response.data, b"defg".to_vec());
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn read_multi_reads_ranges_in_request_order() {
-        let (service, _storage_dir, collection_dir) = create_service();
-        write_collection_file(&collection_dir, "segments/a.bin", b"abcdefghij");
-        write_collection_file(&collection_dir, "segments/b.bin", b"klmnopqrst");
+    #[tokio::test]
+    async fn read_bytes_out_of_bounds_returns_error() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        write_collection_file(&collection_dir, "oob/data.bin", b"tiny");
 
-        Runtime::new().unwrap().block_on(async {
-            let response = service
-                .read_multi(Request::new(ReadMultiRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    reads: vec![
-                        ReadMultiEntry {
-                            path: "segments/a.bin".to_string(),
-                            offset: 1,
-                            length: 3,
-                        },
-                        ReadMultiEntry {
-                            path: "segments/b.bin".to_string(),
-                            offset: 2,
-                            length: 4,
-                        },
-                        ReadMultiEntry {
-                            path: "segments/a.bin".to_string(),
-                            offset: 6,
-                            length: 2,
-                        },
-                    ],
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let err = service
+            .read_bytes(Request::new(ReadBytesRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "oob/data.bin".to_string(),
+                offset: 0,
+                length: 9999,
+                open_options: None,
+            }))
+            .await
+            .unwrap_err();
 
-            assert_eq!(
-                response.data,
-                vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
-            );
-        });
+        assert_eq!(err.code(), Code::OutOfRange);
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn read_whole_returns_entire_file() {
-        let (service, _storage_dir, collection_dir) = create_service();
-        let payload = b"whole file contents";
-        write_collection_file(&collection_dir, "whole/data.bin", payload);
-
-        Runtime::new().unwrap().block_on(async {
-            let response = service
-                .read_whole(Request::new(ReadWholeRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "whole/data.bin".to_string(),
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
-
-            assert_eq!(response.data, payload.to_vec());
-        });
-    }
-
-    #[test]
-    fn read_bytes_stream_splits_large_reads_into_chunks() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn read_bytes_stream_splits_large_reads_into_chunks() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         let total_len = STREAM_CHUNK_SIZE as usize + 17;
         let payload = (0..total_len)
             .map(|idx| (idx % 251) as u8)
             .collect::<Vec<_>>();
         write_collection_file(&collection_dir, "stream/data.bin", &payload);
 
-        Runtime::new().unwrap().block_on(async {
-            let mut stream = service
-                .read_bytes_stream(Request::new(ReadBytesStreamRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "stream/data.bin".to_string(),
-                    offset: 0,
-                    length: total_len as u64,
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let mut stream = service
+            .read_bytes_stream(Request::new(ReadBytesStreamRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "stream/data.bin".to_string(),
+                offset: 0,
+                length: total_len as u64,
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            let mut chunks = Vec::new();
-            let mut reconstructed = Vec::new();
-            while let Some(item) = stream.next().await {
-                let chunk = item.unwrap().data;
-                chunks.push(chunk.len());
-                reconstructed.extend_from_slice(&chunk);
-            }
+        let mut chunks = Vec::new();
+        let mut reconstructed = Vec::new();
+        while let Some(item) = stream.next().await {
+            let chunk = item.unwrap().data;
+            chunks.push(chunk.len());
+            reconstructed.extend_from_slice(&chunk);
+        }
 
-            assert_eq!(
-                chunks,
-                vec![
-                    STREAM_CHUNK_SIZE as usize,
-                    total_len - STREAM_CHUNK_SIZE as usize
-                ]
-            );
-            assert_eq!(reconstructed, payload);
-        });
+        assert_eq!(
+            chunks,
+            vec![
+                STREAM_CHUNK_SIZE as usize,
+                total_len - STREAM_CHUNK_SIZE as usize
+            ]
+        );
+        assert_eq!(reconstructed, payload);
+
+        drop_service(service, storage_dir).await;
     }
 
-    #[test]
-    fn read_batch_returns_each_requested_slice() {
-        let (service, _storage_dir, collection_dir) = create_service();
+    #[tokio::test]
+    async fn read_bytes_stream_returns_empty_stream_for_zero_length() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        write_collection_file(&collection_dir, "stream/zero.bin", b"some data");
+
+        let mut stream = service
+            .read_bytes_stream(Request::new(ReadBytesStreamRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "stream/zero.bin".to_string(),
+                offset: 0,
+                length: 0,
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(stream.next().await.is_none());
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_bytes_stream_clamps_length_to_file_size() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        let payload = b"short";
+        write_collection_file(&collection_dir, "stream/clamp.bin", payload);
+
+        let mut stream = service
+            .read_bytes_stream(Request::new(ReadBytesStreamRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "stream/clamp.bin".to_string(),
+                offset: 0,
+                length: 999999,
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let mut reconstructed = Vec::new();
+        while let Some(item) = stream.next().await {
+            reconstructed.extend_from_slice(&item.unwrap().data);
+        }
+
+        assert_eq!(reconstructed, payload.to_vec());
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_whole_returns_entire_file() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        let payload = b"whole file contents";
+        write_collection_file(&collection_dir, "whole/data.bin", payload);
+
+        let response = service
+            .read_whole(Request::new(ReadWholeRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "whole/data.bin".to_string(),
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(response.data, payload.to_vec());
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_batch_returns_each_requested_slice() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
         write_collection_file(&collection_dir, "batch/data.bin", b"0123456789");
 
-        Runtime::new().unwrap().block_on(async {
-            let response = service
-                .read_batch(Request::new(ReadBatchRequest {
-                    collection_name: TEST_COLLECTION_NAME.to_string(),
-                    path: "batch/data.bin".to_string(),
-                    ranges: vec![
-                        ReadBatchRange {
-                            offset: 0,
-                            length: 2,
-                        },
-                        ReadBatchRange {
-                            offset: 4,
-                            length: 3,
-                        },
-                        ReadBatchRange {
-                            offset: 9,
-                            length: 1,
-                        },
-                    ],
-                    open_options: None,
-                }))
-                .await
-                .unwrap()
-                .into_inner();
+        let response = service
+            .read_batch(Request::new(ReadBatchRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "batch/data.bin".to_string(),
+                ranges: vec![
+                    ReadBatchRange {
+                        offset: 0,
+                        length: 2,
+                    },
+                    ReadBatchRange {
+                        offset: 4,
+                        length: 3,
+                    },
+                    ReadBatchRange {
+                        offset: 9,
+                        length: 1,
+                    },
+                ],
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
-            assert_eq!(
-                response.data,
-                vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
-            );
-        });
+        assert_eq!(
+            response.data,
+            vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
+        );
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_multi_reads_ranges_in_request_order() {
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        write_collection_file(&collection_dir, "segments/a.bin", b"abcdefghij");
+        write_collection_file(&collection_dir, "segments/b.bin", b"klmnopqrst");
+
+        let response = service
+            .read_multi(Request::new(ReadMultiRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                reads: vec![
+                    ReadMultiEntry {
+                        path: "segments/a.bin".to_string(),
+                        offset: 1,
+                        length: 3,
+                    },
+                    ReadMultiEntry {
+                        path: "segments/b.bin".to_string(),
+                        offset: 2,
+                        length: 4,
+                    },
+                    ReadMultiEntry {
+                        path: "segments/a.bin".to_string(),
+                        offset: 6,
+                        length: 2,
+                    },
+                ],
+                open_options: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(
+            response.data,
+            vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
+        );
+
+        drop_service(service, storage_dir).await;
     }
 }
