@@ -451,11 +451,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
                 Ok(Some((
                     ReadBytesStreamResponse { data },
-                    (
-                        storage,
-                        current_offset + chunk_size,
-                        remaining - chunk_size,
-                    ),
+                    (storage, current_offset + chunk_size, remaining - chunk_size),
                 )))
             },
         );
