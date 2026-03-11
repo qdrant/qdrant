@@ -7,22 +7,19 @@ use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
+use tokio::sync::{oneshot, watch};
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::common::stoppable_task::StoppableTaskHandle;
 use crate::operations::generalizer::Generalizer;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::profiling::interface::log_request_to_collector;
 use crate::shards::CollectionId;
-use crate::shards::local_shard::indexed_only::get_largest_unindexed_segment_vector_size;
 use crate::shards::update_tracker::UpdateTracker;
 use crate::update_handler::{OperationData, OptimizerSignal, UpdateSignal};
 use crate::update_workers::UpdateWorkers;
 use crate::update_workers::applied_seq::AppliedSeqHandler;
 use crate::wal_delta::LockedWal;
-
-const BYTES_IN_KB: usize = 1024;
 
 /// Sends the operation result through the feedback channel if present.
 /// Logs a debug message if the receiver is no longer waiting.
@@ -51,8 +48,7 @@ impl UpdateWorkers {
         segments: LockedSegmentHolder,
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
-        prevent_unoptimized_threshold_kb: Option<usize>,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        prevent_unoptimized: bool,
         mut optimization_finished_receiver: watch::Receiver<()>,
         applied_seq_handler: Arc<AppliedSeqHandler>,
         cancel: CancellationToken,
@@ -78,7 +74,6 @@ impl UpdateWorkers {
                 }) => {
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
-                    let segments_clone = segments.clone();
                     let update_operation_lock_clone = update_operation_lock.clone();
                     let update_tracker_clone = update_tracker.clone();
 
@@ -121,20 +116,8 @@ impl UpdateWorkers {
                         }
                     };
 
-                    let operation_result = Self::wait_for_optimization(
-                        prevent_unoptimized_threshold_kb,
-                        &segments_clone,
-                        optimization_handles.clone(),
-                        &mut optimization_finished_receiver,
-                    )
-                    .await;
-
-                    if let Err(err) = operation_result {
-                        send_feedback(sender, Err(err), op_num);
-                        continue;
-                    }
-
                     let wait = sender.is_some();
+                    let segments_clone = segments.clone();
                     let operation_result = tokio::task::spawn_blocking(move || {
                         Self::update_worker_internal(
                             collection_name_clone,
@@ -164,6 +147,19 @@ impl UpdateWorkers {
                         log::error!("Can't update last applied_seq {err}")
                     }
 
+                    if wait && prevent_unoptimized {
+                        let wait_result = Self::wait_for_deferred_points_ready(
+                            &segments,
+                            &optimize_sender,
+                            &mut optimization_finished_receiver,
+                        )
+                        .await;
+                        if let Err(err) = wait_result {
+                            send_feedback(sender, Err(err), op_num);
+                            continue;
+                        }
+                    }
+
                     send_feedback(sender, res, op_num);
                 }
                 UpdateSignal::Nop => optimize_sender
@@ -191,56 +187,43 @@ impl UpdateWorkers {
         receiver
     }
 
-    /// Checks that unoptimized segments are small enough, so that we can effectively
-    /// push more updates.
+    /// Wait until all deferred points are ready for read/search.
     ///
-    /// Returns when all segments are smaller that the optimization_threshold.
-    async fn wait_for_optimization(
-        // Size of the unoptimized segment to be considered large enough for waiting.
-        // If `None`, waiting is disabled.
-        optimization_threshold_kb: Option<usize>,
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe.
+    async fn wait_for_deferred_points_ready(
         segments: &LockedSegmentHolder,
-        optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
+        optimize_sender: &Sender<OptimizerSignal>,
         optimization_finished_receiver: &mut watch::Receiver<()>,
     ) -> CollectionResult<()> {
-        let Some(optimization_threshold_kb) = optimization_threshold_kb else {
-            // Waiting is disabled
-            return Ok(());
-        };
-        let optimization_threshold = optimization_threshold_kb.saturating_mul(BYTES_IN_KB);
         loop {
             let locked_segments = segments.clone();
-            let can_proceed = tokio::task::spawn_blocking(move || {
-                let segments = locked_segments.read();
-                let largest_unoptimized_segment_size_opt =
-                    get_largest_unindexed_segment_vector_size(&segments);
+            let has_deferred_points =
+                AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                    let segments = locked_segments.read();
+                    segments.iter().any(|(_, segment)| {
+                        let segment_guard = segment.get().read();
+                        segment_guard.has_deferred_points()
+                    })
+                }))
+                .await
+                .map_err(CollectionError::from)?;
 
-                let largest_unoptimized_segment_size =
-                    largest_unoptimized_segment_size_opt.unwrap_or(0);
-
-                // True, if we can proceed with updates
-                largest_unoptimized_segment_size <= optimization_threshold
-            })
-            .await
-            .map_err(CollectionError::from)?;
-
-            if can_proceed {
+            // No deferred points, nothing to wait for.
+            if !has_deferred_points {
                 return Ok(());
             }
 
-            // Block only if there are running optimization that can terminate
-            {
-                let optimizations_guard = optimization_handles.lock().await;
-                if optimizations_guard.iter().all(|h| h.is_finished()) {
-                    return Ok(());
-                }
-            }
+            // The only way to make deferred points visible is optimization.
+            // Send Nop to re-trigger optimizers in case
+            // the previous signal was consumed without launching an optimization.
+            let _ = optimize_sender.try_send(OptimizerSignal::Nop);
 
-            // If unoptimized segments are too large, the only way it can be fixed is optimization
-            // So we wait the notification of optimization completion to re-check the sizes
+            // Wait for the optimizer to check conditions or complete an optimization.
             log::debug!("waiting for optimization to allow updates");
             if let Err(err) = optimization_finished_receiver.changed().await {
-                // this can be if optimization is cancelled, we don't need to wait anymore
+                // This can be if optimization is cancelled, we don't need to wait anymore.
                 log::debug!("Optimization thread terminated with an error: {err}");
                 return Ok(());
             }

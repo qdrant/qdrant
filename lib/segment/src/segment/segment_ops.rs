@@ -675,13 +675,6 @@ impl Segment {
             .available_point_count()
             .saturating_sub(self.deferred_point_count_estimated())
     }
-
-    pub fn has_deferred_points(&self) -> bool {
-        if let Some(deferred_from) = self.deferred_internal_id {
-            return self.is_appendable() && self.total_point_count() > deferred_from as usize;
-        };
-        false
-    }
 }
 
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
