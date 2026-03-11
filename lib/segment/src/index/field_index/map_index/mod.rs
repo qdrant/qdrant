@@ -267,7 +267,10 @@ where
             //  - We don't have both deferred points and an immutable index.
             //  - It is not trivial (nor performant) to implement correct filtering for this index variant as
             //    it doesn't work well in combination with the way it handles deletions.
-            MapIndex::Immutable(index) => Box::new(index.iter_counts_per_value()),
+            MapIndex::Immutable(index) => {
+                debug_assert!(deferred_internal_id.is_none());
+                Box::new(index.iter_counts_per_value())
+            }
 
             MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value(deferred_internal_id)),
         }

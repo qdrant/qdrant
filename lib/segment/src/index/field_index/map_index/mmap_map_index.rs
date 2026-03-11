@@ -327,7 +327,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
                     // TODO(deferred): Maybe we can improve this filter and use take_while instead. For this we
                     // need to make sure that `v` is always sorted which we _can_ enforce when finalizing the index.
-                        && deferred_internal_id.is_some_and(|deferred| idx < deferred)
+                    && deferred_internal_id.map_or(true,|deferred| idx < deferred)
                 })
                 .unique()
                 .count();
