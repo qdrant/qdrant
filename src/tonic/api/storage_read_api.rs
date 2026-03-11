@@ -992,7 +992,7 @@ mod tests {
     async fn read_bytes_stream_zero_length_checks_file_exists() {
         let (service, storage_dir, _collection_dir) = create_service_async().await;
 
-        let err = match service
+        let Err(err) = service
             .read_bytes_stream(Request::new(ReadBytesStreamRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
                 path: "stream/missing.bin".to_string(),
@@ -1001,9 +1001,8 @@ mod tests {
                 open_options: None,
             }))
             .await
-        {
-            Ok(_) => panic!("expected missing file to be reported"),
-            Err(err) => err,
+        else {
+            panic!("expected missing file to be reported");
         };
 
         assert_eq!(err.code(), Code::NotFound);
@@ -1017,7 +1016,7 @@ mod tests {
         let payload = b"short";
         write_collection_file(&collection_dir, "stream/clamp.bin", payload);
 
-        let err = match service
+        let Err(err) = service
             .read_bytes_stream(Request::new(ReadBytesStreamRequest {
                 collection_name: TEST_COLLECTION_NAME.to_string(),
                 path: "stream/clamp.bin".to_string(),
@@ -1026,9 +1025,8 @@ mod tests {
                 open_options: None,
             }))
             .await
-        {
-            Ok(_) => panic!("expected out-of-bounds stream request to fail"),
-            Err(err) => err,
+        else {
+            panic!("expected out-of-bounds stream request to fail");
         };
 
         assert_eq!(err.code(), Code::OutOfRange);
