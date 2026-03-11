@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
 use itertools::Either;
 
 use super::Segment;
@@ -45,6 +46,7 @@ impl Segment {
                 &cardinality_estimation,
                 hw_counter,
                 is_stopped,
+                self.deferred_internal_id,
             )
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
@@ -103,7 +105,12 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
-        let range_iter = numeric_index.stream_range(&order_by.as_range());
+        let range_iter = numeric_index
+            .stream_range(&order_by.as_range())
+            // We can't early stop the iterator for deferred points because the items are sorted lexicographically by type `(T, internalID)`.
+            .filter(|&(_, internal_id)| {
+                internal_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
+            });
 
         let directed_range_iter = match order_by.direction() {
             Direction::Asc => Either::Left(range_iter),

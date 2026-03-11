@@ -89,6 +89,7 @@ pub trait PayloadIndex {
         filter: &Filter,
         hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> Vec<PointOffsetType>;
 
     /// Return number of points, indexed by this field

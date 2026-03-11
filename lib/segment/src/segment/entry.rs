@@ -26,6 +26,7 @@ use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
 use crate::id_tracker::IdTracker;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
+use crate::index::query_estimator::adjust_for_deferred_points;
 use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
@@ -75,7 +76,8 @@ impl NonAppendableSegmentEntry for Segment {
             .vector_data
             .get(vector_name)
             .ok_or_else(|| OperationError::vector_name_not_exists(vector_name))?;
-        let vector_query_context = query_context.get_vector_context(vector_name);
+        let vector_query_context =
+            query_context.get_vector_context(vector_name, self.deferred_internal_id);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
@@ -372,7 +374,7 @@ impl NonAppendableSegmentEntry for Segment {
     ) -> CardinalityEstimation {
         match filter {
             None => {
-                let available = self.available_point_count();
+                let available = self.non_deferred_point_count_estimated();
                 CardinalityEstimation {
                     primary_clauses: vec![],
                     min: available,
@@ -382,7 +384,11 @@ impl NonAppendableSegmentEntry for Segment {
             }
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                payload_index.estimate_cardinality(filter, hw_counter)
+                let cardinality = payload_index.estimate_cardinality(filter, hw_counter);
+
+                let total_points = self.id_tracker.borrow().available_point_count();
+                let available_points = self.non_deferred_point_count_estimated();
+                adjust_for_deferred_points(cardinality, available_points, total_points)
             }
         }
     }
