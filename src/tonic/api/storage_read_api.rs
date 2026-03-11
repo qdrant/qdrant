@@ -74,17 +74,25 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
 
         let full = base.join(rel);
 
-        // Double-check: canonicalize if the path exists and verify it's under base.
-        // If the file doesn't exist yet (e.g. for exists check), the component check above
-        // is sufficient since we rejected all non-Normal components.
-        if full.exists() {
-            let canonical = fs_err::canonicalize(&full)
-                .map_err(|e| Status::internal(format!("Failed to canonicalize path: {e}")))?;
-            let canonical_base = fs_err::canonicalize(&base).unwrap_or(base.clone());
-            if !canonical.starts_with(&canonical_base) {
-                return Err(Status::permission_denied(format!(
-                    "Path '{}' is outside the collection directory",
-                    full.display()
+        // Try to canonicalize and verify the path is under the collection base.
+        // If the file doesn't exist yet (e.g. for an exists check), the component
+        // check above is sufficient since we rejected all non-Normal components.
+        match fs_err::canonicalize(&full) {
+            Ok(canonical) => {
+                let canonical_base = fs_err::canonicalize(&base).unwrap_or(base.clone());
+                if !canonical.starts_with(&canonical_base) {
+                    return Err(Status::permission_denied(format!(
+                        "Path '{}' is outside the collection directory",
+                        full.display()
+                    )));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // File doesn't exist — the component check is sufficient.
+            }
+            Err(e) => {
+                return Err(Status::internal(format!(
+                    "Failed to canonicalize path: {e}"
                 )));
             }
         }
@@ -328,8 +336,13 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let open_options = convert_open_options(open_options);
         let sequential = open_options.need_sequential;
-        let storage = tokio::task::spawn_blocking(move || {
-            S::open(&path, open_options).map_err(io_error_to_status)
+        let (storage, length) = tokio::task::spawn_blocking(move || {
+            let s = S::open(&path, open_options).map_err(io_error_to_status)?;
+            let file_len = s.len().map_err(io_error_to_status)?;
+            // Clamp to available bytes so the stream stops at EOF
+            // instead of producing an OutOfBounds error.
+            let clamped = length.min(file_len.saturating_sub(offset));
+            Ok::<_, Status>((s, clamped))
         })
         .await
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
