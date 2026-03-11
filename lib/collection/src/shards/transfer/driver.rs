@@ -41,6 +41,7 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
+    fallback_method: ShardTransferMethod,
 ) -> CollectionResult<bool> {
     // The remote might target a different shard ID depending on the shard transfer type
     let local_shard_id = transfer_config.shard_id;
@@ -117,7 +118,7 @@ pub async fn transfer_shard(
 
             // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
-                let fallback_shard_transfer_method = ShardTransferMethod::default();
+                let fallback_shard_transfer_method = fallback_method;
                 log::warn!(
                     "Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}",
                 );
@@ -202,6 +203,7 @@ pub fn spawn_transfer_task<T, F>(
     channel_service: ChannelService,
     snapshots_path: PathBuf,
     temp_dir: PathBuf,
+    fallback_method: ShardTransferMethod,
     on_finish: T,
     on_error: F,
 ) -> CancellableAsyncTaskHandle<bool>
@@ -233,6 +235,7 @@ where
                     channel_service.clone(),
                     &snapshots_path,
                     &temp_dir,
+                    fallback_method,
                 )
                 .await
             };

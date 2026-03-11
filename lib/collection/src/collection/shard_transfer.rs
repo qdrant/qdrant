@@ -35,7 +35,7 @@ impl Collection {
             .check_transfer_exists(transfer_key)
     }
 
-    async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
         let prevent_unoptimized = self
             .collection_config
             .read()
@@ -187,6 +187,7 @@ impl Collection {
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
+        let fallback_method = self.default_shard_transfer_method().await;
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             progress.clone(),
@@ -196,6 +197,7 @@ impl Collection {
             channel_service,
             self.snapshots_path.clone(),
             temp_dir,
+            fallback_method,
             on_finish,
             on_error,
         );
