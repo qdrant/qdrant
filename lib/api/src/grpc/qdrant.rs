@@ -15959,8 +15959,6 @@ pub struct FileExistsRequest {
     #[prost(string, tag = "2")]
     #[validate(length(min = 1))]
     pub path: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
-    pub open_options: ::core::option::Option<StorageOpenOptions>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

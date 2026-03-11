@@ -52,7 +52,6 @@ message ListFilesRequest {
 message FileExistsRequest {
   string collection_name = 1;
   string path = 2;
-  optional StorageOpenOptions open_options = 3;
 }
 
 message FileExistsResponse {

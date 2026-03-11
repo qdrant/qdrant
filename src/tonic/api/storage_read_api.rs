@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::path::{Component, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use api::grpc::qdrant::storage_read_server::StorageRead;
 use api::grpc::qdrant::{
@@ -21,7 +20,6 @@ use common::universal_io::{
 use futures::Stream;
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
-use tokio::sync::mpsc;
 use tonic::{Request, Response, Status, async_trait};
 
 use crate::tonic::api::validate;
@@ -101,7 +99,7 @@ fn io_error_to_status(e: UniversalIoError) -> Status {
             end,
             data_length,
         } => Status::out_of_range(format!(
-            "Range {start}..{end} out of bounds (size: {data_length}"
+            "Range {start}..{end} out of bounds (size: {data_length})"
         )),
         UniversalIoError::SerdeJson(e) => Status::internal(format!("Serialization error: {e}")),
         UniversalIoError::NotFound { path } => {
@@ -179,17 +177,6 @@ fn dispatch_read_multi<S: UniversalRead<u8>>(
     }
 }
 
-/// A wrapper around `mpsc::Receiver` that implements `Stream`.
-struct MpscStream<T>(mpsc::Receiver<T>);
-
-impl<T> Stream for MpscStream<T> {
-    type Item = T;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.0.poll_recv(cx)
-    }
-}
-
 #[async_trait]
 impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadService<S> {
     // Check if a file exists via UniversalRead::open(), catch NotFound → false.
@@ -202,15 +189,11 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let FileExistsRequest {
             collection_name,
             path,
-            open_options,
         } = request.into_inner();
         let path = self.resolve_path(&auth, &collection_name, &path)?;
 
-        let open_options = convert_open_options(open_options);
-
-        let exists = tokio::task::spawn_blocking(move || match S::open(&path, open_options) {
-            Ok(_) => true,
-            Err(UniversalIoError::NotFound { .. }) => false,
+        let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
+            Ok(exists) => exists,
             _ => false,
         })
         .await
@@ -308,10 +291,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
             let cow = dispatch_read(
                 &storage,
-                ElementsRange {
-                    start: offset,
-                    length,
-                },
+                ElementsRange::new(offset, length),
                 open_options.need_sequential,
             )
             .map_err(io_error_to_status)?;
@@ -326,8 +306,8 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
     type ReadBytesStreamStream =
         Pin<Box<dyn Stream<Item = Result<ReadBytesStreamResponse, Status>> + Send>>;
 
-    // Streaming variant of read() for large files, sends ~1MB chunks via mpsc channel.
-    // Use spawn_blocking + MpscStream adapter.
+    // Streaming variant of read() for large files.
+    // Only individual chunk reads run on the blocking pool; backpressure does not pin a worker.
     async fn read_bytes_stream(
         &self,
         mut request: Request<ReadBytesStreamRequest>,
@@ -344,54 +324,44 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let path = self.resolve_path(&auth, &collection_name, &path)?;
         let open_options = convert_open_options(open_options);
+        let sequential = open_options.need_sequential;
+        let storage = tokio::task::spawn_blocking(move || {
+            S::open(&path, open_options).map_err(io_error_to_status)
+        })
+        .await
+        .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
 
-        let (tx, rx) = mpsc::channel(4);
+        let storage = Arc::new(storage);
 
-        tokio::task::spawn_blocking(move || {
-            let storage = match S::open(&path, open_options) {
-                Ok(storage) => storage,
-                Err(e) => {
-                    let _ = tx.blocking_send(Err(io_error_to_status(e)));
-                    return;
+        let stream = futures::stream::try_unfold(
+            (storage, offset, length),
+            move |(storage, current_offset, remaining)| async move {
+                if remaining == 0 {
+                    return Ok(None);
                 }
-            };
 
-            let mut remaining = length;
-            let mut current_offset = offset;
-
-            while remaining > 0 {
                 let chunk_size = remaining.min(STREAM_CHUNK_SIZE);
-                let result = dispatch_read(
-                    &storage,
-                    ElementsRange {
-                        start: current_offset,
-                        length: chunk_size,
-                    },
-                    open_options.need_sequential,
-                );
+                let storage_for_read = Arc::clone(&storage);
 
-                match result {
-                    Ok(cow) => {
-                        let data = cow.into_owned();
-                        if tx
-                            .blocking_send(Ok(ReadBytesStreamResponse { data }))
-                            .is_err()
-                        {
-                            return; // Client disconnected
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.blocking_send(Err(io_error_to_status(e)));
-                        return;
-                    }
-                }
+                let data = tokio::task::spawn_blocking(move || {
+                    dispatch_read(
+                        &*storage_for_read,
+                        ElementsRange::new(current_offset, chunk_size),
+                        sequential,
+                    )
+                    .map(|cow| cow.into_owned())
+                    .map_err(io_error_to_status)
+                })
+                .await
+                .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
 
-                current_offset += chunk_size;
-                remaining -= chunk_size;
-            }
-        });
+                Ok(Some((
+                    ReadBytesStreamResponse { data },
+                    (storage, current_offset + chunk_size, remaining - chunk_size),
+                )))
+            },
+        );
 
-        let stream = MpscStream(rx);
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -439,10 +409,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let open_options = convert_open_options(open_options);
         let ranges = ranges
             .iter()
-            .map(|r| ElementsRange {
-                start: r.offset,
-                length: r.length,
-            })
+            .map(|r| ElementsRange::new(r.offset, r.length))
             .collect::<Vec<_>>();
 
         let data = tokio::task::spawn_blocking(move || {
@@ -494,13 +461,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 unique_paths.push(resolved);
                 idx
             });
-            reads_.push((
-                file_index,
-                ElementsRange {
-                    start: entry.offset,
-                    length: entry.length,
-                },
-            ));
+            reads_.push((file_index, ElementsRange::new(entry.offset, entry.length)));
         }
 
         let num_reads = reads.len();
@@ -529,5 +490,377 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         .map_err(|e| Status::internal(format!("Task join error: {e}")))??;
 
         Ok(Response::new(ReadMultiResponse { data }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+
+    use api::grpc::qdrant::{ReadBatchRange, ReadMultiEntry};
+    use collection::common::snapshots_manager::SnapshotsConfig;
+    use collection::config::WalConfig;
+    use collection::optimizers_builder::OptimizersConfig;
+    use collection::shards::channel_service::ChannelService;
+    use common::budget::ResourceBudget;
+    use common::load_concurrency::LoadConcurrencyConfig;
+    use common::mmap;
+    use futures::StreamExt as _;
+    use segment::types::{HnswConfig, HnswGlobalConfig};
+    use storage::content_manager::toc::TableOfContent;
+    use storage::types::{PerformanceConfig, StorageConfig};
+    use tempfile::TempDir;
+    use tokio::runtime::Runtime;
+    use tonic::Code;
+
+    use super::*;
+
+    const TEST_COLLECTION_NAME: &str = "test-collection";
+
+    fn test_storage_config(storage_path: &Path) -> StorageConfig {
+        StorageConfig {
+            storage_path: storage_path.to_path_buf(),
+            snapshots_path: storage_path.join("snapshots"),
+            snapshots_config: SnapshotsConfig::default(),
+            temp_path: None,
+            on_disk_payload: false,
+            optimizers: OptimizersConfig {
+                deleted_threshold: 0.5,
+                vacuum_min_vector_number: 100,
+                default_segment_number: 2,
+                max_segment_size: None,
+                #[expect(deprecated)]
+                memmap_threshold: Some(100),
+                indexing_threshold: Some(100),
+                flush_interval_sec: 2,
+                max_optimization_threads: Some(2),
+                prevent_unoptimized: None,
+            },
+            optimizers_overwrite: None,
+            wal: WalConfig::default(),
+            performance: PerformanceConfig {
+                max_search_threads: 1,
+                max_optimization_runtime_threads: 1,
+                update_rate_limit: None,
+                search_timeout_sec: None,
+                optimizer_cpu_budget: 0,
+                optimizer_io_budget: 0,
+                incoming_shard_transfers_limit: Some(1),
+                outgoing_shard_transfers_limit: Some(1),
+                async_scorer: None,
+                load_concurrency: LoadConcurrencyConfig::default(),
+            },
+            hnsw_index: HnswConfig::default(),
+            hnsw_global_config: HnswGlobalConfig::default(),
+            mmap_advice: mmap::Advice::Random,
+            node_type: Default::default(),
+            update_queue_size: Default::default(),
+            handle_collection_load_errors: false,
+            recovery_mode: None,
+            update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
+            shard_transfer_method: None,
+            collection: None,
+            max_collections: None,
+        }
+    }
+
+    fn create_service() -> (StorageReadService<MmapUniversal<u8>>, TempDir, PathBuf) {
+        let storage_dir = tempfile::tempdir().unwrap();
+        let config = test_storage_config(storage_dir.path());
+        let toc = Arc::new(TableOfContent::new(
+            &config,
+            Runtime::new().unwrap(),
+            Runtime::new().unwrap(),
+            Runtime::new().unwrap(),
+            ResourceBudget::default(),
+            ChannelService::new(6333, false, None, None),
+            0,
+            None,
+        ));
+        let collection_dir = storage_dir
+            .path()
+            .join(COLLECTIONS_DIR)
+            .join(TEST_COLLECTION_NAME);
+        fs_err::create_dir_all(&collection_dir).unwrap();
+
+        let dispatcher = Arc::new(Dispatcher::new(toc));
+        let service = StorageReadService::new(dispatcher);
+
+        (service, storage_dir, collection_dir)
+    }
+
+    fn write_collection_file(
+        collection_dir: &Path,
+        relative_path: &str,
+        contents: &[u8],
+    ) -> PathBuf {
+        let path = collection_dir.join(relative_path);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn file_exists_rejects_path_traversal() {
+        let (service, _storage_dir, _collection_dir) = create_service();
+
+        Runtime::new().unwrap().block_on(async {
+            let err = service
+                .file_exists(Request::new(FileExistsRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "nested/../secret.bin".to_string(),
+                }))
+                .await
+                .unwrap_err();
+
+            assert_eq!(err.code(), Code::InvalidArgument);
+            assert!(
+                err.message().contains("Invalid path component"),
+                "unexpected error message: {}",
+                err.message()
+            );
+        });
+    }
+
+    #[test]
+    fn file_exists_reports_true_for_existing_and_false_for_missing_files() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "exists/present.bin", b"abc");
+
+        Runtime::new().unwrap().block_on(async {
+            let existing = service
+                .file_exists(Request::new(FileExistsRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "exists/present.bin".to_string(),
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            let missing = service
+                .file_exists(Request::new(FileExistsRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "exists/missing.bin".to_string(),
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert!(existing.exists);
+            assert!(!missing.exists);
+        });
+    }
+
+    #[test]
+    fn list_files_returns_paths_relative_to_collection_dir() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "index/chunk_1.bin", b"123");
+        write_collection_file(&collection_dir, "index/chunk_2.bin", b"456");
+        write_collection_file(&collection_dir, "index/other.bin", b"789");
+
+        Runtime::new().unwrap().block_on(async {
+            let mut paths = service
+                .list_files(Request::new(ListFilesRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    prefix_path: "index/chunk_".to_string(),
+                }))
+                .await
+                .unwrap()
+                .into_inner()
+                .paths;
+
+            paths.sort();
+
+            assert_eq!(
+                paths,
+                vec![
+                    "index/chunk_1.bin".to_string(),
+                    "index/chunk_2.bin".to_string(),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn file_length_returns_file_size() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "length/data.bin", b"1234567");
+
+        Runtime::new().unwrap().block_on(async {
+            let response = service
+                .file_length(Request::new(FileLengthRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "length/data.bin".to_string(),
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert_eq!(response.length, 7);
+        });
+    }
+
+    #[test]
+    fn read_bytes_returns_requested_range() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "bytes/data.bin", b"abcdefghij");
+
+        Runtime::new().unwrap().block_on(async {
+            let response = service
+                .read_bytes(Request::new(ReadBytesRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "bytes/data.bin".to_string(),
+                    offset: 3,
+                    length: 4,
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert_eq!(response.data, b"defg".to_vec());
+        });
+    }
+
+    #[test]
+    fn read_multi_reads_ranges_in_request_order() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "segments/a.bin", b"abcdefghij");
+        write_collection_file(&collection_dir, "segments/b.bin", b"klmnopqrst");
+
+        Runtime::new().unwrap().block_on(async {
+            let response = service
+                .read_multi(Request::new(ReadMultiRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    reads: vec![
+                        ReadMultiEntry {
+                            path: "segments/a.bin".to_string(),
+                            offset: 1,
+                            length: 3,
+                        },
+                        ReadMultiEntry {
+                            path: "segments/b.bin".to_string(),
+                            offset: 2,
+                            length: 4,
+                        },
+                        ReadMultiEntry {
+                            path: "segments/a.bin".to_string(),
+                            offset: 6,
+                            length: 2,
+                        },
+                    ],
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert_eq!(
+                response.data,
+                vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
+            );
+        });
+    }
+
+    #[test]
+    fn read_whole_returns_entire_file() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        let payload = b"whole file contents";
+        write_collection_file(&collection_dir, "whole/data.bin", payload);
+
+        Runtime::new().unwrap().block_on(async {
+            let response = service
+                .read_whole(Request::new(ReadWholeRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "whole/data.bin".to_string(),
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert_eq!(response.data, payload.to_vec());
+        });
+    }
+
+    #[test]
+    fn read_bytes_stream_splits_large_reads_into_chunks() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        let total_len = STREAM_CHUNK_SIZE as usize + 17;
+        let payload = (0..total_len)
+            .map(|idx| (idx % 251) as u8)
+            .collect::<Vec<_>>();
+        write_collection_file(&collection_dir, "stream/data.bin", &payload);
+
+        Runtime::new().unwrap().block_on(async {
+            let mut stream = service
+                .read_bytes_stream(Request::new(ReadBytesStreamRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "stream/data.bin".to_string(),
+                    offset: 0,
+                    length: total_len as u64,
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            let mut chunks = Vec::new();
+            let mut reconstructed = Vec::new();
+            while let Some(item) = stream.next().await {
+                let chunk = item.unwrap().data;
+                chunks.push(chunk.len());
+                reconstructed.extend_from_slice(&chunk);
+            }
+
+            assert_eq!(
+                chunks,
+                vec![
+                    STREAM_CHUNK_SIZE as usize,
+                    total_len - STREAM_CHUNK_SIZE as usize
+                ]
+            );
+            assert_eq!(reconstructed, payload);
+        });
+    }
+
+    #[test]
+    fn read_batch_returns_each_requested_slice() {
+        let (service, _storage_dir, collection_dir) = create_service();
+        write_collection_file(&collection_dir, "batch/data.bin", b"0123456789");
+
+        Runtime::new().unwrap().block_on(async {
+            let response = service
+                .read_batch(Request::new(ReadBatchRequest {
+                    collection_name: TEST_COLLECTION_NAME.to_string(),
+                    path: "batch/data.bin".to_string(),
+                    ranges: vec![
+                        ReadBatchRange {
+                            offset: 0,
+                            length: 2,
+                        },
+                        ReadBatchRange {
+                            offset: 4,
+                            length: 3,
+                        },
+                        ReadBatchRange {
+                            offset: 9,
+                            length: 1,
+                        },
+                    ],
+                    open_options: None,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            assert_eq!(
+                response.data,
+                vec![b"01".to_vec(), b"456".to_vec(), b"9".to_vec()]
+            );
+        });
     }
 }
