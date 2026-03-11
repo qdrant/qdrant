@@ -940,8 +940,8 @@ impl SegmentHolder {
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
 
-        // Merge-sort all points across segments, grouped by point_id
-        let point_groups = locked_segments
+        // Iterator produces groups of points by point ID
+        let point_group_iter = locked_segments
             .iter()
             .map(|(&segment_id, locked_segment)| {
                 locked_segment
@@ -959,9 +959,10 @@ impl SegmentHolder {
         let mut points = Vec::new();
         let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
-        for (point_id, group) in &point_groups {
+        for (point_id, group_iter) in &point_group_iter {
+            // Fill buffer with points of current chunk, need at least 2 points to deduplicate
             points.clear();
-            points.extend(group);
+            points.extend(group_iter);
             if points.len() < 2 {
                 continue;
             }
