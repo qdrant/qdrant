@@ -344,6 +344,8 @@ impl LocalShard {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
+        let total_started = Instant::now();
+
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
@@ -519,6 +521,13 @@ impl LocalShard {
 
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
+
+        log::debug!(
+            target: "qdrant::load_timing",
+            "Shard {} - total loaded in {:.2}ms",
+            shard_path.display(),
+            total_started.elapsed().as_secs_f64() * 1000.0,
+        );
 
         Ok(local_shard)
     }
