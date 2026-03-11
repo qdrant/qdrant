@@ -238,10 +238,14 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let relative_paths = paths
             .into_iter()
             .filter_map(|p| {
-                p.strip_prefix(&base)
-                    .ok()
-                    .and_then(|p| p.to_str())
-                    .map(String::from)
+                p.strip_prefix(&base).ok().map(|rel| {
+                    // Always use forward slashes in gRPC responses regardless of OS.
+                    let components = rel
+                        .components()
+                        .filter_map(|c| c.as_os_str().to_str())
+                        .collect::<Vec<_>>();
+                    components.join("/")
+                })
             })
             .collect::<Vec<_>>();
 
