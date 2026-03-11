@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -41,13 +41,16 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         }
     }
 
-    /// Return the base directory for a collection.
-    fn collection_base_path(&self, auth: &storage::rbac::Auth, collection_name: &str) -> PathBuf {
+    /// Return the root directory that contains all collections.
+    fn collections_base_path(&self, auth: &storage::rbac::Auth) -> PathBuf {
         let pass = new_unchecked_verification_pass();
         let toc = self.dispatcher.toc(auth, &pass);
-        toc.storage_path()
-            .join(COLLECTIONS_DIR)
-            .join(collection_name)
+        toc.storage_path().join(COLLECTIONS_DIR)
+    }
+
+    /// Return the base directory for a collection.
+    fn collection_base_path(&self, auth: &storage::rbac::Auth, collection_name: &str) -> PathBuf {
+        self.collections_base_path(auth).join(collection_name)
     }
 
     /// Resolve a collection-scoped relative path to an absolute path,
@@ -58,9 +61,12 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         collection_name: &str,
         relative_path: &str,
     ) -> Result<PathBuf, Status> {
+        let collections_root = self.collections_base_path(auth);
         let base = self.collection_base_path(auth, collection_name);
+        let canonical_collections_root = fs_err::canonicalize(&collections_root)
+            .map_err(|e| Status::internal(format!("Failed to canonicalize collections root: {e}")))?;
 
-        let rel = std::path::Path::new(relative_path);
+        let rel = Path::new(relative_path);
         for c in rel.components() {
             match c {
                 Component::Normal(_) => {}
@@ -79,16 +85,24 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
         // check above is sufficient since we rejected all non-Normal components.
         match fs_err::canonicalize(&full) {
             Ok(canonical) => {
-                let canonical_base = fs_err::canonicalize(&base).unwrap_or(base.clone());
-                if !canonical.starts_with(&canonical_base) {
+                if !canonical.starts_with(&canonical_collections_root) {
                     return Err(Status::permission_denied(format!(
-                        "Path '{}' is outside the collection directory",
+                        "Path '{}' is outside the collections directory",
                         full.display()
                     )));
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist — the component check is sufficient.
+                if let Some(canonical_ancestor) = canonicalize_existing_ancestor(&full)
+                    .map_err(|e| Status::internal(format!("Failed to canonicalize path: {e}")))?
+                {
+                    if !canonical_ancestor.starts_with(&canonical_collections_root) {
+                        return Err(Status::permission_denied(format!(
+                            "Path '{}' is outside the collections directory",
+                            full.display()
+                        )));
+                    }
+                }
             }
             Err(e) => {
                 return Err(Status::internal(format!(
@@ -101,10 +115,31 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageReadService<S> {
     }
 }
 
+fn canonicalize_existing_ancestor(path: &Path) -> std::io::Result<Option<PathBuf>> {
+    let mut current = Some(path);
+    while let Some(candidate) = current {
+        match fs_err::canonicalize(candidate) {
+            Ok(canonical) => return Ok(Some(canonical)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                current = candidate.parent();
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(None)
+}
+
 /// Convert UniversalIoError to tonic Status.
 fn io_error_to_status(e: UniversalIoError) -> Status {
     match e {
-        UniversalIoError::Io(e) => Status::internal(format!("I/O error: {e}")),
+        UniversalIoError::Io(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => Status::not_found(format!("File not found: {e}")),
+            std::io::ErrorKind::PermissionDenied => {
+                Status::permission_denied(format!("Permission denied: {e}"))
+            }
+            _ => Status::internal(format!("I/O error: {e}")),
+        },
         UniversalIoError::Mmap(e) => Status::internal(format!("Mmap error: {e}")),
         UniversalIoError::OutOfBounds {
             start,
@@ -207,6 +242,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
         let exists = tokio::task::spawn_blocking(move || match S::exists(&path) {
             Ok(exists) => Ok(exists),
             Err(UniversalIoError::NotFound { .. }) => Ok(false),
+            Err(UniversalIoError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(e) => Err(io_error_to_status(e)),
         })
         .await
@@ -434,10 +470,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
 
         let data = tokio::task::spawn_blocking(move || {
             let storage = S::open(&path, open_options).map_err(io_error_to_status)?;
-            let mut results = ranges
-                .iter()
-                .map(|r| Vec::with_capacity(r.length as usize))
-                .collect::<Vec<_>>();
+            let mut results = ranges.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             dispatch_read_batch(
                 &storage,
                 ranges,
@@ -494,10 +527,7 @@ impl<S: UniversalRead<u8> + Send + Sync + 'static> StorageRead for StorageReadSe
                 .collect::<common::universal_io::Result<Vec<_>>>()
                 .map_err(io_error_to_status)?;
 
-            let mut results = reads_
-                .iter()
-                .map(|(_, r)| Vec::with_capacity(r.length as usize))
-                .collect::<Vec<_>>();
+            let mut results = reads_.iter().map(|_| Vec::new()).collect::<Vec<_>>();
             dispatch_read_multi(
                 &files,
                 reads_,
@@ -661,6 +691,31 @@ mod tests {
             "unexpected error message: {}",
             err.message()
         );
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn file_exists_rejects_symlinked_collection_dir_escape() {
+        use std::os::unix::fs::symlink;
+
+        let (service, storage_dir, collection_dir) = create_service_async().await;
+        let external_dir = tempfile::tempdir().unwrap();
+
+        fs_err::remove_dir_all(&collection_dir).unwrap();
+        fs_err::write(external_dir.path().join("escape.bin"), b"secret").unwrap();
+        symlink(external_dir.path(), &collection_dir).unwrap();
+
+        let err = service
+            .file_exists(Request::new(FileExistsRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                path: "escape.bin".to_string(),
+            }))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), Code::PermissionDenied);
 
         drop_service(service, storage_dir).await;
     }
@@ -990,6 +1045,28 @@ mod tests {
             response.data,
             vec![b"bcd".to_vec(), b"mnop".to_vec(), b"gh".to_vec()]
         );
+
+        drop_service(service, storage_dir).await;
+    }
+
+    #[tokio::test]
+    async fn read_multi_rejects_empty_entry_path() {
+        let (service, storage_dir, _collection_dir) = create_service_async().await;
+
+        let err = service
+            .read_multi(Request::new(ReadMultiRequest {
+                collection_name: TEST_COLLECTION_NAME.to_string(),
+                reads: vec![ReadMultiEntry {
+                    path: "".to_string(),
+                    offset: 0,
+                    length: 1,
+                }],
+                open_options: None,
+            }))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), Code::InvalidArgument);
 
         drop_service(service, storage_dir).await;
     }

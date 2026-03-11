@@ -16141,7 +16141,7 @@ pub struct ReadMultiRequest {
     )]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1), nested)]
     pub reads: ::prost::alloc::vec::Vec<ReadMultiEntry>,
     #[prost(message, optional, tag = "3")]
     pub open_options: ::core::option::Option<StorageOpenOptions>,

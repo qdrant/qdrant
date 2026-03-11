@@ -439,7 +439,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ReadBatchRequest.path", "length(min = 1)"),
             ("ReadBatchRequest.ranges", "length(min = 1)"),
             ("ReadMultiRequest.collection_name", "length(min = 1, max = 255), custom(function = \"common::validation::validate_collection_name_legacy\")"),
-            ("ReadMultiRequest.reads", "length(min = 1)"),
+            ("ReadMultiRequest.reads", "length(min = 1), nested"),
             ("ReadMultiEntry.path", "length(min = 1)"),
         ], &[])
 }
