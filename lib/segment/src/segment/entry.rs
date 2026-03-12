@@ -892,8 +892,8 @@ impl NonAppendableSegmentEntry for Segment {
     }
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
-        // TODO(deferred): subtract deferred point count here?
-        query_context.add_available_point_count(self.available_point_count());
+        query_context
+            .add_available_point_count(self.available_point_count_without_deferred_estimated());
         let hw_acc = query_context.hardware_usage_accumulator();
         let hw_counter = hw_acc.get_counter_cell();
 
