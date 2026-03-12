@@ -56,6 +56,7 @@ rs-examples-list:
 # 🐍 Build qdrant-edge-py
 [working-directory: 'python', script]
 py-build:
+  unset VIRTUAL_ENV
   uv venv --allow-existing
   uv pip install requests
   maturin develop --no-default-features --features abi3
@@ -64,6 +65,7 @@ py-build:
 [working-directory: 'python', script]
 [positional-arguments, arg('e', short = 'e')]
 py-examples e="":
+  unset VIRTUAL_ENV
   EXAMPLES=${1:-$(just py-examples-list)}
   FAILURES=""
   for fname in $EXAMPLES; do
