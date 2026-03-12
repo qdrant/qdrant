@@ -36,7 +36,7 @@ fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rng: &mut R, dim: usize
 
 #[rstest]
 #[case::nearest(QueryVariant::Nearest, 32, 5)]
-#[case::discovery(QueryVariant::Discovery, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
+#[case::discover(QueryVariant::Discover, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
 #[case::reco_best_score(QueryVariant::RecoBestScore, 64, 10)]
 #[case::reco_sum_scores(QueryVariant::RecoSumScores, 64, 10)]
 fn test_filterable_hnsw(

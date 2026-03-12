@@ -1,5 +1,5 @@
 mod count;
-mod discovery;
+mod discover;
 mod facet;
 mod local_shard;
 mod matrix;
@@ -365,29 +365,29 @@ mod test {
     }
 
     async fn test_query_limit(collection: &Collection) {
-        assert_strict_mode_error(discovery_fixture(Some(10), None, None), collection).await;
-        assert_strict_mode_success(discovery_fixture(Some(4), None, None), collection).await;
+        assert_strict_mode_error(discover_fixture(Some(10), None, None), collection).await;
+        assert_strict_mode_success(discover_fixture(Some(4), None, None), collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
         let filter = filter_fixture(UNINDEXED_KEY);
-        assert_strict_mode_error(discovery_fixture(None, Some(filter), None), collection).await;
+        assert_strict_mode_error(discover_fixture(None, Some(filter), None), collection).await;
 
         let filter = filter_fixture(INDEXED_KEY);
-        assert_strict_mode_success(discovery_fixture(None, Some(filter), None), collection).await;
+        assert_strict_mode_success(discover_fixture(None, Some(filter), None), collection).await;
     }
 
     async fn test_search_params(collection: &Collection) {
         let restricted_params = search_params_fixture(true);
         assert_strict_mode_error(
-            discovery_fixture(None, None, Some(restricted_params)),
+            discover_fixture(None, None, Some(restricted_params)),
             collection,
         )
         .await;
 
         let allowed_params = search_params_fixture(false);
         assert_strict_mode_success(
-            discovery_fixture(None, None, Some(allowed_params)),
+            discover_fixture(None, None, Some(allowed_params)),
             collection,
         )
         .await;
@@ -464,7 +464,7 @@ mod test {
         }
     }
 
-    fn discovery_fixture(
+    fn discover_fixture(
         limit: Option<usize>,
         filter: Option<Filter>,
         search_params: Option<SearchParams>,

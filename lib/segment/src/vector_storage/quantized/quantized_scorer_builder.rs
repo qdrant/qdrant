@@ -17,7 +17,7 @@ use crate::vector_storage::quantized::quantized_multi_custom_query_scorer::Quant
 use crate::vector_storage::quantized::quantized_multi_query_scorer::QuantizedMultiQueryScorer;
 use crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsets;
 use crate::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, NaiveFeedbackQuery, RecoBestScoreQuery, RecoQuery,
+    ContextQuery, DiscoverQuery, NaiveFeedbackQuery, RecoBestScoreQuery, RecoQuery,
     RecoSumScoresQuery, TransformInto,
 };
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
@@ -196,11 +196,10 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<DenseVector> =
-                    discovery_query.transform_into()?;
+            QueryVector::Discover(discover_query) => {
+                let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _>::new(
-                    discovery_query,
+                    discover_query,
                     quantized_storage,
                     quantization_config,
                     hardware_counter,
@@ -282,12 +281,12 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     );
                 raw_scorer_from_query_scorer(query_scorer)
             }
-            QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
-                    discovery_query.transform_into()?;
+            QueryVector::Discover(discover_query) => {
+                let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
+                    discover_query.transform_into()?;
                 let query_scorer =
                     QuantizedMultiCustomQueryScorer::<TElement, TMetric, _, _>::new_multi(
-                        discovery_query,
+                        discover_query,
                         quantized_multivector_storage,
                         quantization_config,
                         hardware_counter,

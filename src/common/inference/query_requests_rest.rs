@@ -11,7 +11,7 @@ use ordered_float::OrderedFloat;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery,
+    ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, RecoQuery,
 };
 use storage::content_manager::errors::{StorageError, StorageResult};
 
@@ -253,7 +253,7 @@ fn convert_query_with_inferred(
                 .flatten()
                 .map(|pair| context_pair_from_rest_with_inferred(pair, inferred))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Query::Vector(VectorQuery::Discover(DiscoveryQuery::new(
+            Ok(Query::Vector(VectorQuery::Discover(DiscoverQuery::new(
                 target, context,
             ))))
         }

@@ -136,7 +136,7 @@ async fn discover_batch_points(
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
-pub fn config_discovery_api(cfg: &mut web::ServiceConfig) {
+pub fn config_discover_api(cfg: &mut web::ServiceConfig) {
     cfg.service(discover_points);
     cfg.service(discover_batch_points);
 }

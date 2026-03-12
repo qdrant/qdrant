@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::query::{
-    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+    ContextQuery, DiscoverQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::{QueryScorerBytes, QueryScorerBytesImpl};
@@ -157,11 +157,10 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 );
                 Ok(async_raw_scorer_from_query_scorer(query_scorer, storage))
             }
-            QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<DenseVector> =
-                    discovery_query.transform_into()?;
+            QueryVector::Discover(discover_query) => {
+                let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
-                    discovery_query,
+                    discover_query,
                     storage,
                     hardware_counter,
                 );

@@ -25,12 +25,12 @@ impl<T> ContextPair<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Hash)]
-pub struct DiscoveryQuery<T> {
+pub struct DiscoverQuery<T> {
     pub target: T,
     pub pairs: Vec<ContextPair<T>>,
 }
 
-impl<T> DiscoveryQuery<T> {
+impl<T> DiscoverQuery<T> {
     pub fn new(target: T, pairs: Vec<ContextPair<T>>) -> Self {
         Self { target, pairs }
     }
@@ -50,12 +50,12 @@ impl<T> DiscoveryQuery<T> {
     }
 }
 
-impl<T, U> TransformInto<DiscoveryQuery<U>, T, U> for DiscoveryQuery<T> {
-    fn transform<F>(self, mut f: F) -> OperationResult<DiscoveryQuery<U>>
+impl<T, U> TransformInto<DiscoverQuery<U>, T, U> for DiscoverQuery<T> {
+    fn transform<F>(self, mut f: F) -> OperationResult<DiscoverQuery<U>>
     where
         F: FnMut(T) -> OperationResult<U>,
     {
-        Ok(DiscoveryQuery::new(
+        Ok(DiscoverQuery::new(
             f(self.target)?,
             self.pairs
                 .into_iter()
@@ -65,7 +65,7 @@ impl<T, U> TransformInto<DiscoveryQuery<U>, T, U> for DiscoveryQuery<T> {
     }
 }
 
-impl<T> Query<T> for DiscoveryQuery<T> {
+impl<T> Query<T> for DiscoverQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         let rank = self.rank_by(&similarity);
 
@@ -76,9 +76,9 @@ impl<T> Query<T> for DiscoveryQuery<T> {
     }
 }
 
-impl From<DiscoveryQuery<VectorInternal>> for QueryVector {
-    fn from(query: DiscoveryQuery<VectorInternal>) -> Self {
-        QueryVector::Discovery(query)
+impl From<DiscoverQuery<VectorInternal>> for QueryVector {
+    fn from(query: DiscoverQuery<VectorInternal>) -> Self {
+        QueryVector::Discover(query)
     }
 }
 
@@ -113,7 +113,7 @@ mod test {
 
         let target = 42;
 
-        let query = DiscoveryQuery::new(target, pairs);
+        let query = DiscoverQuery::new(target, pairs);
 
         let rank = query.rank_by(dummy_similarity);
 
@@ -139,7 +139,7 @@ mod test {
 
         let pairs = pairs.into_iter().map(ContextPair::from).collect();
 
-        let query = DiscoveryQuery::new(target, pairs);
+        let query = DiscoverQuery::new(target, pairs);
 
         let score = query.score_by(dummy_similarity);
 
@@ -160,11 +160,11 @@ mod test {
             let dummy_similarity = |x: &ScoreType| *x as ScoreType;
 
             let pairs1 = pairs1.into_iter().map(ContextPair::from).collect();
-            let query1 = DiscoveryQuery::new(target, pairs1);
+            let query1 = DiscoverQuery::new(target, pairs1);
             let score1 = query1.score_by(dummy_similarity);
 
             let pairs2 = pairs2.into_iter().map(ContextPair::from).collect();
-            let query2 = DiscoveryQuery::new(target, pairs2);
+            let query2 = DiscoverQuery::new(target, pairs2);
             let score2 = query2.score_by(dummy_similarity);
 
             let target_part1 = score1 - score1.floor();
@@ -183,10 +183,10 @@ mod test {
             let dummy_similarity = |x: &ScoreType| *x as ScoreType;
 
             let pairs = pairs.into_iter().map(ContextPair::from).collect_vec();
-            let query1 = DiscoveryQuery::new(target1, pairs.clone());
+            let query1 = DiscoverQuery::new(target1, pairs.clone());
             let score1 = query1.score_by(dummy_similarity);
 
-            let query2 = DiscoveryQuery::new(target2, pairs);
+            let query2 = DiscoverQuery::new(target2, pairs);
             let score2 = query2.score_by(dummy_similarity);
 
             let context_part1 = score1.floor();

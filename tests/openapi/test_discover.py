@@ -110,7 +110,7 @@ def test_only_target_is_search_with_different_scoring(collection_name):
         assert search_point["score"] != discover_point["score"]
 
 
-# Only when we use both target and context, we are doing discovery
+# Only when we use both target and context, we are doing a discover request
 def test_discover_same_context(collection_name):
     target1 = random_example()
     context = [
@@ -306,7 +306,7 @@ def test_null_offset(collection_name):
     assert response.ok, response.json()
 
 
-def test_discovery_lookup(collection_name, collection_name_lookup):
+def test_discover_lookup(collection_name, collection_name_lookup):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -373,7 +373,7 @@ def test_discovery_lookup(collection_name, collection_name_lookup):
         },
     )
     assert response.ok, response.text
-    discovery_result_by_id = response.json()["result"]
+    discover_result_by_id = response.json()["result"]
 
     # check discover by vector + lookup_from
     response = request_with_validation(
@@ -392,7 +392,7 @@ def test_discovery_lookup(collection_name, collection_name_lookup):
         },
     )
     assert response.ok, response.text
-    discovery_result_by_vector = response.json()["result"]
+    discover_result_by_vector = response.json()["result"]
 
     # check if results are the same
-    assert discovery_result_by_id == discovery_result_by_vector, f"discovery_result_by_id: {discovery_result_by_id}, discovery_result_by_vector: {discovery_result_by_vector}"
+    assert discover_result_by_id == discover_result_by_vector, f"discover_result_by_id: {discover_result_by_id}, discover_result_by_vector: {discover_result_by_vector}"

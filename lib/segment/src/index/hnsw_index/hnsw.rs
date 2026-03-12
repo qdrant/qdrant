@@ -70,7 +70,7 @@ use crate::types::{
     QuantizationSearchParams, SearchParams,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::query::DiscoveryQuery;
+use crate::vector_storage::query::DiscoverQuery;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -1173,8 +1173,8 @@ impl HNSWIndex {
         vectors
             .iter()
             .map(|&vector| match vector {
-                QueryVector::Discovery(discovery_query) => self.discovery_search_with_graph(
-                    discovery_query.clone(),
+                QueryVector::Discover(discover_query) => self.discover_search_with_graph(
+                    discover_query.clone(),
                     filter,
                     top,
                     params,
@@ -1288,16 +1288,16 @@ impl HNSWIndex {
         self.search_plain_batched(vectors, filtered_points, top, params, vector_query_context)
     }
 
-    fn discovery_search_with_graph(
+    fn discover_search_with_graph(
         &self,
-        discovery_query: DiscoveryQuery<VectorInternal>,
+        discover_query: DiscoverQuery<VectorInternal>,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Stage 1: Find best entry points using Context search
-        let query_vector = QueryVector::Context(discovery_query.pairs.clone().into());
+        let query_vector = QueryVector::Context(discover_query.pairs.clone().into());
 
         const DISCOVERY_ENTRY_POINT_COUNT: usize = 10;
 
@@ -1312,8 +1312,8 @@ impl HNSWIndex {
             )
             .map(|search_result| search_result.iter().map(|x| x.idx).collect())?;
 
-        // Stage 2: Discovery search with entry points
-        let query_vector = QueryVector::Discovery(discovery_query);
+        // Stage 2: Discover search with entry points
+        let query_vector = QueryVector::Discover(discover_query);
 
         self.search_with_graph(
             &query_vector,
