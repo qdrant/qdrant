@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, hash_map};
+use std::collections::VecDeque;
 use std::io::{self, Read as _};
 use std::mem::{self, MaybeUninit, size_of};
 use std::os::fd::AsRawFd as _;
@@ -397,13 +397,20 @@ impl<'uring, 'data, T> Drop for IoUringRuntime<'uring, 'data, T> {
 
 #[derive(Debug)]
 struct IoUringState<'data, T> {
-    requests: HashMap<RequestId, IoUringRequest<'data, T>>,
+    /// Stores in-flight requests in a slot-indexed deque. The front of the deque
+    /// corresponds to `base_id`. Slots are `None` for completed/aborted requests
+    /// that haven't been compacted yet. Since request IDs are sequential (from
+    /// `enumerate()`) and at most `IO_URING_QUEUE_LENGTH` are in-flight, this
+    /// stays small and avoids HashMap hashing overhead.
+    requests: VecDeque<Option<IoUringRequest<'data, T>>>,
+    base_id: RequestId,
 }
 
 impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
-            requests: HashMap::new(),
+            requests: VecDeque::new(),
+            base_id: 0,
         }
     }
 
@@ -461,19 +468,31 @@ impl<'data, T> IoUringState<'data, T> {
         id: RequestId,
         req: IoUringRequest<'data, T>,
     ) -> io::Result<&mut IoUringRequest<'data, T>> {
-        let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
-            return Err(io::Error::other(format!("request {id} already exists")));
-        };
+        debug_assert!(
+            id >= self.base_id,
+            "request {id} precedes base {base}",
+            base = self.base_id
+        );
 
-        let req = entry.insert(req);
-        Ok(req)
+        let idx = (id - self.base_id) as usize;
+
+        if idx >= self.requests.len() {
+            self.requests.resize_with(idx + 1, || None);
+        }
+
+        let slot = &mut self.requests[idx];
+        if slot.is_some() {
+            return Err(io::Error::other(format!("request {id} already exists")));
+        }
+
+        *slot = Some(req);
+        Ok(slot.as_mut().unwrap())
     }
 
     pub fn finalize(&mut self, id: RequestId, byte_length: u32) -> io::Result<IoUringResponse<T>> {
         let req = self
-            .requests
-            .remove(&id)
-            .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
+            .take(id)
+            .ok_or_else(|| io::Error::other(format!("request {id} does not exist")))?;
 
         let resp = match req {
             IoUringRequest::Read(items) => {
@@ -492,7 +511,24 @@ impl<'data, T> IoUringState<'data, T> {
     }
 
     pub fn abort(&mut self, id: RequestId) -> bool {
-        self.requests.remove(&id).is_some()
+        self.take(id).is_some()
+    }
+
+    fn take(&mut self, id: RequestId) -> Option<IoUringRequest<'data, T>> {
+        if id < self.base_id {
+            return None;
+        }
+
+        let idx = (id - self.base_id) as usize;
+        let req = self.requests.get_mut(idx)?.take()?;
+
+        // Pop completed slots from the front to keep the deque compact
+        while let Some(None) = self.requests.front() {
+            self.requests.pop_front();
+            self.base_id += 1;
+        }
+
+        Some(req)
     }
 
     fn is_empty(&self) -> bool {
