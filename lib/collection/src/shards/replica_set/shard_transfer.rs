@@ -7,7 +7,9 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::forward_proxy_shard::{ForwardProxyShard, TransferBatchResult};
+use crate::shards::forward_proxy_shard::{
+    ForwardProxyShard, PreparedTransferBatch, TransferBatchResult,
+};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -367,6 +369,41 @@ impl ShardReplicaSet {
 
         proxy
             .transfer_batch(
+                offset,
+                batch_size,
+                hashring_filter,
+                merge_points,
+                &self.search_runtime,
+            )
+            .await
+    }
+
+    /// Read a transfer batch without sending it yet.
+    ///
+    /// Returns a [`PreparedTransferBatch`] that holds the update lock. The caller can then drop
+    /// other locks (e.g. the shard holder lock) before calling [`PreparedTransferBatch::send`].
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn read_transfer_batch(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        hashring_filter: Option<&HashRingRouter>,
+        merge_points: bool,
+    ) -> CollectionResult<PreparedTransferBatch> {
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Cannot transfer batch from shard {} because it is not proxified",
+                self.shard_id
+            )));
+        };
+
+        proxy
+            .read_transfer_batch(
                 offset,
                 batch_size,
                 hashring_filter,
