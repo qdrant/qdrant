@@ -45,7 +45,7 @@ fn compare_search_result(result_a: &[Vec<ScoredPointOffset>], result_b: &[Vec<Sc
 #[rstest]
 #[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Uint8, 32, 10)]
 #[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Float16, 32, 10)]
-#[case::discovery(QueryVariant::Discovery, VectorStorageDatatype::Uint8, 128, 20)]
+#[case::discover(QueryVariant::Discover, VectorStorageDatatype::Uint8, 128, 20)]
 #[case::reco_best_score(QueryVariant::RecoBestScore, VectorStorageDatatype::Float16, 64, 20)]
 #[case::reco_sum_scores(QueryVariant::RecoSumScores, VectorStorageDatatype::Float16, 64, 20)]
 fn test_byte_storage_hnsw(

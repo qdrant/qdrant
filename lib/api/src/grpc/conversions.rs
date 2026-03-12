@@ -2875,9 +2875,9 @@ impl TryFrom<raw_query::Context> for segment_query::ContextQuery<segment_vectors
     }
 }
 
-impl From<segment_query::DiscoveryQuery<segment_vectors::VectorInternal>> for raw_query::Discovery {
-    fn from(value: segment_query::DiscoveryQuery<segment_vectors::VectorInternal>) -> Self {
-        let segment_query::DiscoveryQuery { target, pairs } = value;
+impl From<segment_query::DiscoverQuery<segment_vectors::VectorInternal>> for raw_query::Discovery {
+    fn from(value: segment_query::DiscoverQuery<segment_vectors::VectorInternal>) -> Self {
+        let segment_query::DiscoverQuery { target, pairs } = value;
         Self {
             target: Some(RawVector::from(target)),
             context: pairs
@@ -2889,7 +2889,7 @@ impl From<segment_query::DiscoveryQuery<segment_vectors::VectorInternal>> for ra
 }
 
 impl TryFrom<raw_query::Discovery>
-    for segment_query::DiscoveryQuery<segment_vectors::VectorInternal>
+    for segment_query::DiscoverQuery<segment_vectors::VectorInternal>
 {
     type Error = Status;
     fn try_from(value: raw_query::Discovery) -> Result<Self, Self::Error> {

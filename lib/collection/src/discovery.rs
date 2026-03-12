@@ -6,7 +6,7 @@ use futures::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoverQuery};
 use shard::query::query_enum::QueryEnum;
 use shard::search::CoreSearchRequestBatch;
 
@@ -22,7 +22,7 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, DiscoverRequestInternal,
 };
 
-fn discovery_into_core_search(
+fn discover_into_core_search(
     collection_name: &str,
     request: DiscoverRequestInternal,
     all_vectors_records_map: &ReferencedVectors,
@@ -78,9 +78,9 @@ fn discovery_into_core_search(
         .collect_vec();
 
     let query: QueryEnum = match (target, context_pairs) {
-        // Target with/without pairs => Discovery
+        // Target with/without pairs => Discover
         (Some(target), pairs) => QueryEnum::Discover(NamedQuery {
-            query: DiscoveryQuery::new(target, pairs),
+            query: DiscoverQuery::new(target, pairs),
             using,
         }),
 
@@ -214,7 +214,7 @@ where
         request_batch,
         |(_req, shard)| shard,
         |(req, _), acc| {
-            discovery_into_core_search(collection.name(), req, &all_vectors_records_map).map(
+            discover_into_core_search(collection.name(), req, &all_vectors_records_map).map(
                 |core_req| {
                     acc.push(core_req);
                 },

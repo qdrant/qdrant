@@ -525,9 +525,9 @@ pub async fn discover_batch(
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(discover_points.len());
 
-    for discovery_request in discover_points {
+    for discover_request in discover_points {
         let (internal_request, _collection_name, _consistency, _timeout, shard_key_selector) =
-            try_discover_request_from_grpc(discovery_request)?;
+            try_discover_request_from_grpc(discover_request)?;
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector)?;
         requests.push((internal_request, shard_selector));
     }

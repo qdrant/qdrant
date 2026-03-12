@@ -78,7 +78,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
 
     fn try_from(value: api::grpc::qdrant::CoreSearchPoints) -> Result<Self, Self::Error> {
         use segment::data_types::vectors::VectorInternal;
-        use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
+        use segment::vector_storage::query::{ContextQuery, DiscoverQuery, RecoQuery};
 
         let query = value
             .query
@@ -118,7 +118,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.try_into()?, pairs),
+                            query: DiscoverQuery::new(target.try_into()?, pairs),
                             using: value.vector_name,
                         })
                     }

@@ -73,13 +73,13 @@ fn check_query_vector(
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Discovery(discovery_query) => {
-            discovery_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Discover(discover_query) => {
+            discover_query.flat_iter().try_for_each(|vector| {
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Context(discovery_context_query) => {
-            discovery_context_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Context(context_query) => {
+            context_query.flat_iter().try_for_each(|vector| {
                 check_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
@@ -107,13 +107,13 @@ fn check_query_sparse_vector(
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Discovery(discovery_query) => {
-            discovery_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Discover(discover_query) => {
+            discover_query.flat_iter().try_for_each(|vector| {
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }
-        QueryVector::Context(discovery_context_query) => {
-            discovery_context_query.flat_iter().try_for_each(|vector| {
+        QueryVector::Context(context_query) => {
+            context_query.flat_iter().try_for_each(|vector| {
                 check_sparse_vector_against_config(VectorRef::from(vector), vector_config)
             })?
         }

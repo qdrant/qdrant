@@ -12,7 +12,7 @@ use segment::types::{
     VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
+    ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, NaiveFeedbackCoefficients, RecoQuery,
 };
 use serde::Serialize;
 use shard::query::query_enum::QueryEnum;
@@ -165,7 +165,7 @@ pub enum VectorQuery<T> {
     RecommendAverageVector(RecoQuery<T>),
     RecommendBestScore(RecoQuery<T>),
     RecommendSumScores(RecoQuery<T>),
-    Discover(DiscoveryQuery<T>),
+    Discover(DiscoverQuery<T>),
     Context(ContextQuery<T>),
     Feedback(FeedbackInternal<T>),
 }
@@ -297,7 +297,7 @@ impl VectorQuery<VectorInputInternal> {
                     })
                     .collect::<CollectionResult<_>>()?;
 
-                Ok(VectorQuery::Discover(DiscoveryQuery { target, pairs }))
+                Ok(VectorQuery::Discover(DiscoverQuery { target, pairs }))
             }
             VectorQuery::Context(context) => {
                 let pairs = context

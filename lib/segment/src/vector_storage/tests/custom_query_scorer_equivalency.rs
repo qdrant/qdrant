@@ -240,7 +240,7 @@ fn compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,
         QueryVariant::RecoSumScores,
-        QueryVariant::Discovery,
+        QueryVariant::Discover,
         QueryVariant::Context
     )]
     query_variant: QueryVariant,
@@ -257,7 +257,7 @@ fn async_compare_scoring_equivalency(
     #[values(
         QueryVariant::RecoBestScore,
         QueryVariant::RecoSumScores,
-        QueryVariant::Discovery,
+        QueryVariant::Discover,
         QueryVariant::Context
     )]
     query_variant: QueryVariant,

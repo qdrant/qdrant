@@ -115,7 +115,7 @@ impl EdgeShard {
             }
             QueryVector::RecommendBestScore(_) => (),
             QueryVector::RecommendSumScores(_) => (),
-            QueryVector::Discovery(_) => (),
+            QueryVector::Discover(_) => (),
             QueryVector::Context(_) => (),
             QueryVector::FeedbackNaive(_) => (),
         }

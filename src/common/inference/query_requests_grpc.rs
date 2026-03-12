@@ -14,7 +14,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::types::{Filter, PointIdType, SearchParams};
 use segment::vector_storage::query::{
-    ContextPair, ContextQuery, DiscoveryQuery, FeedbackItem, RecoQuery,
+    ContextPair, ContextQuery, DiscoverQuery, FeedbackItem, RecoQuery,
 };
 use tonic::Status;
 
@@ -285,7 +285,7 @@ fn convert_query_with_inferred(
                 .map(|pair| context_pair_from_grpc_with_inferred(pair, inferred))
                 .collect::<Result<_, _>>()?;
 
-            Query::Vector(VectorQuery::Discover(DiscoveryQuery::new(target, context)))
+            Query::Vector(VectorQuery::Discover(DiscoverQuery::new(target, context)))
         }
         Variant::Context(context) => {
             let context_query = context_query_from_grpc_with_inferred(context, inferred)?;

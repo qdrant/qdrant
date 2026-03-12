@@ -45,7 +45,7 @@ impl FromPyObject<'_, '_> for PyQuery {
             }
 
             PyQueryInterface::Discover { query, using } => QueryEnum::Discover(NamedQuery {
-                query: DiscoveryQuery::from(query),
+                query: DiscoverQuery::from(query),
                 using,
             }),
 
@@ -270,14 +270,14 @@ impl PyRecommendQuery {
 #[pyclass(name = "DiscoverQuery", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
-pub struct PyDiscoverQuery(DiscoveryQuery<VectorInternal>);
+pub struct PyDiscoverQuery(DiscoverQuery<VectorInternal>);
 
 #[pyclass_repr]
 #[pymethods]
 impl PyDiscoverQuery {
     #[new]
     pub fn new(target: PyNamedVectorInternal, pairs: Vec<PyContextPair>) -> Self {
-        Self(DiscoveryQuery {
+        Self(DiscoverQuery {
             target: VectorInternal::from(target),
             pairs: PyContextPair::peel_vec(pairs),
         })
@@ -301,7 +301,7 @@ impl PyDiscoverQuery {
 impl PyDiscoverQuery {
     fn _getters(self) {
         // Every field should have a getter method
-        let DiscoveryQuery {
+        let DiscoverQuery {
             target: _,
             pairs: _,
         } = self.0;

@@ -32,7 +32,7 @@ use crate::vector_storage::{
 /// │                 │                     │                │ │  Query
 /// │ deleted_points  │                     │ TVectorStorage │ │ ┌──────────────────┐
 /// │ deleted_vectors │                     └────────────────┘ └─┤ - RecoQuery      │
-/// └─────────────────┘                                          │ - DiscoveryQuery │
+/// └─────────────────┘                                          │ - DiscoverQuery  │
 ///                                                              │ - ContextQuery   │
 ///                                                              └──────────────────┘
 ///                                                              - Scoring logic
