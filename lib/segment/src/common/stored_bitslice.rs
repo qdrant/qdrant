@@ -14,7 +14,7 @@ use bitvec::vec::BitVec;
 use common::universal_io::{
     ElementsRange, Flusher, OpenOptions, Result, UniversalIoError, UniversalRead, UniversalWrite,
 };
-use itertools::Itertools;
+use itertools::{Itertools, PeekingNext};
 
 /// Number of bits per `u64` element.
 const BITS_PER_ELEMENT: u64 = u64::BITS as u64;
@@ -144,43 +144,68 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
 impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
     /// Set multiple individual bits in a batch.
     ///
-    /// Each `(bit_index, value)` pair sets a single bit. If contiguous, bits within the same
-    /// `u64` element are coalesced into a single read-modify-write.
+    /// Each `(bit_index, value)` pair sets a single bit. Bits within the same
+    /// `u64` element are coalesced into a single read-modify-write, and
+    /// consecutive modified elements are grouped into contiguous runs
+    /// written via a single `write_batch` call.
     pub fn set_bits_batch(&mut self, updates: impl IntoIterator<Item = (u64, bool)>) -> Result<()> {
-        // group by bits on the same element
         let chunks = updates
             .into_iter()
             .chunk_by(|(bit_idx, _)| Self::element_idx(*bit_idx));
 
-        for (element_idx, chunk) in &chunks {
-            if element_idx >= self.element_len {
+        // Coalesce consecutive element indices into contiguous runs,
+        // collecting per-element bit updates within each run.
+        let runs = (&chunks)
+            .into_iter()
+            // .map(|(element_idx, chunk)| (element_idx, chunk.collect::<Vec<_>>()))
+            .peekable()
+            .batching(|iter| {
+                let (start, first) = iter.next()?;
+                let mut run_updates: Vec<_> = first.collect();
+
+                let mut end = start;
+                while let Some((_idx, updates)) =
+                    iter.peeking_next(|(next_idx, _)| *next_idx == end + 1)
+                {
+                    run_updates.extend(updates);
+                    end += 1;
+                }
+
+                let num_elements = end - start + 1;
+                Some((start, run_updates, num_elements))
+            });
+
+        // For each run: single read, apply all bit modifications, single write.
+        let mut writes = Vec::new();
+        for (element_start, run_updates, num_elements) in runs {
+            if element_start + num_elements > self.element_len {
                 return Err(UniversalIoError::OutOfBounds {
-                    start: element_idx,
-                    end: element_idx.saturating_add(1),
+                    start: element_start,
+                    end: element_start + num_elements,
                     elements: self.element_len as usize,
                 });
             }
 
-            let mut element = self.storage.read::<false>(ElementsRange {
-                start: element_idx,
-                length: 1,
-            })?[0];
-            let old_element = element;
-            let new_element = &mut element;
+            let original = self.storage.read::<false>(ElementsRange {
+                start: element_start,
+                length: num_elements,
+            })?;
+            let mut buf = original.to_vec();
+            let bitslice = BitSlice::from_slice_mut(&mut buf);
 
-            let bitslice = BitSlice::from_element_mut(new_element);
-
-            // Do all modifications to this element
-            for (bit_idx, value) in chunk {
-                let bit_within_element = bit_idx as u8 & <u64 as BitRegister>::MASK;
-                bitslice.set(bit_within_element as usize, value);
+            for (bit_idx, value) in run_updates {
+                let bit_offset =
+                    bit_idx as usize - (element_start as usize * BITS_PER_ELEMENT as usize);
+                bitslice.set(bit_offset, value);
             }
 
-            // Write if it changed
-            if old_element != *new_element {
-                self.storage.write(element_idx, &[*new_element])?;
+            if *original != buf[..] {
+                writes.push((element_start, buf));
             }
         }
+
+        self.storage
+            .write_batch(writes.iter().map(|(start, vec)| (*start, vec.as_slice())))?;
 
         Ok(())
     }
@@ -203,7 +228,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
             return Err(UniversalIoError::OutOfBounds {
                 start: 0,
                 end: bit_count,
-                data_length: self.bit_len() as usize,
+                elements: self.bit_len() as usize,
             });
         }
 
@@ -415,12 +440,14 @@ mod tests {
 
     #[test]
     fn test_set_bits_batch() {
-        let f = create_temp_file(&[0x00; 8]);
+        // 4 u64 elements = 256 bits
+        let f = create_temp_file(&[0x00; 32]);
 
         let mut storage: MmapBitSlice =
             StoredBitSlice::open(f.path(), OpenOptions::default()).unwrap();
+        assert_eq!(storage.element_len(), 4);
 
-        // Set several bits
+        // --- Single element (element 0) ---
         storage
             .set_bits_batch([(0, true), (3, true), (7, true), (8, true), (15, true)])
             .unwrap();
@@ -431,6 +458,78 @@ mod tests {
         assert_eq!(storage.get_bit(7).unwrap(), Some(true));
         assert_eq!(storage.get_bit(8).unwrap(), Some(true));
         assert_eq!(storage.get_bit(15).unwrap(), Some(true));
+
+        // --- Consecutive elements (elements 1 and 2) coalesced into one run ---
+        // Element 1: bits 64..128, Element 2: bits 128..192
+        storage
+            .set_bits_batch([
+                (64, true),  // element 1, bit 0
+                (65, true),  // element 1, bit 1
+                (127, true), // element 1, last bit
+                (128, true), // element 2, first bit
+                (190, true), // element 2, bit 62
+            ])
+            .unwrap();
+
+        assert_eq!(storage.get_bit(64).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(65).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(66).unwrap(), Some(false));
+        assert_eq!(storage.get_bit(127).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(128).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(129).unwrap(), Some(false));
+        assert_eq!(storage.get_bit(190).unwrap(), Some(true));
+
+        // --- Non-consecutive elements (elements 0 and 2, gap at 1) ---
+        // Two separate runs in a single batch call.
+        storage
+            .set_bits_batch([
+                (1, true),   // element 0
+                (191, true), // element 2
+            ])
+            .unwrap();
+
+        assert_eq!(storage.get_bit(1).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(191).unwrap(), Some(true));
+        // Previously set bits should still be there
+        assert_eq!(storage.get_bit(64).unwrap(), Some(true));
+
+        // --- Clearing bits across elements ---
+        storage
+            .set_bits_batch([
+                (0, false),   // element 0
+                (64, false),  // element 1
+                (128, false), // element 2
+            ])
+            .unwrap();
+
+        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
+        assert_eq!(storage.get_bit(64).unwrap(), Some(false));
+        assert_eq!(storage.get_bit(128).unwrap(), Some(false));
+        // Other bits remain untouched
+        assert_eq!(storage.get_bit(3).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(65).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(190).unwrap(), Some(true));
+
+        // --- All four elements in one consecutive run ---
+        storage
+            .set_bits_batch([
+                (0, false),   // element 0
+                (64, false),  // element 1
+                (128, false), // element 2
+                (192, true),  // element 3
+                (255, true),  // element 3, last bit
+            ])
+            .unwrap();
+
+        assert_eq!(storage.get_bit(0).unwrap(), Some(false));
+        assert_eq!(storage.get_bit(192).unwrap(), Some(true));
+        assert_eq!(storage.get_bit(255).unwrap(), Some(true));
+
+        // --- Out of bounds ---
+        assert!(storage.set_bits_batch([(256, true)]).is_err());
+
+        // --- Empty batch is a no-op ---
+        storage.set_bits_batch(std::iter::empty()).unwrap();
     }
 
     #[test]
