@@ -444,7 +444,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             let wrapped_segment_guard = wrapped_segment.read();
             (
                 wrapped_segment_guard.estimate_point_count(filter, hw_counter)?,
-                wrapped_segment_guard.available_point_count(),
+                wrapped_segment_guard.available_point_count_without_deferred_estimated(),
             )
         };
 

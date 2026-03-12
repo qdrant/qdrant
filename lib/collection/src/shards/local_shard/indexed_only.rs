@@ -46,7 +46,6 @@ pub fn get_index_only_excluded_vectors(
                         return Some((vector_name, None, points));
                     }
 
-                    // TODO(deferred): Ignore deferred points.
                     let vector_storage_size =
                         segment_guard.available_vectors_size_in_bytes(&vector_name);
 
