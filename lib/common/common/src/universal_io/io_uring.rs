@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, hash_map};
+use std::collections::hash_map;
 use std::io::{self, Read as _};
 use std::mem::{self, MaybeUninit, size_of};
 use std::os::fd::AsRawFd as _;
@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ::io_uring::types::Fd;
 use ::io_uring::{IoUring, Probe, opcode, squeue};
+use ahash::AHashMap;
 use fs_err as fs;
 
 use super::*;
@@ -397,13 +398,13 @@ impl<'uring, 'data, T> Drop for IoUringRuntime<'uring, 'data, T> {
 
 #[derive(Debug)]
 struct IoUringState<'data, T> {
-    requests: HashMap<RequestId, IoUringRequest<'data, T>>,
+    requests: AHashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
 impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
-            requests: HashMap::new(),
+            requests: AHashMap::new(),
         }
     }
 
