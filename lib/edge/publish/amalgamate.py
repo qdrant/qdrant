@@ -127,6 +127,7 @@ def main() -> None:
             """
             #![allow(unexpected_cfgs)]
             #![allow(dead_code, unused_imports)]
+            // #![warn(unnameable_types)] // TODO: re-enable when cleaning up the API
             pub use edge::*;
             """
         ).lstrip()
@@ -175,6 +176,16 @@ def main() -> None:
         AMALGAMATION.glob("src/**/*.rs"),
         # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
+    )
+
+    # Fix doctests
+    substitute(
+        AMALGAMATION / "src/common/typelevel.rs",
+        (r"^//! ```\n//! use ", "//! ```ignore\n//! use "),
+    )
+    substitute(
+        AMALGAMATION.glob("src/edge/**/*.rs"),
+        (r"^(/// .*)\bedge::", r"\1qdrant_edge::"),
     )
 
     # Remove unused code.

@@ -3,16 +3,12 @@
 use std::error::Error;
 
 use examples::{fill_dummy_data, load_new_shard};
-use ordered_float::OrderedFloat;
-use qdrant_edge::Fusion;
-use qdrant_edge::internal::segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal,
+use qdrant_edge::external::ordered_float::OrderedFloat;
+use qdrant_edge::{
+    Condition, DEFAULT_VECTOR_NAME, FieldCondition, Filter, Fusion, Match, NamedQuery, Prefetch,
+    QueryEnum, QueryRequest, ScoringQuery, ValueVariants, VectorInternal, WithPayloadInterface,
+    WithVector,
 };
-use qdrant_edge::internal::segment::types::{
-    Condition, FieldCondition, Filter, Match, ValueVariants, WithPayloadInterface, WithVector,
-};
-use qdrant_edge::internal::shard::query::query_enum::QueryEnum;
-use qdrant_edge::internal::shard::query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let shard = load_new_shard()?;
@@ -25,9 +21,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Basic RRF fusion (equal weights)
     println!("=== Basic RRF Fusion ===");
-    let result = shard.query(ShardQueryRequest {
+    let result = shard.query(QueryRequest {
         prefetches: vec![
-            ShardPrefetch {
+            Prefetch {
                 prefetches: vec![],
                 query: Some(ScoringQuery::Vector(nearest([6.0, 9.0, 4.0, 2.0]))),
                 limit: 5,
@@ -35,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 filter: None,
                 score_threshold: None,
             },
-            ShardPrefetch {
+            Prefetch {
                 prefetches: vec![],
                 query: Some(ScoringQuery::Vector(nearest([1.0, -3.0, 2.0, 8.0]))),
                 limit: 5,
@@ -63,9 +59,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Weighted RRF fusion - first prefetch has 3x weight
     println!("\n=== Weighted RRF Fusion (3:1) ===");
-    let result = shard.query(ShardQueryRequest {
+    let result = shard.query(QueryRequest {
         prefetches: vec![
-            ShardPrefetch {
+            Prefetch {
                 prefetches: vec![],
                 query: Some(ScoringQuery::Vector(nearest([6.0, 9.0, 4.0, 2.0]))),
                 limit: 5,
@@ -73,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 filter: None,
                 score_threshold: None,
             },
-            ShardPrefetch {
+            Prefetch {
                 prefetches: vec![],
                 query: Some(ScoringQuery::Vector(nearest([1.0, -3.0, 2.0, 8.0]))),
                 limit: 5,

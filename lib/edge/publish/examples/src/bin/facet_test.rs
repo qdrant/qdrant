@@ -2,7 +2,9 @@ use std::error::Error;
 use std::path::Path;
 
 use examples::DATA_DIR;
-use qdrant_edge::{EdgeShard, FacetRequest};
+use qdrant_edge::{
+    Condition, EdgeShard, FacetRequest, FieldCondition, Filter, Match, ValueVariants,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let facet_dir = Path::new(DATA_DIR).join("facet_test");
@@ -57,10 +59,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("---- Test Facet with filter ----");
-    use qdrant_edge::internal::segment::types::{
-        Condition, FieldCondition, Filter, Match, ValueVariants,
-    };
-
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         "color".try_into().unwrap(),
         Match::new_value(ValueVariants::String("red".to_string())),

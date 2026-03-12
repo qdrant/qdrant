@@ -5,10 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use examples::DATA_DIR;
-use qdrant_edge::EdgeShard;
-use qdrant_edge::internal::segment::types::{ExtendedPointId, WithPayloadInterface, WithVector};
-use qdrant_edge::internal::shard::files::{clear_data, move_data};
-use qdrant_edge::internal::shard::snapshots::snapshot_manifest::SnapshotManifest;
+use qdrant_edge::external::serde_json;
+use qdrant_edge::{EdgeShard, PointId, WithPayloadInterface, WithVector};
 
 const SNAPSHOT_URL: &str =
     "https://storage.googleapis.com/qdrant-benchmark-snapshots/test-shard.snapshot";
@@ -36,11 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shard = EdgeShard::load(&recovered_path, None)?;
 
     let points = shard.retrieve(
-        &[
-            ExtendedPointId::NumId(1),
-            ExtendedPointId::NumId(2),
-            ExtendedPointId::NumId(3),
-        ],
+        &[PointId::NumId(1), PointId::NumId(2), PointId::NumId(3)],
         Some(WithPayloadInterface::Bool(true)),
         Some(WithVector::Bool(false)),
     )?;
@@ -62,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shard = EdgeShard::load(&recovered_path, None)?;
 
     let points = shard.retrieve(
-        &[ExtendedPointId::NumId(100500)],
+        &[PointId::NumId(100500)],
         Some(WithPayloadInterface::Bool(true)),
         Some(WithVector::Bool(false)),
     )?;
@@ -108,6 +102,8 @@ fn update_from_snapshot(
     shard_path: &Path,
     snapshot_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
+    use qdrant_edge::internal::{SnapshotManifest, clear_data, move_data};
+
     let tmp_dir = snapshot_path.parent().unwrap_or(Path::new("."));
 
     // A place where we can temporarily unpack the snapshot

@@ -1,4 +1,4 @@
-pub mod config;
+mod config;
 mod count;
 mod facet;
 mod info;
@@ -9,6 +9,8 @@ mod retrieve;
 mod scroll;
 mod search;
 mod snapshots;
+mod types;
+pub use types::*;
 mod update;
 
 use std::num::NonZero;
@@ -18,11 +20,13 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use common::save_on_disk::SaveOnDisk;
+pub use config::optimizers::EdgeOptimizersConfig;
+pub use config::shard::EdgeConfig;
+pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 use fs_err as fs;
 pub use info::ShardInfo;
 use parking_lot::Mutex;
 pub use reexports::*;
-use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::NonAppendableSegmentEntry as _;
 use segment::segment_constructor::{load_segment, normalize_segment_dir};
 use shard::files::{PAYLOAD_INDEX_CONFIG_FILE, SEGMENTS_PATH};
@@ -32,13 +36,12 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::wal::SerdeWal;
 use wal::WalOptions;
 
-use crate::config::optimizers::EdgeOptimizersConfig;
-use crate::config::shard::{EDGE_CONFIG_FILE, EdgeShardConfig};
+use crate::config::shard::EDGE_CONFIG_FILE;
 
 #[derive(Debug)]
 pub struct EdgeShard {
     path: PathBuf,
-    config: SaveOnDisk<EdgeShardConfig>,
+    config: SaveOnDisk<EdgeConfig>,
     wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
     segments: LockedSegmentHolder,
 }
@@ -52,7 +55,7 @@ impl EdgeShard {
     /// * If `config` is `None`, tries to load from `edge_config.json`. If that does not exist,
     ///   infers config from existing segments (and ensures at least one segment or config was
     ///   provided).
-    pub fn load(path: &Path, config: Option<EdgeShardConfig>) -> OperationResult<Self> {
+    pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
         let wal_path = path.join(WAL_PATH);
 
         if !wal_path.exists() {
@@ -82,9 +85,9 @@ impl EdgeShard {
         })?;
 
         let mut segments = SegmentHolder::default();
-        let mut config: Option<EdgeShardConfig> = match config {
+        let mut config: Option<EdgeConfig> = match config {
             Some(c) => Some(c),
-            None => match EdgeShardConfig::load(path) {
+            None => match EdgeConfig::load(path) {
                 Some(Ok(c)) => Some(c),
                 Some(Err(e)) => return Err(e),
                 None => None,
@@ -143,7 +146,7 @@ impl EdgeShard {
                     ))
                 )?;
             } else {
-                config = Some(EdgeShardConfig::from_segment_config(segment_cfg));
+                config = Some(EdgeConfig::from_segment_config(segment_cfg));
             }
 
             segment.check_consistency_and_repair().map_err(|err| {
@@ -203,7 +206,7 @@ impl EdgeShard {
         Ok(shard)
     }
 
-    pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeShardConfig> {
+    pub fn config(&self) -> parking_lot::RwLockReadGuard<'_, EdgeConfig> {
         self.config.read()
     }
 

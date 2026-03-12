@@ -14,7 +14,7 @@ pub mod utils;
 use std::path::PathBuf;
 
 use bytemuck::TransparentWrapperAlloc as _;
-use edge::config::shard::EdgeShardConfig;
+use edge::EdgeConfig;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use segment::common::operation_error::OperationError;
@@ -100,7 +100,7 @@ impl PyEdgeShard {
     #[new]
     #[pyo3(signature = (path, config = None))]
     pub fn load(path: PathBuf, config: Option<PyEdgeConfig>) -> Result<Self> {
-        let shard = edge::EdgeShard::load(&path, config.map(EdgeShardConfig::from))?;
+        let shard = edge::EdgeShard::load(&path, config.map(EdgeConfig::from))?;
         Ok(Self(Some(shard)))
     }
 
