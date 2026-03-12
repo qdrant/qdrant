@@ -238,8 +238,18 @@ pub enum ShardTransferMethod {
 }
 
 impl ShardTransferMethod {
+    pub fn is_streaming(&self) -> bool {
+        match self {
+            Self::StreamRecords | Self::ReshardingStreamRecords => true,
+            Self::Snapshot | Self::WalDelta => false,
+        }
+    }
+
     pub fn is_resharding(&self) -> bool {
-        matches!(self, Self::ReshardingStreamRecords)
+        match self {
+            Self::ReshardingStreamRecords => true,
+            Self::StreamRecords | Self::Snapshot | Self::WalDelta => false,
+        }
     }
 }
 

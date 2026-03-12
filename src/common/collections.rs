@@ -25,9 +25,7 @@ use collection::shards::replica_set;
 use collection::shards::replica_set::replica_set_state;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{
-    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
-};
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -414,13 +412,7 @@ pub async fn do_update_collection_cluster(
 
             // Decide on a transfer-method and check its validity in combination with filters.
             let method = collection.default_shard_transfer_method().await;
-
-            let is_method_streaming = matches!(
-                method,
-                ShardTransferMethod::ReshardingStreamRecords | ShardTransferMethod::StreamRecords
-            );
-
-            if !is_method_streaming && filter.is_some() {
+            if !method.is_streaming() && filter.is_some() {
                 return Err(StorageError::BadRequest {
                     description: format!(
                         "Can't do shard transfer using method {method:?} in combination with a filter",
