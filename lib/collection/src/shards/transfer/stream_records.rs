@@ -155,6 +155,11 @@ pub(super) async fn transfer_stream_records(
             // and sending.
         };
 
+        #[cfg(feature = "staging")]
+        if let Some(delay) = staging_delay {
+            tokio::time::sleep(delay).await;
+        }
+
         // Send batch to remote shard without holding the shard holder lock.
         // This is important because sending can take a very long time (especially the last
         // batch which waits for the remote to fully process). Holding the shard holder lock
@@ -163,11 +168,6 @@ pub(super) async fn transfer_stream_records(
 
         offset = result.next_page_offset;
         progress.lock().add(result.count);
-
-        #[cfg(feature = "staging")]
-        if let Some(delay) = staging_delay {
-            tokio::time::sleep(delay).await;
-        }
 
         // If this is the last batch, finalize
         if offset.is_none() {
