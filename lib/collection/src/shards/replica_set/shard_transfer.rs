@@ -7,9 +7,7 @@ use segment::types::{Filter, PointIdType};
 use super::ShardReplicaSet;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::forward_proxy_shard::{
-    ForwardProxyShard, PreparedTransferBatch, TransferBatchResult,
-};
+use crate::shards::forward_proxy_shard::{ForwardProxyShard, PreparedTransferBatch};
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -342,40 +340,6 @@ impl ShardReplicaSet {
 
         let (local_shard, _) = queue_proxy.forget_updates_and_finalize();
         let _ = local.insert(Shard::Local(local_shard));
-    }
-
-    /// Custom operation for transferring data from one shard to another during transfer
-    ///
-    /// Returns new point offset and transferred count
-    ///
-    /// # Cancel safety
-    ///
-    /// This method is cancel safe.
-    pub async fn transfer_batch(
-        &self,
-        offset: Option<PointIdType>,
-        batch_size: usize,
-        hashring_filter: Option<&HashRingRouter>,
-        merge_points: bool,
-    ) -> CollectionResult<TransferBatchResult> {
-        let local = self.local.read().await;
-
-        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
-            return Err(CollectionError::service_error(format!(
-                "Cannot transfer batch from shard {} because it is not proxified",
-                self.shard_id
-            )));
-        };
-
-        proxy
-            .transfer_batch(
-                offset,
-                batch_size,
-                hashring_filter,
-                merge_points,
-                &self.search_runtime,
-            )
-            .await
     }
 
     /// Read a transfer batch without sending it yet.
