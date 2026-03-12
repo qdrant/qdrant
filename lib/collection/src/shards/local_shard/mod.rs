@@ -27,6 +27,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
+const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
+
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -523,10 +525,10 @@ impl LocalShard {
         local_shard.load_from_wal(collection_id).await?;
 
         log::debug!(
-            target: "qdrant::load_timing",
-            "Shard {} - total loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Shard {} - total loaded in {:.2}s",
             shard_path.display(),
-            total_started.elapsed().as_secs_f64() * 1000.0,
+            total_started.elapsed().as_secs_f64(),
         );
 
         Ok(local_shard)

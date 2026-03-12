@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
+
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
@@ -477,10 +479,10 @@ fn create_segment(
         config,
     )?);
     log::debug!(
-        target: "qdrant::load_timing",
-        "Segment {} - payload_storage loaded in {:.2}ms",
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - payload_storage loaded in {:.2}s",
         segment_path.display(),
-        started.elapsed().as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64(),
     );
 
     let appendable_flag = config.is_appendable();
@@ -495,10 +497,10 @@ fn create_segment(
         &mut db_builder,
     )?;
     log::debug!(
-        target: "qdrant::load_timing",
-        "Segment {} - id_tracker loaded in {:.2}ms",
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - id_tracker loaded in {:.2}s",
         segment_path.display(),
-        started.elapsed().as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64(),
     );
 
     let mut vector_storages = HashMap::new();
@@ -518,11 +520,11 @@ fn create_segment(
             vector_name,
         )?);
         log::debug!(
-            target: "qdrant::load_timing",
-            "Segment {} - vector_storage dense '{}' loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_storage dense '{}' loaded in {:.2}s",
             segment_path.display(),
             vector_name,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64(),
         );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
@@ -543,11 +545,11 @@ fn create_segment(
             stopped,
         )?);
         log::debug!(
-            target: "qdrant::load_timing",
-            "Segment {} - vector_storage sparse '{}' loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_storage sparse '{}' loaded in {:.2}s",
             segment_path.display(),
             vector_name,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64(),
         );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
@@ -564,10 +566,10 @@ fn create_segment(
         create,
     )?);
     log::debug!(
-        target: "qdrant::load_timing",
-        "Segment {} - payload_index loaded in {:.2}ms",
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - payload_index loaded in {:.2}s",
         segment_path.display(),
-        started.elapsed().as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64(),
     );
 
     let mut vector_data = HashMap::new();
@@ -601,11 +603,11 @@ fn create_segment(
             },
         );
         log::debug!(
-            target: "qdrant::load_timing",
-            "Segment {} - quantized_vectors '{}' loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - quantized_vectors '{}' loaded in {:.2}s",
             segment_path.display(),
             vector_name,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64(),
         );
 
         let started = Instant::now();
@@ -620,11 +622,11 @@ fn create_segment(
             },
         )?);
         log::debug!(
-            target: "qdrant::load_timing",
-            "Segment {} - vector_index dense '{}' loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_index dense '{}' loaded in {:.2}s",
             segment_path.display(),
             vector_name,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64(),
         );
 
         check_process_stopped(stopped)?;
@@ -665,11 +667,11 @@ fn create_segment(
             tick_progress: || (),
         })?);
         log::debug!(
-            target: "qdrant::load_timing",
-            "Segment {} - vector_index sparse '{}' loaded in {:.2}ms",
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_index sparse '{}' loaded in {:.2}s",
             segment_path.display(),
             vector_name,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64(),
         );
 
         check_process_stopped(stopped)?;
@@ -886,10 +888,10 @@ pub fn load_segment(
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment_state = Segment::load_state(path)?;
     log::debug!(
-        target: "qdrant::load_timing",
-        "Segment {} - load_state in {:.2}ms",
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - load_state in {:.2}s",
         path.display(),
-        started.elapsed().as_secs_f64() * 1000.0,
+        started.elapsed().as_secs_f64(),
     );
 
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
@@ -917,10 +919,10 @@ pub fn load_segment(
     }
 
     log::debug!(
-        target: "qdrant::load_timing",
-        "Segment {} - total loaded in {:.2}ms",
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - total loaded in {:.2}s",
         path.display(),
-        total_started.elapsed().as_secs_f64() * 1000.0,
+        total_started.elapsed().as_secs_f64(),
     );
 
     Ok(segment)
