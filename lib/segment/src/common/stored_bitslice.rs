@@ -67,6 +67,25 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
         self.element_len
     }
 
+    /// Derive the element position that contains this bit
+    #[inline(always)]
+    fn element_idx(bit_idx: u64) -> u64 {
+        // Bitvec's way of calculating the element idx.
+        //
+        // This is equivalent to bit_idx.div_ceil(u64::BITS)
+        bit_idx >> <u64 as BitRegister>::INDX
+    }
+
+    /// Assuming the element index is known, this returns the offset within this
+    /// element for the target bit.
+    #[inline(always)]
+    fn bit_within_element(bit_idx: u64) -> u8 {
+        // Bitvec's way of calculating the bit within element
+        //
+        // This is equivalent to bit_idx % u64::BITS
+        bit_idx as u8 & <u64 as BitRegister>::MASK
+    }
+
     /// Read the entire storage and return it as a [`BitSlice`].
     ///
     /// Returns `Cow::Borrowed` when the backend supports zero-copy reads
@@ -91,8 +110,8 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
     ///
     /// Returns `None` if `bit_index` is out of bounds.
     pub fn get_bit(&self, bit_index: u64) -> Result<Option<bool>> {
-        let element_index = bit_index >> <u64 as BitRegister>::INDX;
-        let bit_within_element = bit_index as u8 & <u64 as BitRegister>::MASK;
+        let element_index = Self::element_idx(bit_index);
+        let bit_within_element = Self::bit_within_element(bit_index);
 
         if element_index >= self.element_len {
             return Ok(None);
@@ -131,7 +150,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         // group by bits on the same element
         let chunks = updates
             .into_iter()
-            .chunk_by(|(bit_index, _)| bit_index >> <u64 as BitRegister>::INDX);
+            .chunk_by(|(bit_idx, _)| Self::element_idx(*bit_idx));
 
         for (element_idx, chunk) in &chunks {
             if element_idx >= self.element_len {
@@ -189,7 +208,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         }
 
         // Fetch existing, in case the source length is not a multiple of element size
-        let element_count = bit_count.div_ceil(BITS_PER_ELEMENT);
+        let element_count = Self::element_idx(bit_count);
 
         let existing = self.storage.read::<false>(ElementsRange {
             start: 0,
@@ -223,8 +242,8 @@ mod tests {
         ///
         /// Only writes to the backend if the element actually changed.
         pub fn replace_bit(&mut self, bit_index: u64, value: bool) -> Result<bool> {
-            let element_index = bit_index >> <u64 as BitRegister>::INDX;
-            let bit_within_element = bit_index as u8 & <u64 as BitRegister>::MASK;
+            let element_index = Self::element_idx(bit_index);
+            let bit_within_element = Self::bit_within_element(bit_index);
 
             if element_index >= self.element_len {
                 return Err(UniversalIoError::OutOfBounds {
