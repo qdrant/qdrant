@@ -275,7 +275,7 @@ impl ForwardProxyShard {
         runtime_handle: &Handle,
     ) -> CollectionResult<PreparedTransferBatch> {
         debug_assert!(batch_size > 0);
-        let _update_lock = self.update_lock.clone().lock_owned().await;
+        let update_lock = self.update_lock.clone().lock_owned().await;
 
         let read_start = Instant::now();
         let (points, next_page_offset) = match hashring_filter {
@@ -311,7 +311,7 @@ impl ForwardProxyShard {
             count,
             read_duration,
             wait,
-            _update_lock,
+            _update_lock: update_lock,
         })
     }
 
