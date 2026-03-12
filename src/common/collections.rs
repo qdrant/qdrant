@@ -423,8 +423,7 @@ pub async fn do_update_collection_cluster(
             if !is_method_streaming && filter.is_some() {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Can't do shard transfer using method {:?} in combination with a filter",
-                        method,
+                        "Can't do shard transfer using method {method:?} in combination with a filter",
                     ),
                 });
             }
