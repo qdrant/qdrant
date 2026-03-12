@@ -60,7 +60,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Self: Sized,
     {
         // Check that `io_uring` was successfully initialized
-        with_uring_runtime::<u8, _, _>(|_| ()).map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
+        with_uring_runtime::<'_, u8, _, _>(|_| ()).map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
 
         let file = fs::OpenOptions::new()
             .read(true)
@@ -272,9 +272,17 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     }
 }
 
-fn with_uring_runtime<T, Out, F>(with_uring: F) -> io::Result<Out>
+/// Run a closure with access to the thread-local io_uring runtime.
+///
+/// `'data` is the lifetime of any write buffers that will be submitted to io_uring.
+/// The compiler enforces that write data outlives all in-flight operations, because
+/// `IoUringState<'data, T>` holds `&'data [T]` references until operations complete.
+///
+/// The io_uring borrow lifetime is handled via HRTB (`for<'uring>`), keeping it
+/// independent from the caller's data lifetime.
+fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> io::Result<Out>
 where
-    F: FnOnce(IoUringRuntime<T>) -> Out,
+    F: for<'uring> FnOnce(IoUringRuntime<'uring, 'data, T>) -> Out,
 {
     IO_URING.with(|io_uring| {
         let io_uring = match io_uring {
@@ -287,20 +295,20 @@ where
         };
 
         let mut io_uring = io_uring.borrow_mut();
-        let rt = IoUringRuntime::<T>::new(&mut io_uring);
+        let rt = IoUringRuntime::new(&mut io_uring);
         let output = with_uring(rt);
         Ok(output)
     })
 }
 
-struct IoUringRuntime<'a, T> {
-    io_uring: &'a mut IoUring,
-    state: IoUringState<T>,
+struct IoUringRuntime<'uring, 'data, T> {
+    io_uring: &'uring mut IoUring,
+    state: IoUringState<'data, T>,
     in_progress: usize,
 }
 
-impl<'a, T> IoUringRuntime<'a, T> {
-    pub fn new(io_uring: &'a mut IoUring) -> Self {
+impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
+    pub fn new(io_uring: &'uring mut IoUring) -> Self {
         Self {
             io_uring,
             state: IoUringState::new(),
@@ -321,7 +329,7 @@ impl<'a, T> IoUringRuntime<'a, T> {
 
     pub fn enqueue<F>(&mut self, mut entries: F) -> io::Result<()>
     where
-        F: FnMut(&mut IoUringState<T>) -> io::Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, T>) -> io::Result<Option<squeue::Entry>>,
     {
         let mut sqe = self.io_uring.submission();
 
@@ -367,7 +375,7 @@ impl<'a, T> IoUringRuntime<'a, T> {
     }
 }
 
-impl<'a, T> Drop for IoUringRuntime<'a, T> {
+impl<'uring, 'data, T> Drop for IoUringRuntime<'uring, 'data, T> {
     fn drop(&mut self) {
         while self.in_progress > 0 {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
@@ -387,11 +395,11 @@ impl<'a, T> Drop for IoUringRuntime<'a, T> {
 }
 
 #[derive(Debug)]
-struct IoUringState<T> {
-    requests: HashMap<RequestId, IoUringRequest<T>>,
+struct IoUringState<'data, T> {
+    requests: HashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
-impl<T> IoUringState<T> {
+impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
             requests: HashMap::new(),
@@ -430,16 +438,17 @@ impl<T> IoUringState<T> {
         id: RequestId,
         fd: Fd,
         byte_offset: u64,
-        items: &[T],
+        items: &'data [T],
     ) -> io::Result<squeue::Entry>
     where
         T: bytemuck::Pod,
     {
+        let items = self
+            .init(id, IoUringRequest::Write(items))?
+            .expect_write();
+
         let bytes: &[u8] = bytemuck::cast_slice(items);
         let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
-
-        self.init(id, IoUringRequest::Write(bytes.len()))?;
-
         let entry = opcode::Write::new(fd, bytes.as_ptr(), byte_length)
             .offset(byte_offset)
             .build()
@@ -451,8 +460,8 @@ impl<T> IoUringState<T> {
     fn init(
         &mut self,
         id: RequestId,
-        req: IoUringRequest<T>,
-    ) -> io::Result<&mut IoUringRequest<T>> {
+        req: IoUringRequest<'data, T>,
+    ) -> io::Result<&mut IoUringRequest<'data, T>> {
         let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
             return Err(io::Error::other(format!("request {id} already exists")));
         };
@@ -474,8 +483,8 @@ impl<T> IoUringState<T> {
                 IoUringResponse::Read(items)
             }
 
-            IoUringRequest::Write(expected_byte_len) => {
-                assert_eq!(expected_byte_len, byte_length as usize);
+            IoUringRequest::Write(items) => {
+                assert_eq!(mem::size_of_val(items), byte_length as usize);
                 IoUringResponse::Write
             }
         };
@@ -492,7 +501,7 @@ impl<T> IoUringState<T> {
     }
 }
 
-impl<T> Drop for IoUringState<T> {
+impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
         debug_assert!(self.is_empty());
     }
@@ -506,17 +515,24 @@ fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
 type RequestId = u64;
 
 #[derive(Debug)]
-enum IoUringRequest<T> {
+enum IoUringRequest<'data, T> {
     Read(Vec<MaybeUninit<T>>),
-    /// Stores expected byte length for finalize assertion.
-    Write(usize),
+    Write(&'data [T]),
 }
 
-impl<T> IoUringRequest<T> {
+impl<'data, T> IoUringRequest<'data, T> {
     pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::Read(buffer) => buffer,
+            _ => panic!(),
+        }
+    }
+
+    pub fn expect_write(&self) -> &'data [T] {
+        #[expect(clippy::match_wildcard_for_single_variants)]
+        match self {
+            IoUringRequest::Write(buffer) => buffer,
             _ => panic!(),
         }
     }
