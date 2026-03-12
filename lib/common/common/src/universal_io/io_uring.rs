@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, hash_map};
 use std::io::{self, Read as _};
-use std::mem::size_of;
+use std::mem::{self, MaybeUninit, size_of};
 use std::os::fd::AsRawFd as _;
 use std::sync::Arc;
 
@@ -13,10 +13,25 @@ use fs_err as fs;
 use super::*;
 
 thread_local! {
-    static IO_URING: io::Result<RefCell<IoUring>> = IoUring::new(IO_URING_QUEUE_LENGTH).map(RefCell::new);
+    static IO_URING: io::Result<RefCell<IoUring>> = init_io_uring().map(RefCell::new);
 }
 
 const IO_URING_QUEUE_LENGTH: u32 = 16;
+
+fn init_io_uring() -> io::Result<IoUring> {
+    let io_uring = IoUring::new(IO_URING_QUEUE_LENGTH)?;
+
+    let mut probe = Probe::new();
+    io_uring.submitter().register_probe(&mut probe)?;
+
+    if probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE) {
+        Ok(io_uring)
+    } else {
+        Err(io::Error::other(
+            "io_uring does not support required operations",
+        ))
+    }
+}
 
 #[derive(Debug)]
 pub struct IoUringFile {
@@ -26,18 +41,6 @@ pub struct IoUringFile {
 impl IoUringFile {
     fn fd(&self) -> Fd {
         Fd(self.file.as_raw_fd())
-    }
-
-    /// Convert element range to byte range (offset, length in bytes)
-    fn element_range_to_bytes<T>(range: ElementsRange) -> (u64, u64) {
-        let byte_offset = Self::element_to_byte_offset::<T>(range.start);
-        let byte_length = range.length * size_of::<T>() as u64;
-        (byte_offset, byte_length)
-    }
-
-    /// Convert element offset to byte offset
-    fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
-        element_offset * size_of::<T>() as u64
     }
 }
 
@@ -56,19 +59,9 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: Sized,
     {
-        // Check that `io_uring` was successfully initialized and basic read/write operations are supported
-        with_uring(|io_uring| {
-            let mut probe = Probe::new();
-            io_uring.submitter().register_probe(&mut probe)?;
-
-            if probe.is_supported(opcode::Read::CODE) && probe.is_supported(opcode::Write::CODE) {
-                Ok(())
-            } else {
-                Err(io::Error::other(
-                    "io_uring does not support required operations",
-                ))
-            }
-        })??;
+        // Check that `io_uring` was successfully initialized
+        with_uring_runtime::<'_, u8, _, _>(|_| ())
+            .map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
 
         let file = fs::OpenOptions::new()
             .read(true)
@@ -84,17 +77,13 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     }
 
     fn read<const SEQUENTIAL: bool>(&self, range: ElementsRange) -> Result<Cow<'_, [T]>> {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
-
-            let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
-            let entry = rt.state.read(0, self.fd(), byte_offset, byte_length)?;
+        with_uring_runtime(|mut rt| {
+            let entry = rt.state.read(0, self.fd(), range)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
 
             let (_, resp) = rt.completed().next().expect("read operation completed")?;
-            let bytes = resp.expect_read();
-            let items: Vec<T> = bytemuck::cast_vec(bytes);
+            let items = resp.expect_read();
             Ok(Cow::from(items))
         })?
     }
@@ -104,8 +93,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         ranges: impl IntoIterator<Item = ElementsRange>,
         mut callback: impl FnMut(usize, &[T]) -> Result<()>,
     ) -> Result<()> {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
+        with_uring_runtime(|mut rt| {
             let mut ranges = ranges.into_iter().enumerate().peekable();
 
             while ranges.peek().is_some() || rt.in_progress > 0 {
@@ -114,8 +102,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                         return Ok(None);
                     };
 
-                    let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
-                    let entry = state.read(id as _, self.fd(), byte_offset, byte_length)?;
+                    let entry = state.read(id as _, self.fd(), range)?;
                     Ok(Some(entry))
                 })?;
 
@@ -123,9 +110,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
                 for result in rt.completed() {
                     let (id, resp) = result?;
-                    let bytes = resp.expect_read();
-                    let items = bytemuck::cast_slice(&bytes);
-                    callback(id as _, items)?;
+                    let items = resp.expect_read();
+                    callback(id as _, &items)?;
                 }
             }
 
@@ -141,8 +127,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
     where
         Self: Sized,
     {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
+        with_uring_runtime(|mut rt| {
             let mut reads = reads.into_iter().enumerate().peekable();
             let mut file_indices = Vec::new();
 
@@ -158,8 +143,7 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
                     file_indices.push(file_index);
 
-                    let (byte_offset, byte_length) = Self::element_range_to_bytes::<T>(range);
-                    let entry = state.read(id as _, file.fd(), byte_offset, byte_length)?;
+                    let entry = state.read(id as _, file.fd(), range)?;
                     Ok(Some(entry))
                 })?;
 
@@ -173,10 +157,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
                         .copied()
                         .expect("file index is tracked");
 
-                    let buffer = resp.expect_read();
-                    let items = bytemuck::cast_slice(&buffer);
-
-                    callback(id as _, file_idx, items)?;
+                    let items = resp.expect_read();
+                    callback(id as _, file_idx, &items)?;
                 }
             }
 
@@ -206,12 +188,9 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
 
 impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     fn write(&mut self, offset: ElementOffset, items: &[T]) -> Result<()> {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
-
-            let byte_offset = Self::element_to_byte_offset::<T>(offset);
-            let bytes = bytemuck::cast_slice(items);
-            let entry = rt.state.write(0, self.fd(), byte_offset, bytes)?;
+        with_uring_runtime(|mut rt| {
+            let byte_offset = element_to_byte_offset::<T>(offset);
+            let entry = rt.state.write(0, self.fd(), byte_offset, items)?;
             rt.enqueue_single(entry)?;
             rt.submit_and_wait(1)?;
 
@@ -225,19 +204,17 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
         &mut self,
         items: impl IntoIterator<Item = (ElementOffset, &'a [T])>,
     ) -> Result<()> {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
+        with_uring_runtime(|mut rt| {
             let mut items = items.into_iter().enumerate().peekable();
 
             while items.peek().is_some() || rt.in_progress > 0 {
                 rt.enqueue(|state| {
-                    let Some((id, (offset, item))) = items.next() else {
+                    let Some((id, (offset, items))) = items.next() else {
                         return Ok(None);
                     };
 
-                    let byte_offset = Self::element_to_byte_offset::<T>(offset);
-                    let bytes = bytemuck::cast_slice(item);
-                    let entry = state.write(id as _, self.fd(), byte_offset, bytes)?;
+                    let byte_offset = element_to_byte_offset::<T>(offset);
+                    let entry = state.write(id as _, self.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
 
@@ -260,8 +237,7 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     where
         Self: Sized,
     {
-        with_uring(|io_uring| {
-            let mut rt = IoUringRuntime::new(io_uring);
+        with_uring_runtime(|mut rt| {
             let mut writes = writes.into_iter().enumerate().peekable();
 
             while writes.peek().is_some() || rt.in_progress > 0 {
@@ -274,9 +250,8 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
                         io::Error::other(format!("invalid file index {file_index}"))
                     })?;
 
-                    let byte_offset = Self::element_to_byte_offset::<T>(offset);
-                    let bytes = bytemuck::cast_slice(items);
-                    let entry = state.write(id as _, file.fd(), byte_offset, bytes)?;
+                    let byte_offset = element_to_byte_offset::<T>(offset);
+                    let entry = state.write(id as _, file.fd(), byte_offset, items)?;
                     Ok(Some(entry))
                 })?;
 
@@ -298,9 +273,17 @@ impl<T: bytemuck::Pod + 'static> UniversalWrite<T> for IoUringFile {
     }
 }
 
-fn with_uring<T, F>(with_uring: F) -> io::Result<T>
+/// Run a closure with access to the thread-local io_uring runtime.
+///
+/// `'data` is the lifetime of any write buffers that will be submitted to io_uring.
+/// The compiler enforces that write data outlives all in-flight operations, because
+/// `IoUringState<'data, T>` holds `&'data [T]` references until operations complete.
+///
+/// The io_uring borrow lifetime is handled via HRTB (`for<'uring>`), keeping it
+/// independent from the caller's data lifetime.
+fn with_uring_runtime<'data, T: 'data, Out, F>(with_uring: F) -> io::Result<Out>
 where
-    F: FnOnce(&mut IoUring) -> T,
+    F: for<'uring> FnOnce(IoUringRuntime<'uring, 'data, T>) -> Out,
 {
     IO_URING.with(|io_uring| {
         let io_uring = match io_uring {
@@ -313,19 +296,20 @@ where
         };
 
         let mut io_uring = io_uring.borrow_mut();
-        let output = with_uring(&mut io_uring);
+        let rt = IoUringRuntime::new(&mut io_uring);
+        let output = with_uring(rt);
         Ok(output)
     })
 }
 
-struct IoUringRuntime<'a> {
-    io_uring: &'a mut IoUring,
-    state: IoUringState<'a>,
+struct IoUringRuntime<'uring, 'data, T> {
+    io_uring: &'uring mut IoUring,
+    state: IoUringState<'data, T>,
     in_progress: usize,
 }
 
-impl<'a> IoUringRuntime<'a> {
-    pub fn new(io_uring: &'a mut IoUring) -> Self {
+impl<'uring, 'data, T> IoUringRuntime<'uring, 'data, T> {
+    pub fn new(io_uring: &'uring mut IoUring) -> Self {
         Self {
             io_uring,
             state: IoUringState::new(),
@@ -346,7 +330,7 @@ impl<'a> IoUringRuntime<'a> {
 
     pub fn enqueue<F>(&mut self, mut entries: F) -> io::Result<()>
     where
-        F: FnMut(&mut IoUringState<'a>) -> io::Result<Option<squeue::Entry>>,
+        F: FnMut(&mut IoUringState<'data, T>) -> io::Result<Option<squeue::Entry>>,
     {
         let mut sqe = self.io_uring.submission();
 
@@ -370,7 +354,7 @@ impl<'a> IoUringRuntime<'a> {
         Ok(())
     }
 
-    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse)>> {
+    pub fn completed(&mut self) -> impl Iterator<Item = io::Result<(u64, IoUringResponse<T>)>> {
         self.io_uring.completion().map(|entry| {
             self.in_progress -= 1;
 
@@ -392,7 +376,7 @@ impl<'a> IoUringRuntime<'a> {
     }
 }
 
-impl<'a> Drop for IoUringRuntime<'a> {
+impl<'uring, 'data, T> Drop for IoUringRuntime<'uring, 'data, T> {
     fn drop(&mut self) {
         while self.in_progress > 0 {
             // TODO: Cancel operations with `io_uring::Submitter::register_sync_cancel`?
@@ -412,31 +396,38 @@ impl<'a> Drop for IoUringRuntime<'a> {
 }
 
 #[derive(Debug)]
-struct IoUringState<'a> {
-    requests: HashMap<RequestId, IoUringRequest<'a>>,
+struct IoUringState<'data, T> {
+    requests: HashMap<RequestId, IoUringRequest<'data, T>>,
 }
 
-impl<'a> IoUringState<'a> {
+impl<'data, T> IoUringState<'data, T> {
     pub fn new() -> Self {
         Self {
             requests: HashMap::new(),
         }
     }
 
-    pub fn read(
-        &mut self,
-        id: RequestId,
-        fd: Fd,
-        byte_offset: u64,
-        byte_length: u64,
-    ) -> io::Result<squeue::Entry> {
-        let buffer = self
-            .init(id, IoUringRequest::Read(vec![0; byte_length as _]))?
-            .expect_read();
+    /// Allocates `Vec<MaybeUninit<T>>`, reinterprets it as `Vec<MaybeUninit<u8>>`, and stores the byte buffer
+    /// so the kernel writes into correctly aligned memory for `T`.
+    pub fn read(&mut self, id: RequestId, fd: Fd, range: ElementsRange) -> io::Result<squeue::Entry>
+    where
+        T: bytemuck::Pod,
+    {
+        let ElementsRange {
+            start: offset,
+            length,
+        } = range;
 
-        let length = u32::try_from(byte_length).expect("read byte length fit within u32");
-        let entry = opcode::Read::new(fd, buffer.as_mut_ptr(), length)
-            .offset(byte_offset)
+        let mut items: Vec<MaybeUninit<T>> = Vec::with_capacity(length as _);
+        items.resize_with(length as _, || MaybeUninit::uninit());
+        let items = self.init(id, IoUringRequest::Read(items))?.expect_read();
+
+        let bytes_ptr = items.as_mut_ptr().cast();
+        let byte_offset = offset as usize * size_of::<T>();
+        let byte_length = length as usize * size_of::<T>();
+        let byte_length = u32::try_from(byte_length).expect("read buffer length fit within u32");
+        let entry = opcode::Read::new(fd, bytes_ptr, byte_length)
+            .offset(byte_offset as _)
             .build()
             .user_data(id);
 
@@ -448,12 +439,16 @@ impl<'a> IoUringState<'a> {
         id: RequestId,
         fd: Fd,
         byte_offset: u64,
-        bytes: &'a [u8],
-    ) -> io::Result<squeue::Entry> {
-        let bytes = self.init(id, IoUringRequest::Write(bytes))?.expect_write();
+        items: &'data [T],
+    ) -> io::Result<squeue::Entry>
+    where
+        T: bytemuck::Pod,
+    {
+        let items = self.init(id, IoUringRequest::Write(items))?.expect_write();
 
-        let length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
-        let entry = opcode::Write::new(fd, bytes.as_ptr(), length)
+        let bytes: &[u8] = bytemuck::cast_slice(items);
+        let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
+        let entry = opcode::Write::new(fd, bytes.as_ptr(), byte_length)
             .offset(byte_offset)
             .build()
             .user_data(id);
@@ -464,8 +459,8 @@ impl<'a> IoUringState<'a> {
     fn init(
         &mut self,
         id: RequestId,
-        req: IoUringRequest<'a>,
-    ) -> io::Result<&mut IoUringRequest<'a>> {
+        req: IoUringRequest<'data, T>,
+    ) -> io::Result<&mut IoUringRequest<'data, T>> {
         let hash_map::Entry::Vacant(entry) = self.requests.entry(id) else {
             return Err(io::Error::other(format!("request {id} already exists")));
         };
@@ -474,20 +469,21 @@ impl<'a> IoUringState<'a> {
         Ok(req)
     }
 
-    pub fn finalize(&mut self, id: RequestId, length: u32) -> io::Result<IoUringResponse> {
+    pub fn finalize(&mut self, id: RequestId, byte_length: u32) -> io::Result<IoUringResponse<T>> {
         let req = self
             .requests
             .remove(&id)
             .ok_or_else(|| io::Error::other("request {id} does not exist"))?;
 
         let resp = match req {
-            IoUringRequest::Read(buffer) => {
-                assert_eq!(buffer.len(), length as usize);
-                IoUringResponse::Read(buffer)
+            IoUringRequest::Read(items) => {
+                assert_eq!(mem::size_of_val(items.as_slice()), byte_length as usize);
+                let items: Vec<T> = unsafe { mem::transmute(items) };
+                IoUringResponse::Read(items)
             }
 
-            IoUringRequest::Write(buffer) => {
-                assert_eq!(buffer.len(), length as usize);
+            IoUringRequest::Write(items) => {
+                assert_eq!(mem::size_of_val(items), byte_length as usize);
                 IoUringResponse::Write
             }
         };
@@ -504,22 +500,27 @@ impl<'a> IoUringState<'a> {
     }
 }
 
-impl<'a> Drop for IoUringState<'a> {
+impl<'data, T> Drop for IoUringState<'data, T> {
     fn drop(&mut self) {
         debug_assert!(self.is_empty());
     }
 }
 
+/// Convert element offset to byte offset
+fn element_to_byte_offset<T>(element_offset: ElementOffset) -> u64 {
+    element_offset * size_of::<T>() as u64
+}
+
 type RequestId = u64;
 
 #[derive(Debug)]
-enum IoUringRequest<'a> {
-    Read(Vec<u8>),
-    Write(&'a [u8]),
+enum IoUringRequest<'data, T> {
+    Read(Vec<MaybeUninit<T>>),
+    Write(&'data [T]),
 }
 
-impl<'a> IoUringRequest<'a> {
-    pub fn expect_read(&mut self) -> &mut Vec<u8> {
+impl<'data, T> IoUringRequest<'data, T> {
+    pub fn expect_read(&mut self) -> &mut Vec<MaybeUninit<T>> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::Read(buffer) => buffer,
@@ -527,7 +528,7 @@ impl<'a> IoUringRequest<'a> {
         }
     }
 
-    pub fn expect_write(&self) -> &[u8] {
+    pub fn expect_write(&self) -> &'data [T] {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             IoUringRequest::Write(buffer) => buffer,
@@ -537,13 +538,13 @@ impl<'a> IoUringRequest<'a> {
 }
 
 #[derive(Debug)]
-enum IoUringResponse {
-    Read(Vec<u8>),
+enum IoUringResponse<T> {
+    Read(Vec<T>),
     Write,
 }
 
-impl IoUringResponse {
-    pub fn expect_read(self) -> Vec<u8> {
+impl<T> IoUringResponse<T> {
+    pub fn expect_read(self) -> Vec<T> {
         #[expect(clippy::match_wildcard_for_single_variants)]
         match self {
             Self::Read(buffer) => buffer,
