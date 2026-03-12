@@ -60,7 +60,8 @@ impl<T: bytemuck::Pod + 'static> UniversalRead<T> for IoUringFile {
         Self: Sized,
     {
         // Check that `io_uring` was successfully initialized
-        with_uring_runtime::<'_, u8, _, _>(|_| ()).map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
+        with_uring_runtime::<'_, u8, _, _>(|_| ())
+            .map_err(|e| UniversalIoError::IoUringNotSupported(e.to_string()))?;
 
         let file = fs::OpenOptions::new()
             .read(true)
@@ -443,9 +444,7 @@ impl<'data, T> IoUringState<'data, T> {
     where
         T: bytemuck::Pod,
     {
-        let items = self
-            .init(id, IoUringRequest::Write(items))?
-            .expect_write();
+        let items = self.init(id, IoUringRequest::Write(items))?.expect_write();
 
         let bytes: &[u8] = bytemuck::cast_slice(items);
         let byte_length = u32::try_from(bytes.len()).expect("write buffer length fit within u32");
