@@ -1,6 +1,6 @@
 /target
-/.idea
-/.vscode
+.idea
+.vscode
 /.devcontainer
 /storage
 /snapshots

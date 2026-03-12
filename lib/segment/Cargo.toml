@@ -91,7 +91,6 @@ ahash = { workspace = true }
 self_cell = { workspace = true }
 sha2 = { workspace = true }
 smallvec = { workspace = true }
-is_sorted = "0.1.1"
 strum = { workspace = true }
 byteorder = { workspace = true }
 tap = { workspace = true }
