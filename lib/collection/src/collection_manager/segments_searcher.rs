@@ -446,20 +446,28 @@ impl SegmentsSearcher {
             };
 
             let hw_counter = hw_measurement_acc.get_counter_cell();
-            let all_points: BTreeSet<_> = segments
-                .into_iter()
-                .flat_map(|segment| {
-                    segment.get().read().read_filtered(
-                        None,
-                        None,
-                        filter.as_ref(),
-                        &is_stopped,
-                        &hw_counter,
-                        deferred_behavior,
-                    )
-                })
-                .collect();
-            Ok(all_points)
+
+            let work = || {
+                let all_points: BTreeSet<_> = segments
+                    .into_iter()
+                    .flat_map(|segment| {
+                        segment.get().read().read_filtered(
+                            None,
+                            None,
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                            deferred_behavior,
+                        )
+                    })
+                    .collect();
+                Ok(all_points)
+            };
+
+            match hw_counter.cpu_utilization() {
+                Some(cpu_util) => cpu_util.measure(work),
+                None => work(),
+            }
         });
         AbortOnDropHandle::new(points).await?
     }
@@ -493,11 +501,14 @@ impl SegmentsSearcher {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
                         let hw_counter = hw_measurement_acc.get_counter_cell();
+                        let cpu_utilization = hw_measurement_acc.cpu_utilization();
                         move || {
-                            segment
-                                .get()
-                                .read()
-                                .rescore_with_formula(arc_ctx, &hw_counter)
+                            cpu_utilization.measure(|| {
+                                segment
+                                    .get()
+                                    .read()
+                                    .rescore_with_formula(arc_ctx, &hw_counter)
+                            })
                         }
                     });
                     AbortOnDropHandle::new(handle)
