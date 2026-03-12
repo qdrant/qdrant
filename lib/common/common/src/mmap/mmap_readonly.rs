@@ -353,6 +353,12 @@ impl<T> Deref for MmapSliceReadOnly<T> {
     }
 }
 
+impl<T: 'static> AsRef<[T]> for MmapSliceReadOnly<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.mmap
+    }
+}
+
 /// Assert slice `&[S]` is correctly aligned for type `T`.
 ///
 /// # Panics

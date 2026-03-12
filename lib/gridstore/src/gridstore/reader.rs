@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
-use common::universal_io::mmap::MmapUniversal;
+use common::universal_io::mmap::{MmapUniversal, MmapUniversalRo};
 use common::universal_io::read_json_via;
 
 use super::view::GridstoreView;
@@ -155,12 +155,12 @@ pub(super) fn read_config_and_tracker(
     base_path: &std::path::Path,
 ) -> Result<(StorageConfig, Tracker)> {
     let config_path = base_path.join(CONFIG_FILENAME);
-    let config: StorageConfig = read_json_via::<MmapUniversal<u8>, StorageConfig>(&config_path)
+    let config: StorageConfig = read_json_via::<MmapUniversalRo<u8>, StorageConfig>(&config_path)
         .map_err(|err| {
-            GridstoreError::service_error(format!(
-                "Failed to read config from '{config_path:?}': {err}"
-            ))
-        })?;
+        GridstoreError::service_error(format!(
+            "Failed to read config from '{config_path:?}': {err}"
+        ))
+    })?;
 
     let tracker = Tracker::open(base_path)?;
 
