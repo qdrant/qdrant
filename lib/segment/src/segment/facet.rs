@@ -85,6 +85,16 @@ impl Segment {
                     .iter_values_map(hw_counter)
                     .stop_if(is_stopped)
                     .filter_map(|(value, iter)| {
+                        #[cfg(debug_assertions)]
+                        let iter = {
+                            let mut prev_id = None;
+                            iter.inspect(move |&id| {
+                                let previous = prev_id.get_or_insert(id);
+                                debug_assert!(*previous <= id, "Sorted iter assertion broken");
+                                *previous = id;
+                            })
+                        };
+
                         let count = iter
                             .dedup()
                             .take_while(|&point_id| {
