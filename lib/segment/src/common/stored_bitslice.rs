@@ -16,13 +16,14 @@ use common::universal_io::{
 };
 use itertools::{Itertools, PeekingNext};
 
-/// Number of bits per `u64` element.
-const BITS_PER_ELEMENT: u64 = u64::BITS as u64;
+/// Number of bits per `BitStore` element.
+const BITS_PER_ELEMENT: u32 = BitStore::BITS;
 
-type BitSlice = bitvec::slice::BitSlice<u64, Lsb0>;
+type BitStore = u64;
+type BitSlice = bitvec::slice::BitSlice<BitStore, Lsb0>;
 
 /// Convenience alias for a bitslice backed by a memory-mapped file.
-pub type MmapBitSlice = StoredBitSlice<common::universal_io::mmap::MmapUniversal<u64>>;
+pub type MmapBitSlice = StoredBitSlice<common::universal_io::mmap::MmapUniversal<BitStore>>;
 
 /// A storage-agnostic bitslice that supports both reading and writing bits.
 ///
@@ -33,11 +34,11 @@ pub type MmapBitSlice = StoredBitSlice<common::universal_io::mmap::MmapUniversal
 #[derive(Debug)]
 pub struct StoredBitSlice<S> {
     storage: S,
-    /// Total number of `u64` elements in the underlying storage.
+    /// Total number of `BitStore` elements in the underlying storage.
     element_len: u64,
 }
 
-impl<S: UniversalRead<u64>> StoredBitSlice<S> {
+impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
     /// Open a bitslice storage from the given path using backend `S`.
     pub fn open(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
         let storage = S::open(path, options)?;
@@ -59,10 +60,10 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
 
     /// Total number of bits available.
     pub fn bit_len(&self) -> u64 {
-        self.element_len * BITS_PER_ELEMENT
+        self.element_len * BITS_PER_ELEMENT as u64
     }
 
-    /// Total number of `u64` elements in the underlying storage.
+    /// Total number of `BitStore` elements in the underlying storage.
     pub fn element_len(&self) -> u64 {
         self.element_len
     }
@@ -72,8 +73,8 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
     fn element_idx(bit_idx: u64) -> u64 {
         // Bitvec's way of calculating the element idx.
         //
-        // This is equivalent to bit_idx.div_ceil(u64::BITS)
-        bit_idx >> <u64 as BitRegister>::INDX
+        // This is equivalent to bit_idx / u64::BITS
+        bit_idx >> <BitStore as BitRegister>::INDX
     }
 
     /// Assuming the element index is known, this returns the offset within this
@@ -82,8 +83,8 @@ impl<S: UniversalRead<u64>> StoredBitSlice<S> {
     fn bit_within_element(bit_idx: u64) -> u8 {
         // Bitvec's way of calculating the bit within element
         //
-        // This is equivalent to bit_idx % u64::BITS
-        bit_idx as u8 & <u64 as BitRegister>::MASK
+        // This is equivalent to bit_idx % BitStore::BITS
+        bit_idx as u8 & <BitStore as BitRegister>::MASK
     }
 
     /// Read the entire storage and return it as a [`BitSlice`].
@@ -233,7 +234,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         }
 
         // Fetch existing, in case the source length is not a multiple of element size
-        let element_count = Self::element_idx(bit_count);
+        let element_count = bit_count.div_ceil(BITS_PER_ELEMENT as u64);
 
         let existing = self.storage.read::<false>(ElementsRange {
             start: 0,
@@ -262,7 +263,7 @@ mod tests {
 
     use super::*;
 
-    impl StoredBitSlice<MmapUniversal<u64>> {
+    impl StoredBitSlice<MmapUniversal<BitStore>> {
         /// Read-modify-write a single bit. Returns the previous value.
         ///
         /// Only writes to the backend if the element actually changed.
@@ -304,8 +305,8 @@ mod tests {
             0
         } else {
             data.len()
-                .next_multiple_of(std::mem::size_of::<u64>())
-                .max(std::mem::size_of::<u64>())
+                .next_multiple_of(std::mem::size_of::<BitStore>())
+                .max(std::mem::size_of::<BitStore>())
         };
         let mut buf = vec![0u8; aligned_len];
         buf[..data.len()].copy_from_slice(data);
