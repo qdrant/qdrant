@@ -60,7 +60,7 @@ impl<S: UniversalRead<BitStore>> StoredBitSlice<S> {
 
     /// Total number of bits available.
     pub fn bit_len(&self) -> u64 {
-        self.element_len * BITS_PER_ELEMENT as u64
+        self.element_len * u64::from(BITS_PER_ELEMENT)
     }
 
     /// Total number of `BitStore` elements in the underlying storage.
@@ -234,7 +234,7 @@ impl<S: UniversalWrite<u64>> StoredBitSlice<S> {
         }
 
         // Fetch existing, in case the source length is not a multiple of element size
-        let element_count = bit_count.div_ceil(BITS_PER_ELEMENT as u64);
+        let element_count = bit_count.div_ceil(u64::from(BITS_PER_ELEMENT));
 
         let existing = self.storage.read::<false>(ElementsRange {
             start: 0,
