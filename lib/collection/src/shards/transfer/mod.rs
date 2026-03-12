@@ -186,16 +186,14 @@ impl ShardTransferRestart {
             to: self.to,
         }
     }
-}
 
-impl From<ShardTransfer> for ShardTransferRestart {
-    fn from(transfer: ShardTransfer) -> Self {
+    pub fn from_transfer(transfer: ShardTransfer, default_method: ShardTransferMethod) -> Self {
         Self {
             shard_id: transfer.shard_id,
             to_shard_id: transfer.to_shard_id,
             from: transfer.from,
             to: transfer.to,
-            method: transfer.method.unwrap_or_default(),
+            method: transfer.method.unwrap_or(default_method),
         }
     }
 }
@@ -225,11 +223,10 @@ impl ShardTransferKey {
 /// - `wal_delta` - Attempt to transfer shard difference by WAL delta.
 ///
 /// - `resharding_stream_records` - Shard transfer for resharding: stream all records in batches until all points are transferred.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
     // Stream all shard records in batches until the whole shard is transferred.
-    #[default]
     StreamRecords,
     // Snapshot the shard, transfer and restore it on the receiver.
     Snapshot,
@@ -241,8 +238,18 @@ pub enum ShardTransferMethod {
 }
 
 impl ShardTransferMethod {
+    pub fn is_streaming(&self) -> bool {
+        match self {
+            Self::StreamRecords | Self::ReshardingStreamRecords => true,
+            Self::Snapshot | Self::WalDelta => false,
+        }
+    }
+
     pub fn is_resharding(&self) -> bool {
-        matches!(self, Self::ReshardingStreamRecords)
+        match self {
+            Self::ReshardingStreamRecords => true,
+            Self::StreamRecords | Self::Snapshot | Self::WalDelta => false,
+        }
     }
 }
 
@@ -470,6 +477,7 @@ pub trait ShardTransferConsensus: Send + Sync {
         &self,
         transfer_config: ShardTransfer,
         collection_id: CollectionId,
+        default_method: ShardTransferMethod,
     ) -> CollectionResult<()>;
 
     /// Propose to restart a shard transfer with a different given configuration
@@ -480,6 +488,7 @@ pub trait ShardTransferConsensus: Send + Sync {
         &self,
         transfer_config: &ShardTransfer,
         collection_id: &CollectionId,
+        default_method: ShardTransferMethod,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
             "`restart_shard_transfer_confirm_and_retry` exit without attempting any work, \
@@ -493,7 +502,11 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             log::trace!("Propose and confirm shard transfer restart operation");
             result = self
-                .restart_shard_transfer(transfer_config.clone(), collection_id.into())
+                .restart_shard_transfer(
+                    transfer_config.clone(),
+                    collection_id.into(),
+                    default_method,
+                )
                 .await;
 
             match &result {

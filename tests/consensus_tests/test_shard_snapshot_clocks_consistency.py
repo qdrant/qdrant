@@ -52,7 +52,9 @@ def test_shard_snapshot_clocks_consistency(tmp_path: pathlib.Path):
     sleep(1)
 
     # TODO: Compare clock tags of most recent operations in WAL with recovery point
-    recovery_point = requests.get(f"{peer_url}/collections/test_collection/shards/0/recovery_point").json()['result']
+    response = requests.get(f"{peer_url}/collections/test_collection/shards/0/recovery_point")
+    assert_http_ok(response)
+    recovery_point = response.json()['result']
     wal = requests.get(f"{peer_url}/collections/test_collection/shards/0/wal?entries=5").json()['result']
 
     assert len(recovery_point) == 1
