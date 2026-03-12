@@ -49,7 +49,7 @@ impl Collection {
         } else {
             self.shared_storage_config
                 .default_shard_transfer_method
-                .unwrap_or_default()
+                .unwrap_or(ShardTransferMethod::StreamRecords)
         }
     }
 
@@ -66,10 +66,10 @@ impl Collection {
         F: Future<Output = ()> + Send + 'static,
     {
         // Select transfer method
+        let default_method = self.default_shard_transfer_method().await;
         if shard_transfer.method.is_none() {
-            let method = self.default_shard_transfer_method().await;
-            log::warn!("No shard transfer method selected, defaulting to {method:?}");
-            shard_transfer.method.replace(method);
+            log::warn!("No shard transfer method selected, defaulting to {default_method:?}");
+            shard_transfer.method.replace(default_method);
         }
 
         let do_transfer = {
@@ -96,7 +96,7 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let transfer_method = shard_transfer.method.unwrap_or_default();
+            let transfer_method = shard_transfer.method.unwrap_or(default_method);
             let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 

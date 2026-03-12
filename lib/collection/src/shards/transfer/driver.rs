@@ -58,7 +58,7 @@ pub async fn transfer_shard(
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
-    match transfer_config.method.unwrap_or_default() {
+    match transfer_config.method.unwrap_or(fallback_method) {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_stream_records(
@@ -165,7 +165,7 @@ pub async fn transfer_shard_fallback_default(
     // Propose to restart transfer with a different method
     transfer_config.method.replace(fallback_method);
     consensus
-        .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_id)
+        .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_id, fallback_method)
         .await?;
 
     Ok(false)
