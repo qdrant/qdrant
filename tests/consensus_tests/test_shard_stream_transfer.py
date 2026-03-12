@@ -490,8 +490,8 @@ def test_shard_stream_transfer_pending_queue_data_race(tmp_path: pathlib.Path):
 # duration. It could cascade into freezing the entire cluster for a long time.
 #
 # This test ensures that doesn't happen anymore. It triggers a shard transfer
-# with artifical delay in batches to emulate a long running batch. Then it sends
-# a resharding start operation and confirms consensus is still resonsive.
+# with artificial delay in batches to emulate a long running batch. Then it sends
+# a resharding start operation and confirms consensus is still responsive.
 # Previously this would be blocked and it would time out causing the test to
 # fail.
 #
