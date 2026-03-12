@@ -86,7 +86,7 @@ impl Segment {
                     .stop_if(is_stopped)
                     .filter_map(|(value, iter)| {
                         let count = iter
-                            .unique()
+                            .dedup()
                             .take_while(|&point_id| {
                                 point_id < self.deferred_internal_id.unwrap_or(PointOffsetType::MAX)
                             })
