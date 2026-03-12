@@ -84,11 +84,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
 }
 
 pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<Mmap> {
-    let file = OpenOptions::new()
-        .read(true)
-        .append(true)
-        .create(true)
-        .open(path)?;
+    let file = OpenOptions::new().read(true).open(path)?;
 
     let mmap = unsafe { Mmap::map(&file)? };
 
