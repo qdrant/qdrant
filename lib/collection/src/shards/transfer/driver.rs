@@ -168,7 +168,7 @@ pub async fn transfer_shard_fallback_default(
         .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_id, fallback_method)
         .await?;
 
-    Ok(false)
+    Ok(true)
 }
 
 /// Return local shard back from the forward proxy
