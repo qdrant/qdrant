@@ -253,7 +253,10 @@ impl ImmutableIdTracker {
                 ..OpenOptions::default()
             },
         )?;
-        let deleted_bitvec: BitVec = deleted_storage.read_all()?.iter().by_vals().collect();
+
+        let mut deleted_bitvec = BitVec::new();
+        deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+
         let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_storage);
 
         let internal_to_version_map = open_write_mmap(
