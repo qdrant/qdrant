@@ -19,7 +19,7 @@ use crate::common::utils::transpose_map_into_named_vector;
 use crate::data_types::segment_record::NamedVectorsOwned;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{
-    ContextQuery, DiscoveryQuery, NaiveFeedbackQuery, RecoQuery, TransformInto,
+    ContextQuery, DiscoverQuery, NaiveFeedbackQuery, RecoQuery, TransformInto,
 };
 
 /// How many dimensions of a sparse vector are considered to be a single unit for cost estimation.
@@ -848,7 +848,7 @@ pub enum QueryVector {
     Nearest(VectorInternal),
     RecommendBestScore(RecoQuery<VectorInternal>),
     RecommendSumScores(RecoQuery<VectorInternal>),
-    Discovery(DiscoveryQuery<VectorInternal>),
+    Discover(DiscoverQuery<VectorInternal>),
     Context(ContextQuery<VectorInternal>),
     FeedbackNaive(NaiveFeedbackQuery<VectorInternal>),
 }
@@ -866,7 +866,7 @@ impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector 
             QueryVector::RecommendSumScores(v) => {
                 Ok(QueryVector::RecommendSumScores(v.transform(&mut f)?))
             }
-            QueryVector::Discovery(v) => Ok(QueryVector::Discovery(v.transform(&mut f)?)),
+            QueryVector::Discover(v) => Ok(QueryVector::Discover(v.transform(&mut f)?)),
             QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(&mut f)?)),
             QueryVector::FeedbackNaive(v) => Ok(QueryVector::FeedbackNaive(v.transform(&mut f)?)),
         }

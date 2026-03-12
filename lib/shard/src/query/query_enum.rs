@@ -10,7 +10,7 @@ pub enum QueryEnum {
     Nearest(NamedQuery<VectorInternal>),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),
     RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
-    Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
+    Discover(NamedQuery<DiscoverQuery<VectorInternal>>),
     Context(NamedQuery<ContextQuery<VectorInternal>>),
     FeedbackNaive(NamedQuery<NaiveFeedbackQuery<VectorInternal>>),
 }
@@ -21,7 +21,7 @@ impl QueryEnum {
             QueryEnum::Nearest(vector) => vector.get_name(),
             QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
             QueryEnum::RecommendSumScores(reco_query) => reco_query.get_name(),
-            QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
+            QueryEnum::Discover(discover_query) => discover_query.get_name(),
             QueryEnum::Context(context_query) => context_query.get_name(),
             QueryEnum::FeedbackNaive(feedback_query) => feedback_query.get_name(),
         }
@@ -55,9 +55,9 @@ impl QueryEnum {
                     }
                 }
             }
-            QueryEnum::Discover(discovery_query) => {
-                let name = discovery_query.get_name();
-                for vector in discovery_query.query.flat_iter() {
+            QueryEnum::Discover(discover_query) => {
+                let name = discover_query.get_name();
+                for vector in discover_query.query.flat_iter() {
                     match vector {
                         VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
                         VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
@@ -125,8 +125,8 @@ impl From<DenseVector> for QueryEnum {
     }
 }
 
-impl From<NamedQuery<DiscoveryQuery<VectorInternal>>> for QueryEnum {
-    fn from(query: NamedQuery<DiscoveryQuery<VectorInternal>>) -> Self {
+impl From<NamedQuery<DiscoverQuery<VectorInternal>>> for QueryEnum {
+    fn from(query: NamedQuery<DiscoverQuery<VectorInternal>>) -> Self {
         QueryEnum::Discover(query)
     }
 }
@@ -137,7 +137,7 @@ impl From<QueryEnum> for QueryVector {
             QueryEnum::Nearest(named) => QueryVector::Nearest(named.query),
             QueryEnum::RecommendBestScore(named) => QueryVector::RecommendBestScore(named.query),
             QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
-            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
+            QueryEnum::Discover(named) => QueryVector::Discover(named.query),
             QueryEnum::Context(named) => QueryVector::Context(named.query),
             QueryEnum::FeedbackNaive(named) => QueryVector::FeedbackNaive(named.query),
         }

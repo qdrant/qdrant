@@ -520,7 +520,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             ),
             QueryVector::RecommendBestScore(_)
             | QueryVector::RecommendSumScores(_)
-            | QueryVector::Discovery(_)
+            | QueryVector::Discover(_)
             | QueryVector::Context(_)
             | QueryVector::FeedbackNaive(_) => {
                 let _timer = if filter.is_some() {
