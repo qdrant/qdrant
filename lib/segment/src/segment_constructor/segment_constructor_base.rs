@@ -3,9 +3,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::defaults::LOAD_TIMING_LOG_TARGET;
 use common::flags::FeatureFlags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;
@@ -468,30 +470,44 @@ fn create_segment(
     #[cfg(feature = "rocksdb")]
     let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
 
+    let started = Instant::now();
     let payload_storage = sp(create_payload_storage(
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
         segment_path,
         config,
     )?);
+    log::debug!(
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - payload_storage loaded in {:.2}s",
+        segment_path.display(),
+        started.elapsed().as_secs_f64(),
+    );
 
     let appendable_flag = config.is_appendable();
 
     let use_mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
+    let started = Instant::now();
     let id_tracker = create_segment_id_tracker(
         use_mutable_id_tracker,
         segment_path,
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
     )?;
+    log::debug!(
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - id_tracker loaded in {:.2}s",
+        segment_path.display(),
+        started.elapsed().as_secs_f64(),
+    );
 
     let mut vector_storages = HashMap::new();
 
     for (vector_name, vector_config) in &config.vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
 
-        // Select suitable vector storage type based on configuration
+        let started = Instant::now();
         let vector_storage = sp(open_vector_storage(
             #[cfg(feature = "rocksdb")]
             &mut db_builder,
@@ -502,6 +518,13 @@ fn create_segment(
             #[cfg(feature = "rocksdb")]
             vector_name,
         )?);
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_storage dense '{}' loaded in {:.2}s",
+            segment_path.display(),
+            vector_name,
+            started.elapsed().as_secs_f64(),
+        );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
     }
@@ -509,7 +532,7 @@ fn create_segment(
     for (vector_name, sparse_config) in config.sparse_vector_data.iter() {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
 
-        // Select suitable sparse vector storage type based on configuration
+        let started = Instant::now();
         let vector_storage = sp(create_sparse_vector_storage(
             #[cfg(feature = "rocksdb")]
             &mut db_builder,
@@ -520,11 +543,19 @@ fn create_segment(
             #[cfg(feature = "rocksdb")]
             stopped,
         )?);
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_storage sparse '{}' loaded in {:.2}s",
+            segment_path.display(),
+            vector_name,
+            started.elapsed().as_secs_f64(),
+        );
 
         vector_storages.insert(vector_name.to_owned(), vector_storage);
     }
 
     let payload_index_path = get_payload_index_path(segment_path);
+    let started = Instant::now();
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage.clone(),
         id_tracker.clone(),
@@ -533,6 +564,12 @@ fn create_segment(
         appendable_flag,
         create,
     )?);
+    log::debug!(
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - payload_index loaded in {:.2}s",
+        segment_path.display(),
+        started.elapsed().as_secs_f64(),
+    );
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
@@ -550,6 +587,7 @@ fn create_segment(
             );
         }
 
+        let started = Instant::now();
         let quantized_vectors = sp(
             if let Some(quantization_config) = config.quantization_config(vector_name) {
                 let quantized_data_path = vector_storage_path;
@@ -563,7 +601,15 @@ fn create_segment(
                 None
             },
         );
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - quantized_vectors '{}' loaded in {:.2}s",
+            segment_path.display(),
+            vector_name,
+            started.elapsed().as_secs_f64(),
+        );
 
+        let started = Instant::now();
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = sp(open_vector_index(
             vector_config,
             VectorIndexOpenArgs {
@@ -574,6 +620,13 @@ fn create_segment(
                 quantized_vectors: quantized_vectors.clone(),
             },
         )?);
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_index dense '{}' loaded in {:.2}s",
+            segment_path.display(),
+            vector_name,
+            started.elapsed().as_secs_f64(),
+        );
 
         check_process_stopped(stopped)?;
 
@@ -602,6 +655,7 @@ fn create_segment(
             );
         }
 
+        let started = Instant::now();
         let vector_index = sp(create_sparse_vector_index(SparseVectorIndexOpenArgs {
             config: sparse_vector_config.index,
             id_tracker: id_tracker.clone(),
@@ -611,6 +665,13 @@ fn create_segment(
             stopped,
             tick_progress: || (),
         })?);
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Segment {} - vector_index sparse '{}' loaded in {:.2}s",
+            segment_path.display(),
+            vector_name,
+            started.elapsed().as_secs_f64(),
+        );
 
         check_process_stopped(stopped)?;
 
@@ -784,6 +845,8 @@ pub fn load_segment(
     deferred_internal_id: Option<PointOffsetType>,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    let total_started = Instant::now();
+
     let stored_version = SegmentVersion::load(path)?.ok_or_else(|| {
         OperationError::service_error(format!(
             "Segment version file not found in segment: {}",
@@ -820,8 +883,15 @@ pub fn load_segment(
         SegmentVersion::save(path)?
     }
 
+    let started = Instant::now();
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment_state = Segment::load_state(path)?;
+    log::debug!(
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - load_state in {:.2}s",
+        path.display(),
+        started.elapsed().as_secs_f64(),
+    );
 
     #[cfg_attr(not(feature = "rocksdb"), expect(unused_mut))]
     let mut segment = create_segment(
@@ -846,6 +916,13 @@ pub fn load_segment(
             migrate_rocksdb_payload_storage(path, &mut segment, &mut segment_state)?;
         }
     }
+
+    log::debug!(
+        target: LOAD_TIMING_LOG_TARGET,
+        "Segment {} - total loaded in {:.2}s",
+        path.display(),
+        total_started.elapsed().as_secs_f64(),
+    );
 
     Ok(segment)
 }

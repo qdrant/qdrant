@@ -31,6 +31,7 @@ use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::LOAD_TIMING_LOG_TARGET;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
@@ -344,6 +345,8 @@ impl LocalShard {
         search_runtime: Handle,
         optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
+        let total_started = Instant::now();
+
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
@@ -519,6 +522,13 @@ impl LocalShard {
 
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
+
+        log::debug!(
+            target: LOAD_TIMING_LOG_TARGET,
+            "Shard {} - total loaded in {:.2}s",
+            shard_path.display(),
+            total_started.elapsed().as_secs_f64(),
+        );
 
         Ok(local_shard)
     }

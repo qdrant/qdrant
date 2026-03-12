@@ -22,6 +22,10 @@ pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
 /// Default timeout for consensus meta operations.
 pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
 
+/// Log target for detailed storage-component load timing.
+/// Enable via log config, e.g. `log_level: "INFO,qdrant::load_timing=debug"`.
+pub const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
+
 /// Max number of pooled elements to preserve in memory.
 /// Scaled according to the number of logical CPU cores to account for concurrent operations.
 pub static POOL_KEEP_LIMIT: LazyLock<usize> = LazyLock::new(|| cpu::get_num_cpus().clamp(16, 128));
