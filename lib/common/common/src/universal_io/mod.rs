@@ -72,6 +72,8 @@ pub enum UniversalIoError {
     /// Source id is not valid for this multi-source storage.
     #[error("Invalid source id {file_index} (num sources: {num_files})")]
     InvalidFileIndex { file_index: usize, num_files: usize },
+    #[error("IoUring not supported: {0}")]
+    IoUringNotSupported(String),
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
