@@ -398,9 +398,10 @@ pub(crate) fn create_sparse_vector_index(
             VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
         }
 
-        // Non-compressed
+        // Non-compressed fallback: redirect to compressed variant (USE_COMPRESSED is always true,
+        // so this arm is unreachable in practice, but kept for exhaustiveness)
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, false) => {
-            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args)?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float32, false) => {
             VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?)

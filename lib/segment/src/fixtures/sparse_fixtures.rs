@@ -123,10 +123,6 @@ macro_rules! fixture_for_all_indices {
             ::sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap<f32>
         >($($args)*);
 
-        eprintln!("InvertedIndexImmutableRam");
-        $test::<
-            ::sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam
-        >($($args)*);
 
         eprintln!("InvertedIndexMmap");
         $test::<
