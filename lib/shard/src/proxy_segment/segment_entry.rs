@@ -735,7 +735,13 @@ impl NonAppendableSegmentEntry for ProxySegment {
     }
 
     fn available_point_count_without_deferred_estimated(&self) -> usize {
-        self.available_point_count()
+        let deleted_points_count = self.deleted_points.len();
+        let wrapped_segment_count = self
+            .wrapped_segment
+            .get()
+            .read()
+            .available_point_count_without_deferred_estimated();
+        wrapped_segment_count.saturating_sub(deleted_points_count)
     }
 }
 

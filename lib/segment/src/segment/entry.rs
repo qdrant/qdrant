@@ -510,7 +510,7 @@ impl NonAppendableSegmentEntry for Segment {
         let num_points = self.available_point_count_without_deferred_estimated();
         let num_deferred_points = self.deferred_point_count_estimated();
 
-        let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
+        let vectors_size_bytes = total_average_vectors_size_bytes * self.available_point_count();
 
         // Unwrap and default to 0 here because the RocksDB storage is the only faillible one, and we will remove it eventually.
         let payloads_size_bytes = self
