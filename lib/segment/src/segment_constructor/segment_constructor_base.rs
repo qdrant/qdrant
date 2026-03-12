@@ -5,10 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
-
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::defaults::LOAD_TIMING_LOG_TARGET;
 use common::flags::FeatureFlags;
 use common::fs::{safe_delete_with_suffix, sync_parent_dir};
 use common::is_alive_lock::IsAliveLock;

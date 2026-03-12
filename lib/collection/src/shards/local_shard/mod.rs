@@ -27,12 +27,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
-const LOAD_TIMING_LOG_TARGET: &str = "qdrant::load_timing";
-
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::defaults::LOAD_TIMING_LOG_TARGET;
 use common::rate_limiting::RateLimiter;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
