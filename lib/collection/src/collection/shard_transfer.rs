@@ -187,7 +187,7 @@ impl Collection {
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
-        let fallback_method = self.default_shard_transfer_method().await;
+        let fallback_method = ShardTransferMethod::StreamRecords;
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             progress.clone(),
