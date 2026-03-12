@@ -761,6 +761,7 @@ impl Collection {
 
             // Select shard transfer method, prefer user configured method or choose one now
             // If all peers are 1.8+, we try WAL delta transfer, otherwise we use the default method
+            let default_method = self.default_shard_transfer_method().await;
             let shard_transfer_method = self
                 .shared_storage_config
                 .default_shard_transfer_method
@@ -771,7 +772,7 @@ impl Collection {
                     if all_support_wal_delta {
                         ShardTransferMethod::WalDelta
                     } else {
-                        ShardTransferMethod::default()
+                        default_method
                     }
                 });
 

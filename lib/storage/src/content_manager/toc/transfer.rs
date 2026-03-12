@@ -4,7 +4,10 @@ use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
+    ShardTransferRestart,
+};
 
 use super::dispatcher::TocDispatcher;
 use crate::content_manager::collection_meta_ops::{
@@ -83,11 +86,15 @@ impl ShardTransferConsensus for TocDispatcher {
         &self,
         transfer_config: ShardTransfer,
         collection_id: CollectionId,
+        default_method: ShardTransferMethod,
     ) -> CollectionResult<()> {
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_id,
-                ShardTransferOperations::Restart(transfer_config.into()),
+                ShardTransferOperations::Restart(ShardTransferRestart::from_transfer(
+                    transfer_config,
+                    default_method,
+                )),
             )));
         self
             .consensus_state

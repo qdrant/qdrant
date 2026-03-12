@@ -35,6 +35,22 @@ impl Collection {
             .check_transfer_exists(transfer_key)
     }
 
+    pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
+        let prevent_unoptimized = self
+            .effective_optimizers_config()
+            .await
+            .map(|config| config.prevent_unoptimized.unwrap_or(false))
+            .unwrap_or(false);
+        if prevent_unoptimized {
+            log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
+            ShardTransferMethod::Snapshot
+        } else {
+            self.shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or(ShardTransferMethod::StreamRecords)
+        }
+    }
+
     pub async fn start_shard_transfer<T, F>(
         &self,
         mut shard_transfer: ShardTransfer,
@@ -48,13 +64,10 @@ impl Collection {
         F: Future<Output = ()> + Send + 'static,
     {
         // Select transfer method
+        let default_method = self.default_shard_transfer_method().await;
         if shard_transfer.method.is_none() {
-            let method = self
-                .shared_storage_config
-                .default_shard_transfer_method
-                .unwrap_or_default();
-            log::warn!("No shard transfer method selected, defaulting to {method:?}");
-            shard_transfer.method.replace(method);
+            log::warn!("No shard transfer method selected, defaulting to {default_method:?}");
+            shard_transfer.method.replace(default_method);
         }
 
         let do_transfer = {
@@ -81,7 +94,7 @@ impl Collection {
             let from_is_local = from_replica_set.is_local().await;
             let to_is_local = to_replica_set.is_local().await;
 
-            let transfer_method = shard_transfer.method.unwrap_or_default();
+            let transfer_method = shard_transfer.method.unwrap_or(default_method);
             let initial_state = match transfer_method {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
 
@@ -172,6 +185,7 @@ impl Collection {
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
+        let fallback_method = ShardTransferMethod::StreamRecords;
         let transfer_task = transfer::driver::spawn_transfer_task(
             shard_holder,
             progress.clone(),
@@ -181,6 +195,7 @@ impl Collection {
             channel_service,
             self.snapshots_path.clone(),
             temp_dir,
+            fallback_method,
             on_finish,
             on_error,
         );
