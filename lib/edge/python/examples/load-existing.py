@@ -60,6 +60,7 @@ expected_points = edge.scroll(
 print(expected_points)
 
 # Re-load edge shard from disk (load existing)
+edge.close()
 edge = EdgeShard.load(TMP_DIR)
 
 points = edge.scroll(ScrollRequest(limit=5, with_vector=True, with_payload=True))

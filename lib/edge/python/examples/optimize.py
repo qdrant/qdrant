@@ -11,8 +11,8 @@ import os
 import shutil
 
 import requests
-
 from common import DATA_DIR
+
 from qdrant_edge import *
 
 COLLECTION = "edge_optimize_example"
@@ -95,7 +95,9 @@ def prepare_collection():
         request_json(
             "PUT",
             f"/collections/{COLLECTION}/points?wait=true",
-            json={"points": [build_point(point_id) for point_id in range(start, end + 1)]},
+            json={
+                "points": [build_point(point_id) for point_id in range(start, end + 1)]
+            },
         )
 
     remote_count = request_json(
@@ -138,7 +140,7 @@ def create_shard_snapshot() -> str:
 
 
 def load_edge_shard() -> EdgeShard:
-    return EdgeShard(
+    return EdgeShard.load(
         SHARD_DIR,
         EdgeConfig(
             vectors=EdgeVectorParams(size=VECTOR_SIZE, distance=Distance.Dot),
