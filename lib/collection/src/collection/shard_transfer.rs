@@ -37,11 +37,9 @@ impl Collection {
 
     pub async fn default_shard_transfer_method(&self) -> ShardTransferMethod {
         let prevent_unoptimized = self
-            .collection_config
-            .read()
+            .effective_optimizers_config()
             .await
-            .optimizer_config
-            .prevent_unoptimized
+            .map(|config| config.prevent_unoptimized.unwrap_or(false))
             .unwrap_or(false);
         if prevent_unoptimized {
             log::info!("Using snapshot transfer method because prevent_unoptimized is enabled");
