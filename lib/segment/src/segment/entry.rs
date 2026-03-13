@@ -532,6 +532,7 @@ impl NonAppendableSegmentEntry for Segment {
             is_appendable: self.appendable_flag,
             index_schema: HashMap::new(),
             vector_data: vector_data_info,
+            deferred_internal_id: self.deferred_internal_id,
         }
     }
 

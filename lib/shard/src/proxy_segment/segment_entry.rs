@@ -520,6 +520,7 @@ impl NonAppendableSegmentEntry for ProxySegment {
             is_appendable: false,
             index_schema: wrapped_info.index_schema,
             vector_data,
+            deferred_internal_id: wrapped_info.deferred_internal_id,
         }
     }
 
